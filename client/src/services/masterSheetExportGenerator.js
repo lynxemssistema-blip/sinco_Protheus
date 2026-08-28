@@ -81,13 +81,25 @@ const formatDate = (val) => {
 
 const parseToDate = (val) => {
     if (!val) return null;
-    if (val instanceof Date && !isNaN(val.getTime())) return val;
+    if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
     const str = String(val).trim();
+    if (!str || str === '-' || str === '00/00/0000' || str === '00000000') return null;
     if (/^\d{8}$/.test(str)) {
         const y = parseInt(str.substring(0, 4), 10);
         const m = parseInt(str.substring(4, 6), 10) - 1;
         const d = parseInt(str.substring(6, 8), 10);
-        return new Date(Date.UTC(y, m, d, 12, 0, 0));
+        const dt = new Date(Date.UTC(y, m, d, 12, 0, 0));
+        return isNaN(dt.getTime()) ? null : dt;
+    }
+    if (str.includes('/') && str.length >= 8) {
+        const parts = str.split('/');
+        if (parts.length === 3) {
+            const d = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10) - 1;
+            const y = parseInt(parts[2], 10);
+            const dt = new Date(Date.UTC(y, m, d, 12, 0, 0));
+            return isNaN(dt.getTime()) ? null : dt;
+        }
     }
     if (str.includes('T') || str.includes('-')) {
         const parts = str.split('T')[0].split('-');
@@ -95,7 +107,8 @@ const parseToDate = (val) => {
             const y = parseInt(parts[0], 10);
             const m = parseInt(parts[1], 10) - 1;
             const d = parseInt(parts[2], 10);
-            return new Date(Date.UTC(y, m, d, 12, 0, 0));
+            const dt = new Date(Date.UTC(y, m, d, 12, 0, 0));
+            return isNaN(dt.getTime()) ? null : dt;
         }
     }
     const dt = new Date(val);
@@ -255,7 +268,9 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
         const lastCol = getColLetter(colCount);
 
         // 1. Linha 1: Marca Corporativa
-        ws.mergeCells(`A1:${lastCol}1`);
+        if (colCount > 1) {
+            ws.mergeCells(`A1:${lastCol}1`);
+        }
         const r1 = ws.getCell('A1');
         r1.value = 'METALFISA METALÚRGICA LTDA — SISTEMA INTEGRADO DE GESTÃO (S&OP)';
         r1.fill = NAVY_FILL;
@@ -264,7 +279,9 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
         ws.getRow(1).height = 26;
 
         // 2. Linha 2: Título do Relatório
-        ws.mergeCells(`A2:${lastCol}2`);
+        if (colCount > 1) {
+            ws.mergeCells(`A2:${lastCol}2`);
+        }
         const r2 = ws.getCell('A2');
         r2.value = `RELATÓRIO: ${title.toUpperCase()}`;
         r2.fill = BLUE_FILL;
@@ -273,7 +290,9 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
         ws.getRow(2).height = 20;
 
         // 3. Linha 3: Metadados
-        ws.mergeCells(`A3:${lastCol}3`);
+        if (colCount > 1) {
+            ws.mergeCells(`A3:${lastCol}3`);
+        }
         const r3 = ws.getCell('A3');
         r3.value = `Emissão: ${dateStr}${filterLabel ? `   |   Filtros Aplicados: ${filterLabel}` : ''}`;
         r3.fill = SLATE_FILL;
@@ -297,7 +316,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
         });
 
         // 6. Linhas de Dados
-        dataRows.forEach((rowObj, rIdx) => {
+        (dataRows || []).forEach((rowObj, rIdx) => {
             const row = ws.getRow(6 + rIdx);
             row.height = 20;
             const isZebra = rIdx % 2 === 1;
@@ -306,33 +325,63 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
                 const cell = row.getCell(cIdx + 1);
                 const val = rowObj[col.key];
 
-                cell.value = val !== undefined && val !== null ? val : '-';
                 cell.font = { name: 'Calibri', size: 9.5, color: { argb: 'FF1E293B' } };
                 cell.alignment = { horizontal: col.align || 'left', vertical: 'middle' };
                 cell.border = THIN_BORDER;
                 cell.fill = isZebra ? ZEBRA_FILL : WHITE_FILL;
 
                 // Highlight fracionada
-                if (rowObj.is_fraction && (col.key === 'visual_op' || col.key === 'lote_ident' || col.key === 'op')) {
+                if (rowObj.is_fraction && (col.key === 'visual_op' || col.key === 'lote_ident' || col.key === 'op' || col.key === 'tipo_lote')) {
                     cell.fill = AMBER_FILL;
                     cell.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FF78350F' } };
                 }
 
-                // Formatos
+                // Status badges
+                if (col.key === 'status') {
+                    if (val === 'Entregue') {
+                        cell.fill = GREEN_FILL;
+                        cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF166534' } };
+                    } else if (val === 'Fracionada') {
+                        cell.fill = AMBER_FILL;
+                        cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF78350F' } };
+                    }
+                }
+
+                // Formatos e Tipagem Segura
                 if (col.type === 'number') {
-                    if (typeof val === 'number') {
+                    if (typeof val === 'number' && !isNaN(val) && isFinite(val)) {
+                        cell.value = val;
                         cell.numFmt = Number.isInteger(val) ? '#,##0' : '#,##0.00';
+                    } else if (val !== undefined && val !== null && val !== '' && !isNaN(Number(val))) {
+                        const n = Number(val);
+                        cell.value = n;
+                        cell.numFmt = Number.isInteger(n) ? '#,##0' : '#,##0.00';
+                    } else {
+                        cell.value = (val !== undefined && val !== null && val !== '') ? String(val) : '-';
                     }
                 } else if (col.type === 'date') {
-                    if (val instanceof Date) {
+                    if (val instanceof Date && !isNaN(val.getTime())) {
+                        cell.value = val;
                         cell.numFmt = 'dd/mm/yyyy';
+                    } else if (typeof val === 'string' && val.trim() && val.trim() !== '-') {
+                        const parsed = parseToDate(val);
+                        if (parsed instanceof Date && !isNaN(parsed.getTime())) {
+                            cell.value = parsed;
+                            cell.numFmt = 'dd/mm/yyyy';
+                        } else {
+                            cell.value = String(val);
+                        }
+                    } else {
+                        cell.value = '-';
                     }
+                } else {
+                    cell.value = (val !== undefined && val !== null) ? String(val) : '-';
                 }
             });
         });
 
         // 7. Linha de Totais
-        if (totalConfig && dataRows.length > 0) {
+        if (totalConfig && dataRows && dataRows.length > 0) {
             const totRowIdx = 6 + dataRows.length;
             const totRow = ws.getRow(totRowIdx);
             totRow.height = 22;
@@ -347,7 +396,10 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
                 if (cIdx === 0) {
                     cell.value = 'TOTAL GERAL';
                 } else if (totalConfig[col.key]) {
-                    const sum = dataRows.reduce((acc, r) => acc + (Number(r[col.key]) || 0), 0);
+                    const sum = dataRows.reduce((acc, r) => {
+                        const n = Number(r[col.key]);
+                        return acc + (!isNaN(n) && isFinite(n) ? n : 0);
+                    }, 0);
                     cell.value = sum;
                     cell.numFmt = Number.isInteger(sum) ? '#,##0' : '#,##0.00';
                 } else {
@@ -356,16 +408,18 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
             });
         }
 
-        // Auto-filtro
-        ws.autoFilter = {
-            from: { row: 5, column: 1 },
-            to: { row: 5, column: colCount }
-        };
+        // Auto-filtro válido no padrão OpenXML (deve cobrir as linhas de dados)
+        if (dataRows && dataRows.length > 0) {
+            ws.autoFilter = {
+                from: { row: 5, column: 1 },
+                to: { row: 5 + dataRows.length, column: colCount }
+            };
+        }
 
         // Auto-largura de colunas
         columnsConfig.forEach((col, idx) => {
             let maxLen = (col.header || '').length;
-            dataRows.forEach(r => {
+            (dataRows || []).forEach(r => {
                 const v = r[col.key];
                 let s = '';
                 if (v instanceof Date) s = '00/00/0000';
@@ -735,9 +789,20 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
             ...data.recursos.flatMap(r => [
                 { header: `${r} Prev (min)`, key: `prev_${r}`, align: 'right', type: 'number', minWidth: 14 },
                 { header: `${r} Apon (min)`, key: `apon_${r}`, align: 'right', type: 'number', minWidth: 14 },
-                { header: `${r} Qtd Apon (un)`, key: `qtd_apon_${r}`, align: 'right', type: 'number', minWidth: 14 }
+                { header: `${r} Qtd Apon (un)`, key: `qtd_apon_${r}`, align: 'right', type: 'number', minWidth: 14 },
+                { header: `${r} Qtd Falta (un)`, key: `qtd_falta_${r}`, align: 'right', type: 'number', minWidth: 14 },
+                { header: `${r} Falta (min)`, key: `tempo_falta_${r}`, align: 'right', type: 'number', minWidth: 14 }
             ])
         ];
+
+        const execTotals = { qtd_planejada: true };
+        data.recursos.forEach(r => {
+            execTotals[`prev_${r}`] = true;
+            execTotals[`apon_${r}`] = true;
+            execTotals[`qtd_apon_${r}`] = true;
+            execTotals[`qtd_falta_${r}`] = true;
+            execTotals[`tempo_falta_${r}`] = true;
+        });
 
         const execData = data.execucao_op.map(e => {
             const row = {
@@ -750,14 +815,40 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
                 qtde_pcp: e.qtde_pcp != null && e.qtde_pcp !== '' ? Number(e.qtde_pcp) : ''
             };
             data.recursos.forEach(r => {
-                row[`prev_${r}`] = Number(e['previsto_' + r] || 0);
-                row[`apon_${r}`] = Number(e['apontado_' + r] || 0);
-                row[`qtd_apon_${r}`] = Number(e['qtd_apontada_' + r] || 0);
+                const rawPrev = e['previsto_' + r];
+                const rawApon = e['apontado_' + r];
+                const rawQtdApon = e['qtd_apontada_' + r];
+                const rawQtdFalta = e['qtd_falta_' + r];
+                const rawTempoFalta = e['tempo_falta_' + r];
+
+                const hasResource = (rawPrev !== null && rawPrev !== undefined && Number(rawPrev) > 0) ||
+                                    (rawApon !== null && rawApon !== undefined && Number(rawApon) > 0) ||
+                                    (rawQtdApon !== null && rawQtdApon !== undefined && Number(rawQtdApon) > 0);
+
+                if (hasResource) {
+                    const prev = Number(rawPrev || 0);
+                    const apon = Number(rawApon || 0);
+                    const qtdApon = Number(rawQtdApon || 0);
+                    const qtdFalta = rawQtdFalta !== undefined && rawQtdFalta !== null ? Number(rawQtdFalta) : Math.max(0, row.qtd_planejada - qtdApon);
+                    const tempoFalta = rawTempoFalta !== undefined && rawTempoFalta !== null ? Number(rawTempoFalta) : Math.max(0, prev - apon);
+
+                    row[`prev_${r}`] = prev;
+                    row[`apon_${r}`] = apon;
+                    row[`qtd_apon_${r}`] = qtdApon;
+                    row[`qtd_falta_${r}`] = qtdFalta;
+                    row[`tempo_falta_${r}`] = tempoFalta;
+                } else {
+                    row[`prev_${r}`] = '';
+                    row[`apon_${r}`] = '';
+                    row[`qtd_apon_${r}`] = '';
+                    row[`qtd_falta_${r}`] = '';
+                    row[`tempo_falta_${r}`] = '';
+                }
             });
             return row;
         });
 
-        addStyledMetalFisaSheet('Execução OP', 'Execução e Apontamentos de OP', execColumns, execData, { qtd_planejada: true });
+        addStyledMetalFisaSheet('Execução OP', 'Execução e Apontamentos de OP', execColumns, execData, execTotals);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -830,7 +921,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
         const formatOperations = (compCode) => {
             const ops = data.routingSequenceMap?.[compCode] || [];
             if (!ops || ops.length === 0) return '-';
-            return ops.map(o => `${o.operac}${o.recurso ? ` (${o.recurso})` : ''}`).join(' ➔ ');
+            return ops.map(o => `${o.operac}${o.recurso ? ` (${o.recurso})` : ''}`).join(' -> ');
         };
 
         const treeColumns = [
@@ -941,6 +1032,11 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
         addStyledMetalFisaSheet('Detalhamento Estrutura', 'Árvore Multinível de Fabricação por Fração / Lote de OP', treeColumns, treeRows, { qtd_lote: true });
     }
 
+    // Garante que o workbook tenha ao menos 1 worksheet válida
+    if (wb.worksheets.length === 0) {
+        addStyledMetalFisaSheet('Resumo', 'Nenhum Registro Encontrado', [{ header: 'Aviso', key: 'msg', minWidth: 40 }], [{ msg: 'Nenhum registro encontrado para os filtros selecionados.' }]);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Exportação do Buffer via Navegador
     // ─────────────────────────────────────────────────────────────────────────
@@ -948,10 +1044,15 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
+    a.style.display = 'none';
     a.href = url;
     a.download = `Planilha_Mestra_MetalFisa_${getTodayDateStr()}.xlsx`;
+    document.body.appendChild(a);
     a.click();
-    window.URL.revokeObjectURL(url);
+    setTimeout(() => {
+        if (document.body.contains(a)) document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }, 60000);
 };
 
 /**
@@ -1108,6 +1209,56 @@ export const exportMasterSheetPdf = (rawData, activeTab = 'itens', filterParams 
                 ]);
             });
         });
+    } else if (activeTab === 'execucao' && data.execucao_op && data.recursos) {
+        tabLabel = 'Execução e Apontamentos de OP por Recurso';
+        headers = [
+            [
+                'Pedido', 'Cliente', 'OP', 'Produto', 'Qtd Plan', 'Data PCP', 'Qtde PCP',
+                ...data.recursos.flatMap(r => [`${r} Prev`, `${r} Apon`, `${r} Qtd Ap`, `${r} Qtd Falta`, `${r} Falta min`])
+            ]
+        ];
+        rows = data.execucao_op.map(e => {
+            const qtdPlan = Number(e.qtd_planejada || 0);
+            const rCols = data.recursos.flatMap(r => {
+                const rawPrev = e['previsto_' + r];
+                const rawApon = e['apontado_' + r];
+                const rawQtdApon = e['qtd_apontada_' + r];
+                const rawQtdFalta = e['qtd_falta_' + r];
+                const rawTempoFalta = e['tempo_falta_' + r];
+
+                const hasResource = (rawPrev !== null && rawPrev !== undefined && Number(rawPrev) > 0) ||
+                                    (rawApon !== null && rawApon !== undefined && Number(rawApon) > 0) ||
+                                    (rawQtdApon !== null && rawQtdApon !== undefined && Number(rawQtdApon) > 0);
+
+                if (!hasResource) {
+                    return ['-', '-', '-', '-', '-'];
+                }
+
+                const prev = Number(rawPrev || 0);
+                const apon = Number(rawApon || 0);
+                const qtdApon = Number(rawQtdApon || 0);
+                const qtdFalta = rawQtdFalta !== undefined && rawQtdFalta !== null ? Number(rawQtdFalta) : Math.max(0, qtdPlan - qtdApon);
+                const tempoFalta = rawTempoFalta !== undefined && rawTempoFalta !== null ? Number(rawTempoFalta) : Math.max(0, prev - apon);
+
+                return [
+                    prev > 0 ? formatNum(prev) : '-',
+                    apon > 0 ? formatNum(apon) : '-',
+                    qtdApon > 0 ? formatNum(qtdApon) : '-',
+                    qtdFalta > 0 ? formatNum(qtdFalta) : '-',
+                    tempoFalta > 0 ? formatNum(tempoFalta) : '-'
+                ];
+            });
+            return [
+                e.pedido,
+                e.cliente,
+                e.op,
+                e.produto,
+                formatNum(qtdPlan),
+                formatDate(e.data_pcp),
+                e.qtde_pcp != null && e.qtde_pcp !== '' ? formatNum(e.qtde_pcp) : '-',
+                ...rCols
+            ];
+        });
     } else {
         // Default: Itens Detalhados com Prioridades e Data PCP
         tabLabel = 'Itens Detalhados com Grupos de Prioridades';
@@ -1230,7 +1381,9 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         const lastCol = getColLetter(colCount);
 
         // 1. Linha 1: Marca Corporativa
-        ws.mergeCells(`A1:${lastCol}1`);
+        if (colCount > 1) {
+            ws.mergeCells(`A1:${lastCol}1`);
+        }
         const r1 = ws.getCell('A1');
         r1.value = 'METALFISA METALÚRGICA LTDA — SISTEMA INTEGRADO DE GESTÃO (S&OP)';
         r1.fill = NAVY_FILL;
@@ -1239,7 +1392,9 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         ws.getRow(1).height = 26;
 
         // 2. Linha 2: Título do Relatório
-        ws.mergeCells(`A2:${lastCol}2`);
+        if (colCount > 1) {
+            ws.mergeCells(`A2:${lastCol}2`);
+        }
         const r2 = ws.getCell('A2');
         r2.value = `RELATÓRIO: ${title.toUpperCase()}`;
         r2.fill = BLUE_FILL;
@@ -1248,7 +1403,9 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         ws.getRow(2).height = 20;
 
         // 3. Linha 3: Metadados
-        ws.mergeCells(`A3:${lastCol}3`);
+        if (colCount > 1) {
+            ws.mergeCells(`A3:${lastCol}3`);
+        }
         const r3 = ws.getCell('A3');
         r3.value = `Emissão: ${dateStr}${filterLabel ? `   |   Filtros Aplicados: ${filterLabel}` : ''}`;
         r3.fill = SLATE_FILL;
@@ -1272,7 +1429,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         });
 
         // 6. Linhas de Dados
-        dataRows.forEach((rowObj, rIdx) => {
+        (dataRows || []).forEach((rowObj, rIdx) => {
             const row = ws.getRow(6 + rIdx);
             row.height = 20;
             const isZebra = rIdx % 2 === 1;
@@ -1281,7 +1438,6 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
                 const cell = row.getCell(cIdx + 1);
                 const val = rowObj[col.key];
 
-                cell.value = val !== undefined && val !== null ? val : '-';
                 cell.font = { name: 'Calibri', size: 9.5, color: { argb: 'FF1E293B' } };
                 cell.alignment = { horizontal: col.align || 'left', vertical: 'middle' };
                 cell.border = THIN_BORDER;
@@ -1304,21 +1460,41 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
                     }
                 }
 
-                // Formatos
+                // Formatos e Tipagem Segura
                 if (col.type === 'number') {
-                    if (typeof val === 'number') {
+                    if (typeof val === 'number' && !isNaN(val) && isFinite(val)) {
+                        cell.value = val;
                         cell.numFmt = Number.isInteger(val) ? '#,##0' : '#,##0.00';
+                    } else if (val !== undefined && val !== null && val !== '' && !isNaN(Number(val))) {
+                        const n = Number(val);
+                        cell.value = n;
+                        cell.numFmt = Number.isInteger(n) ? '#,##0' : '#,##0.00';
+                    } else {
+                        cell.value = (val !== undefined && val !== null && val !== '') ? String(val) : '-';
                     }
                 } else if (col.type === 'date') {
-                    if (val instanceof Date) {
+                    if (val instanceof Date && !isNaN(val.getTime())) {
+                        cell.value = val;
                         cell.numFmt = 'dd/mm/yyyy';
+                    } else if (typeof val === 'string' && val.trim() && val.trim() !== '-') {
+                        const parsed = parseToDate(val);
+                        if (parsed instanceof Date && !isNaN(parsed.getTime())) {
+                            cell.value = parsed;
+                            cell.numFmt = 'dd/mm/yyyy';
+                        } else {
+                            cell.value = String(val);
+                        }
+                    } else {
+                        cell.value = '-';
                     }
+                } else {
+                    cell.value = (val !== undefined && val !== null) ? String(val) : '-';
                 }
             });
         });
 
         // 7. Linha de Totais
-        if (totalConfig && dataRows.length > 0) {
+        if (totalConfig && dataRows && dataRows.length > 0) {
             const totRowIdx = 6 + dataRows.length;
             const totRow = ws.getRow(totRowIdx);
             totRow.height = 22;
@@ -1333,7 +1509,10 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
                 if (cIdx === 0) {
                     cell.value = 'TOTAL GERAL';
                 } else if (totalConfig[col.key]) {
-                    const sum = dataRows.reduce((acc, r) => acc + (Number(r[col.key]) || 0), 0);
+                    const sum = dataRows.reduce((acc, r) => {
+                        const n = Number(r[col.key]);
+                        return acc + (!isNaN(n) && isFinite(n) ? n : 0);
+                    }, 0);
                     cell.value = sum;
                     cell.numFmt = Number.isInteger(sum) ? '#,##0' : '#,##0.00';
                 } else {
@@ -1342,16 +1521,18 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
             });
         }
 
-        // Auto-filtro
-        ws.autoFilter = {
-            from: { row: 5, column: 1 },
-            to: { row: 5, column: colCount }
-        };
+        // Auto-filtro válido no padrão OpenXML (deve cobrir as linhas de dados)
+        if (dataRows && dataRows.length > 0) {
+            ws.autoFilter = {
+                from: { row: 5, column: 1 },
+                to: { row: 5 + dataRows.length, column: colCount }
+            };
+        }
 
         // Auto-largura de colunas
         columnsConfig.forEach((col, idx) => {
             let maxLen = (col.header || '').length;
-            dataRows.forEach(r => {
+            (dataRows || []).forEach(r => {
                 const v = r[col.key];
                 let s = '';
                 if (v instanceof Date) s = '00/00/0000';
@@ -1407,17 +1588,46 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         status: parseFloat(item.qtd_faturar) <= 0 ? 'Entregue' : (item.is_fraction ? 'Fracionada' : 'Pendente')
     }));
 
-    addStyledMetalFisaSheet('OPs Fracionadas', 'OPs e Frações de Produção Detalhadas', opsColumns, opsData, { visual_qtd: true, qtd_faturar: true });
+    addStyledMetalFisaSheet('OPs e Lotes (Visão Geral)', 'OPs e Frações de Produção Detalhadas', opsColumns, opsData, { visual_qtd: true, qtd_faturar: true });
 
     // ─────────────────────────────────────────────────────────────────────────
-    // ABA 2: DETALHAMENTO DE PEÇAS DA OP (ÁRVORE MULTINÍVEL DE FABRICAÇÃO)
+    // MAPAS AUXILIARES DE ENGENHARIA E OPERAÇÕES
     // ─────────────────────────────────────────────────────────────────────────
+    const treeDataMap = {};
+    (masterData.estruturas_hierarquicas || []).forEach(node => {
+        const raiz = (node.raiz || '').trim();
+        if (!treeDataMap[raiz]) treeDataMap[raiz] = [];
+        treeDataMap[raiz].push(node);
+    });
+
     const formatOperations = (compCode) => {
         const ops = masterData.routingSequenceMap?.[compCode] || [];
         if (!ops || ops.length === 0) return '-';
-        return ops.map(o => `${o.operac}${o.recurso ? ` (${o.recurso})` : ''}`).join(' ➔ ');
+        return ops.map(o => `${o.operac} (${o.recurso_nome || o.recurso || 'POSTO'}${o.descri ? ` - ${o.descri}` : ''})`).join(' -> ');
     };
 
+    const getResourceListStr = (compCode) => {
+        const ops = masterData.routingSequenceMap?.[compCode] || [];
+        if (!ops || ops.length === 0) return '-';
+        const recs = [...new Set(ops.map(o => o.recurso_nome || o.recurso).filter(Boolean))];
+        return recs.length > 0 ? recs.join(', ') : '-';
+    };
+
+    const calcEstimatedHours = (compCode, qtdLote) => {
+        const ops = masterData.routingSequenceMap?.[compCode] || [];
+        if (!ops || ops.length === 0 || !qtdLote) return 0;
+        let totalMin = 0;
+        ops.forEach(o => {
+            const setup = Number(o.setup || 0);
+            const tPeca = Number(o.tempo_peca || 0);
+            totalMin += setup + (tPeca * qtdLote);
+        });
+        return Number((totalMin / 60).toFixed(2));
+    };
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ABA 2: PEÇAS & FABRICAÇÃO (ÁRVORE MULTINÍVEL DETALHADA BOM)
+    // ─────────────────────────────────────────────────────────────────────────
     const treeColumns = [
         { header: 'Pedido', key: 'pedido', align: 'center', minWidth: 12 },
         { header: 'Cliente', key: 'cliente', align: 'left', minWidth: 26 },
@@ -1431,18 +1641,13 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         { header: 'UM', key: 'um', align: 'center', minWidth: 8 },
         { header: 'Qtd. Unit. Estrutura', key: 'quant_acumulada', align: 'right', type: 'number', minWidth: 16 },
         { header: 'Qtd. Fabricar no Lote (PCP)', key: 'qtd_lote', align: 'right', type: 'number', minWidth: 20 },
-        { header: 'Roteiro de Operações / Recursos', key: 'roteiro_str', align: 'left', minWidth: 32 },
+        { header: 'Recursos / Centros de Trabalho', key: 'recursos_str', align: 'left', minWidth: 28 },
+        { header: 'Roteiro de Operações Completo', key: 'roteiro_str', align: 'left', minWidth: 42 },
+        { header: 'Tempo Fabr. Lote (h)', key: 'tempo_horas', align: 'right', type: 'number', minWidth: 16 },
         { header: 'Data PCP (Lote)', key: 'data_pcp', align: 'center', type: 'date', minWidth: 15 },
         { header: 'Ref. Cliente', key: 'ref_cliente', align: 'left', minWidth: 18 },
         { header: 'PC (Ped. Cliente)', key: 'ped_cliente', align: 'center', minWidth: 18 }
     ];
-
-    const treeDataMap = {};
-    (masterData.estruturas_hierarquicas || []).forEach(node => {
-        const raiz = (node.raiz || '').trim();
-        if (!treeDataMap[raiz]) treeDataMap[raiz] = [];
-        treeDataMap[raiz].push(node);
-    });
 
     const treeData = [];
     fractionalItems.forEach(item => {
@@ -1450,6 +1655,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         const fracQtd = Number(item.visual_qtd || item.quantidade_pcp || item.qtd_faturar || 0);
 
         // 1. Nível 0: Produto Acabado Principal
+        const paTempoH = calcEstimatedHours(prod, fracQtd);
         treeData.push({
             is_fraction: item.is_fraction,
             pedido: item.pedido,
@@ -1464,7 +1670,9 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
             um: item.unidade || item.um || 'UN',
             quant_acumulada: 1.0,
             qtd_lote: fracQtd,
+            recursos_str: getResourceListStr(prod),
             roteiro_str: formatOperations(prod),
+            tempo_horas: paTempoH,
             data_pcp: parseToDate(item.data_entrega_pcp || item.pcp_delivery_forecast_date),
             ref_cliente: item.ref_cliente || '-',
             ped_cliente: item.ped_cliente || item.pedcli || '-'
@@ -1478,6 +1686,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
             const nivelLabel = `${nivelNum} - ${tipoLabel}`;
             const qtdAcum = Number(node.quant_acumulada || node.quant_unitaria || 0);
             const qtdTotalLote = Number((qtdAcum * fracQtd).toFixed(4));
+            const subTempoH = calcEstimatedHours(node.comp, qtdTotalLote);
 
             treeData.push({
                 is_fraction: item.is_fraction,
@@ -1493,7 +1702,9 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
                 um: node.um || '-',
                 quant_acumulada: qtdAcum,
                 qtd_lote: qtdTotalLote,
+                recursos_str: getResourceListStr(node.comp),
                 roteiro_str: formatOperations(node.comp),
+                tempo_horas: subTempoH,
                 data_pcp: parseToDate(item.data_entrega_pcp || item.pcp_delivery_forecast_date),
                 ref_cliente: item.ref_cliente || '-',
                 ped_cliente: item.ped_cliente || item.pedcli || '-'
@@ -1501,10 +1712,248 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         });
     });
 
-    addStyledMetalFisaSheet('Detalhamento Peças OP', 'Árvore Multinível de Peças e Fabricação por Fração de OP', treeColumns, treeData, { qtd_lote: true });
+    addStyledMetalFisaSheet('Peças e Fabricação (BOM)', 'Árvore Multinível de Peças e Fabricação por Fração de OP', treeColumns, treeData, { qtd_lote: true, tempo_horas: true });
 
     // ─────────────────────────────────────────────────────────────────────────
-    // ABA 3: Resumo por Produto Acabado
+    // ABA 3: OPERAÇÕES POR RECURSO & MÁQUINA (DETALHAMENTO DE POSTO DE TRABALHO)
+    // ─────────────────────────────────────────────────────────────────────────
+    const operacoesColumns = [
+        { header: 'Cód. Recurso', key: 'recurso_cod', align: 'center', minWidth: 14 },
+        { header: 'Nome do Recurso / Máquina', key: 'recurso_nome', align: 'left', minWidth: 32 },
+        { header: 'Centro Trabalho', key: 'ctrab', align: 'center', minWidth: 14 },
+        { header: 'OP / Fração', key: 'visual_op', align: 'center', minWidth: 18 },
+        { header: 'Identificação Lote', key: 'lote_ident', align: 'left', minWidth: 16 },
+        { header: 'Pedido', key: 'pedido', align: 'center', minWidth: 12 },
+        { header: 'Cliente', key: 'cliente', align: 'left', minWidth: 26 },
+        { header: 'Cód. Peça / Subconjunto', key: 'comp', align: 'left', minWidth: 18 },
+        { header: 'Descrição da Peça', key: 'desc', align: 'left', minWidth: 34 },
+        { header: 'Tipo', key: 'tipo', align: 'center', minWidth: 8 },
+        { header: 'Operação', key: 'operac', align: 'center', minWidth: 10 },
+        { header: 'Descrição da Operação', key: 'descri_operac', align: 'left', minWidth: 28 },
+        { header: 'Qtd. a Processar (PCP)', key: 'qtd_processar', align: 'right', type: 'number', minWidth: 18 },
+        { header: 'Setup (min)', key: 'setup_min', align: 'right', type: 'number', minWidth: 12 },
+        { header: 'Tempo Unit. (min)', key: 'tempo_unit_min', align: 'right', type: 'number', minWidth: 14 },
+        { header: 'Tempo Total (Minutos)', key: 'tempo_total_min', align: 'right', type: 'number', minWidth: 18 },
+        { header: 'Tempo Total (Horas)', key: 'tempo_total_horas', align: 'right', type: 'number', minWidth: 16 },
+        { header: 'Data PCP (Lote)', key: 'data_pcp', align: 'center', type: 'date', minWidth: 15 }
+    ];
+
+    const operacoesData = [];
+    fractionalItems.forEach(item => {
+        const prod = (item.codigo || item.produto || '').trim();
+        const fracQtd = Number(item.visual_qtd || item.quantidade_pcp || item.qtd_faturar || 0);
+
+        // Agrupa todas as peças deste lote (PA + subconjuntos)
+        const parts = [
+            { comp: prod, desc: item.descricao || '-', tipo: 'PA', qtd: fracQtd }
+        ];
+
+        const subNodes = treeDataMap[prod] || [];
+        subNodes.forEach(node => {
+            const qtdAcum = Number(node.quant_acumulada || node.quant_unitaria || 0);
+            parts.push({
+                comp: node.comp,
+                desc: node.desc || '-',
+                tipo: node.tipo || 'PI',
+                qtd: Number((qtdAcum * fracQtd).toFixed(4))
+            });
+        });
+
+        // Para cada peça, busca o roteiro de operações
+        parts.forEach(part => {
+            const ops = masterData.routingSequenceMap?.[part.comp] || [];
+            ops.forEach(op => {
+                const recCod = op.recurso || '-';
+                const recNome = op.recurso_nome || masterData.recursoNomeMap?.[op.recurso] || op.recurso || '-';
+                const setupMin = Number(op.setup || 0);
+                const unitMin = Number(op.tempo_peca || 0);
+                const totalMin = Number((setupMin + (unitMin * part.qtd)).toFixed(2));
+                const totalHoras = Number((totalMin / 60).toFixed(2));
+
+                operacoesData.push({
+                    is_fraction: item.is_fraction,
+                    recurso_cod: recCod,
+                    recurso_nome: recNome,
+                    ctrab: op.ctrab || '-',
+                    visual_op: item.visual_op || item.op_num || '-',
+                    lote_ident: item.is_fraction ? `Fração ${item.fraction_letter || item.numero_lote || ''}` : 'Lote Único',
+                    pedido: item.pedido,
+                    cliente: item.nome_cliente || item.cliente || '-',
+                    comp: part.comp,
+                    desc: part.desc,
+                    tipo: part.tipo,
+                    operac: op.operac,
+                    descri_operac: op.descri || `Operação ${op.operac}`,
+                    qtd_processar: part.qtd,
+                    setup_min: setupMin,
+                    tempo_unit_min: unitMin,
+                    tempo_total_min: totalMin,
+                    tempo_total_horas: totalHoras,
+                    data_pcp: parseToDate(item.data_entrega_pcp || item.pcp_delivery_forecast_date)
+                });
+            });
+        });
+    });
+
+    // Ordena por Recurso, Pedido, OP, Peça, Operação
+    operacoesData.sort((a, b) => {
+        if (a.recurso_cod !== b.recurso_cod) return a.recurso_cod.localeCompare(b.recurso_cod);
+        if (a.pedido !== b.pedido) return String(a.pedido).localeCompare(String(b.pedido));
+        if (a.visual_op !== b.visual_op) return String(a.visual_op).localeCompare(String(b.visual_op));
+        return String(a.operac).localeCompare(String(b.operac));
+    });
+
+    if (operacoesData.length > 0) {
+        addStyledMetalFisaSheet('Operações por Recurso', 'Detalhamento Completo de Operações por Máquina / Recurso', operacoesColumns, operacoesData, { qtd_processar: true, tempo_total_min: true, tempo_total_horas: true });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ABA 4: MATRIZ DE CARGA MÁQUINA (HORAS CALCULADAS POR POSTO DE TRABALHO)
+    // ─────────────────────────────────────────────────────────────────────────
+    const allRecursosSet = new Set(masterData.recursos || []);
+    operacoesData.forEach(o => {
+        if (o.recurso_cod && o.recurso_cod !== '-') allRecursosSet.add(o.recurso_cod);
+    });
+    const recursosList = Array.from(allRecursosSet).sort();
+
+    if (recursosList.length > 0) {
+        const matrizColumns = [
+            { header: 'Pedido', key: 'pedido', align: 'center', minWidth: 12 },
+            { header: 'Cliente', key: 'cliente', align: 'left', minWidth: 26 },
+            { header: 'Item', key: 'item', align: 'center', minWidth: 8 },
+            { header: 'OP / Fração', key: 'visual_op', align: 'center', minWidth: 18 },
+            { header: 'Identificação Lote', key: 'lote_ident', align: 'left', minWidth: 16 },
+            { header: 'Cód. Produto', key: 'produto', align: 'left', minWidth: 18 },
+            { header: 'Descrição do Produto', key: 'descricao', align: 'left', minWidth: 32 },
+            { header: 'Qtd. Fração (PCP)', key: 'fracQtd', align: 'right', type: 'number', minWidth: 16 },
+            { header: 'Data PCP (Lote)', key: 'data_pcp', align: 'center', type: 'date', minWidth: 15 },
+            ...recursosList.map(r => ({
+                header: `${masterData.recursoNomeMap?.[r] || r} (h)`,
+                key: `rec_${r}`,
+                align: 'right',
+                type: 'number',
+                minWidth: 15
+            })),
+            { header: 'Total Horas OP (h)', key: 'total_horas_op', align: 'right', type: 'number', minWidth: 18 }
+        ];
+
+        const matrizTotals = { fracQtd: true, total_horas_op: true };
+        recursosList.forEach(r => { matrizTotals[`rec_${r}`] = true; });
+
+        const matrizData = fractionalItems.map(item => {
+            const prod = (item.codigo || item.produto || '').trim();
+            const fracQtd = Number(item.visual_qtd || item.quantidade_pcp || item.qtd_faturar || 0);
+
+            // Soma horas alocadas nas operações desta OP específica
+            const thisOpOperations = operacoesData.filter(o => o.visual_op === (item.visual_op || item.op_num) && o.pedido === item.pedido);
+
+            const row = {
+                is_fraction: item.is_fraction,
+                pedido: item.pedido,
+                cliente: item.nome_cliente || item.cliente || '-',
+                item: item.item,
+                visual_op: item.visual_op || item.op_num || '-',
+                lote_ident: item.is_fraction ? `Fração ${item.fraction_letter || item.numero_lote || ''}` : 'Lote Único',
+                produto: prod,
+                descricao: item.descricao || '-',
+                fracQtd: fracQtd,
+                data_pcp: parseToDate(item.data_entrega_pcp || item.pcp_delivery_forecast_date),
+                total_horas_op: 0
+            };
+
+            let sumOpH = 0;
+            recursosList.forEach(r => {
+                const rHours = thisOpOperations
+                    .filter(o => o.recurso_cod === r)
+                    .reduce((acc, o) => acc + (Number(o.tempo_total_horas) || 0), 0);
+                const rHoursRounded = Number(rHours.toFixed(2));
+                row[`rec_${r}`] = rHoursRounded;
+                sumOpH += rHoursRounded;
+            });
+            row.total_horas_op = Number(sumOpH.toFixed(2));
+
+            return row;
+        });
+
+        addStyledMetalFisaSheet('Matriz Carga Máquina', 'Matriz de Carga de Horas Máquina por Lote de OP', matrizColumns, matrizData, matrizTotals);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ABA 5: MATERIAIS & INSUMOS (CONSOLIDADO DE MATÉRIAS-PRIMAS / CORTE / ALMOXARIFADO)
+    // ─────────────────────────────────────────────────────────────────────────
+    const rawMaterialsMap = new Map();
+
+    fractionalItems.forEach(item => {
+        const prod = (item.codigo || item.produto || '').trim();
+        const fracQtd = Number(item.visual_qtd || item.quantidade_pcp || item.qtd_faturar || 0);
+        const opIdent = item.visual_op || item.op_num || '-';
+        const pedIdent = item.pedido;
+
+        const subNodes = treeDataMap[prod] || [];
+        subNodes.forEach(node => {
+            const compCod = (node.comp || '').trim();
+            if (!compCod) return;
+
+            const qtdAcum = Number(node.quant_acumulada || node.quant_unitaria || 0);
+            const qtdTotalLote = Number((qtdAcum * fracQtd).toFixed(4));
+
+            if (!rawMaterialsMap.has(compCod)) {
+                rawMaterialsMap.set(compCod, {
+                    comp: compCod,
+                    desc: node.desc || '-',
+                    tipo: node.tipo || 'MP',
+                    um: node.um || '-',
+                    qtd_total_consolidada: 0,
+                    ops_set: new Set(),
+                    produtos_pai_set: new Set(),
+                    pedidos_set: new Set()
+                });
+            }
+
+            const matEntry = rawMaterialsMap.get(compCod);
+            matEntry.qtd_total_consolidada += qtdTotalLote;
+            if (opIdent) matEntry.ops_set.add(opIdent);
+            if (prod) matEntry.produtos_pai_set.add(prod);
+            if (pedIdent) matEntry.pedidos_set.add(pedIdent);
+        });
+    });
+
+    if (rawMaterialsMap.size > 0) {
+        const matConsolidadoColumns = [
+            { header: 'Cód. Material / Insumo', key: 'comp', align: 'left', minWidth: 18 },
+            { header: 'Descrição do Material', key: 'desc', align: 'left', minWidth: 40 },
+            { header: 'Tipo', key: 'tipo', align: 'center', minWidth: 10 },
+            { header: 'UM', key: 'um', align: 'center', minWidth: 8 },
+            { header: 'Qtd. Total Consolidada (PCP)', key: 'qtd_total_consolidada', align: 'right', type: 'number', minWidth: 22 },
+            { header: 'Qtd. OPs Vinculadas', key: 'qtd_ops', align: 'right', type: 'number', minWidth: 16 },
+            { header: 'Relação de OPs / Frações', key: 'ops_str', align: 'left', minWidth: 32 },
+            { header: 'Produtos Pai Onde Aplica', key: 'produtos_pai_str', align: 'left', minWidth: 28 },
+            { header: 'Pedidos Vinculados', key: 'pedidos_str', align: 'left', minWidth: 28 }
+        ];
+
+        const matConsolidadoData = Array.from(rawMaterialsMap.values()).map(m => ({
+            comp: m.comp,
+            desc: m.desc,
+            tipo: m.tipo,
+            um: m.um,
+            qtd_total_consolidada: Number(m.qtd_total_consolidada.toFixed(4)),
+            qtd_ops: m.ops_set.size,
+            ops_str: Array.from(m.ops_set).join(', '),
+            produtos_pai_str: Array.from(m.produtos_pai_set).join(', '),
+            pedidos_str: Array.from(m.pedidos_set).join(', ')
+        }));
+
+        // Ordena por Tipo e Código
+        matConsolidadoData.sort((a, b) => {
+            if (a.tipo !== b.tipo) return a.tipo.localeCompare(b.tipo);
+            return a.comp.localeCompare(b.comp);
+        });
+
+        addStyledMetalFisaSheet('Materiais Consolidados', 'Necessidade Consolidada de Matérias-Primas e Componentes (PCP / Compras)', matConsolidadoColumns, matConsolidadoData, { qtd_total_consolidada: true });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ABA 6: RESUMO POR PRODUTO ACABADO
     // ─────────────────────────────────────────────────────────────────────────
     const prodSummaryMap = new Map();
     fractionalItems.forEach(item => {
@@ -1517,13 +1966,15 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
                     um: item.unidade || item.um || 'UN',
                     qtd_total_pcp: 0,
                     qtd_fracoes: 0,
-                    pedidos: new Set()
+                    pedidos: new Set(),
+                    ops: new Set()
                 });
             }
             const pEntry = prodSummaryMap.get(prod);
             pEntry.qtd_total_pcp += Number(item.visual_qtd || item.quantidade_pcp || item.qtd_faturar || 0);
             pEntry.qtd_fracoes += 1;
             if (item.pedido) pEntry.pedidos.add(item.pedido);
+            if (item.visual_op || item.op_num) pEntry.ops.add(item.visual_op || item.op_num);
         }
     });
 
@@ -1533,6 +1984,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         { header: 'UM', key: 'um', align: 'center', minWidth: 8 },
         { header: 'Qtd Total PCP', key: 'qtd_total_pcp', align: 'right', type: 'number', minWidth: 16 },
         { header: 'Total de Frações/Lotes', key: 'qtd_fracoes', align: 'right', type: 'number', minWidth: 18 },
+        { header: 'OPs / Lotes Gerados', key: 'ops_str', align: 'left', minWidth: 32 },
         { header: 'Pedidos Vinculados', key: 'pedidos_str', align: 'left', minWidth: 30 }
     ];
 
@@ -1540,140 +1992,13 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         produto: r.produto,
         descricao: r.descricao,
         um: r.um,
-        qtd_total_pcp: r.qtd_total_pcp,
+        qtd_total_pcp: Number(r.qtd_total_pcp.toFixed(4)),
         qtd_fracoes: r.qtd_fracoes,
+        ops_str: Array.from(r.ops).join(', '),
         pedidos_str: Array.from(r.pedidos).join(', ')
     }));
 
     addStyledMetalFisaSheet('Resumo Produtos', 'Resumo Consolidado por Produto Acabado', resumoColumns, resumoData, { qtd_total_pcp: true, qtd_fracoes: true });
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // ABA 4: Carga por Recurso (Horas Máquina Proporcionais)
-    // ─────────────────────────────────────────────────────────────────────────
-    if (masterData.recursos && masterData.recursos.length > 0 && masterData.carga) {
-        const tempoUnitarioRecPorProd = {};
-        (masterData.carga || []).forEach(c => {
-            const p = (c.produto || '').trim();
-            const q = Number(c.qtd_faturar || 1);
-            if (p && q > 0 && !tempoUnitarioRecPorProd[p]) {
-                tempoUnitarioRecPorProd[p] = {};
-                masterData.recursos.forEach(r => {
-                    const min = Number(c['rec_' + r] || 0);
-                    tempoUnitarioRecPorProd[p][r] = min / q;
-                });
-            }
-        });
-
-        const cargaColumns = [
-            { header: 'Pedido', key: 'pedido', align: 'center', minWidth: 12 },
-            { header: 'Cliente', key: 'cliente', align: 'left', minWidth: 26 },
-            { header: 'Item', key: 'item', align: 'center', minWidth: 8 },
-            { header: 'OP Fração', key: 'visual_op', align: 'center', minWidth: 18 },
-            { header: 'Cód. Produto', key: 'produto', align: 'left', minWidth: 18 },
-            { header: 'Descrição', key: 'descricao', align: 'left', minWidth: 32 },
-            { header: 'Qtd. Fração (PCP)', key: 'fracQtd', align: 'right', type: 'number', minWidth: 16 },
-            { header: 'Data PCP', key: 'data_pcp', align: 'center', type: 'date', minWidth: 15 },
-            ...masterData.recursos.map(r => ({
-                header: `${masterData.recursoNomeMap?.[r] || r} (h)`,
-                key: `rec_${r}`,
-                align: 'right',
-                type: 'number',
-                minWidth: 14
-            }))
-        ];
-
-        const cargaTotals = { fracQtd: true };
-        masterData.recursos.forEach(r => { cargaTotals[`rec_${r}`] = true; });
-
-        const cargaData = fractionalItems.map(item => {
-            const prod = (item.codigo || item.produto || '').trim();
-            const fracQtd = Number(item.visual_qtd || item.quantidade_pcp || item.qtd_faturar || 0);
-            const tUnit = tempoUnitarioRecPorProd[prod] || {};
-
-            const row = {
-                is_fraction: item.is_fraction,
-                pedido: item.pedido,
-                cliente: item.nome_cliente || item.cliente || '-',
-                item: item.item,
-                visual_op: item.visual_op || item.op_num || '-',
-                produto: prod,
-                descricao: item.descricao || '-',
-                fracQtd: fracQtd,
-                data_pcp: parseToDate(item.data_entrega_pcp || item.pcp_delivery_forecast_date)
-            };
-
-            masterData.recursos.forEach(r => {
-                const minUnit = tUnit[r] || 0;
-                const horasFrac = (minUnit * fracQtd) / 60;
-                row[`rec_${r}`] = Number(horasFrac.toFixed(2));
-            });
-
-            return row;
-        });
-
-        addStyledMetalFisaSheet('Carga por Recurso', 'Carga Máquina por Fração de OP', cargaColumns, cargaData, cargaTotals);
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // ABA 5: Necessidade de Componentes / Materiais (BOM Proporcional)
-    // ─────────────────────────────────────────────────────────────────────────
-    if (masterData.estruturas && masterData.estruturas.length > 0) {
-        const bomMap = {};
-        masterData.estruturas.forEach(b => {
-            const raiz = (b.raiz || '').trim();
-            if (!bomMap[raiz]) bomMap[raiz] = [];
-            bomMap[raiz].push(b);
-        });
-
-        const matColumns = [
-            { header: 'Pedido', key: 'pedido', align: 'center', minWidth: 12 },
-            { header: 'Cliente', key: 'cliente', align: 'left', minWidth: 26 },
-            { header: 'Item', key: 'item', align: 'center', minWidth: 8 },
-            { header: 'OP Fração', key: 'visual_op', align: 'center', minWidth: 18 },
-            { header: 'Identificação Lote', key: 'lote_ident', align: 'left', minWidth: 18 },
-            { header: 'Produto Pai', key: 'produto', align: 'left', minWidth: 18 },
-            { header: 'Qtd. Fração (PCP)', key: 'fracQtd', align: 'right', type: 'number', minWidth: 16 },
-            { header: 'Data PCP', key: 'data_pcp', align: 'center', type: 'date', minWidth: 15 },
-            { header: 'Cód. Componente / MP', key: 'comp', align: 'left', minWidth: 18 },
-            { header: 'Descrição Componente', key: 'desc', align: 'left', minWidth: 35 },
-            { header: 'UM', key: 'um', align: 'center', minWidth: 8 },
-            { header: 'Tipo', key: 'tipo', align: 'center', minWidth: 8 },
-            { header: 'Qtd Unit. (BOM)', key: 'qtdUnit', align: 'right', type: 'number', minWidth: 14 },
-            { header: 'Qtd Necessária Fração', key: 'qtdTotalFrac', align: 'right', type: 'number', minWidth: 18 }
-        ];
-
-        const matData = [];
-        fractionalItems.forEach(item => {
-            const prod = (item.codigo || item.produto || '').trim();
-            const fracQtd = Number(item.visual_qtd || item.quantidade_pcp || item.qtd_faturar || 0);
-            const comps = bomMap[prod] || [];
-
-            comps.forEach(c => {
-                const qtdUnit = Number(c.quant || 0);
-                matData.push({
-                    is_fraction: item.is_fraction,
-                    pedido: item.pedido,
-                    cliente: item.nome_cliente || item.cliente || '-',
-                    item: item.item,
-                    visual_op: item.visual_op || item.op_num || '-',
-                    lote_ident: item.is_fraction ? `Fração ${item.fraction_letter || item.numero_lote || ''}` : 'Lote Único',
-                    produto: prod,
-                    fracQtd: fracQtd,
-                    data_pcp: parseToDate(item.data_entrega_pcp || item.pcp_delivery_forecast_date),
-                    comp: c.comp,
-                    desc: c.desc || '-',
-                    um: c.um || '-',
-                    tipo: c.tipo || '-',
-                    qtdUnit: qtdUnit,
-                    qtdTotalFrac: Number((qtdUnit * fracQtd).toFixed(4))
-                });
-            });
-        });
-
-        if (matData.length > 0) {
-            addStyledMetalFisaSheet('Necessidade BOM', 'Necessidade de Materiais por Fração de OP', matColumns, matData, { qtdTotalFrac: true });
-        }
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Exportação do Buffer via Navegador
@@ -1682,10 +2007,15 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
+    a.style.display = 'none';
     a.href = url;
-    a.download = `Planilha_Mestra_OPs_Fracionadas_${getTodayDateStr()}.xlsx`;
+    a.download = `Planilha_Mestra_OPs_Loteadas_${getTodayDateStr()}.xlsx`;
+    document.body.appendChild(a);
     a.click();
-    window.URL.revokeObjectURL(url);
+    setTimeout(() => {
+        if (document.body.contains(a)) document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }, 60000);
 };
 
 const getTodayDateStr = () => {

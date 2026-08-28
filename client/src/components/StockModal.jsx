@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, TrendingUp, TrendingDown, History, Save, AlertCircle } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, History, Save, AlertCircle, Zap } from 'lucide-react';
 import { getStockBalance, getStockMovements, addStockMovement } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import StockEmpenhoModal from './StockEmpenhoModal';
 
 export default function StockModal({ isOpen, onClose, productCode, productName }) {
     const { user } = useAuth();
@@ -10,6 +11,7 @@ export default function StockModal({ isOpen, onClose, productCode, productName }
     const [movements, setMovements] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [isEmpenhoOpen, setIsEmpenhoOpen] = useState(false);
 
     // Form State
     const [type, setType] = useState('E'); // E = Entrada, S = Saída
@@ -125,6 +127,15 @@ export default function StockModal({ isOpen, onClose, productCode, productName }
                                     {(balanceFabrica || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
                                     <span className="text-lg text-blue-400 font-normal ml-2">unidades</span>
                                 </div>
+                                {balanceFabrica > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsEmpenhoOpen(true)}
+                                        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+                                    >
+                                        <Zap size={14} /> Empenhar para OP
+                                    </button>
+                                )}
                             </div>
                             <div className={`h-12 w-12 rounded-full flex items-center justify-center ${balanceFabrica > 0 ? 'bg-blue-200 text-blue-700' : 'bg-blue-100 text-blue-400'}`}>
                                 <Save className="h-6 w-6" />
@@ -259,6 +270,22 @@ export default function StockModal({ isOpen, onClose, productCode, productName }
                     </div>
                 </div>
             </div>
+
+            {isEmpenhoOpen && (
+                <StockEmpenhoModal
+                    product={{
+                        codigo: productCode,
+                        descricao: productName,
+                        saldo_fabrica: balanceFabrica,
+                        saldo_protheus: balanceProtheus
+                    }}
+                    onClose={() => setIsEmpenhoOpen(false)}
+                    onSuccess={() => {
+                        setIsEmpenhoOpen(false);
+                        loadData();
+                    }}
+                />
+            )}
         </div>
     );
 }

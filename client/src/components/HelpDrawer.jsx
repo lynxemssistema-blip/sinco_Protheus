@@ -7,24 +7,54 @@ import {
 import { useHelp } from '../contexts/HelpContext';
 
 // ─── Icon Map ────────────────────────────────────────────────────────────────
+// ─── Icon Map ────────────────────────────────────────────────────────────────
 const ICON_BG = {
     'Comercial': { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' },
+    'Comercial / PCP': { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' },
     'PCP': { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
+    'PCP Geral': { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
+    'PCP Refinado': { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
+    'OP Fracionada': { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
+    'PCP / Chão de Fábrica': { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' },
+    'Planejamento / PCP': { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
+    'VMI / PCP': { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200' },
+    'VMI': { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200' },
     'Engenharia': { bg: 'bg-teal-100', text: 'text-teal-700', border: 'border-teal-200' },
+    'Engenharia / CAD': { bg: 'bg-violet-100', text: 'text-violet-700', border: 'border-violet-200' },
+    'Engenharia / Produto': { bg: 'bg-teal-100', text: 'text-teal-700', border: 'border-teal-200' },
     'SINCO / Engenharia': { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-200' },
+    'SINCO': { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-200' },
     'Materiais': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
     'Compras': { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200' },
+    'Suprimentos': { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-200' },
+    'Suprimentos / Fiscal': { bg: 'bg-sky-100', text: 'text-sky-700', border: 'border-sky-200' },
+    'Suprimentos / Qualidade': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
     'Produtos': { bg: 'bg-teal-100', text: 'text-teal-700', border: 'border-teal-200' },
-    'Logística': { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-200' },
-    'SGQ': { bg: 'bg-teal-100', text: 'text-teal-700', border: 'border-teal-200' },
+    'Logística': { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-200' },
+    'Logística / Fornecedores': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
+    'SGQ': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
+    'Qualidade': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
     'Relatórios': { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' },
     'Administração': { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200' },
     'Comunicação': { bg: 'bg-yellow-100', text: 'text-yellow-700', border: 'border-yellow-200' },
     'Analytics': { bg: 'bg-sky-100', text: 'text-sky-700', border: 'border-sky-200' },
+    'Gestão a Vista': { bg: 'bg-sky-100', text: 'text-sky-700', border: 'border-sky-200' },
+    'Financeiro': { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-200' },
+    'Recursos Humanos': { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-200' },
+    'RH': { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-200' },
+    'Gestão de Clientes / WabTec': { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' },
+    'WabTec': { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200' },
+    'Gestão de Clientes / Engetron': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
+    'Engetron': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200' },
+    'Manutenção de Equip.': { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
+    'Manutenção': { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200' },
+    'Meu Painel': { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' },
+    'Acesso Cliente': { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200' },
+    'Sistema': { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200' },
 };
 
 function getCategoryStyle(category) {
-    return ICON_BG[category] || { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-200' };
+    return ICON_BG[category] || { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200' };
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────

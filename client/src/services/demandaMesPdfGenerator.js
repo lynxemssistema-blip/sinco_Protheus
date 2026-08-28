@@ -96,6 +96,46 @@ export const generateDemandaMesPdf = ({
 
         const tableStartY = drawHeader();
 
+        const getMonthKeyFromDate = (dt) => {
+            if (!dt || dt === 'Sem Data') return null;
+            try {
+                const d = new Date(dt);
+                if (isNaN(d.getTime())) return null;
+                const m = d.getUTCMonth() + 1;
+                const y = d.getUTCFullYear();
+                const mNames = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                return `${mNames[m] || m}/${y}`;
+            } catch (e) {
+                return null;
+            }
+        };
+
+        const matchMonthYear = (dateStr, monthLabel) => {
+            if (dateStr === 'Sem Data' && monthLabel === 'Sem Data') return true;
+            if (!dateStr || !monthLabel) return false;
+            const fcMonth = getMonthKeyFromDate(dateStr);
+            if (!fcMonth) return false;
+            const cleanLabel = monthLabel.replace(/^DEM\.\s*/i, '').trim().toLowerCase();
+            return fcMonth.toLowerCase() === cleanLabel;
+        };
+
+        const getPcpItemsForMonth = (item, monthLabel) => {
+            if (!item?.pedidos) return [];
+            const result = [];
+            for (const p of item.pedidos) {
+                for (const fc of (p.previsoes_pcp || [])) {
+                    if (matchMonthYear(fc.data_pcp, monthLabel)) {
+                        result.push({
+                            pedido: p.pedido_metal,
+                            item: p.item_pedido,
+                            nfs: p.nfs || [],
+                        });
+                    }
+                }
+            }
+            return result;
+        };
+
         // Montar Colunas da Tabela
         const tableColumns = [
             'Ref. Cliente',
@@ -105,15 +145,11 @@ export const generateDemandaMesPdf = ({
             ...mesesDemanda.map(m => `Dem. ${m}`),
             'Tot. Demanda',
             'Qtd Faturada',
-            'Saldo Faturar',
-            'Previsões PCP (SINCO)'
+            'Saldo Faturar'
         ];
 
         // Montar Linhas da Tabela
         const tableRows = items.map(item => {
-            const pcpSummary = Object.entries(item.pcp_por_mes || {})
-                .map(([mes, qtd]) => `${mes}: ${qtd}`)
-                .join(' | ') || (item.possui_saldo ? 'Sem Data Definida' : (item.totalmente_faturado ? '100% Faturado' : '-'));
 
             let statusLabel = 'SEM SALDO';
             if (item.possui_saldo) statusLabel = 'COM SALDO';
@@ -124,11 +160,30 @@ export const generateDemandaMesPdf = ({
                 item.codigo_metalfisa || '-',
                 item.descricao || '-',
                 statusLabel,
-                ...mesesDemanda.map(m => (item.demandas && item.demandas[m] ? Number(item.demandas[m]).toLocaleString('pt-BR') : '-')),
+                ...mesesDemanda.map(m => {
+                    const demVal = item.demandas && item.demandas[m] ? Number(item.demandas[m]).toLocaleString('pt-BR') : '-';
+                    let cellText = demVal !== '-' ? `${demVal} un` : '-';
+                    
+                    const pcpItems = getPcpItemsForMonth(item, m);
+                    let nfLines = [];
+                    pcpItems.forEach(pcp => {
+                        if (pcp.nfs && pcp.nfs.length > 0) {
+                            pcp.nfs.forEach(nf => {
+                                nfLines.push(`NF ${nf.nota} (${nf.emissao})`);
+                            });
+                        }
+                    });
+                    
+                    nfLines = [...new Set(nfLines)];
+                    if (nfLines.length > 0) {
+                        cellText += `\n${nfLines.join('\n')}`;
+                    }
+                    
+                    return cellText;
+                }),
                 Number(item.total_demanda || 0).toLocaleString('pt-BR'),
                 Number(item.total_faturado || 0).toLocaleString('pt-BR'),
-                Number(item.total_saldo_faturar || 0).toLocaleString('pt-BR'),
-                pcpSummary
+                Number(item.total_saldo_faturar || 0).toLocaleString('pt-BR')
             ];
             return row;
         });
@@ -150,12 +205,10 @@ export const generateDemandaMesPdf = ({
         const totalDemandaIdx = startMonthIdx + mesesDemanda.length;
         const qtdFaturadaIdx = totalDemandaIdx + 1;
         const saldoFaturarIdx = qtdFaturadaIdx + 1;
-        const pcpPrevisoesIdx = saldoFaturarIdx + 1;
 
         colStyles[totalDemandaIdx] = { halign: 'right', cellWidth: 18, fontStyle: 'bold' };
         colStyles[qtdFaturadaIdx] = { halign: 'right', cellWidth: 18, fontStyle: 'bold' };
         colStyles[saldoFaturarIdx] = { halign: 'right', cellWidth: 18, fontStyle: 'bold' };
-        colStyles[pcpPrevisoesIdx] = { halign: 'left', cellWidth: 36 };
 
         autoTable(doc, {
             head: [tableColumns],

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 import { useAuth } from '../contexts/AuthContext';
 
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database, Calendar, Info } from 'lucide-react';
+import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database, Calendar, Info, Play } from 'lucide-react';
 
 import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus, getProtheusFornecedores, getProtheusClientes, getSincoProcessosList } from '../services/api';
 
@@ -26,6 +26,8 @@ import LynxConfigTab from '../components/LynxConfigTab';
 
 import LabelPrinterTab from '../components/settings/LabelPrinterTab';
 
+import AjusteApontamentoTab from '../components/settings/AjusteApontamentoTab';
+
 
 
 export default function Settings() {
@@ -39,6 +41,8 @@ export default function Settings() {
     const tabs = isAdmin ? [
 
         { id: 'general', label: 'Geral', icon: Building2 },
+
+        { id: 'ajuste_apontamento', label: 'Ajustando o Apontamento', icon: Play },
 
         { id: 'orders_visibility', label: 'Visibilidade de Pedidos', icon: EyeOff },
 
@@ -1512,6 +1516,14 @@ export default function Settings() {
 
                 {activeTab === 'etiquetas' && (
                     <LabelPrinterTab />
+                )}
+
+
+
+                {/* AJUSTANDO O APONTAMENTO TAB */}
+
+                {activeTab === 'ajuste_apontamento' && (
+                    <AjusteApontamentoTab />
                 )}
 
 

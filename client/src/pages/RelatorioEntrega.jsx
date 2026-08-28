@@ -5,16 +5,107 @@ import {
     Printer, ChevronDown, ChevronUp, Bot, Settings,
     Factory, Truck, BarChart3, HelpCircle, Wrench, Star,
     Building2, Globe, Cpu, RefreshCcw, AlertTriangle, Mail,
-    PenLine, KeyRound, Eye, EyeOff, XCircle, BadgeCheck, Lock, Sparkles
+    PenLine, KeyRound, Eye, EyeOff, XCircle, BadgeCheck, Lock, Sparkles,
+    Scissors, Layers, ArrowRight, CornerDownRight, CheckSquare, Split, FileSpreadsheet
 } from 'lucide-react';
 import api from '../services/api';
 import { logoBase64 } from '../services/metalfisaLogoBase64';
 
 // ─── Constantes de dados ────────────────────────────────────────────────────
 const DELIVERY_DATE = 'Agosto de 2026';
-const SYSTEM_VERSION = 'v2026.2 - Industrial Edition';
+const SYSTEM_VERSION = 'v2026.3 - Enterprise Industrial Suite';
 
 const NOVIDADES_REVISOES = [
+    {
+        label: 'Gestão de OPs por Lote (LPF) & Aglutinação Multi-Cliente',
+        status: 'Inclusão',
+        categoria: 'PCP & Chão de Fábrica',
+        desc: 'Cockpit operacional integrado para agrupamento de ordens de produção de diferentes pedidos e clientes sob um lote unificado de fabricação (LPF-XXXXXX). Permite o corte conjunto em chapas comuns a laser/puncionadeira, consolidação de data PCP de entrega, totalização instantânea de peças e rastreabilidade total.',
+        date: '28/08/2026',
+        color: 'emerald',
+        destaques: ['Lotes Sequenciais LPF-XXXXXX', 'Aglutinação Multi-Cliente', 'Corte Otimizado de Chapas', 'Totalização Consolidada']
+    },
+    {
+        label: 'Fracionamento de OPs (Split AA, AB, AC...) & Sublotes Rastreáveis',
+        status: 'Inclusão',
+        categoria: 'Comercial & PCP',
+        desc: 'Divisão de saldos pendentes em frações independentes com identificador alfabético sequencial (ex: 00461809AA, 00461809AB). Cada fração possui quantidade e data PCP customizadas com validação matemática estrita de soma exata ao Saldo a Faturar e suporte a unificação ágil.',
+        date: '28/08/2026',
+        color: 'indigo',
+        destaques: ['Sufixos Alfabéticos AA/AB/AC', 'Validação de Soma Exata', 'Datas PCP Independentes', 'Desfazer / Unificar Ágil']
+    },
+    {
+        label: 'Regra Soberana: Saldo a Faturar (c6_qtdven - c6_qtdent)',
+        status: 'Inclusão',
+        categoria: 'Comercial & Engenharia',
+        desc: 'Blindagem contra superprodução: toda programação de PCP, fracionamento e corte utiliza estritamente o Saldo a Faturar pendente no ERP Protheus, descontando entregas parciais faturadas em notas fiscais passadas. Itens com saldo zerado recebem a tag verde ENTREGUE e histórico em popover.',
+        date: '28/08/2026',
+        color: 'blue',
+        destaques: ['Prevenção de Superprodução', 'Dedução em Tempo Real de NFs', 'Tag ENTREGUE Automática', 'Histórico de Faturamentos']
+    },
+    {
+        label: 'Liberação Irreversível & Carimbo Oficial da Garantia da Qualidade',
+        status: 'Inclusão',
+        categoria: 'Qualidade & Fabricação',
+        desc: 'Implementação de trava definitiva no status LIBERADO P/ FABRICAÇÃO (manual ou automática via plano de corte) com bloqueio 403 contra exclusão. Ao gerar os PDFs dos desenhos técnicos, estampa o carimbo da qualidade oficial contendo o código LPF, a quantidade TOTAL somada do lote e o roteiro de máquinas.',
+        date: '28/08/2026',
+        color: 'rose',
+        destaques: ['Trava Permanente Irreversível', 'Bloqueio de Exclusão Pós-Liberação', 'Carimbo nos Desenhos Técnicos', 'Qtd Total Somada no Carimbo']
+    },
+    {
+        label: 'Planilha Mestra & Execução OP com Colunas Congeladas (Sticky)',
+        status: 'Inclusão',
+        categoria: 'Comercial & PCP',
+        desc: 'Implementação da aba "Execução OP" na Planilha Mestra com as 7 primeiras colunas congeladas/fixas à esquerda (Pedido, Cliente, OP, Produto, Qtd Plan, Data PCP, Qtde PCP) com sombra de separação. Permite navegação suave em scroll horizontal com 5 subcolunas analíticas por máquina (Previsto min, Apontado min, Qtd Apontada, Qtd Falta e Tempo Falta min), com cálculo de totais e células limpas em recursos não utilizados.',
+        date: '27/08/2026',
+        color: 'blue',
+        destaques: ['7 Colunas Fixas com Scroll', '5 Subcolunas por Máquina', 'FCS & Carga por Recurso']
+    },
+    {
+        label: 'VMI Tabela de Críticos, Gestão de Versões & Comparador A x B',
+        status: 'Inclusão',
+        categoria: 'VMI & Suprimentos',
+        desc: 'Módulo estratégico para monitoramento de risco de desabastecimento em contratos de Vendor Managed Inventory. Importação multi-aba com seletor de planilhas, versionamento histórico de bases e comparador automatizado de versões A x B (destaque imediato de novos críticos, itens solucionados e variações de demanda), com gráficos de evolução temporal e exportação PDF/Excel.',
+        date: '26/08/2026',
+        color: 'violet',
+        destaques: ['Comparador A x B com Deltas', 'Versionamento Multi-Planilha', 'Curvas de Evolução & Ruptura']
+    },
+    {
+        label: 'Auditoria Fiscal (PC x XML) & Espelho de NF-e',
+        status: 'Inclusão',
+        categoria: 'Suprimentos & Fiscal',
+        desc: 'Rotina de conciliação fiscal e de recebimento que compara em tempo real os dados do Pedido de Compra Protheus (SC7) com o XML da Nota Fiscal emitida pelo fornecedor. Semáforo visual para divergências de preço unitário, NCM, alíquotas de ICMS/IPI e volumes, além de visualizador de Espelho de NF-e diagramado com código de barras.',
+        date: '24/08/2026',
+        color: 'orange',
+        destaques: ['Auditoria PC vs XML', 'Semáforo de Divergências', 'Espelho de NF com Barcode']
+    },
+    {
+        label: 'SolidEdge Estrutura Completa & Visualizador 3D (CAD WebGL)',
+        status: 'Inclusão',
+        categoria: 'Engenharia & CAD 3D',
+        desc: 'Integração aprofundada da árvore multinível de montagem do SolidEdge CAD ao SINCO, detalhando tempos de fabricação e centros de trabalho. Inclui visualizador 3D interativo WebGL integrado no navegador com rotação 360°, corte em planos, medições dimensionais de faces/arestas e vista explodida de montagem.',
+        date: '22/08/2026',
+        color: 'cyan',
+        destaques: ['Árvore Multinível SolidEdge', 'Visualizador 3D WebGL 360°', 'Medição & Vista Explodida']
+    },
+    {
+        label: 'Gestão de Contratos WabTec (PPAPs & Escopo) e Engetron',
+        status: 'Inclusão',
+        categoria: 'Contratos Especiais',
+        desc: 'Suíte dedicada a contratos de alta complexidade técnica: gestão dos 18 elementos de PPAP WabTec (níveis 1 a 5) com emissão de PSW, matriz de escopo de fornecimento com controle de revisões de engenharia (ECN) e painel executivo de demandas Engetron com medição de OTD (On-Time Delivery).',
+        date: '20/08/2026',
+        color: 'slate',
+        destaques: ['PPAPs WabTec Níveis 1-5', 'Matriz de Escopo & ECN', 'Painel & OTD Engetron']
+    },
+    {
+        label: 'RH Offboarding & Custódia de Ativos',
+        status: 'Inclusão',
+        categoria: 'Recursos Humanos',
+        desc: 'Fluxo formal e padronizado de desligamento de colaboradores com conferência eletrônica de devolução de ferramentas, caixas, EPIs, crachás e notebooks. Emissão de Termo de Quitação com assinatura digital e revogação simultânea de acessos aos sistemas de TI.',
+        date: '19/08/2026',
+        color: 'pink',
+        destaques: ['Checklist de Devolução de Bens', 'Termo de Quitação Digital', 'Revogação de Acessos TI']
+    },
     {
         label: 'Status de Engenharia com Restrição & Ação em Lote',
         status: 'Inclusão',
@@ -34,13 +125,13 @@ const NOVIDADES_REVISOES = [
         destaques: ['Custo MP + Custo Recursos', 'Override seguro por pai', 'Exportação com abertura analítica']
     },
     {
-        label: 'Módulo VMI & Mapeamento de Revisões Protheus vs Cliente',
+        label: 'Central de Ajuda Contextual & HelpDrawer Universal',
         status: 'Inclusão',
-        categoria: 'VMI & Cadeia de Suprimentos',
-        desc: 'Ambiente completo de Vendor Managed Inventory: importação e leitura de Forecast (Excel/EDI), cálculo de demanda mês a mês, geração e acompanhamento de pedidos de compra/venda, controle de processos especiais (como Bicromatização e Zincagem) e mapeamento inteligente de códigos e revisões entre o ERP Protheus e o Cliente.',
-        date: '15/08/2026',
-        color: 'violet',
-        destaques: ['Forecast & Demand planning', 'Processo de Bicromatização', 'De/Para de Revisões']
+        categoria: 'Treinamento & Suporte',
+        desc: 'Base de conhecimento interativa integrada a todas as 95+ telas do sistema, com gaveta lateral de ajuda contextual (HelpDrawer), normalização inteligente de URLs dinâmicas, integração direta aos POPs do SGQ e painel HelpCenter com busca global.',
+        date: '17/08/2026',
+        color: 'teal',
+        destaques: ['Ajuda Contextual em 95+ Telas', 'Gaveta Lateral Instantânea', 'Sincronização com SGQ / POPs']
     },
     {
         label: 'Relatório de Liberações de Engenharia Otimizado',
@@ -59,15 +150,6 @@ const NOVIDADES_REVISOES = [
         date: '01/08/2026',
         color: 'indigo',
         destaques: ['Disparo diário de faturamento', 'Notificação de bloqueios e NFs', 'Painel de itens liberados']
-    },
-    {
-        label: 'Exportação PDF Padronizada & Mesclagem de Desenhos',
-        status: 'Revisado',
-        categoria: 'Design System & Documentação',
-        desc: 'Motor universal de renderização de PDF para impressões industriais com cabeçalho oficial Metalfisa, quebra de página inteligente (break-inside avoid), assinatura digital e capacidade de mesclagem automática com desenhos técnicos em vetor/raster.',
-        date: '28/07/2026',
-        color: 'teal',
-        destaques: ['Layout A4 oficial com margens', 'Carimbos dinâmicos', 'Mesclagem de folhas CAD']
     },
     {
         label: 'Resiliência Multi-Database & Otimização de Performance',
@@ -101,10 +183,10 @@ const MODULOS = [
     },
     {
         id: 3,
-        nome: 'Gestão de Pedidos Protheus (SC5/SC6)',
-        categoria: 'Comercial & Vendas',
-        desc: 'Tabela mestra conectada em tempo real com o Protheus, rastreabilidade de status por item, drawer lateral de detalhes com histórico completo, filtros por cliente/pedido e exportação para Excel.',
-        detalhes: ['Identificação instantânea de atrasos', 'Visão agrupada por cliente e data de entrega', 'Acesso direto à estrutura técnica e OPs'],
+        nome: 'Gestão de Pedidos Protheus (SC5/SC6) & Planilha Mestra',
+        categoria: 'Comercial & PCP',
+        desc: 'Tabela mestra conectada em tempo real com o Protheus, rastreabilidade de status por item, simulação de capacidade finita (FCS), conferência de matérias-primas e Planilha Mestra com colunas congeladas na aba Execução OP.',
+        detalhes: ['7 colunas fixas com scroll horizontal', '5 subcolunas analíticas por máquina', 'Exportação Excel com fórmulas e PDF institucional'],
         icon: Package,
         color: 'indigo'
     },
@@ -119,15 +201,33 @@ const MODULOS = [
     },
     {
         id: 5,
+        nome: 'PCP Refinado — Capacidade & Taxa de Ocupação',
+        categoria: 'PCP & Engenharia',
+        desc: 'Painel de carga horária acumulada por máquina e centro de trabalho, taxas de ocupação nominais vs reais e cálculo dinâmico de horas extras necessárias para atendimento aos prazos comerciais.',
+        detalhes: ['Detecção visual de gargalos', 'Taxa de ocupação percentual por máquina', 'Simulação de turnos adicionais'],
+        icon: Cpu,
+        color: 'blue'
+    },
+    {
+        id: 6,
+        nome: 'OP Fracionada & Painel da Fábrica',
+        categoria: 'Produção Local',
+        desc: 'Gestão de ordens de produção divididas em lotes fracionados para montagens parciais, com acompanhamento de saldo restante e envio de apontamentos por lote para o Protheus.',
+        detalhes: ['Rastreamento de lotes parciais', 'Controle de saldo em aberto por OP', 'Etiquetagem de sub-lotes'],
+        icon: Zap,
+        color: 'orange'
+    },
+    {
+        id: 7,
         nome: 'Produção & Apontamentos em Tempo Real',
         categoria: 'Chão de Fábrica',
         desc: 'Controle de Ordens de Produção (OPs), apontamentos diretos via WebSockets (Socket.io) sem recarregar a tela, Analytics de chão de fábrica, Macro Modal de Produção e extrato de tempos e paradas por recurso.',
         detalhes: ['Apontamento por código de barras / QR Code', 'Registro de início, pausa, retorno e conclusão', 'Sincronização imediata com todos os operadores'],
         icon: Zap,
-        color: 'orange'
+        color: 'red'
     },
     {
-        id: 6,
+        id: 8,
         nome: 'SINCO — Engenharia & SolidEdge Connect',
         categoria: 'Engenharia & CAD',
         desc: 'Integração bidirecional em tempo real com SolidEdge CAD 3D via agente Windows dedicado. Gerenciamento de Ordens de Serviço (OS), BOM automática a partir do 3D, matriz de montagem, lista de materiais e apontamento por OS.',
@@ -136,17 +236,26 @@ const MODULOS = [
         color: 'cyan'
     },
     {
-        id: 7,
-        nome: 'Engenharia, Custos & Estrutura de Produtos',
-        categoria: 'Engenharia & Custos',
-        desc: 'Catálogo de Produtos com suporte a Status de Engenharia (Novo, Revisão, Restrição, Normal), cálculo analítico de custos (Matéria-Prima, Materiais Comprados, Mão de Obra e Total), BOM Generator multinível, mesclagem de desenhos PDF e consulta de Onde é Usado.',
-        detalhes: ['Relatório de Controle e Liberações de Engenharia', 'Exportação de árvore técnica com pesos e dimensões', 'Histórico completo de revisões de projetos'],
+        id: 9,
+        nome: 'SolidEdge Árvore Completa & Visualizador 3D WebGL',
+        categoria: 'Engenharia & CAD 3D',
+        desc: 'Visualização da árvore de montagem multinível integrada do SolidEdge com cálculo de tempos e centros de trabalho, associada ao visualizador 3D WebGL interativo com medições e vista explodida.',
+        detalhes: ['Inspeção dimensional de cotas e ângulos', 'Explosão de montagem para orientação fabril', 'Leitura direta de modelos nativos'],
         icon: Cpu,
         color: 'teal'
     },
     {
-        id: 8,
-        nome: 'SGQ — Sistema de Gestão da Qualidade',
+        id: 10,
+        nome: 'Engenharia, Custos & Estrutura de Produtos (BOM)',
+        categoria: 'Engenharia & Custos',
+        desc: 'Catálogo de Produtos com suporte a Status de Engenharia (Novo, Revisão, Restrição, Normal), cálculo analítico de custos (Matéria-Prima, Materiais Comprados, Mão de Obra e Total), BOM Generator multinível e consulta de Onde é Usado.',
+        detalhes: ['Relatório de Controle e Liberações de Engenharia', 'Exportação de árvore técnica com pesos e dimensões', 'Histórico completo de revisões de projetos'],
+        icon: Cpu,
+        color: 'green'
+    },
+    {
+        id: 11,
+        nome: 'SGQ — Sistema de Gestão da Qualidade & RNCs (5W2H)',
         categoria: 'Qualidade & Normas',
         desc: 'Módulo de conformidade ISO: Gestão de Ativos e Caixas de Ferramentas, Relatórios de Não Conformidade (RNC) com ciclo 5W2H e causa-raiz, Procedimentos Operacionais Padrão (POPs) com editor rico, Controle de Calibrações e Treinamentos.',
         detalhes: ['Alertas proativos de instrumentos a calibrar', 'Registro fotográfico de evidências em RNCs', 'Emissão e consulta de PPAPs por produto'],
@@ -154,8 +263,8 @@ const MODULOS = [
         color: 'emerald'
     },
     {
-        id: 9,
-        nome: 'VMI — Vendor Managed Inventory',
+        id: 12,
+        nome: 'VMI — Vendor Managed Inventory & Demanda Mês',
         categoria: 'Cadeia de Suprimentos',
         desc: 'Plataforma integrada de reposição contínua: Leitura de Forecast, projeção de Demanda Mês a Mês, gestão de Pedidos VMI, Estratégia de Produção, histórico de atendimento, tratamento superficial (Bicromatização) e mapeamento de revisões.',
         detalhes: ['Interface de upload e conciliação de planilhas', 'Controle de estoques de segurança em trânsito', 'Visão gerencial de aderência de entregas'],
@@ -163,26 +272,53 @@ const MODULOS = [
         color: 'violet'
     },
     {
-        id: 10,
-        nome: 'Faturamento, Comercial & Gestão de OPs',
+        id: 13,
+        nome: 'VMI — Tabela de Críticos, Versões & Comparador A x B',
+        categoria: 'VMI & Gestão de Risco',
+        desc: 'Monitoramento estratégico de desabastecimento, versionamento multi-planilha, comparador A x B com segregação de itens novos em risco, resolvidos e alterados, acompanhado de gráficos temporais de evolução.',
+        detalhes: ['Histórico de versões arquivadas', 'Destaque instantâneo de deltas', 'Espelho operacional e relatórios executivos'],
+        icon: AlertTriangle,
+        color: 'red'
+    },
+    {
+        id: 14,
+        nome: 'Comercial, Faturamento & Controle de Solicitações',
         categoria: 'Comercial & Faturamento',
-        desc: 'Painel analítico de Itens a Faturar, acompanhamento de emissão de Notas Fiscais (NFs), histórico de solicitações comerciais, conferência de pendências financeiras e automação de alertas de liberação para expedição.',
-        detalhes: ['Dashboard de faturamento por período e cliente', 'Controle de pedidos liberados vs saldo em aberto', 'Visão gerencial de atrasos e gargalos comerciais'],
+        desc: 'Painel analítico de Itens a Faturar, gestão de solicitações de faturamento com validação de saldo de estoque (Almox 01 vs 03), emissão de Espelho de NF e dashboard gerencial de conversão financeira.',
+        detalhes: ['Dashboard financeiro por cliente e período', 'Download de Espelho NF em PDF e Excel', 'Controle de pedidos liberados vs pendentes'],
         icon: FileText,
         color: 'blue'
     },
     {
-        id: 11,
-        nome: 'Financeiro & Controladoria',
-        categoria: 'Financeiro',
+        id: 15,
+        nome: 'Financeiro, Fluxo de Caixa & Balancete Dinâmico',
+        categoria: 'Financeiro & Controladoria',
         desc: 'Dashboard financeiro gerencial, Fluxo de Caixa consolidado por regime de competência/caixa, Plano de Contas estruturado e Balancete Dinâmico com drill-down por centro de custos e período customizado.',
         detalhes: ['Visualização restrita por perfil financeiro sensível', 'Projeção de entradas e saídas programadas', 'Exportação de demonstrativos em formato contábil'],
         icon: BarChart3,
         color: 'green'
     },
     {
-        id: 12,
-        nome: 'Logística, Romaneios & Portal do Fornecedor',
+        id: 16,
+        nome: 'Suprimentos, Compras & Auditoria PC x XML',
+        categoria: 'Compras & Fiscal',
+        desc: 'Controle integrado de compras (SC/PC) amarrados a Pedidos de Venda, rastreamento SC → NF e módulo Auditoria PC x XML com conferência de divergências de preço, NCM, alíquotas e volumes.',
+        detalhes: ['Semáforo de inconsistências fiscais', 'Consulta de saldos de estoque e reservas', 'Prevenção de compras em duplicidade'],
+        icon: Package,
+        color: 'orange'
+    },
+    {
+        id: 17,
+        nome: 'Espelho de NF-e, Conferência Fiscal & Impressão',
+        categoria: 'Fiscal & Recebimento',
+        desc: 'Visualizador de Espelho de Nota Fiscal com conferência tributária completa (ICMS, IPI, PIS/COFINS, ST), dados de frete/transportadora e impressão institucional com código de barras.',
+        detalhes: ['Layout homologado para conferência de carga', 'Detalhamento de itens e impostos', 'Vínculo com romaneios de entrada/saída'],
+        icon: FileText,
+        color: 'slate'
+    },
+    {
+        id: 18,
+        nome: 'Logística, Romaneios & Expedição com QR Code',
         categoria: 'Logística & Expedição',
         desc: 'Gestão completa de expedição com geração de Romaneios com QR Code, portal externo seguro para fornecedores terceirizados, recebimento de retornos industriais, conferência cega e impressão térmica rápida.',
         detalhes: ['Rastreamento de itens enviados para beneficiamento', 'Upload de fotos de comprovantes e conferência', 'Integração com saldo de materiais e estoque'],
@@ -190,17 +326,26 @@ const MODULOS = [
         color: 'red'
     },
     {
-        id: 13,
-        nome: 'Suprimentos & Gestão de Compras',
-        categoria: 'Compras & Suprimentos',
-        desc: 'Controle integrado do ciclo de compras: Solicitações de Compras (SC), Pedidos de Compras amarrados aos Pedidos de Venda do Cliente (PC x PV), Requisições Internas, Rastreamento SC → NF e Auditoria de PC x XML de entrada.',
-        detalhes: ['Visualizador de espelho de NF integrado', 'Consulta de saldos de estoque e reservas de projeto', 'Prevenção de compras em duplicidade'],
-        icon: Package,
-        color: 'orange'
+        id: 19,
+        nome: 'Portal do Fornecedor (Beneficiamento Externo)',
+        categoria: 'Logística & Parceiros',
+        desc: 'Ambiente com login externo isolado para fornecedores de tratamento superficial (Bicromatização, Zincagem, Pintura, Têmpera) consultarem romaneios destinados ao seu CNPJ e registrarem recebimentos.',
+        detalhes: ['Isolamento total da rede interna', 'Comprovante digital de recebimento e entrega', 'Acompanhamento do status de lotes externos'],
+        icon: Globe,
+        color: 'amber'
     },
     {
-        id: 14,
-        nome: 'Manutenção de Equipamentos & Ativos',
+        id: 20,
+        nome: 'Portal do Cliente (Web & Modo Tablet / Quiosque)',
+        categoria: 'Atendimento ao Cliente',
+        desc: 'Ambiente com login exclusivo para clientes acompanharem o status de fabricação dos seus pedidos em tempo real ou realizarem solicitações rápidas via interface tablet industrial dedicada.',
+        detalhes: ['Visualização do cronograma e status dos pedidos', 'Download de relatórios de entrega e medições', 'Interface touch ampliada para quiosques'],
+        icon: Users,
+        color: 'violet'
+    },
+    {
+        id: 21,
+        nome: 'Manutenção de Equipamentos & Checklists Diários',
         categoria: 'Manutenção Industrial',
         desc: 'Controle de manutenção preventiva e corretiva com cadastro de máquinas industriais, checklists diários operacionais, emissão de Ordens de Manutenção (OM), controle de técnicos e estoque de peças de reposição.',
         detalhes: ['Histórico de intervenções e tempo médio entre falhas (MTBF)', 'Fichas técnicas de máquinas com manuais anexados', 'Controle de atividades padrão de manutenção'],
@@ -208,35 +353,53 @@ const MODULOS = [
         color: 'slate'
     },
     {
-        id: 15,
-        nome: 'RH — Recursos Humanos & Recrutamento com IA',
+        id: 22,
+        nome: 'RH — Recrutamento com IA (Gemini) & Gestão de Vagas',
         categoria: 'Recursos Humanos',
-        desc: 'Gestão de vagas operacionais e administrativas, triagem inteligente de currículos com IA Google Gemini (extração automática de dados, experiências e aderência ao perfil da vaga) e processo estruturado de Offboarding com custódia de bens.',
-        detalhes: ['Matriz de Cargos e Funções integrada ao SGQ', 'Checklist eletrônico de desligamento e devolução de EPIs', 'Score de compatibilidade de candidatos'],
+        desc: 'Gestão de vagas operacionais e administrativas com triagem inteligente de currículos via Google Gemini IA (extração automática de dados, experiências e pontuação de aderência ao perfil da vaga).',
+        detalhes: ['Matriz de Cargos e Funções integrada ao SGQ', 'Score de compatibilidade automática de candidatos', 'Histórico completo de candidaturas e entrevistas'],
         icon: Users,
         color: 'pink'
     },
     {
-        id: 16,
-        nome: 'Wabtec — Módulo Especializado',
+        id: 23,
+        nome: 'RH — Offboarding & Custódia de Ativos',
+        categoria: 'Recursos Humanos & TI',
+        desc: 'Fluxo estruturado de desligamento com checklist eletrônico de devolução de EPIs, caixas de ferramentas, crachás e notebooks, termo de quitação com assinatura e revogação de acessos.',
+        detalhes: ['Custódia de bens e ferramentas do SGQ', 'Termo de quitação formal em PDF', 'Bloqueio instantâneo de contas de rede/sistema'],
+        icon: Users,
+        color: 'pink'
+    },
+    {
+        id: 24,
+        nome: 'WabTec — PPAPs, Escopo de Fornecimento & Forecast',
         categoria: 'Contratos Especiais',
-        desc: 'Módulo dedicado ao contrato Wabtec: acompanhamento detalhado do escopo de fornecimento, importação de estruturas customizadas de produtos, gestão de PPAPs contratuais e calendário de datas de solicitação.',
+        desc: 'Módulo dedicado ao contrato WabTec: acompanhamento detalhado do escopo de fornecimento, importação de estruturas customizadas de produtos, gestão de PPAPs (níveis 1-5, PSW) e datas de solicitação.',
         detalhes: ['Conformidade com especificações técnicas do cliente', 'Rastreabilidade de documentação e certificados', 'Painel de status de entrega de lotes'],
         icon: Building2,
         color: 'slate'
     },
     {
-        id: 17,
+        id: 25,
+        nome: 'Engetron — Painel de Demandas & Cumprimento de OTD',
+        categoria: 'Contratos Especiais',
+        desc: 'Painel gerencial de acompanhamento de demandas e entregas do contrato Engetron, controle de OPs dedicadas, prazos contratuais e indicador de OTD (On-Time Delivery) em tempo real.',
+        detalhes: ['Monitoramento de lotes de entrega', 'Histórico de pontualidade fabril', 'Alertas preventivos de prazos'],
+        icon: Building2,
+        color: 'blue'
+    },
+    {
+        id: 26,
         nome: 'Hermes — Assistente IA & Monitor Proativo',
         categoria: 'Inteligência Artificial',
         desc: 'Assistente inteligente corporativo com compreensão de linguagem natural, acesso contextual seguro aos bancos de dados do sistema, feed proativo de notícias internas e monitoramento contínuo de anomalias de produção.',
         detalhes: ['Geração de respostas técnicas instantâneas', 'Alertas automáticos de inconsistências operacionais', 'Interface conversacional intuitiva'],
         icon: Bot,
-        color: 'blue'
+        color: 'indigo'
     },
     {
-        id: 18,
-        nome: 'PCPMetal — Engine FCS com IA',
+        id: 27,
+        nome: 'PCPMetal — Engine FCS com Simulação de Capacidade',
         categoria: 'Inteligência Artificial & PCP',
         desc: 'Engine de simulação de capacidade finita (Factory Capacity Simulation) para prever gargalos de produção, balanceamento de linhas e otimização de sequência de fabricação com cache em memória.',
         detalhes: ['Simulação de cenários de entrega com variação de demanda', 'Cálculo de taxa de ocupação por centro de custo', 'Apoio à tomada de decisão de horas extras'],
@@ -244,7 +407,7 @@ const MODULOS = [
         color: 'indigo'
     },
     {
-        id: 19,
+        id: 28,
         nome: 'Etiquetas & Impressão Industrial Direta',
         categoria: 'Hardware & Impressão',
         desc: 'Integração com Print Agent local em linguagem nativa PPLB / EPL2 para impressoras industriais Zebra/Argox. Permite impressão de etiquetas de identificação de peças, volumes de romaneio e pré-listas de expedição.',
@@ -253,7 +416,7 @@ const MODULOS = [
         color: 'amber'
     },
     {
-        id: 20,
+        id: 29,
         nome: 'WhatsApp & Mensageria Automatizada',
         categoria: 'Comunicação & Mensageria',
         desc: 'Integração com Evolution API para disparos de mensagens automáticas: alertas de ordens concluídas, resumos de produção gerados por IA, recuperação segura de senha e suporte operacional.',
@@ -262,57 +425,12 @@ const MODULOS = [
         color: 'emerald'
     },
     {
-        id: 21,
-        nome: 'Configurações, Auditoria & Administração',
-        categoria: 'Administração',
-        desc: 'Painel central de controle do sistema: gerenciamento de usuários, personalização de perfis, matriz de permissões por tela, visibilidade de pedidos, controle de módulos ativos e log de auditoria de operações.',
-        detalhes: ['Controle de acesso granular por rota e ação', 'Envio automático de credenciais de acesso por e-mail', 'Configuração de parâmetros gerais da empresa'],
-        icon: Settings,
-        color: 'slate'
-    },
-    {
-        id: 22,
-        nome: 'Central de Ajuda & POPs Contextuais',
+        id: 30,
+        nome: 'Central de Ajuda & POPs Contextuais (Help Center)',
         categoria: 'Treinamento & Suporte',
-        desc: 'Base de conhecimento integrada com ajuda contextual em todas as telas do sistema, sincronizada em tempo real com os Procedimentos Operacionais Padrão (POPs) do SGQ para capacitação contínua.',
-        detalhes: ['Guia passo a passo por funcionalidade', 'Acesso direto a manuais e diretrizes operacionais', 'Busca rápida de tópicos de ajuda'],
+        desc: 'Base de conhecimento interativa com ajuda contextual em todas as 95+ páginas do sistema, sincronizada em tempo real com os Procedimentos Operacionais Padrão (POPs) do SGQ para capacitação contínua.',
+        detalhes: ['Guia passo a passo por funcionalidade', 'Acesso direto a manuais e diretrizes operacionais', 'Busca rápida de tópicos e gaveta lateral de ajuda'],
         icon: HelpCircle,
-        color: 'teal'
-    },
-    {
-        id: 23,
-        nome: 'Painel TV (Visão Chão de Fábrica)',
-        categoria: 'Chão de Fábrica',
-        desc: 'Interface visual de alta legibilidade projetada especificamente para televisores e monitores industriais no galpão, com atualização automática via WebSockets sem necessidade de login interativo.',
-        detalhes: ['Exibição de status de OPs em andamento e metas do turno', 'Alertas visuais de atrasos e prioridades', 'Carregamento leve e contínuo 24/7'],
-        icon: Globe,
-        color: 'blue'
-    },
-    {
-        id: 24,
-        nome: 'Mural de Avisos & Comunicados Multimídia',
-        categoria: 'Comunicação Interna',
-        desc: 'Canal de comunicação interna multimídia com suporte a postagens de texto, anexos de imagem e arquivos de áudio gravados, com banners persistentes de avisos urgentes fixados no topo de todas as páginas.',
-        detalhes: ['Controle de confirmação de leitura por usuário', 'Priorização de recados urgentes com destaque', 'Histórico arquivado de comunicados'],
-        icon: AlertTriangle,
-        color: 'yellow'
-    },
-    {
-        id: 25,
-        nome: 'Calendário de Atividades & Entregas',
-        categoria: 'Planejamento & Agenda',
-        desc: 'Visão em calendário mensal, semanal e diário consolidando datas de entrega de pedidos do Protheus, eventos de qualidade, datas de reuniões e compromissos personalizados de cada departamento.',
-        detalhes: ['Filtros por tipo de compromisso e setor', 'Sincronização de prazos da Ata Viva', 'Interface arrastar e soltar (drag & drop)'],
-        icon: Clock,
-        color: 'violet'
-    },
-    {
-        id: 26,
-        nome: 'Ata Viva — Gestão Inteligente de Reuniões',
-        categoria: 'Gestão Corporativa',
-        desc: 'Módulo colaborativo para redação de atas de reuniões em tempo real, com atribuição de tarefas a responsáveis, estipulação de prazos de entrega e integração direta com o Calendário de Atividades.',
-        detalhes: ['Acompanhamento de pendências e percentual de conclusão', 'Exportação oficial da ata em PDF formatado', 'Notificação aos participantes das decisões tomadas'],
-        icon: FileText,
         color: 'teal'
     },
 ];
@@ -324,8 +442,8 @@ const PERFIS_USUARIOS = [
         nivel: 'Total & Irrestrito',
         color: 'indigo',
         destaque: 'Controle Máximo',
-        desc: 'Acesso total e irrestrito a todos os 26 módulos funcionais, configurações mestras, gerenciamento de banco de dados, menus, agentes de IA, auditorias e gestão de outros administradores.',
-        permissoes: ['Acesso irrestrito a todas as 95+ rotas', 'Gerenciamento de usuários SA e senhas', 'Configurações de infraestrutura e menus', 'Acesso a valores e relatórios financeiros']
+        desc: 'Acesso total e irrestrito a todos os 30 módulos funcionais, configurações mestras, gerenciamento de banco de dados, menus, agentes de IA, auditorias e gestão de outros administradores.',
+        permissoes: ['Acesso irrestrito a todas as 110+ rotas', 'Gerenciamento de usuários SA e senhas', 'Configurações de infraestrutura e menus', 'Acesso a valores e relatórios financeiros']
     },
     {
         codigo: 'A',
@@ -393,8 +511,9 @@ const PERFIS_USUARIOS = [
 ];
 
 const INTEGRACOES = [
-    { nome: 'Protheus / TOTVS (PostgreSQL)', tipo: 'Leitura e sincronização estruturada', desc: 'Tabelas SC5010 (Pedidos), SC6010 (Itens), SC2010 (OPs), SB1010 (Produtos), SG1010/SG2010 (Estruturas e Roteiros), SF2010 (NFs), SA5010 (Amarr. Prod x Cli), SH6010 (Recursos)', status: 'Operacional', color: 'blue' },
+    { nome: 'Protheus / TOTVS (PostgreSQL)', tipo: 'Leitura e sincronização estruturada', desc: 'Tabelas SC5010 (Pedidos), SC6010 (Itens), SC2010 (OPs), SB1010 (Produtos), SG1010/SG2010 (Estruturas e Roteiros), SF2010 (NFs), SA5010 (Amarr. Prod x Cli), SH6010 (Recursos), SC7010 (Compras)', status: 'Operacional', color: 'blue' },
     { nome: 'SolidEdge (CAD 3D)', tipo: 'WebSocket em tempo real', desc: 'Agente Windows detecta modelo 3D ativo no SolidEdge e sincroniza instantaneamente com o SINCO via Socket.io', status: 'Operacional', color: 'cyan' },
+    { nome: 'Visualizador CAD 3D WebGL (Three.js)', tipo: 'Motor de Renderização Gráfica Integrado', desc: 'Visualizador 3D em tempo real no navegador para medição dimensional, cotas, rotação 360° e vista explodida de montagem', status: 'Operacional', color: 'teal' },
     { nome: 'Google Gemini AI', tipo: 'API de Inteligência Artificial Generativa', desc: 'Extração automática de metadados em desenhos PDF, triagem de currículos em RH, assistente Hermes e diagnósticos proativos', status: 'Operacional', color: 'indigo' },
     { nome: 'WhatsApp (Evolution API)', tipo: 'Mensageria e Alertas em Tempo Real', desc: 'Recuperação de senhas, envio programado de KPIs (Meu Canal), resumos com IA e notificações críticas de chão de fábrica', status: 'Operacional', color: 'emerald' },
     { nome: 'E-mail Corporativo (SMTP / IMAP)', tipo: 'smtp.task.com.br | Porta 587 SSL/TLS', desc: 'Disparo de relatórios do Meu Canal, liberações de engenharia com espelho/PDF, notificações do SGQ e alertas de faturamento', status: 'Operacional', color: 'orange' },
@@ -406,18 +525,19 @@ const AUTOMACOES = [
     { horario: '15:00 (dias úteis)', nome: 'Meu Canal — Tarde', desc: 'Atualização dos KPIs de produção — relatório consolidado por setor' },
     { horario: '15:00 (dias úteis)', nome: 'Relatório WhatsApp com IA', desc: 'Resumo inteligente de produção gerado por IA e enviado aos grupos monitorados' },
     { horario: '08:30 (diário)', nome: 'Alertas SGQ & Qualidade', desc: 'Notificações de calibrações a vencer, treinamentos pendentes e RNCs em aberto' },
-    { horario: 'Configurável', nome: 'Automações de Faturamento', desc: 'Relatórios consolidados de faturamento e avisos de pendências financeiras' },
+    { horario: '17:30 (dias úteis)', nome: 'Automações de Faturamento & Expedição', desc: 'Relatórios consolidados de faturamento, pedidos liberados e avisos de pendências financeiras' },
+    { horario: 'A cada 15 min', nome: 'Auditoria Fiscal e Sincronização XML / NF-e', desc: 'Verificação contínua de pedidos de compra vs notas fiscais recebidas para validação tributária' },
     { horario: 'A cada 1 hora', nome: 'Monitoramento de Métricas & Saúde', desc: 'Cron job contínuo de coleta de métricas de ocupação, banco de dados e CPU' },
     { horario: 'Contínuo', nome: 'Hermes — Monitor Proativo', desc: 'Detecção de anomalias operacionais e alertas instantâneos via Socket.io' },
 ];
 
 const METRICAS = [
-    { label: 'Rotas / Páginas Web', value: '95+', icon: Globe },
-    { label: 'Módulos Funcionais', value: '26', icon: Package },
-    { label: 'Endpoints de API', value: '75+', icon: Server },
-    { label: 'Componentes React', value: '85+', icon: Cpu },
-    { label: 'Integrações Externas', value: '6', icon: Link2 },
-    { label: 'Automações (Cron Jobs)', value: '7', icon: Zap },
+    { label: 'Rotas / Páginas Web', value: '110+', icon: Globe },
+    { label: 'Módulos Funcionais', value: '30', icon: Package },
+    { label: 'Endpoints de API', value: '90+', icon: Server },
+    { label: 'Componentes React', value: '110+', icon: Cpu },
+    { label: 'Integrações Externas', value: '7', icon: Link2 },
+    { label: 'Automações (Cron Jobs)', value: '8', icon: Zap },
     { label: 'Canais de Mensageria', value: '3', icon: Mail },
     { label: 'Bancos Integrados', value: '2', icon: Database },
 ];
@@ -721,6 +841,323 @@ function SignatureBlock({ label, organization, role, signatureData, onClickSign,
                         </div>
                     </>
                 )}
+            </div>
+        </div>
+    );
+}
+
+// ─── Componente de Fluxogramas Visuais de Engenharia e Processos ─────────────
+function FluxogramasProcessosSection() {
+    const [activeFlow, setActiveFlow] = useState(0);
+
+    const FLUXOS = [
+        {
+            id: 'saldo_faturar',
+            title: '1. Ciclo do Pedido & Soberania do Saldo a Faturar',
+            badge: 'Regra de Engenharia',
+            color: 'blue',
+            icon: Shield,
+            objective: 'Garantir que o chão de fábrica produza apenas o saldo real pendente (c6_qtdven - c6_qtdent), eliminando desperdício e superprodução de itens faturados.',
+            steps: [
+                {
+                    step: '01',
+                    title: 'Entrada do Pedido no ERP',
+                    system: 'Protheus SC5/SC6',
+                    type: 'input',
+                    desc: 'Pedido de venda registrado com quantidade vendida original (C6_QTDVEN) e preço acordado.'
+                },
+                {
+                    step: '02',
+                    title: 'Verificação de Faturamento Parcial',
+                    system: 'Protheus SD2/SF2',
+                    type: 'decision',
+                    desc: 'O sistema consulta em tempo real se já houve emissão de Notas Fiscais anteriores para o item.',
+                    branches: [
+                        { label: 'Houve NF Emitida', action: 'Saldo Fat = C6_QTDVEN - C6_QTDENT', tag: 'Dedução em Tempo Real', color: 'indigo' },
+                        { label: 'Sem Entregas', action: 'Saldo Fat = C6_QTDVEN', tag: 'Saldo Integral', color: 'blue' }
+                    ]
+                },
+                {
+                    step: '03',
+                    title: 'Avaliação de Encerramento',
+                    system: 'Engine SINCO',
+                    type: 'decision',
+                    desc: 'Se Saldo a Faturar <= 0, o item recebe a tag verde "ENTREGUE" e é bloqueado para corte e partição.',
+                    branches: [
+                        { label: 'Saldo = 0', action: 'Status ENTREGUE (Item Finalizado)', tag: 'Bloqueado p/ Produção', color: 'emerald' },
+                        { label: 'Saldo > 0', action: 'Disponível na Gestão de OPs com Saldo Real', tag: 'Liberado p/ Planejamento', color: 'amber' }
+                    ]
+                },
+                {
+                    step: '04',
+                    title: 'Direcionamento Operacional',
+                    system: 'PCP / Cockpit',
+                    type: 'output',
+                    desc: 'O PCP pode optar por agrupar o saldo em Lote LPF ou abrir o modal de Fracionamento (Split OP).'
+                }
+            ]
+        },
+        {
+            id: 'split_op',
+            title: '2. Fracionamento de OPs (Split AA, AB, AC...)',
+            badge: 'PCP & Entregas',
+            color: 'indigo',
+            icon: Split,
+            objective: 'Dividir um saldo a faturar em múltiplos lotes de entrega com OPs rastreáveis e validação estrita de soma.',
+            steps: [
+                {
+                    step: '01',
+                    title: 'Abertura do Modal de Partição',
+                    system: 'SplitOPModal.jsx',
+                    type: 'input',
+                    desc: 'Usuário seleciona o item pendente na grade e aciona "Partir / Fracionar OP".'
+                },
+                {
+                    step: '02',
+                    title: 'Definição da Quantidade Base',
+                    system: 'Trava Soberana',
+                    type: 'process',
+                    desc: 'A quantidade total distribuível é rigorosamente travada no Saldo a Faturar do item.'
+                },
+                {
+                    step: '03',
+                    title: 'Configuração de Frações e Datas',
+                    system: 'Interface do Usuário',
+                    type: 'process',
+                    desc: 'Divisão em Fração #1 (AA), Fração #2 (AB), Fração #3 (AC)... com quantidades e Datas PCP customizadas.'
+                },
+                {
+                    step: '04',
+                    title: 'Validação Matemática Estrita',
+                    system: 'Engine de Validação',
+                    type: 'decision',
+                    desc: 'A soma exata das frações é comparada com o Saldo a Faturar.',
+                    branches: [
+                        { label: 'Soma != Saldo Fat', action: 'Alerta Vermelho: Diferença de Quantidade', tag: 'Bloqueia Salvamento', color: 'rose' },
+                        { label: 'Soma == Saldo Fat', action: 'Validação Aprovada (Diferença = 0.00)', tag: 'Libera Gravação', color: 'emerald' }
+                    ]
+                },
+                {
+                    step: '05',
+                    title: 'Persistência e OPs Discretas',
+                    system: 'MySQL & Flat View',
+                    type: 'output',
+                    desc: 'Gravação em app_pcp_delivery_forecasts gerando OPs como 00461809AA e 00461809AB com total rastreabilidade.'
+                }
+            ]
+        },
+        {
+            id: 'lotes_lpf',
+            title: '3. Formação de Lotes LPF & Aglutinação Multi-Cliente',
+            badge: 'Otimização Fabril',
+            color: 'emerald',
+            icon: Layers,
+            objective: 'Agrupar itens e frações de diferentes clientes com mesma chapa/espessura sob um lote único de corte.',
+            steps: [
+                {
+                    step: '01',
+                    title: 'Seleção Múltipla na Grade',
+                    system: 'GestaoOPsPage.jsx',
+                    type: 'input',
+                    desc: 'Operador marca checkboxes de itens/frações que compartilham a mesma matéria-prima (MTC) e espessura.'
+                },
+                {
+                    step: '02',
+                    title: 'Criação do Lote Sequencial',
+                    system: 'Backend / LPF Generator',
+                    type: 'process',
+                    desc: 'Geração automática de código único padronizado (ex: LPF-000128) no banco de dados.'
+                },
+                {
+                    step: '03',
+                    title: 'Agrupamento Visual na Grade',
+                    system: 'Flat & Acordeon View',
+                    type: 'process',
+                    desc: 'Os itens passam a ser exibidos sob o cabeçalho verde esmeralda com quantidade consolidada e data sincronizada.'
+                },
+                {
+                    step: '04',
+                    title: 'Integração com Plano de Corte',
+                    system: 'CorteForecastModal.jsx',
+                    type: 'output',
+                    desc: 'Disponibilização do lote para distribuição em chapas padrão (Laser/Puncionadeira) com cálculo de retalhos.'
+                }
+            ]
+        },
+        {
+            id: 'liberacao_irreversivel',
+            title: '4. Liberação Irreversível & Carimbos da Qualidade',
+            badge: 'Garantia da Qualidade',
+            color: 'rose',
+            icon: Lock,
+            objective: 'Travar permanentemente o lote liberado e estampar a quantidade total somada nos desenhos técnicos.',
+            steps: [
+                {
+                    step: '01',
+                    title: 'Disparo da Liberação',
+                    system: 'Opção B ou C',
+                    type: 'input',
+                    desc: 'Usuário clica em "Liberar Produção / Aglutinar" (Opção B) OU salva a estratégia no Plano de Corte (Opção C).'
+                },
+                {
+                    step: '02',
+                    title: 'Ativação da Trava Permanente',
+                    system: 'app_lpf_lots & app_pcp_delivery_forecasts',
+                    type: 'process',
+                    desc: 'Status alterado para "LIBERADO P/ FABRICAÇÃO". Bloqueio 403 ativado contra exclusão, desmembramento e edição.'
+                },
+                {
+                    step: '03',
+                    title: 'Processamento de Desenhos Técnicos',
+                    system: 'loteWithDrawingsPdfGenerator.js',
+                    type: 'process',
+                    desc: 'O gerador analisa as peças comuns do lote e calcula a SOMA GERAL de quantidades de todos os pedidos.'
+                },
+                {
+                    step: '04',
+                    title: 'Estampa do Carimbo Oficial nos PDFs',
+                    system: 'Motor Gráfico de PDF',
+                    type: 'output',
+                    desc: 'Renderização do carimbo "CÓPIA CONTROLADA | QUALIDADE" com Código LPF, Quantidade TOTAL a Fabricar e Roteiro de Máquinas.'
+                }
+            ]
+        },
+        {
+            id: 'planilha_mestra',
+            title: '5. Planilha Mestra Excel com Aba 1 (Índice)',
+            badge: 'Exportação & BI',
+            color: 'teal',
+            icon: FileSpreadsheet,
+            objective: 'Gerar arquivo Excel com sumário executivo, explosão de engenharia e matriz consolidada de chapas.',
+            steps: [
+                {
+                    step: '01',
+                    title: 'Disparo da Exportação',
+                    system: 'Botão Planilha Mestra',
+                    type: 'input',
+                    desc: 'Processamento assíncrono disparado no topo da página respeitando os filtros ativos da carteira.'
+                },
+                {
+                    step: '02',
+                    title: 'Explosão Recursiva de Estrutura (BOM)',
+                    system: 'Engine de Engenharia',
+                    type: 'process',
+                    desc: 'Leitura recursiva de subconjuntos, matérias-primas (MTC) e roteiros de centros de trabalho (Laser, Dobra, Solda).'
+                },
+                {
+                    step: '03',
+                    title: 'Montagem das 4 Abas Formatadas',
+                    system: 'ExcelJS Engine',
+                    type: 'process',
+                    desc: 'Aba 1 (Índice Geral & Links), Aba 2 (Itens Aglutinados), Aba 3 (Estrutura Linear BOM), Aba 4 (Consolid. Peças Materiais).'
+                },
+                {
+                    step: '04',
+                    title: 'Download Seguro em Memória',
+                    system: 'Blob Stream Service',
+                    type: 'output',
+                    desc: 'Download instantâneo com buffer limpo e compatibilidade total com redes locais HTTP e HTTPS.'
+                }
+            ]
+        }
+    ];
+
+    const current = FLUXOS[activeFlow];
+    const c = getColor(current.color);
+    const IconComponent = current.icon;
+
+    return (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print:shadow-none break-inside-avoid">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <SectionHeader 
+                    icon={GitBranch} 
+                    title="Fluxos de Engenharia & Arquitetura Visual de Processos" 
+                    subtitle="Diagramas dinâmicos ilustrando o funcionamento de ponta a ponta dos novos módulos" 
+                />
+                <span className="text-[10px] font-black text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200 uppercase tracking-wider">
+                    5 Processos Homologados
+                </span>
+            </div>
+
+            {/* Navegador de Fluxos */}
+            <div className="flex flex-wrap gap-2 mb-5 no-print">
+                {FLUXOS.map((f, idx) => (
+                    <button
+                        key={f.id}
+                        onClick={() => setActiveFlow(idx)}
+                        className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                            activeFlow === idx
+                                ? 'bg-slate-900 text-white shadow-sm ring-1 ring-slate-900'
+                                : 'bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 ring-1 ring-slate-200'
+                        }`}
+                    >
+                        <span className={`w-2 h-2 rounded-full ${activeFlow === idx ? 'bg-emerald-400' : 'bg-slate-400'}`} />
+                        <span>{f.title.split('.')[1] || f.title}</span>
+                    </button>
+                ))}
+            </div>
+
+            {/* Visualizador do Fluxo Selecionado */}
+            <div className={`p-5 rounded-2xl ring-1 ${c.ring} ${c.bg} space-y-4`}>
+                {/* Header do Fluxo */}
+                <div className="flex items-start justify-between gap-3 flex-wrap border-b border-slate-200/80 pb-3">
+                    <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl bg-white shadow-sm ring-1 ${c.ring} flex items-center justify-center`}>
+                            <IconComponent className={`w-5 h-5 ${c.text}`} />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h3 className={`text-base font-black ${c.text}`}>{current.title}</h3>
+                                <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-white ring-1 ${c.ring} ${c.text}`}>
+                                    {current.badge}
+                                </span>
+                            </div>
+                            <p className="text-xs text-slate-600 mt-0.5">{current.objective}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Etapas do Diagrama Visual */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                    {current.steps.map((st, sIdx) => (
+                        <div key={st.step} className="flex flex-col justify-between p-3.5 rounded-xl bg-white ring-1 ring-slate-200 shadow-sm relative group">
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                        PASSO {st.step}
+                                    </span>
+                                    <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md font-mono">
+                                        {st.system}
+                                    </span>
+                                </div>
+                                <h4 className="text-xs font-black text-slate-900">{st.title}</h4>
+                                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">{st.desc}</p>
+
+                                {st.branches && (
+                                    <div className="mt-2.5 pt-2 border-t border-slate-100 space-y-1.5">
+                                        {st.branches.map((b, bIdx) => (
+                                            <div key={bIdx} className="p-1.5 rounded-lg bg-slate-50 border border-slate-150 text-[10px]">
+                                                <div className="flex items-center justify-between font-bold text-slate-700">
+                                                    <span>{b.label}:</span>
+                                                    <span className={`text-[9px] px-1.5 py-0.2 rounded text-white ${b.color === 'emerald' ? 'bg-emerald-600' : b.color === 'rose' ? 'bg-rose-600' : b.color === 'amber' ? 'bg-amber-600' : 'bg-indigo-600'}`}>
+                                                        {b.tag}
+                                                    </span>
+                                                </div>
+                                                <div className="text-slate-500 mt-0.5 font-medium">{b.action}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {sIdx < current.steps.length - 1 && (
+                                <div className="hidden lg:block absolute -right-3 top-1/2 -translate-y-1/2 z-10 bg-white rounded-full p-1 ring-1 ring-slate-200 text-slate-400">
+                                    <ArrowRight className="w-3 h-3" />
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );
@@ -1035,6 +1472,9 @@ export default function RelatorioEntrega({ embedded = false }) {
                         })}
                     </div>
                 </CollapseSection>
+
+                {/* ═══ FLUXOGRAMAS DE ENGENHARIA & PROCESSOS ══════════════════ */}
+                <FluxogramasProcessosSection />
 
                 <CollapseSection title={`Módulos Entregues e Capacidades Operacionais (${MODULOS.length})`} icon={Package} defaultOpen={true}>
                     <div className="mt-2 grid sm:grid-cols-2 gap-3">

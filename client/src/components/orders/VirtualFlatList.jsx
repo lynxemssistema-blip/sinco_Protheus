@@ -52,6 +52,7 @@ const VirtualFlatList = ({
     handleUpdateFaturamentoDate,
     onOpenClassificacaoModal,
     onOpenBomStructure,
+    onOpenStructureStock,
     canEdit,
 }) => {
     const sentinelRef = useRef(null);
@@ -158,6 +159,7 @@ const VirtualFlatList = ({
                         onUpdateFaturamentoDate={handleUpdateFaturamentoDate}
                         onOpenClassificacaoModal={onOpenClassificacaoModal}
                         onOpenBomStructure={onOpenBomStructure}
+                        onOpenStructureStock={onOpenStructureStock}
                         canEdit={canEdit}
                     />
                 );

@@ -392,20 +392,38 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
     }
 
     if (pedidoVal) {
-        whereClause += ` AND c5.c5_num LIKE $${params.length + 1}`;
-        params.push(`%${pedidoVal}%`);
+        const pedTokens = String(pedidoVal).split(',').map(p => p.trim()).filter(Boolean);
+        if (pedTokens.length > 1) {
+            whereClause += ` AND TRIM(c5.c5_num) = ANY($${params.length + 1}::varchar[])`;
+            params.push(pedTokens);
+        } else {
+            whereClause += ` AND c5.c5_num LIKE $${params.length + 1}`;
+            params.push(`%${pedidoVal}%`);
+        }
     }
 
     // Product Filter (Exists logic)
     if (produtoVal) {
-        whereClause += ` AND EXISTS (
-            SELECT 1 FROM sc6010 sub_c6 
-            LEFT JOIN sb1010 sub_b1 ON sub_b1.b1_cod = sub_c6.c6_produto
-            WHERE sub_c6.c6_num = c5.c5_num 
-            AND sub_c6.c6_filial = c5.c5_filial
-            AND (UPPER(sub_c6.c6_produto) LIKE UPPER($${params.length + 1}) OR UPPER(sub_b1.b1_desc) LIKE UPPER($${params.length + 1}))
-        )`;
-        params.push(`%${produtoVal}%`);
+        const prodTokens = String(produtoVal).split(',').map(p => p.trim()).filter(Boolean);
+        if (prodTokens.length > 1) {
+            whereClause += ` AND EXISTS (
+                SELECT 1 FROM public.sc6010 sub_c6 
+                WHERE sub_c6.c6_num = c5.c5_num 
+                AND sub_c6.c6_filial = c5.c5_filial
+                AND TRIM(sub_c6.c6_produto) = ANY($${params.length + 1}::varchar[])
+                AND COALESCE(sub_c6.d_e_l_e_t_, '') = ''
+            )`;
+            params.push(prodTokens);
+        } else {
+            whereClause += ` AND EXISTS (
+                SELECT 1 FROM sc6010 sub_c6 
+                LEFT JOIN sb1010 sub_b1 ON sub_b1.b1_cod = sub_c6.c6_produto
+                WHERE sub_c6.c6_num = c5.c5_num 
+                AND sub_c6.c6_filial = c5.c5_filial
+                AND (UPPER(sub_c6.c6_produto) LIKE UPPER($${params.length + 1}) OR UPPER(sub_b1.b1_desc) LIKE UPPER($${params.length + 1}))
+            )`;
+            params.push(`%${produtoVal}%`);
+        }
     }
 
     // Pedcli (Customer Order Number) filter
@@ -1678,9 +1696,11 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         const execRecursoCols = [];
         allRecursos.forEach(r => {
             const resName = recursoNomeMap[r] || r;
-            execRecursoCols.push({ header: `${resName} (Executado)`, key: `rec_${r}_exec`, width: 22 });
-            execRecursoCols.push({ header: `${resName} (Previsto)`,  key: `rec_${r}_prev`, width: 22 });
-            execRecursoCols.push({ header: `${resName} (Qtd Apontada)`, key: `rec_${r}_qtd_apontada`, width: 22 });
+            execRecursoCols.push({ header: `${resName} (Executado)`, key: `rec_${r}_exec`, width: 20 });
+            execRecursoCols.push({ header: `${resName} (Previsto)`,  key: `rec_${r}_prev`, width: 20 });
+            execRecursoCols.push({ header: `${resName} (Qtd Apontada)`, key: `rec_${r}_qtd_apontada`, width: 18 });
+            execRecursoCols.push({ header: `${resName} (Qtd Falta)`, key: `rec_${r}_qtd_falta`, width: 18 });
+            execRecursoCols.push({ header: `${resName} (Falta min)`, key: `rec_${r}_tempo_falta`, width: 18 });
         });
         sheetExecucao.columns = [...execFixedCols, ...execRecursoCols];
 
@@ -1905,16 +1925,22 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
                         // Valores em minutos
                         const previstoMins = previsto > 0 ? previsto : 0;
                         const executadoMins = executado > 0 ? executado : 0;
+                        const qtdFalta = Math.max(0, execRow.qtd_planejada - qtdApontada);
+                        const tempoFalta = Math.max(0, previstoMins - executadoMins);
                         
                         if (previstoMins > 0 || executadoMins > 0 || qtdApontada > 0) {
                             execRow[`rec_${r}_exec`] = executadoMins;
                             execRow[`rec_${r}_prev`] = previstoMins;
                             execRow[`rec_${r}_qtd_apontada`] = qtdApontada > 0 ? qtdApontada : null;
+                            execRow[`rec_${r}_qtd_falta`] = qtdFalta;
+                            execRow[`rec_${r}_tempo_falta`] = tempoFalta;
                             hasLoad = true;
                         } else {
                             execRow[`rec_${r}_exec`] = null;
                             execRow[`rec_${r}_prev`] = null;
                             execRow[`rec_${r}_qtd_apontada`] = null;
+                            execRow[`rec_${r}_qtd_falta`] = null;
+                            execRow[`rec_${r}_tempo_falta`] = null;
                         }
                     });
                     
@@ -2866,16 +2892,20 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
         let allRecursos = [];
         if (allCodesArr.length > 0) {
             const routingRows = await db.query(
-                `SELECT TRIM(g2_produto) as produto, TRIM(g2_recurso) as recurso, TRIM(g2_operac) as operac,
-                        g2_tempad::numeric as tempad, GREATEST(g2_lotepad::numeric, 1) as lotepad, g2_setup::numeric as setup
-                 FROM sg2010
-                 WHERE TRIM(g2_produto) = ANY($1::text[]) AND d_e_l_e_t_ = ''
-                 ORDER BY g2_produto, g2_recurso, g2_operac`,
+                `SELECT TRIM(g2.g2_produto) as produto, TRIM(g2.g2_recurso) as recurso, TRIM(g2.g2_operac) as operac,
+                        g2.g2_tempad::numeric as tempad, GREATEST(g2.g2_lotepad::numeric, 1) as lotepad, g2.g2_setup::numeric as setup,
+                        TRIM(COALESCE(g2.g2_descri, h1.h1_descri, '')) as descri,
+                        TRIM(h1.h1_descri) as recurso_nome,
+                        TRIM(COALESCE(g2.g2_ctrab, h1.h1_ctrab, '')) as ctrab
+                 FROM sg2010 g2
+                 LEFT JOIN sh1010 h1 ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+                 WHERE TRIM(g2.g2_produto) = ANY($1::text[]) AND COALESCE(g2.d_e_l_e_t_, '') NOT IN ('*', '  *')
+                 ORDER BY g2.g2_produto, g2.g2_operac`,
                 [allCodesArr]
             );
             routingRows.rows.forEach(r => {
                 const cod = r.produto, rec = r.recurso, operac = r.operac;
-                const tempad = Number(r.tempad), lote = Math.max(Number(r.lotepad) || 1, 1), setup = Number(r.setup) || 0;
+                const tempad = Number(r.tempad) || 0, lote = Math.max(Number(r.lotepad) || 1, 1), setup = Number(r.setup) || 0;
                 const tPeca = Number.isFinite(tempad / lote) ? tempad / lote : 0;
                 if (!routingMap[cod]) routingMap[cod] = {};
                 if (!routingMap[cod][rec]) routingMap[cod][rec] = { tempo_peca: 0, setup: 0 };
@@ -2883,10 +2913,24 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
                 routingMap[cod][rec].setup += setup;
                 
                 if (!routingSequenceMap[cod]) routingSequenceMap[cod] = [];
-                routingSequenceMap[cod].push({ operac, recurso: rec, tempo_peca: tPeca, setup });
+                routingSequenceMap[cod].push({
+                    operac,
+                    recurso: rec,
+                    recurso_nome: r.recurso_nome || rec,
+                    descri: r.descri || r.recurso_nome || `Operação ${operac}`,
+                    ctrab: r.ctrab || '',
+                    tempo_peca: tPeca,
+                    tempad,
+                    lotepad: lote,
+                    setup
+                });
                 
                 if (cod && operac && rec) {
                     operacaoToRecurso[`${cod}_${operac}`] = rec;
+                }
+
+                if (rec && r.recurso_nome) {
+                    recursoNomeMap[rec] = `${rec} - ${r.recurso_nome}`;
                 }
             });
             Object.values(routingSequenceMap).forEach(arr => arr.sort((a,b) => a.operac.localeCompare(b.operac)));
@@ -3103,14 +3147,23 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
                         
                         // Executado = tempo unitário * quantidade apontada (usando a mesma regra de cálculo)
                         const apontado = qtdApontada > 0 ? (qtdApontada * tPecaUnit) : 0;
+                        const qtdFalta = Math.max(0, execRow.qtd_planejada - qtdApontada);
+                        const tempoFalta = Math.max(0, previsto - apontado);
                         
-                        // Sempre mostrar a coluna se o recurso for apontado, mesmo se tempoUnit for 0
-                        // (neste caso mostrará 0 min, mas exibirá na tabela se quisermos)
-                        if (previsto > 0 || apontado > 0 || qtdApontada > 0) hasLoad = true;
-                        
-                        execRow[`previsto_${r}`] = parseFloat(previsto.toFixed(2));
-                        execRow[`apontado_${r}`] = parseFloat(apontado.toFixed(2));
-                        execRow[`qtd_apontada_${r}`] = parseFloat(qtdApontada.toFixed(2));
+                        if (previsto > 0 || apontado > 0 || qtdApontada > 0) {
+                            hasLoad = true;
+                            execRow[`previsto_${r}`] = parseFloat(previsto.toFixed(2));
+                            execRow[`apontado_${r}`] = parseFloat(apontado.toFixed(2));
+                            execRow[`qtd_apontada_${r}`] = parseFloat(qtdApontada.toFixed(2));
+                            execRow[`qtd_falta_${r}`] = parseFloat(qtdFalta.toFixed(2));
+                            execRow[`tempo_falta_${r}`] = parseFloat(tempoFalta.toFixed(2));
+                        } else {
+                            execRow[`previsto_${r}`] = null;
+                            execRow[`apontado_${r}`] = null;
+                            execRow[`qtd_apontada_${r}`] = null;
+                            execRow[`qtd_falta_${r}`] = null;
+                            execRow[`tempo_falta_${r}`] = null;
+                        }
                     });
                     
                     // Apenas adiciona OP se ela tiver carga prevista ou apontada em algum recurso conhecido

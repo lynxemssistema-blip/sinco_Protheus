@@ -88,6 +88,7 @@ const VMIEstrategiaPage = React.lazy(() => import('./pages/vmi/VMIEstrategiaPage
 const VMIHistoricoPage = React.lazy(() => import('./pages/vmi/VMIHistoricoPage'));
 const DemandaVMIContainer = React.lazy(() => import('./pages/vmi/DemandaVMIContainer'));
 const DemandaMesPage = React.lazy(() => import('./pages/vmi/DemandaMesPage'));
+const VMICriticosPage = React.lazy(() => import('./pages/vmi/VMICriticosPage'));
 const VMIPedidosContainer = React.lazy(() => import('./pages/vmi/VMIPedidosContainer'));
 const SWorks = React.lazy(() => import('./pages/SWorks'));
 const ItensAFaturar = React.lazy(() => import('./pages/ItensAFaturar'));
@@ -756,6 +757,11 @@ function App() {
                                         <Route path="/vmi/demanda-mes" element={
                                             <Layout fullWidth={true}>
                                                 <DemandaMesPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/vmi/criticos" element={
+                                            <Layout fullWidth={true}>
+                                                <VMICriticosPage />
                                             </Layout>
                                         } />
                                         <Route path="/vmi/pedido" element={

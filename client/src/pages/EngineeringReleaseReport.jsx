@@ -3,13 +3,16 @@ import api, { getFileUrl } from '../services/api';
 import { 
     ClipboardList, Search, Calendar, User, Package, 
     Download, Mail, Filter, Loader2, AlertCircle, 
-    Inbox, Factory, ChevronDown, ChevronRight, Layers, FileText, Scissors, FileSpreadsheet
+    Inbox, Factory, ChevronDown, ChevronRight, Layers, FileText, Scissors, FileSpreadsheet, Trash2,
+    Printer, FileDown, ExternalLink, Lock, CheckCircle2, ShieldAlert
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { useAuth } from '../contexts/AuthContext';
 import { generateSingleRNCPdf } from '../services/rncPdfGenerator';
 import RNCSendEmailModal from '../components/RNCSendEmailModal';
 import CorteReleaseTab from '../components/CorteReleaseTab';
 import ReportStructureModal from '../components/ReportStructureModal';
+import CorteForecastModal from '../components/CorteForecastModal';
 
 
 // ─── Aba Engenharia ───────────────────────────────────────────────────────────
@@ -337,11 +340,18 @@ const EngineeringTab = () => {
 
 // ─── Aba PCP / Lote ───────────────────────────────────────────────────────────
 const PCPTab = () => {
+    const { user } = useAuth();
     const [releases, setReleases] = useState([]);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(new Set());
     const [filters, setFilters] = useState({ startDate:'',endDate:'',lote:'',usuario:'',pedido:'',produto:'',codigo:'' });
     const [structureCode, setStructureCode] = useState(null);
+
+    // Estados para Plano de Corte e Liberação Irreversível
+    const [corteForecastTarget, setCorteForecastTarget] = useState(null);
+    const [corteLpfCode, setCorteLpfCode] = useState(null);
+    const [liberateTarget, setLiberateTarget] = useState(null);
+    const [liberating, setLiberating] = useState(false);
 
     const fetchReleases = async (params = filters) => {
         setLoading(true);
@@ -364,6 +374,50 @@ const PCPTab = () => {
     const formatDate = dateStr => {
         if (!dateStr) return '—';
         return new Date(dateStr).toLocaleString('pt-BR', { day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit' });
+    };
+
+    const handleOpenCorteModal = (r, e) => {
+        if (e) e.stopPropagation();
+        if (!r.ops || r.ops.length === 0) {
+            toast.warning('Nenhuma OP cadastrada neste lote.');
+            return;
+        }
+        const formattedItems = r.ops.map(op => ({
+            pedido: op.pedido,
+            item: op.item,
+            codigo: op.codigo || op.produto || op.cod_produto,
+            descricao: op.descricao || op.desc_produto,
+            quantidade: op.qtd || op.visual_qtd || op.quantidade_pcp || 0,
+            qtd_faturar: op.qtd || op.visual_qtd || op.quantidade_pcp || 0,
+            op_num: op.visual_op || op.op_num || `${op.pedido}${op.item}`,
+            cliente: op.nome_cliente || op.cliente
+        }));
+        setCorteForecastTarget(formattedItems);
+        setCorteLpfCode(r.codigo_liberacao || r.codigo_lote || r.lote_info);
+    };
+
+    const handleConfirmLiberarLote = async () => {
+        if (!liberateTarget) return;
+        setLiberating(true);
+        try {
+            const code = liberateTarget.codigo_liberacao || liberateTarget.codigo_lote || liberateTarget.id;
+            const res = await api.post('/pcp-releases/liberar', {
+                id: liberateTarget.id,
+                codigo_liberacao: liberateTarget.codigo_liberacao,
+                lote_info: liberateTarget.lote_info,
+                usuario: user?.nome || 'PCP'
+            });
+            if (res.data?.success) {
+                toast.success(`Lote ${code} LIBERADO para fabricação com sucesso!`);
+                setLiberateTarget(null);
+                fetchReleases();
+            }
+        } catch (err) {
+            console.error('Erro ao liberar lote:', err);
+            toast.error(err.response?.data?.error || 'Erro ao liberar lote.');
+        } finally {
+            setLiberating(false);
+        }
     };
 
     const handleExportExcel = () => {
@@ -481,56 +535,140 @@ const PCPTab = () => {
         });
     };
 
+    const [generatingLotCode, setGeneratingLotCode] = useState(null);
+    const [generatingExcelCode, setGeneratingExcelCode] = useState(null);
+
+    const handleGenerateLotPdf = async (r, e) => {
+        if (e) e.stopPropagation();
+        const code = r.codigo_liberacao || r.codigo_lote || r.lote_info;
+        if (!r.ops || r.ops.length === 0) {
+            toast.warning('Nenhuma OP / peça cadastrada neste lote.');
+            return;
+        }
+
+        setGeneratingLotCode(code);
+        toast.info(`Gerando Pacote PDF com desenhos e roteiros para o lote ${code}...`);
+
+        try {
+            const { generateLoteWithDrawingsPdf } = await import('../services/loteWithDrawingsPdfGenerator');
+            
+            // Format targets matching generateLoteWithDrawingsPdf requirements
+            const targets = r.ops.map(op => ({
+                pedido: op.pedido,
+                item: op.item,
+                visual_op: op.visual_op || op.op_num || `${op.pedido}${op.item}`,
+                op_num: op.visual_op || op.op_num || `${op.pedido}${op.item}`,
+                visual_qtd: op.qtd || op.visual_qtd || op.quantidade_pcp,
+                qtd_faturar: op.qtd || op.visual_qtd || op.quantidade_pcp,
+                quantidade: op.qtd || op.visual_qtd || op.quantidade_pcp,
+                nome_cliente: op.nome_cliente || op.cliente || '—',
+                cod_produto: op.codigo || op.produto || op.cod_produto,
+                codigo: op.codigo || op.produto || op.cod_produto,
+                descricao: op.descricao || op.desc_produto || '',
+                data_entrega_pcp: op.data_entrega_pcp || op.entrega || r.data_pcp,
+                lote: code,
+                raw_numero_lote: code,
+                data_pcp: r.data_pcp
+            }));
+
+            const pdfBytes = await generateLoteWithDrawingsPdf(targets, r.usuario || 'PCP', code);
+            if (pdfBytes) {
+                const fileName = `${code}_PACOTE_OPS_DESENHOS_ROTEIROS.pdf`;
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+                toast.success(`Pacote PDF do lote ${code} gerado com sucesso!`);
+            }
+        } catch (err) {
+            console.error('Erro ao gerar Pacote PDF do lote:', err);
+            toast.error(err.message || 'Erro ao gerar Pacote PDF.');
+        } finally {
+            setGeneratingLotCode(null);
+        }
+    };
+
+    const handleGenerateLotExcel = async (r, e) => {
+        if (e) e.stopPropagation();
+        const code = r.codigo_liberacao || r.codigo_lote || r.lote_info;
+        if (!r.ops || r.ops.length === 0) {
+            toast.warning('Nenhuma OP / peça cadastrada neste lote.');
+            return;
+        }
+
+        setGeneratingExcelCode(code);
+        toast.info(`Gerando Excel com estruturas completas e roteiros para o lote ${code}...`);
+
+        try {
+            const { generateLoteExcel } = await import('../services/loteExcelGenerator');
+            await generateLoteExcel(r);
+            toast.success(`Planilha Excel completa do lote ${code} gerada com sucesso!`);
+        } catch (err) {
+            console.error('Erro ao gerar Excel do lote:', err);
+            toast.error(err.message || 'Erro ao gerar Excel do lote.');
+        } finally {
+            setGeneratingExcelCode(null);
+        }
+    };
+
+    const handleDeleteRelease = async (r, e) => {
+        if (e) e.stopPropagation();
+        const code = r.codigo_liberacao || r.codigo_lote || r.id;
+        if (!window.confirm(`Deseja realmente excluir a liberação do lote ${code}? Os itens voltarão a ficar disponíveis no PCP.`)) {
+            return;
+        }
+
+        try {
+            await api.delete(`/pcp-releases/${encodeURIComponent(code)}`);
+            toast.success(`Liberação do lote ${code} excluída com sucesso!`);
+            fetchReleases();
+        } catch (err) {
+            console.error('Erro ao excluir liberação:', err);
+            toast.error(err.response?.data?.error || 'Erro ao excluir liberação.');
+        }
+    };
+
     return (
-        <div className="space-y-5">
+        <div className="space-y-6">
             {/* Filtros */}
-            <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-                <div className="flex items-center gap-2">
-                    <Filter className="w-4 h-4 text-green-600" />
-                    <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide">Filtros</h2>
-                    <span className="ml-auto text-xs text-slate-400 font-medium">{releases.length} registros</span>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     {[
-                        { name:'lote',    label:'Lote / OP',      icon: Layers,        placeholder:'Buscar lote...' },
-                        { name:'pedido',  label:'Pedido de Venda', icon: ClipboardList, placeholder:'Nº pedido...' },
-                        { name:'produto', label:'Produto/Código',  icon: Package,       placeholder:'Cód. produto...' },
-                        { name:'usuario', label:'Usuário',         icon: User,          placeholder:'Nome...' },
-                        { name:'codigo',  label:'Cód. Liberação',  icon: Search,        placeholder:'LPF-2026-...' },
+                        { label: 'Data Início', name: 'startDate', type: 'date' },
+                        { label: 'Data Fim', name: 'endDate', type: 'date' },
+                        { label: 'Cód. Liberação / Lote', name: 'codigo', placeholder: 'Ex: LPF-2026-00001' },
+                        { label: 'Usuário', name: 'usuario', placeholder: 'Filtrar por usuário' },
                     ].map(f => (
-                        <div key={f.name} className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-400 uppercase ml-1">{f.label}</label>
-                            <div className="relative">
-                                <f.icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                <input type="text" name={f.name} placeholder={f.placeholder} value={filters[f.name]}
-                                    onChange={handleChange}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none" />
-                            </div>
-                        </div>
-                    ))}
-                    {['startDate','endDate'].map((n,i) => (
-                        <div key={n} className="space-y-1">
-                            <label className="text-[11px] font-bold text-slate-400 uppercase ml-1">{i===0?'De':'Até'}</label>
-                            <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                <input type="date" name={n} value={filters[n]} onChange={handleChange}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-green-500 outline-none" />
-                            </div>
+                        <div key={f.name}>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{f.label}</label>
+                            <input
+                                type={f.type || 'text'}
+                                name={f.name}
+                                value={filters[f.name]}
+                                onChange={handleChange}
+                                placeholder={f.placeholder}
+                                className="w-full px-3.5 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition-all"
+                            />
                         </div>
                     ))}
                 </div>
                 <div className="flex justify-between items-center gap-3 pt-1">
                     <div className="flex gap-2">
-                        <button onClick={handleExportExcel} disabled={releases.length === 0} className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm font-semibold hover:bg-green-700 rounded-xl transition-all shadow-sm disabled:opacity-50">
+                        <button onClick={handleExportExcel} disabled={releases.length === 0} className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm font-semibold hover:bg-green-700 rounded-xl transition-all shadow-sm disabled:opacity-50 cursor-pointer">
                             <FileSpreadsheet className="w-4 h-4" /> Excel
                         </button>
-                        <button onClick={handleExportPdf} disabled={releases.length === 0} className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm font-semibold hover:bg-red-700 rounded-xl transition-all shadow-sm disabled:opacity-50">
+                        <button onClick={handleExportPdf} disabled={releases.length === 0} className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm font-semibold hover:bg-red-700 rounded-xl transition-all shadow-sm disabled:opacity-50 cursor-pointer">
                             <FileText className="w-4 h-4" /> PDF
                         </button>
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={clearFilters} className="px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100 rounded-xl transition-all">Limpar</button>
-                        <button onClick={() => fetchReleases()} className="flex items-center gap-2 px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-bold shadow shadow-green-200 hover:bg-green-700 transition-all">
+                        <button onClick={clearFilters} className="px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100 rounded-xl transition-all cursor-pointer">Limpar</button>
+                        <button onClick={() => fetchReleases()} className="flex items-center gap-2 px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-bold shadow shadow-green-200 hover:bg-green-700 transition-all cursor-pointer">
                             <Search className="w-4 h-4" /> Aplicar
                         </button>
                     </div>
@@ -543,98 +681,276 @@ const PCPTab = () => {
                     <table className="w-full text-left border-collapse">
                         <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                             <tr className="bg-slate-50 border-b border-slate-100">
-                                {['','Cód. Liberação','Data / Hora','Lote (OPs)','Data PCP','Usuário','Qtd. OPs'].map((h,i) => (
-                                    <th key={i} className="px-5 py-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">{h}</th>
+                                {['','Cód. Liberação','Status','Data / Hora','Lote (OPs)','Data PCP','Usuário','Qtd. Peças / OPs','Ações'].map((h,i) => (
+                                    <th key={i} className="px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider">{h}</th>
                                 ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-50">
+                        <tbody className="divide-y divide-slate-100">
                             {loading ? (
-                                <tr><td colSpan={6} className="py-16 text-center"><Loader2 className="w-8 h-8 text-green-500 animate-spin mx-auto" /></td></tr>
+                                <tr><td colSpan={9} className="py-16 text-center"><Loader2 className="w-8 h-8 text-green-500 animate-spin mx-auto" /></td></tr>
                             ) : releases.length === 0 ? (
-                                <tr><td colSpan={6} className="py-16 text-center text-slate-400 text-sm"><Inbox className="w-8 h-8 mx-auto mb-2 opacity-30" />Nenhuma liberação PCP registrada.</td></tr>
+                                <tr><td colSpan={9} className="py-16 text-center text-slate-400 text-sm"><Inbox className="w-8 h-8 mx-auto mb-2 opacity-30" />Nenhuma liberação PCP registrada.</td></tr>
                             ) : releases.map(r => (
-                                <React.Fragment key={r.id}>
-                                    <tr className="hover:bg-slate-50/60 transition-colors cursor-pointer" onClick={() => toggleExpand(r.id)}>
-                                        <td className="px-4 py-4 w-8">
-                                            {expanded.has(r.id)
-                                                ? <ChevronDown className="w-4 h-4 text-slate-400" />
+                                <React.Fragment key={r.id || r.codigo_liberacao || r.codigo_lote}>
+                                    <tr className="hover:bg-slate-50/70 transition-colors cursor-pointer" onClick={() => toggleExpand(r.id || r.codigo_liberacao || r.codigo_lote)}>
+                                        <td className="px-3 py-4 w-8 text-center">
+                                            {expanded.has(r.id || r.codigo_liberacao || r.codigo_lote)
+                                                ? <ChevronDown className="w-4 h-4 text-slate-500" />
                                                 : <ChevronRight className="w-4 h-4 text-slate-400" />}
                                         </td>
-                                        <td className="px-5 py-4">
-                                            <div className="flex items-center gap-3">
-                                                {r.codigo_liberacao
-                                                    ? <span className="text-xs font-bold font-mono px-2 py-1 bg-green-100 text-green-800 border border-green-200 rounded-lg tracking-wider">{r.codigo_liberacao}</span>
-                                                    : <span className="text-xs text-slate-300 italic">—</span>}
+                                        <td className="px-4 py-4">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs font-bold font-mono px-2.5 py-1 bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-lg tracking-wider shadow-2xs">
+                                                    {r.codigo_liberacao || r.codigo_lote || 'LPF'}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-4">
+                                            {r.status === 'LIBERADO' ? (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-full text-[10px] font-bold shadow-2xs" title={r.data_liberacao ? `Liberado em: ${formatDate(r.data_liberacao)} por ${r.usuario_liberacao || 'PCP'}` : 'Liberado para produção'}>
+                                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                                    LIBERADO P/ FABRICAÇÃO
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-[10px] font-bold">
+                                                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                                                    ABERTO / AGUARDANDO
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-4">
+                                            <div className="flex items-center gap-2">
+                                                <div className="p-1.5 bg-emerald-50 text-emerald-700 rounded-lg">
+                                                    <Factory className="w-3.5 h-3.5" />
+                                                </div>
+                                                <div>
+                                                    <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">LOTE PCP</span>
+                                                    <p className="text-[11px] text-slate-500 mt-0.5">{formatDate(r.data_hora)}</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-4 max-w-[280px]">
+                                            <p className="text-xs font-bold text-slate-800 font-mono truncate" title={r.lote_info || r.observacao}>
+                                                {r.lote_info || r.observacao || 'Lote Aglutinado PCP'}
+                                            </p>
+                                        </td>
+                                        <td className="px-4 py-4">
+                                            <span className="text-xs font-semibold text-slate-700">{r.data_pcp || '—'}</span>
+                                        </td>
+                                        <td className="px-4 py-4">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-7 h-7 bg-emerald-50 text-emerald-700 rounded-full flex items-center justify-center text-[10px] font-bold border border-emerald-200">
+                                                    {r.usuario?.substring(0,2).toUpperCase()}
+                                                </div>
+                                                <span className="text-xs font-semibold text-slate-700">{r.usuario}</span>
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-4">
+                                            <span className="px-2.5 py-1 bg-slate-100 text-slate-800 rounded-full text-xs font-bold border border-slate-200">
+                                                {r.qtd_ops || (r.ops ? r.ops.length : 0)} OP(s)
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
+                                            <div className="flex items-center gap-1.5">
+                                                <button
+                                                    onClick={(e) => handleGenerateLotPdf(r, e)}
+                                                    disabled={generatingLotCode === (r.codigo_liberacao || r.codigo_lote)}
+                                                    className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors border border-blue-200 cursor-pointer disabled:opacity-50"
+                                                    title="Gerar Pacote PDF Completo (OPs + Desenhos + Roteiros)"
+                                                >
+                                                    {generatingLotCode === (r.codigo_liberacao || r.codigo_lote) ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                                                    ) : (
+                                                        <Printer className="w-4 h-4" />
+                                                    )}
+                                                </button>
+
+                                                <button
+                                                    onClick={(e) => handleGenerateLotExcel(r, e)}
+                                                    disabled={generatingExcelCode === (r.codigo_liberacao || r.codigo_lote)}
+                                                    className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition-colors border border-emerald-200 cursor-pointer disabled:opacity-50"
+                                                    title="Gerar Excel do Lote (Resumo + Roteiros + BOM Somada)"
+                                                >
+                                                    {generatingExcelCode === (r.codigo_liberacao || r.codigo_lote) ? (
+                                                        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                                                    ) : (
+                                                        <FileSpreadsheet className="w-4 h-4" />
+                                                    )}
+                                                </button>
+
+                                                <button
+                                                    onClick={(e) => handleOpenCorteModal(r, e)}
+                                                    className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-colors border border-indigo-200 cursor-pointer"
+                                                    title="Gerar Estratégia de Lotes / Plano de Corte"
+                                                >
+                                                    <Scissors className="w-4 h-4" />
+                                                </button>
+
                                                 {r.caminho_arquivo && (
                                                     <button
-                                                        onClick={(e) => { e.stopPropagation(); window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(r.caminho_arquivo)}`), '_blank'); }}
-                                                        className="p-1.5 bg-green-50 hover:bg-green-100 text-green-600 rounded-lg transition-colors border border-green-100"
-                                                        title="Abrir PDF salvo na rede"
+                                                        onClick={() => window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(r.caminho_arquivo)}`), '_blank')}
+                                                        className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg transition-colors border border-slate-200 cursor-pointer"
+                                                        title="Visualizar PDF Salvo na Rede"
                                                     >
                                                         <FileText className="w-4 h-4" />
                                                     </button>
                                                 )}
+
+                                                {r.status === 'LIBERADO' ? (
+                                                    <span 
+                                                        className="p-1.5 bg-slate-50 text-slate-400 rounded-lg border border-slate-200 cursor-not-allowed inline-flex items-center" 
+                                                        title="Lote Liberado para Fabricação — Ação irreversível (Exclusão bloqueada)"
+                                                    >
+                                                        <Lock className="w-4 h-4 text-emerald-600" />
+                                                    </span>
+                                                ) : (
+                                                    <button
+                                                        onClick={(e) => handleDeleteRelease(r, e)}
+                                                        className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition-colors border border-rose-200 cursor-pointer"
+                                                        title="Excluir liberação e desmanchar lote"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                             </div>
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <div className="p-1.5 bg-green-50 text-green-600 rounded-lg">
-                                                    <Factory className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] font-bold px-2 py-0.5 bg-green-100 text-green-700 rounded-full">LOTE PCP</span>
-                                                    <p className="text-[11px] text-slate-400 mt-0.5">{formatDate(r.data_hora)}</p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-5 py-4 max-w-[250px]">
-                                            <p className="text-xs font-bold text-slate-700 font-mono truncate" title={r.lote_info}>{r.lote_info}</p>
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <span className="text-sm font-semibold text-slate-600">{r.data_pcp || '—'}</span>
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-7 h-7 bg-green-50 text-green-600 rounded-full flex items-center justify-center text-[10px] font-bold border border-green-100">
-                                                    {r.usuario?.substring(0,2).toUpperCase()}
-                                                </div>
-                                                <span className="text-sm font-semibold text-slate-600">{r.usuario}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-bold">{r.qtd_ops} OP(s)</span>
                                         </td>
                                     </tr>
                                     {/* Expandable detail row */}
-                                    {expanded.has(r.id) && r.ops && r.ops.length > 0 && (
+                                    {expanded.has(r.id || r.codigo_liberacao || r.codigo_lote) && r.ops && r.ops.length > 0 && (
                                         <tr>
-                                            <td colSpan={6} className="px-8 pb-4 bg-green-50/30">
-                                                <div className="rounded-xl border border-green-100 overflow-hidden mt-1">
-                                                    <table className="w-full text-left">
-                                                        <thead>
-                                                            <tr className="bg-green-50 border-b border-green-100">
-                                                                {['Pedido','Item','OP/Lote','Produto','Descrição','Qtd'].map(h => (
-                                                                    <th key={h} className="px-4 py-2 text-[10px] font-bold text-green-700 uppercase">{h}</th>
-                                                                ))}
+                                            <td colSpan={9} className="px-6 py-4 bg-emerald-50/40 border-y border-emerald-100">
+                                                <div className="rounded-xl border border-emerald-200 overflow-hidden shadow-2xs bg-white">
+                                                    <div className="bg-emerald-100/70 px-4 py-2.5 text-xs font-bold text-emerald-950 flex flex-wrap items-center justify-between gap-3 border-b border-emerald-200">
+                                                        <div className="flex items-center gap-3">
+                                                            <span className="text-sm font-bold text-emerald-900">Peças e OPs Agrupadas neste Lote ({r.ops.length})</span>
+                                                            <span className="text-[11px] px-2.5 py-0.5 bg-emerald-200 text-emerald-900 rounded-full font-semibold">
+                                                                Total de peças: {r.ops.reduce((acc, o) => acc + parseFloat(o.qtd || o.visual_qtd || o.quantidade_pcp || 0), 0)} un
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => handleGenerateLotPdf(r, e)}
+                                                                disabled={generatingLotCode === (r.codigo_liberacao || r.codigo_lote)}
+                                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                                                                title="Gerar e baixar PDF completo (OPs + Desenhos + Roteiros)"
+                                                            >
+                                                                {generatingLotCode === (r.codigo_liberacao || r.codigo_lote) ? (
+                                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                ) : (
+                                                                    <Printer className="w-3.5 h-3.5" />
+                                                                )}
+                                                                <span>Gerar PDF (OP + Desenhos + Roteiros)</span>
+                                                            </button>
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => handleGenerateLotExcel(r, e)}
+                                                                disabled={generatingExcelCode === (r.codigo_liberacao || r.codigo_lote)}
+                                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                                                                title="Gerar planilha Excel com Resumo, Roteiros, Operações e BOM Consolidada"
+                                                            >
+                                                                {generatingExcelCode === (r.codigo_liberacao || r.codigo_lote) ? (
+                                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                ) : (
+                                                                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                                                                )}
+                                                                <span>Gerar Excel (Roteiro & Materiais)</span>
+                                                            </button>
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => handleOpenCorteModal(r, e)}
+                                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+                                                                title="Abrir Estratégia de Lotes (Plano de Corte) com as OPs deste Lote"
+                                                            >
+                                                                <Scissors className="w-3.5 h-3.5" />
+                                                                <span>Gerar Plano de Corte</span>
+                                                            </button>
+
+                                                            {r.status === 'LIBERADO' ? (
+                                                                <div 
+                                                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold shadow-2xs"
+                                                                    title="Lote Liberado para Fabricação — Irreversível"
+                                                                >
+                                                                    <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                                                                    <span>Liberado p/ Produção</span>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setLiberateTarget(r);
+                                                                        }}
+                                                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+                                                                        title="Liberar peças aglutinadas para produção (ação irreversível)"
+                                                                    >
+                                                                        <Lock className="w-3.5 h-3.5" />
+                                                                        <span>Liberar Peças Aglutinadas</span>
+                                                                    </button>
+
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => handleDeleteRelease(r, e)}
+                                                                        className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                                                                        title="Excluir liberação e desmanchar lote"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                        <span>Excluir</span>
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <table className="w-full text-left text-xs">
+                                                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[10px] uppercase">
+                                                            <tr>
+                                                                <th className="px-3 py-2">Pedido</th>
+                                                                <th className="px-3 py-2">Item</th>
+                                                                <th className="px-3 py-2">OP / Fração</th>
+                                                                <th className="px-3 py-2">Cód. Produto</th>
+                                                                <th className="px-3 py-2">Descrição</th>
+                                                                <th className="px-3 py-2 text-right">Qtd</th>
+                                                                <th className="px-3 py-2">Cliente</th>
+                                                                <th className="px-3 py-2">Data PCP</th>
+                                                                <th className="px-3 py-2 text-center">Estrutura</th>
                                                             </tr>
                                                         </thead>
-                                                        <tbody className="divide-y divide-green-50">
+                                                        <tbody className="divide-y divide-slate-100">
                                                             {r.ops.map((op, i) => (
-                                                                <tr key={i} className="hover:bg-green-50/50 transition-colors">
-                                                                    <td className="px-4 py-2 text-xs font-mono font-bold text-slate-700">{op.pedido}</td>
-                                                                    <td className="px-4 py-2 text-xs text-slate-500">{op.item}</td>
-                                                                    <td className="px-4 py-2 text-xs font-mono text-green-700 font-bold">{op.visual_op}</td>
-                                                                    <td className="px-4 py-2 text-xs font-mono text-slate-600">
-                                                                        <div className="flex items-center gap-2">
-                                                                            {op.produto}
-                                                                            <button onClick={() => setStructureCode(op.produto)} className="text-[10px] text-blue-600 hover:underline flex items-center gap-1" title="Ver estrutura completa">
-                                                                                <Layers className="w-3 h-3" />
-                                                                            </button>
-                                                                        </div>
+                                                                <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                                    <td className="px-3 py-2 font-mono font-bold text-slate-800">{op.pedido}</td>
+                                                                    <td className="px-3 py-2 text-slate-500">{op.item}</td>
+                                                                    <td className="px-3 py-2 font-mono text-emerald-700 font-bold">{op.visual_op || op.op_num || op.op || '-'}</td>
+                                                                    <td className="px-3 py-2 font-mono text-slate-700 font-semibold">{op.codigo || op.produto || '-'}</td>
+                                                                    <td className="px-3 py-2 text-slate-600 max-w-[200px] truncate" title={op.descricao || op.desc_produto}>
+                                                                        {op.descricao || op.desc_produto || '-'}
                                                                     </td>
-                                                                    <td className="px-4 py-2 text-xs text-slate-500 max-w-[180px] truncate">{op.descricao}</td>
-                                                                    <td className="px-4 py-2 text-xs font-bold text-slate-700">{op.qtd}</td>
+                                                                    <td className="px-3 py-2 text-right font-bold text-emerald-900">
+                                                                        {parseFloat(op.qtd || op.visual_qtd || op.quantidade_pcp || 0).toLocaleString('pt-BR')}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-slate-500 max-w-[140px] truncate" title={op.nome_cliente || op.cliente}>
+                                                                        {op.nome_cliente || op.cliente || '-'}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-slate-600">
+                                                                        {op.data_entrega_pcp || op.entrega || r.data_pcp || '—'}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-center">
+                                                                        {(op.codigo || op.produto) && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setStructureCode(op.codigo || op.produto)}
+                                                                                className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors inline-flex items-center gap-1 text-[11px] font-semibold cursor-pointer"
+                                                                                title="Ver organograma da estrutura do produto"
+                                                                            >
+                                                                                <Layers className="w-3.5 h-3.5" />
+                                                                                <span>Ver</span>
+                                                                            </button>
+                                                                        )}
+                                                                    </td>
                                                                 </tr>
                                                             ))}
                                                         </tbody>
@@ -649,6 +965,75 @@ const PCPTab = () => {
                     </table>
                 </div>
             </div>
+
+            {/* Modal de Confirmação Irreversível de Liberação */}
+            {liberateTarget && (
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200">
+                        <div className="bg-amber-500 px-6 py-4 flex items-center gap-3">
+                            <div className="p-2 bg-white/20 rounded-xl text-white">
+                                <AlertCircle className="w-6 h-6" />
+                            </div>
+                            <div>
+                                <h3 className="text-white font-bold text-base">Confirmar Liberação de Fabricação</h3>
+                                <p className="text-amber-100 text-xs">Ação Irreversível de Controle de Produção</p>
+                            </div>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-950 space-y-2">
+                                <p className="font-bold flex items-center gap-1.5 text-amber-900">
+                                    <Lock className="w-4 h-4 text-amber-700" />
+                                    Atenção: Esta ação não poderá ser desfeita!
+                                </p>
+                                <p>
+                                    Ao liberar o lote <span className="font-mono font-bold text-slate-800">{liberateTarget.codigo_liberacao || liberateTarget.lote_info}</span> com <span className="font-bold">{liberateTarget.ops?.length || 0} OP(s)</span>, o lote será marcado permanentemente como <strong>LIBERADO P/ FABRICAÇÃO</strong> e não poderá ser excluído ou desmanchado.
+                                </p>
+                            </div>
+
+                            <div className="flex justify-end items-center gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setLiberateTarget(null)}
+                                    disabled={liberating}
+                                    className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleConfirmLiberarLote}
+                                    disabled={liberating}
+                                    className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow shadow-emerald-200 transition-all cursor-pointer disabled:opacity-50"
+                                >
+                                    {liberating ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                                    <span>Confirmar Liberação</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Estratégia de Lotes / Plano de Corte integrado */}
+            {corteForecastTarget && (
+                <CorteForecastModal
+                    isOpen={true}
+                    items={corteForecastTarget}
+                    lpfCodigo={corteLpfCode}
+                    onClose={() => {
+                        setCorteForecastTarget(null);
+                        setCorteLpfCode(null);
+                    }}
+                    onSaveSuccess={() => {
+                        setCorteForecastTarget(null);
+                        setCorteLpfCode(null);
+                        toast.success('Plano de Corte gravado e Lote LPF liberado com sucesso!');
+                        fetchReleases();
+                    }}
+                    usuario={user?.nome || 'PCP'}
+                    canEdit={true}
+                />
+            )}
 
             <ReportStructureModal 
                 isOpen={!!structureCode} 

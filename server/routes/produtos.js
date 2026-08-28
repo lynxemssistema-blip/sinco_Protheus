@@ -218,7 +218,7 @@ router.get('/', async (req, res) => {
             const pgPlaceholders = codigos.map((_, i) => `$${i + 1}`).join(',');
             const mysqlPlaceholders = codigos.map(() => '?').join(',');
 
-            const [szResult, sgResult, stockResult, imgsAssocsResult] = await Promise.allSettled([
+            const [szResult, sgResult, protheusStockResult, stockResult, imgsAssocsResult] = await Promise.allSettled([
                 // 1. Referências Cliente (PG - SZ1010)
                 pool.query(`
                     SELECT TRIM(z1_produto) as produto, TRIM(z1_codcli) as desenho,
@@ -237,7 +237,18 @@ router.get('/', async (req, res) => {
                     GROUP BY g1_cod
                 `, codigos),
 
-                // 3. Estoque Local (MySQL)
+                // 3. Saldo ERP Protheus (PG - SB2010 + SB2990)
+                pool.query(`
+                    SELECT TRIM(b2_cod) as codigo, COALESCE(SUM(b2_qatu), 0) as saldo
+                    FROM (
+                        SELECT b2_cod, b2_qatu FROM public.sb2010 WHERE TRIM(b2_cod) = ANY($1::text[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                        UNION ALL
+                        SELECT b2_cod, b2_qatu FROM public.sb2990 WHERE TRIM(b2_cod) = ANY($1::text[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
+                    ) sb2
+                    GROUP BY TRIM(b2_cod)
+                `, [codigos]),
+
+                // 4. Estoque Local / Levantamento de Fábrica (MySQL - app_estoque_movimentos)
                 mysqlPool.execute(`
                     SELECT produto_codigo as codigo,
                            SUM(CASE WHEN tipo = 'E' THEN quantidade ELSE 0 END) -
@@ -247,7 +258,7 @@ router.get('/', async (req, res) => {
                     GROUP BY produto_codigo
                 `, codigos),
 
-                // 4. Imagens + Associações (MySQL — 2 queries sequenciais dentro)
+                // 5. Imagens + Associações (MySQL — 2 queries sequenciais dentro)
                 (async () => {
                     const [imgs] = await mysqlPool.execute(
                         `SELECT produto_codigo, url_imagem FROM app_produto_imagens WHERE produto_codigo IN (${mysqlPlaceholders}) ORDER BY id DESC`,
@@ -281,14 +292,27 @@ router.get('/', async (req, res) => {
                 console.error('Erro SG1:', sgResult.reason?.message);
             }
 
-            // Merge stock
-            if (stockResult.status === 'fulfilled') {
-                const stockMap = {};
-                stockResult.value[0].forEach(r => { stockMap[r.codigo] = parseFloat(r.saldo || 0); });
-                produtos.forEach(p => { p.estoque_total = stockMap[p.codigo.trim()] || 0; });
-            } else {
-                console.error('Erro Estoque:', stockResult.reason?.message);
+            // Merge stock (Fábrica + Protheus)
+            const stockMap = {};
+            if (stockResult.status === 'fulfilled' && stockResult.value && stockResult.value[0]) {
+                stockResult.value[0].forEach(r => { stockMap[r.codigo.trim()] = parseFloat(r.saldo || 0); });
+            } else if (stockResult.status === 'rejected') {
+                console.error('Erro Estoque Fábrica:', stockResult.reason?.message);
             }
+
+            const protheusStockMap = {};
+            if (protheusStockResult.status === 'fulfilled' && protheusStockResult.value?.rows) {
+                protheusStockResult.value.rows.forEach(r => { protheusStockMap[r.codigo.trim()] = parseFloat(r.saldo || 0); });
+            } else if (protheusStockResult.status === 'rejected') {
+                console.error('Erro Estoque Protheus:', protheusStockResult.reason?.message);
+            }
+
+            produtos.forEach(p => {
+                const cod = p.codigo.trim();
+                p.saldo_fabrica = stockMap[cod] !== undefined ? stockMap[cod] : 0;
+                p.saldo_protheus = protheusStockMap[cod] !== undefined ? protheusStockMap[cod] : 0;
+                p.estoque_total = p.saldo_fabrica;
+            });
 
             // Merge images + associations
             if (imgsAssocsResult.status === 'fulfilled') {

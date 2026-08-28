@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, BarChart3, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Lock, Scissors, Table, Trash2 } from 'lucide-react';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, BarChart3, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Lock, Scissors, Table, Trash2, Plus } from 'lucide-react';
 import { getPedidos, getItensPedido, getReportDownloadUrl, getPedidosFlat, getProdutos, getProductDocuments, getSalesPlanningReportData, getSalesPlanningMasterSheet, getSalesNotes, api, getFileUrl, reportSystemError } from '../services/api';
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
 import { toast } from 'react-toastify';
-import { exportMasterSheetExcel } from '../services/masterSheetExportGenerator';
+import { exportMasterSheetExcel, exportFractionalMasterSheetExcel } from '../services/masterSheetExportGenerator';
 
 import PCPExportTab from '../components/orders/PCPExportTab';
 import DocsModal from '../components/DocsModal';
@@ -20,6 +20,7 @@ import SplitOPModal from '../components/SplitOPModal';
 import BOMStructureModal from '../components/BOMStructureModal';
 import PCPMetalDrawer from '../components/PCPMetalDrawer';
 import InvoiceDetailsModal from '../components/InvoiceDetailsModal';
+import ManageLotModal from '../components/ManageLotModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
 import { generateOrderPDF } from '../services/orderPdfGenerator';
@@ -95,6 +96,8 @@ const GestaoOPsPage = () => {
     const [openActionMenu, setOpenActionMenu] = useState(null);
 
     const [pcpReleaseModal, setPcpReleaseModal] = useState({ open: false, targets: [], registerRelease: true });
+    const [isManageLotModalOpen, setIsManageLotModalOpen] = useState(false);
+    const [manageLotSelectedItems, setManageLotSelectedItems] = useState([]);
     const [menuPosition, setMenuPosition] = useState({ top: undefined, bottom: undefined, right: 0 });
 
     useEffect(() => {
@@ -184,9 +187,9 @@ const GestaoOPsPage = () => {
                         // We store raw data under _pcp_prog to avoid collisions, similar to ItensAFaturar
                         _pcp_prog: fraction,
                         fraction_id: fraction.id || `${order.pedido}-${order.item}-${index}`,
-                        visual_qtd: fraction.quantidade_pcp || order.qtd_faturar,
+                        visual_qtd: fraction.quantidade_pcp !== undefined && fraction.quantidade_pcp !== null && fraction.quantidade_pcp !== '' ? parseFloat(fraction.quantidade_pcp) : parseFloat(order.qtd_faturar || 0),
                         visual_op: fracOpNum,
-                        lpf_codigo: fraction.lpf_codigo || order.lpf_codigo_base
+                        lpf_codigo: fraction.lpf_codigo || null
                     });
                 });
             } else {
@@ -224,7 +227,7 @@ const GestaoOPsPage = () => {
                     total_fractions: 1,
                     _pcp_prog: singleForecast,
                     fraction_id: `${order.pedido}-${order.item}`,
-                    visual_qtd: singleForecast?.quantidade_pcp || order.qtd_faturar,
+                    visual_qtd: parseFloat(order.qtd_faturar || 0),
                     visual_op: fullNonFractionOp,
                     lpf_codigo: singleForecast?.lpf_codigo || order.lpf_codigo_base
                 });
@@ -290,19 +293,143 @@ const GestaoOPsPage = () => {
     const handleReprintLPF = async (codigo, items) => {
         try {
             setDownloadingPDF(true);
-            setBatchProgress({ current: 1, total: 1, status: `Iniciando re-impressão LPF: ${codigo}` });
-            const res = await api.get(`/pcp-releases/find/${codigo}`);
-            if (res.data?.caminho_arquivo) {
-                window.open(`${api.defaults.baseURL}/pcp-releases/download/${codigo}`, '_blank');
-            } else {
-                alert(`PDF para o Lote Aglutinado ${codigo} não encontrado.`);
+            setBatchProgress({ current: 1, total: 1, status: `Buscando pacote do Lote ${codigo}...` });
+            
+            // Tenta baixar PDF já arquivado no servidor
+            let hasServerPdf = false;
+            try {
+                const res = await api.get(`/pcp-releases/find/${encodeURIComponent(codigo)}`);
+                if (res.data?.caminho_arquivo) {
+                    window.open(`${api.defaults.baseURL}/pcp-releases/download/${encodeURIComponent(codigo)}`, '_blank');
+                    hasServerPdf = true;
+                }
+            } catch (findErr) {
+                console.log(`PDF não arquivado no servidor para o Lote ${codigo}. Gerando na hora...`);
+            }
+
+            // Se não estava no arquivo do servidor, gera na hora no navegador
+            if (!hasServerPdf) {
+                const targetItems = Array.isArray(items) && items.length > 0
+                    ? items
+                    : (flatGrouped.ObjectGroups[codigo] || []);
+
+                if (targetItems.length === 0) {
+                    toast.warning(`Nenhum item encontrado no lote ${codigo} para gerar o PDF.`);
+                    return;
+                }
+
+                setBatchProgress({ current: 1, total: targetItems.length, status: `Gerando pacote com desenhos do lote ${codigo}...` });
+                const { generateLoteWithDrawingsPdf } = await import('../services/loteWithDrawingsPdfGenerator');
+                const pdfBytes = await generateLoteWithDrawingsPdf(targetItems, user?.nome || 'Usuário', codigo);
+
+                if (pdfBytes) {
+                    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                    const url = window.URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    const safeName = codigo.replace(/[^a-zA-Z0-9_-]/g, '_');
+                    link.download = `LOTE_${safeName}.pdf`;
+                    document.body.appendChild(link);
+                    link.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(link);
+                    toast.success(`Pacote do Lote ${codigo} gerado com sucesso!`);
+                }
             }
         } catch(err) {
             console.error('Erro na re-impressão.', err);
-            alert('Não foi possível realizar o download. Erro: ' + err.message);
+            toast.error('Erro ao gerar documento do lote: ' + err.message);
         } finally {
             setDownloadingPDF(false);
             setBatchProgress(null);
+        }
+    };
+
+    const [manageLotPreselectedCode, setManageLotPreselectedCode] = useState(null);
+
+    const handleOpenManageLotModal = (customItems = null, preselectedCode = null) => {
+        let itemsToAssign = [];
+        if (Array.isArray(customItems) && customItems.length > 0) {
+            itemsToAssign = customItems;
+        } else if (selectedFractions.size > 0) {
+            itemsToAssign = flattenedFractionalOrders.filter(f => selectedFractions.has(f.fraction_id));
+        }
+        setManageLotSelectedItems(itemsToAssign);
+        setManageLotPreselectedCode(preselectedCode || null);
+        setIsManageLotModalOpen(true);
+    };
+
+    const handleRemoveSelectedFromLot = async (targetItems = null) => {
+        let itemsToRemove = [];
+        if (Array.isArray(targetItems) && targetItems.length > 0) {
+            itemsToRemove = targetItems;
+        } else {
+            itemsToRemove = flattenedFractionalOrders.filter(f => selectedFractions.has(f.fraction_id) && f.lpf_codigo);
+        }
+
+        if (itemsToRemove.length === 0) {
+            toast.warning('Nenhum item pertencente a lote foi selecionado.');
+            return;
+        }
+
+        if (!window.confirm(`Deseja remover ${itemsToRemove.length} item(ns) selecionado(s) de seus respectivos lotes?`)) {
+            return;
+        }
+
+        try {
+            for (const it of itemsToRemove) {
+                await api.post('/pcp-releases/remove-item-from-lot', {
+                    pedido: it.pedido,
+                    item: it.item,
+                    fraction_id: it.fraction_id,
+                    is_fraction: it.is_fraction,
+                    fraction_letter: it.fraction_letter,
+                    codigo_lote: it.lpf_codigo
+                });
+            }
+            toast.success(`${itemsToRemove.length} item(ns) removido(s) do lote com sucesso!`);
+            const newSet = new Set(selectedFractions);
+            itemsToRemove.forEach(it => newSet.delete(it.fraction_id));
+            setSelectedFractions(newSet);
+            fetchData();
+        } catch (err) {
+            console.error('Erro ao remover itens do lote:', err);
+            toast.error('Erro ao remover do lote: ' + err.message);
+        }
+    };
+
+    const handleRemoveItemFromLot = async (item) => {
+        const itemIdentifier = `${item.pedido} - Item ${item.item}${item.is_fraction ? ` (Fração ${item.fraction_letter || item.numero_lote || ''})` : ''}`;
+        if (!window.confirm(`Deseja remover ${itemIdentifier} do lote ${item.lpf_codigo}?`)) {
+            return;
+        }
+        try {
+            await api.post('/pcp-releases/remove-item-from-lot', {
+                pedido: item.pedido,
+                item: item.item,
+                fraction_id: item.fraction_id,
+                is_fraction: !!item.is_fraction,
+                fraction_letter: item.fraction_letter || item.numero_lote || ''
+            });
+            toast.success(`Item removido do lote ${item.lpf_codigo}.`);
+            fetchData();
+        } catch (err) {
+            console.error('Erro ao remover do lote:', err);
+            toast.error(err.response?.data?.error || 'Erro ao remover item do lote.');
+        }
+    };
+
+    const handleDissolveLot = async (codigoLote) => {
+        if (!window.confirm(`ATENÇÃO: Deseja realmente desmanchar o Lote ${codigoLote}? Todos os itens serão desvinculados.`)) {
+            return;
+        }
+        try {
+            await api.post('/pcp-releases/dissolve-lot', { codigo_lote: codigoLote });
+            toast.success(`Lote ${codigoLote} desmanchado com sucesso.`);
+            fetchData();
+        } catch (err) {
+            console.error('Erro ao desmanchar lote:', err);
+            toast.error(err.response?.data?.error || 'Erro ao desmanchar lote.');
         }
     };
 
@@ -325,7 +452,7 @@ const GestaoOPsPage = () => {
         const myFetchId = ++fetchIdRef.current;
         setLoading(true);
         setError(null);
-        setLoadingProgress('Iniciando busca dos dados...');
+        setLoadingProgress('Carregando dados das OPs...');
 
         // Use overrides or current state/context values
         const searchFilters = {
@@ -343,49 +470,24 @@ const GestaoOPsPage = () => {
         const searchViewMode = overrides.viewMode || viewMode;
 
         try {
-            console.log(`📡 [GestaoOPsPage] Fetching all data in batches... View: ${searchViewMode}`);
+            console.log(`📡 [GestaoOPsPage] Fetching data... View: ${searchViewMode}`);
 
-            let allOrders = [];
-            let currentPage = 1;
-            let hasMore = true;
-            const batchSize = 100;
-            let requiresFilt = false;
+            const fetchLimit = (searchFilters.pedido || searchFilters.cliente || searchFilters.produto || searchFilters.dataInicial) ? 3000 : 1500;
 
-            while (hasMore) {
-                if (myFetchId !== fetchIdRef.current) return; // Stale request check
-
-                setLoadingProgress(`Carregando lote ${currentPage}... (${allOrders.length} registros obtidos)`);
-
-                let result;
-                if (searchViewMode === 'flat') {
-                    result = await getPedidosFlat({ ...searchFilters, page: currentPage, limit: batchSize });
-                } else {
-                    result = await getPedidos({ ...searchFilters, page: currentPage, limit: batchSize });
-                }
-
-                if (myFetchId !== fetchIdRef.current) return;
-
-                const list = Array.isArray(result?.data) ? result.data : (Array.isArray(result) ? result : []);
-                const meta = result?.meta || {};
-                requiresFilt = !!meta.requiresFilter;
-
-                allOrders = [...allOrders, ...list];
-                setOrders([...allOrders]);
-
-                const metaTotal = meta.total || 0;
-                if (list.length === 0 || (metaTotal > 0 && allOrders.length >= metaTotal) || list.length < batchSize) {
-                    hasMore = false;
-                } else {
-                    currentPage++;
-                }
-
-                // Safety safeguard against unexpected endless loop
-                if (currentPage > 100) hasMore = false;
+            let result;
+            if (searchViewMode === 'flat') {
+                result = await getPedidosFlat({ ...searchFilters, page: 1, limit: fetchLimit });
+            } else {
+                result = await getPedidos({ ...searchFilters, page: 1, limit: fetchLimit });
             }
 
             if (myFetchId !== fetchIdRef.current) return;
 
-            setRequiresFilter(requiresFilt);
+            const list = Array.isArray(result?.data) ? result.data : (Array.isArray(result) ? result : []);
+            const meta = result?.meta || {};
+
+            setOrders(list);
+            setRequiresFilter(!!meta.requiresFilter);
             setTotalPages(1);
             setLoadingProgress('');
         } catch (err) {
@@ -697,8 +799,12 @@ const GestaoOPsPage = () => {
                         is_fraction: !!t.is_fraction,
                         visual_op:   t.visual_op || t.op_num,
                         produto:     t.cod_produto || t.produto || t.codigo,
+                        codigo:      t.cod_produto || t.produto || t.codigo,
                         descricao:   t.descricao || t.desc_produto || '',
-                        qtd:         t.visual_qtd || t.qtd_faturar
+                        qtd:         t.visual_qtd || t.qtd_faturar,
+                        cliente:     t.nome_cliente || t.cliente || '',
+                        nome_cliente: t.nome_cliente || t.cliente || '',
+                        data_entrega_pcp: t.data_entrega_pcp || t.pcp_delivery_forecast_date || ''
                     }));
                     const logRes = await api.post('/pcp-releases/log', {
                         lote_info:  loteInfoStr,
@@ -749,8 +855,27 @@ const GestaoOPsPage = () => {
                             pdfBase64
                         });
                         console.log(`✅ PDF salvo na pasta de OS: ${codigoLiberacao}`);
+
+                        // Persistir vínculo das OPs/frações com este código de lote
+                        await api.post('/pcp-releases/create-or-assign-lot', {
+                            codigo_lote: codigoLiberacao,
+                            data_pcp: targets[0]?.data_entrega_pcp ? new Date(targets[0].data_entrega_pcp).toISOString().split('T')[0] : null,
+                            items: targets.map(t => ({
+                                pedido: t.pedido,
+                                item: t.item,
+                                fraction_id: t.fraction_id,
+                                is_fraction: !!t.is_fraction,
+                                fraction_letter: t.fraction_letter || t.numero_lote || '',
+                                quantidade_pcp: t.visual_qtd || t.quantidade_pcp || t.qtd_faturar,
+                                data_entrega_pcp: t.data_entrega_pcp || null
+                            })),
+                            usuario: user?.nome || 'PCP Gestão'
+                        });
+
+                        setSelectedFractions(new Set());
+                        fetchData();
                     } catch (saveErr) {
-                        console.warn('⚠️ Falha ao salvar PDF na rede (não crítico):', saveErr.message);
+                        console.warn('⚠️ Falha ao salvar PDF na rede ou vincular lote:', saveErr.message);
                     }
                 }
             }
@@ -821,17 +946,17 @@ const GestaoOPsPage = () => {
             if (itemObj) {
                 mirrorData.opNumFromTable = itemObj.visual_op || itemObj.op_num || '';
                 if (itemObj.is_fraction && itemObj.visual_qtd && mirrorData.pedido) {
-                    const originalQtd = mirrorData.pedido.quantidade || 1;
                     const fractionQtd = parseFloat(itemObj.visual_qtd);
                     mirrorData.pedido.quantidade = fractionQtd;
                     // Recalcula quantidades dos itens filhos se aplicável
                     if (mirrorData.itens && Array.isArray(mirrorData.itens)) {
                         mirrorData.itens.forEach(grp => {
+                            const originalQtd = parseFloat(grp.produto_principal?.quantidade_venda || grp.quantidade_venda || mirrorData.pedido?.quantidade || 1);
                             if (grp.produto_principal) grp.produto_principal.quantidade_calculada = fractionQtd;
                             if (grp.estrutura_linear && Array.isArray(grp.estrutura_linear)) {
                                 grp.estrutura_linear.forEach(comp => {
                                     const baseRaw = parseFloat(comp.quantidade_calculada || comp.qtd_total || 0);
-                                    comp.quantidade_calculada = (baseRaw / originalQtd) * fractionQtd;
+                                    comp.quantidade_calculada = originalQtd > 0 ? (baseRaw / originalQtd) * fractionQtd : baseRaw;
                                 });
                             }
                         });
@@ -866,16 +991,16 @@ const GestaoOPsPage = () => {
             if (itemObj) {
                 mirrorData.opNumFromTable = itemObj.visual_op || itemObj.op_num || '';
                 if (itemObj.is_fraction && itemObj.visual_qtd && mirrorData.pedido) {
-                    const originalQtd = mirrorData.pedido.quantidade || 1;
                     const fractionQtd = parseFloat(itemObj.visual_qtd);
                     mirrorData.pedido.quantidade = fractionQtd;
                     if (mirrorData.itens && Array.isArray(mirrorData.itens)) {
                         mirrorData.itens.forEach(grp => {
+                            const originalQtd = parseFloat(grp.produto_principal?.quantidade_venda || grp.quantidade_venda || mirrorData.pedido?.quantidade || 1);
                             if (grp.produto_principal) grp.produto_principal.quantidade_calculada = fractionQtd;
                             if (grp.estrutura_linear && Array.isArray(grp.estrutura_linear)) {
                                 grp.estrutura_linear.forEach(comp => {
                                     const baseRaw = parseFloat(comp.quantidade_calculada || comp.qtd_total || 0);
-                                    comp.quantidade_calculada = (baseRaw / originalQtd) * fractionQtd;
+                                    comp.quantidade_calculada = originalQtd > 0 ? (baseRaw / originalQtd) * fractionQtd : baseRaw;
                                 });
                             }
                         });
@@ -1059,16 +1184,16 @@ const GestaoOPsPage = () => {
             if (itemObj) {
                 mirrorData.opNumFromTable = itemObj.visual_op || itemObj.op_num || '';
                 if (itemObj.is_fraction && itemObj.visual_qtd && mirrorData.pedido) {
-                    const originalQtd = mirrorData.pedido.quantidade || 1;
                     const fractionQtd = parseFloat(itemObj.visual_qtd);
                     mirrorData.pedido.quantidade = fractionQtd;
                     if (mirrorData.itens && Array.isArray(mirrorData.itens)) {
                         mirrorData.itens.forEach(grp => {
+                            const originalQtd = parseFloat(grp.produto_principal?.quantidade_venda || grp.quantidade_venda || mirrorData.pedido?.quantidade || 1);
                             if (grp.produto_principal) grp.produto_principal.quantidade_calculada = fractionQtd;
                             if (grp.estrutura_linear && Array.isArray(grp.estrutura_linear)) {
                                 grp.estrutura_linear.forEach(comp => {
                                     const baseRaw = parseFloat(comp.quantidade_calculada || comp.qtd_total || 0);
-                                    comp.quantidade_calculada = (baseRaw / originalQtd) * fractionQtd;
+                                    comp.quantidade_calculada = originalQtd > 0 ? (baseRaw / originalQtd) * fractionQtd : baseRaw;
                                 });
                             }
                         });
@@ -1118,13 +1243,16 @@ const GestaoOPsPage = () => {
 
         setExportingMasterSheet(true);
         try {
-            // Busca dados de engenharia (BOM e recursos) para os filtros atuais
+            // Busca dados de engenharia (BOM e recursos) otimizada para os produtos selecionados/exibidos
             let masterData = {};
             try {
+                const uniqueProds = [...new Set(targetItems.map(it => (it.codigo || it.produto || '').trim()).filter(Boolean))];
+                const prodParam = filters.produto || (uniqueProds.length > 0 && uniqueProds.length <= 50 ? uniqueProds.join(',') : undefined);
+
                 masterData = await getSalesPlanningMasterSheet({
                     cliente: filters.cliente,
                     pedido: filters.pedido,
-                    produto: filters.produto,
+                    produto: prodParam,
                     pedcli: filters.pedcli,
                     refCliente: filters.refCliente,
                     only_active: filters.only_active
@@ -1133,13 +1261,13 @@ const GestaoOPsPage = () => {
                 console.warn('[Planilha Mestra] Falha ao carregar engenharia complementar:', e);
             }
 
-            await exportMasterSheetExcel(masterData, {
+            await exportFractionalMasterSheetExcel(targetItems, masterData, {
                 cliente: filters.cliente,
                 pedido: filters.pedido,
                 pedcli: filters.pedcli,
                 refCliente: filters.refCliente,
                 only_active: filters.only_active
-            }, targetItems);
+            });
             toast.success(`Planilha Mestra exportada com sucesso (${targetItems.length} OPs/frações)!`);
         } catch (err) {
             console.error('Erro ao exportar Planilha Mestra:', err);
@@ -1212,24 +1340,25 @@ const GestaoOPsPage = () => {
                 : 'bg-white hover:bg-slate-50'
         }`}>
             <td className="px-4 py-2 text-center w-10 print:hidden text-xs">
-                {!isGrouped ? (
-                    <input
-                        type="checkbox"
-                        checked={selectedFractions.has(item.fraction_id)}
-                        onChange={() => {
-                            const newSet = new Set(selectedFractions);
-                            if (newSet.has(item.fraction_id)) {
-                                newSet.delete(item.fraction_id);
-                            } else {
-                                newSet.add(item.fraction_id);
-                            }
-                            setSelectedFractions(newSet);
-                        }}
-                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
-                    />
-                ) : isGrouped ? (
-                    <Lock className="w-4 h-4 text-emerald-600/70 mx-auto" />
-                ) : null}
+                <input
+                    type="checkbox"
+                    checked={selectedFractions.has(item.fraction_id)}
+                    onChange={() => {
+                        const newSet = new Set(selectedFractions);
+                        if (newSet.has(item.fraction_id)) {
+                            newSet.delete(item.fraction_id);
+                        } else {
+                            newSet.add(item.fraction_id);
+                        }
+                        setSelectedFractions(newSet);
+                    }}
+                    className={`w-4 h-4 rounded cursor-pointer ${
+                        isGrouped 
+                            ? 'text-emerald-600 focus:ring-emerald-500 border-emerald-400 bg-emerald-50' 
+                            : 'text-blue-600 focus:ring-blue-500 border-gray-300 bg-gray-100'
+                    }`}
+                    title={isGrouped ? `Selecionar item do lote ${item.lpf_codigo || ''}` : 'Selecionar item'}
+                />
             </td>
             <td className="px-4 py-2 whitespace-nowrap">
                 <div className="flex items-center gap-1.5">
@@ -1336,25 +1465,8 @@ const GestaoOPsPage = () => {
             <td className="px-4 py-2 text-xs text-gray-600 truncate max-w-[250px]" title={item.descricao}>
                 {item.descricao}
             </td>
-            <td className={`px-4 py-2 text-right font-medium ${parseFloat(item.qtd_faturar) <= 0 ? 'text-green-600' : 'text-orange-600 font-bold'}`}>
-                {parseFloat(item.visual_qtd || item.qtd_faturar || 0).toLocaleString('pt-BR')}
-            </td>
-            <td className={`px-4 py-2 text-right text-xs font-medium ${isGrouped ? 'text-gray-500' : 'text-teal-700'}`}>
-                {isGrouped ? (
-                    <span>{parseFloat((item.is_fraction ? item.quantidade_pcp : null) || item.pcp_delivery_forecast_qtd || 0).toLocaleString('pt-BR')}</span>
-                ) : (
-                    <div
-                        className="cursor-pointer hover:bg-teal-50 rounded px-1 py-0.5 transition-colors group/pcp inline-block"
-                        onClick={() => setPcpForecastTarget(item)}
-                        title="Clique para definir Qtd. PCP"
-                    >
-                        <span className="group-hover/pcp:text-teal-900">
-                            {(item.is_fraction && item.quantidade_pcp) || item.pcp_delivery_forecast_qtd
-                                ? parseFloat((item.is_fraction ? item.quantidade_pcp : null) || item.pcp_delivery_forecast_qtd).toLocaleString('pt-BR')
-                                : 'Definir...'}
-                        </span>
-                    </div>
-                )}
+            <td className={`px-4 py-2 text-right font-medium ${parseFloat(item.is_fraction ? (item.visual_qtd || 0) : (item.qtd_faturar || 0)) <= 0 ? 'text-green-600' : 'text-orange-600 font-bold'}`}>
+                {parseFloat(item.is_fraction ? (item.visual_qtd || 0) : (item.qtd_faturar || 0)).toLocaleString('pt-BR')}
             </td>
             <td className={`px-4 py-2 text-center text-xs ${isGrouped ? 'text-gray-500' : ''}`}>
                 {isGrouped ? (
@@ -1582,6 +1694,32 @@ const GestaoOPsPage = () => {
                                 >
                                     <Trash2 className="h-4 w-4 flex-shrink-0 text-rose-500" />
                                     <span>Unificar OP (Excluir Frações)</span>
+                                </button>
+                            </>
+                        )}
+
+                        {item.lpf_codigo ? (
+                            <>
+                                <div className="border-t border-rose-100 my-0.5" />
+                                <button
+                                    type="button"
+                                    onClick={() => { setOpenActionMenu(null); handleRemoveItemFromLot(item); }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 transition-colors"
+                                >
+                                    <Trash2 className="h-4 w-4 flex-shrink-0 text-rose-500" />
+                                    <span>Remover do Lote ({item.lpf_codigo})</span>
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <div className="border-t border-indigo-100 my-0.5" />
+                                <button
+                                    type="button"
+                                    onClick={() => { setOpenActionMenu(null); handleOpenManageLotModal([item]); }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                >
+                                    <Layers className="h-4 w-4 flex-shrink-0 text-indigo-500" />
+                                    <span>Inserir em um Lote...</span>
                                 </button>
                             </>
                         )}
@@ -1934,7 +2072,6 @@ const GestaoOPsPage = () => {
                                         <th className="px-4 py-3 font-semibold">Cód. Prod</th>
                                         <th className="px-4 py-3 font-semibold">Descrição</th>
                                         <th className="px-4 py-3 font-semibold text-right">Saldo Fat.</th>
-                                        <th className="px-4 py-3 font-semibold text-right text-xs">Qtd. PCP</th>
                                         <th className="px-4 py-3 font-semibold text-center text-xs">Data PCP</th>
                                         <th className="px-4 py-3 font-semibold text-center w-12 print:hidden">Ações</th>
                                     </tr>
@@ -2579,33 +2716,140 @@ const GestaoOPsPage = () => {
                                         ) : (
                                             // FLAT VIEW IMPLEMENTATION
                                             <>
-                                                {Object.keys(flatGrouped.ObjectGroups).map(lpf_codigo => (
-                                                    <React.Fragment key={`lpf-${lpf_codigo}`}>
-                                                        <tr className="bg-emerald-50 border-y-2 border-emerald-500">
-                                                            <td colSpan={colSpanCount} className="px-4 py-3 border-l-4 border-emerald-500">
-                                                                <div className="flex items-center justify-between">
-                                                                    <div className="flex items-center gap-3">
-                                                                        <Lock className="w-5 h-5 text-emerald-600" />
-                                                                        <div>
-                                                                            <span className="font-bold text-emerald-900 shadow-sm leading-tight text-lg">Lote Aglutinado</span>
-                                                                            <span className="ml-2 font-mono bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded text-sm font-semibold">{lpf_codigo}</span>
+                                                {Object.keys(flatGrouped.ObjectGroups).map(lpf_codigo => {
+                                                    const grpItems = flatGrouped.ObjectGroups[lpf_codigo] || [];
+                                                    const totalPecasLote = grpItems.reduce((acc, it) => acc + parseFloat(it.visual_qtd || it.quantidade_pcp || it.qtd_faturar || 0), 0);
+                                                    const dataPcpGeral = grpItems[0]?.data_entrega_pcp || grpItems[0]?.pcp_delivery_forecast_date;
+                                                    const allLotSelected = grpItems.length > 0 && grpItems.every(it => selectedFractions.has(it.fraction_id));
+                                                    const someLotSelected = grpItems.some(it => selectedFractions.has(it.fraction_id));
+                                                    const selectedInThisLot = grpItems.filter(it => selectedFractions.has(it.fraction_id));
+
+                                                    return (
+                                                        <React.Fragment key={`lpf-${lpf_codigo}`}>
+                                                            <tr className="bg-gradient-to-r from-emerald-50 via-teal-50/50 to-emerald-50/20 border-y-2 border-emerald-500 shadow-2xs">
+                                                                <td colSpan={colSpanCount} className="px-4 py-3 border-l-4 border-emerald-600">
+                                                                    <div className="flex items-center justify-between flex-wrap gap-3">
+                                                                        <div className="flex items-center gap-3">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={allLotSelected}
+                                                                                ref={el => { if (el) el.indeterminate = someLotSelected && !allLotSelected; }}
+                                                                                onChange={() => {
+                                                                                    const newSet = new Set(selectedFractions);
+                                                                                    if (allLotSelected) {
+                                                                                        grpItems.forEach(it => newSet.delete(it.fraction_id));
+                                                                                    } else {
+                                                                                        grpItems.forEach(it => newSet.add(it.fraction_id));
+                                                                                    }
+                                                                                    setSelectedFractions(newSet);
+                                                                                }}
+                                                                                className="w-4 h-4 text-emerald-600 bg-white border-emerald-400 rounded focus:ring-emerald-500 cursor-pointer"
+                                                                                title={allLotSelected ? 'Desmarcar todos do lote' : 'Selecionar todos os itens deste lote'}
+                                                                            />
+                                                                            <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-xs">
+                                                                                <Layers className="w-5 h-5" />
+                                                                            </div>
+                                                                            <div>
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <span className="font-extrabold text-emerald-950 text-base">Lote de Fabricação (LPF)</span>
+                                                                                    <span className="font-mono bg-emerald-200/90 text-emerald-900 border border-emerald-400 px-2.5 py-0.5 rounded-md text-sm font-black tracking-wider shadow-2xs">
+                                                                                        {lpf_codigo}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="text-xs text-emerald-800 flex items-center gap-3 mt-1 font-medium">
+                                                                                    <span><strong>{grpItems.length}</strong> {grpItems.length === 1 ? 'item' : 'itens'}</span>
+                                                                                    <span>•</span>
+                                                                                    <span><strong>{totalPecasLote.toLocaleString('pt-BR')}</strong> peças totais</span>
+                                                                                    {dataPcpGeral && (
+                                                                                        <>
+                                                                                            <span>•</span>
+                                                                                            <span>Data PCP: <strong>{new Date(dataPcpGeral).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</strong></span>
+                                                                                        </>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                            {selectedInThisLot.length > 0 && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleRemoveSelectedFromLot(selectedInThisLot)}
+                                                                                    className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 px-3 py-1.5 rounded-lg text-xs font-bold shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer animate-fadeIn"
+                                                                                    title={`Remover ${selectedInThisLot.length} item(ns) selecionado(s) deste lote`}
+                                                                                >
+                                                                                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                                                                                    <span>Remover {selectedInThisLot.length} Selecionado(s)</span>
+                                                                                </button>
+                                                                            )}
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleBatchPrintOPByOperationAglutinado(grpItems)}
+                                                                                className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                                                                                title="Liberar formalmente o lote para a fábrica e gerar documento com código LPF"
+                                                                            >
+                                                                                <Factory className="w-3.5 h-3.5" /> Liberar Produção / Aglutinar
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleReprintLPF(lpf_codigo, grpItems)}
+                                                                                className="bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                                                                                title="Baixar PDF do lote já liberado anteriormente"
+                                                                            >
+                                                                                <Printer className="w-3.5 h-3.5 text-emerald-600" /> Reimprimir Pacote
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleOpenManageLotModal(null, lpf_codigo)}
+                                                                                className="bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                                                                                title="Adicionar mais itens a este lote"
+                                                                            >
+                                                                                <Plus className="w-3.5 h-3.5" /> Adicionar Itens
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleDissolveLot(lpf_codigo)}
+                                                                                className="bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition-all flex items-center gap-1 cursor-pointer"
+                                                                                title="Desmanchar lote e liberar itens de volta para a lista"
+                                                                            >
+                                                                                <Trash2 className="w-3.5 h-3.5" /> Desmanchar Lote
+                                                                            </button>
                                                                         </div>
                                                                     </div>
-                                                                    <div>
-                                                                        <button
-                                                                            onClick={() => handleReprintLPF(lpf_codigo, flatGrouped.ObjectGroups[lpf_codigo])}
-                                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-full text-sm font-medium shadow-sm transition-all focus:ring-2 focus:ring-emerald-500 flex items-center gap-2"
-                                                                        >
-                                                                            <Printer className="w-4 h-4" /> REIMPRIMIR LOTE
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                        {flatGrouped.ObjectGroups[lpf_codigo].map((item, idx) => renderFlatRow(item, true, `grp-${lpf_codigo}-${idx}`))}
-                                                    </React.Fragment>
-                                                ))}
+                                                                </td>
+                                                            </tr>
+                                                            {grpItems.map((item, idx) => renderFlatRow(item, true, `grp-${lpf_codigo}-${idx}`))}
+                                                        </React.Fragment>
+                                                    );
+                                                })}
                                                 {flatGrouped.ungrouped.map((item, idx) => renderFlatRow(item, false, `ungrp-${idx}`))}
+
+                                                {Object.keys(flatGrouped.ObjectGroups).length === 0 && flatGrouped.ungrouped.length === 0 && (
+                                                    <tr>
+                                                        <td colSpan={colSpanCount} className="py-12 text-center text-gray-500">
+                                                            <div className="flex flex-col items-center justify-center gap-2">
+                                                                <AlertCircle className="w-8 h-8 text-amber-500 mb-1" />
+                                                                <p className="text-sm font-semibold text-gray-700">Nenhum registro encontrado para os filtros atuais.</p>
+                                                                {(filters.dataInicial || filters.dataFinal || filterLote) && (
+                                                                    <p className="text-xs text-gray-500">
+                                                                        {orders.length > 0
+                                                                            ? `${orders.length} pedidos carregados no banco, mas nenhum possui data no período ${filters.dataInicial || '...'} a ${filters.dataFinal || '...'}.`
+                                                                            : 'Nenhum pedido encontrado.'}
+                                                                    </p>
+                                                                )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setFilters(prev => ({ ...prev, dataInicial: '', dataFinal: '' }));
+                                                                        setFilterLote('');
+                                                                    }}
+                                                                    className="mt-2 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition-colors shadow-sm cursor-pointer"
+                                                                >
+                                                                    Limpar Filtros de Data e Exibir Todas as OPs
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
                                             </>
                                         )}
                                     </>
@@ -2631,7 +2875,7 @@ const GestaoOPsPage = () => {
                                         <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" /> {loadingProgress}
                                     </span>
                                 ) : (
-                                    <span>✅ Todos os dados carregados em lote</span>
+                                    <span>✅ Todos os dados carregados</span>
                                 )}
                             </div>
                         </div>
@@ -2642,32 +2886,55 @@ const GestaoOPsPage = () => {
 
             {/* Floating Batch Actions Bar */}
             {selectedFractions.size > 0 && (
-                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-6 z-50 animate-fadeIn border border-slate-700">
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/95 backdrop-blur-md text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-5 z-50 animate-fadeIn border border-slate-700">
                     <div className="flex items-center gap-2">
-                        <span className="bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full">{selectedFractions.size}</span>
+                        <span className="bg-blue-600 text-white text-xs font-bold px-2.5 py-0.5 rounded-full">{selectedFractions.size}</span>
                         <span className="font-semibold text-sm">itens selecionados</span>
                     </div>
                     <div className="h-6 w-px bg-slate-700"></div>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                         <button
+                            type="button"
+                            onClick={() => handleOpenManageLotModal()}
+                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl text-xs px-3.5 py-2 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+                            title="Criar novo Lote LPF ou inserir itens em lote existente"
+                        >
+                            <Layers className="h-4 w-4" />
+                            <span>Criar / Inserir no Lote</span>
+                        </button>
+                        {flattenedFractionalOrders.some(f => selectedFractions.has(f.fraction_id) && f.lpf_codigo) && (
+                            <button
+                                type="button"
+                                onClick={() => handleRemoveSelectedFromLot()}
+                                className="bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-xl text-xs px-3.5 py-2 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+                                title="Remover itens selecionados dos lotes em que estão agrupados"
+                            >
+                                <Trash2 className="h-4 w-4" />
+                                <span>Remover Selecionados do Lote</span>
+                            </button>
+                        )}
+                        <button
+                            type="button"
                             onClick={() => handleBatchPrintOPByOperationAglutinado()}
                             disabled={downloadingPDF}
-                            className="bg-teal-600 hover:bg-teal-500 text-white font-medium rounded-full text-sm px-4 py-2 transition-colors flex items-center gap-2 disabled:opacity-50"
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs px-3.5 py-2 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
                         >
-                            {downloadingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
-                            Lote Aglutinado (Resumido)
+                            {downloadingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Factory className="h-4 w-4" />}
+                            <span>Liberar Produção / Aglutinar</span>
                         </button>
                         <button
+                            type="button"
                             onClick={() => handleBatchPrintOPByOperationWithDrawings()}
                             disabled={downloadingPDF}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-full text-sm px-4 py-2 transition-colors flex items-center gap-2 disabled:opacity-50"
+                            className="bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl text-xs px-3.5 py-2 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
                         >
                             {downloadingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-                            OP + Desenhos (Rastreabilidade)
+                            <span>OP + Desenhos</span>
                         </button>
                         <button
+                            type="button"
                             onClick={() => setSelectedFractions(new Set())}
-                            className="text-slate-300 hover:text-white px-3 py-2 text-sm transition-colors"
+                            className="text-slate-400 hover:text-white px-3 py-2 text-xs transition-colors cursor-pointer"
                         >
                             Limpar
                         </button>
@@ -2882,6 +3149,21 @@ const GestaoOPsPage = () => {
                     onClose={() => setBomStructureTarget(null)}
                 />
             )}
+
+            {/* Modal de Gestão de Lotes (LPF) */}
+            <ManageLotModal
+                isOpen={isManageLotModalOpen}
+                onClose={() => {
+                    setIsManageLotModalOpen(false);
+                    setManageLotPreselectedCode(null);
+                }}
+                selectedItems={manageLotSelectedItems}
+                preselectedLotCode={manageLotPreselectedCode}
+                onSuccess={() => {
+                    setSelectedFractions(new Set());
+                    fetchData();
+                }}
+            />
 
         </div >
     );

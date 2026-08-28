@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Search, List, Mic, CheckCircle, Clock, AlertTriangle, Calendar, Play, History, Filter, FileText, Printer, ClipboardList, Camera, Upload, Trash2, Check, Eye, Bot, FileDown, Sheet } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Search, List, Mic, CheckCircle, Clock, AlertTriangle, Calendar, Play, History, Filter, FileText, Printer, ClipboardList, Camera, Upload, Trash2, Check, Eye, Bot, FileDown, Sheet, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Zap, DownloadCloud, PauseCircle, Layers, RotateCcw } from 'lucide-react';
 import { getProcessList, getVerticalProduction, getVerticalPendencies, saveAppointment, saveProductionPlanBatch, getFileUrl, getCompanySettings, reportSystemError, getChecklist, saveChecklist, uploadChecklistPhoto, getEstruturaProduto } from '../services/api';
 import { toast } from 'react-toastify';
 import { jsPDF } from 'jspdf';
@@ -318,7 +318,14 @@ export default function VerticalAppointmentPage() {
     const [apiError, setApiError] = useState(null);
     const [wasSearched, setWasSearched] = useState(false);
     const [page, setPage] = useState(1);
-    const [pagination, setPagination] = useState({ hasMore: false, total: 0, limit: 200 });
+    const [pagination, setPagination] = useState({ hasMore: false, total: 0, limit: 200, totalPages: 1 });
+
+    // Configurações de Lote para Grande Volume de Dados
+    const [batchSize, setBatchSize] = useStickyState(200, '@metalfisa:vert_batchSize_v1');
+    const [batchMode, setBatchMode] = useStickyState('CONTINUOUS', '@metalfisa:vert_batchMode_v1'); // 'CONTINUOUS' (acumula na lista) | 'PAGINATED' (página a página)
+    const [autoLoadingAll, setAutoLoadingAll] = useState(false);
+    const [batchProgress, setBatchProgress] = useState({ currentBatch: 0, totalBatches: 0, loaded: 0, total: 0 });
+    const cancelAutoLoadRef = useRef(false);
 
     // Filtros rápidos
     const [filterStatus, setFilterStatus] = useStickyState('ABERTOS', '@metalfisa:vert_statusFilter_v2');
@@ -412,7 +419,7 @@ export default function VerticalAppointmentPage() {
     useEffect(() => {
         if (wasSearched) {
             setPage(1);
-            loadData(true, 1);
+            loadData(true, 1, false, batchSize);
         }
     }, [filterStatus, sortConfig.key, sortConfig.direction]);
 
@@ -425,24 +432,25 @@ export default function VerticalAppointmentPage() {
         }
     };
 
-    const loadData = async (showLoader = true, targetPage = page, append = false) => {
-        if (!selectedOp) return;
+    const loadData = async (showLoader = true, targetPage = page, append = false, customBatchSize = batchSize) => {
+        if (!selectedOp) return null;
 
         const hasFilter = filters.op || filters.pedido || filters.produto || filters.cliente || filters.plan_inicio_ate;
         if (!hasFilter) {
             setData([]);
             setWasSearched(false);
             if (showLoader) setLoading(false);
-            return;
+            return null;
         }
 
         if (showLoader && !append) { setLoading(true); setData([]); }
         setApiError(null);
         try {
+            const currentLimit = parseInt(customBatchSize) || 200;
             const params = { 
                 ...filters, 
                 page: targetPage, 
-                limit: 200,
+                limit: currentLimit,
                 status: filterStatus,
                 sort_key: sortConfig.key,
                 sort_dir: sortConfig.direction
@@ -453,18 +461,34 @@ export default function VerticalAppointmentPage() {
             const rows = result?.data ?? (Array.isArray(result) ? result : []);
             
             if (append) {
-                setData(prev => [...prev, ...rows]);
+                setData(prev => {
+                    // Evita duplicatas por chave op_item_sequen
+                    const existingKeys = new Set(prev.map(r => `${r.op}_${r.item_op}_${r.sequen_op}`));
+                    const newRows = rows.filter(r => !existingKeys.has(`${r.op}_${r.item_op}_${r.sequen_op}`));
+                    return [...prev, ...newRows];
+                });
             } else {
                 setData(rows);
             }
             
-            if (result?.pagination) setPagination(result.pagination);
+            if (result?.pagination) {
+                const total = result.pagination.total || rows.length;
+                const totalPages = result.pagination.totalPages || Math.ceil(total / currentLimit) || 1;
+                setPagination({
+                    ...result.pagination,
+                    total,
+                    totalPages,
+                    limit: currentLimit
+                });
+            }
             setWasSearched(true);
             setDraftPlans({});
+            return result;
         } catch (err) {
             console.error('Erro ao carregar fila vertical', err);
             setApiError(err.message || 'Erro desconhecido');
             reportSystemError('Apontamento Vertical', err, { op: selectedOp, ...filters });
+            return null;
         } finally {
             if (showLoader) setLoading(false);
         }
@@ -480,19 +504,92 @@ export default function VerticalAppointmentPage() {
             return;
         }
         setPage(1);
-        loadData(true, 1);
+        loadData(true, 1, false, batchSize);
     };
 
+    // Carregar Próximo Lote (Manual)
+    const handleLoadNextBatch = () => {
+        if (!pagination.hasMore || loading) return;
+        const nextPage = page + 1;
+        setPage(nextPage);
+        const shouldAppend = batchMode === 'CONTINUOUS';
+        loadData(false, nextPage, shouldAppend, batchSize);
+    };
+
+    // Carregar Todos os Lotes Automaticamente (Loop Progressivo)
+    const handleLoadAllBatches = async () => {
+        if (!pagination.hasMore || autoLoadingAll) return;
+        setAutoLoadingAll(true);
+        cancelAutoLoadRef.current = false;
+
+        try {
+            let currentPage = page;
+            let currentTotal = data.length;
+            const targetTotal = pagination.total || (currentTotal + 200);
+            const totalBatches = pagination.totalPages || Math.ceil(targetTotal / batchSize);
+
+            setBatchProgress({
+                currentBatch: currentPage,
+                totalBatches,
+                loaded: currentTotal,
+                total: targetTotal
+            });
+
+            while (currentPage < totalBatches && !cancelAutoLoadRef.current) {
+                currentPage++;
+                const res = await loadData(false, currentPage, true, batchSize);
+                if (!res || !res.data || res.data.length === 0) break;
+
+                currentTotal += res.data.length;
+                setPage(currentPage);
+                setBatchProgress({
+                    currentBatch: currentPage,
+                    totalBatches,
+                    loaded: currentTotal,
+                    total: targetTotal
+                });
+
+                if (!res.pagination?.hasMore) break;
+                // Micro-pausa para permitir que a UI do React permaneça fluida
+                await new Promise(r => setTimeout(r, 60));
+            }
+
+            if (cancelAutoLoadRef.current) {
+                toast.info('Carregamento de lotes pausado pelo usuário.');
+            } else {
+                toast.success(`Todos os ${currentTotal} registros foram carregados em lote com sucesso!`);
+            }
+        } catch (err) {
+            console.error('Erro no carregamento automático de lotes:', err);
+            toast.error('Falha durante o carregamento de lotes.');
+        } finally {
+            setAutoLoadingAll(false);
+        }
+    };
+
+    const handleCancelAutoLoad = () => {
+        cancelAutoLoadRef.current = true;
+        setAutoLoadingAll(false);
+    };
+
+    // Pular para página específica (Modo Paginado)
     const handlePageChange = (newPage) => {
+        if (newPage < 1 || (pagination.totalPages && newPage > pagination.totalPages)) return;
         setPage(newPage);
-        loadData(true, newPage);
+        loadData(true, newPage, false, batchSize);
     };
 
+    // Alterar tamanho do lote
+    const handleBatchSizeChange = (newSize) => {
+        const sizeNum = parseInt(newSize) || 200;
+        setBatchSize(sizeNum);
+        setPage(1);
+        loadData(true, 1, false, sizeNum);
+    };
 
     const handlePlanChange = (opKey, dateStr) => {
         setDraftPlans(prev => ({ ...prev, [opKey]: dateStr }));
     };
-
 
     const getWeekStart = (date) => {
         const d = new Date(date);
@@ -1017,6 +1114,125 @@ export default function VerticalAppointmentPage() {
                 </div>
             ) : filteredData.length > 0 ? (
                 <div className="bg-white rounded-lg shadow-sm border overflow-hidden flex-1 flex flex-col min-h-0">
+                    {/* Barra de Controle de Lote Superior */}
+                    <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <div className="flex items-center gap-1.5 font-medium text-slate-700 bg-white px-2.5 py-1 rounded border border-slate-200 shadow-sm">
+                                <Layers className="w-3.5 h-3.5 text-blue-600" />
+                                <span>Exibindo <strong>{filteredData.length}</strong> de <strong>{pagination.total || filteredData.length}</strong> OPs</span>
+                                <span className="text-slate-400">|</span>
+                                <span className="text-slate-500">Lote <strong>{page}</strong> de <strong>{pagination.totalPages || 1}</strong></span>
+                            </div>
+
+                            {/* Seletor de Tamanho do Lote */}
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-slate-500 font-semibold">Tamanho do Lote:</span>
+                                <div className="inline-flex rounded-md shadow-sm border border-slate-200 bg-white p-0.5">
+                                    {[50, 100, 200, 500, 1000].map(size => (
+                                        <button
+                                            key={size}
+                                            type="button"
+                                            disabled={loading || autoLoadingAll}
+                                            onClick={() => handleBatchSizeChange(size)}
+                                            className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                                                batchSize === size
+                                                    ? 'bg-blue-600 text-white shadow-xs'
+                                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                            }`}
+                                        >
+                                            {size}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Modo de Lote: Contínuo vs Paginado */}
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-slate-500 font-semibold">Modo:</span>
+                                <div className="inline-flex rounded-md shadow-sm border border-slate-200 bg-white p-0.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setBatchMode('CONTINUOUS')}
+                                        className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                                            batchMode === 'CONTINUOUS'
+                                                ? 'bg-indigo-600 text-white shadow-xs'
+                                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                        }`}
+                                        title="Adiciona os próximos lotes ao final da lista sem limpar as OPs anteriores"
+                                    >
+                                        Acumulativo (Scroll)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setBatchMode('PAGINATED')}
+                                        className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                                            batchMode === 'PAGINATED'
+                                                ? 'bg-indigo-600 text-white shadow-xs'
+                                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                        }`}
+                                        title="Exibe uma página de lote por vez"
+                                    >
+                                        Por Páginas
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Ações de Lote Rápido */}
+                        <div className="flex items-center gap-2">
+                            {autoLoadingAll ? (
+                                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 px-3 py-1 rounded-lg">
+                                    <div className="w-3.5 h-3.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin" />
+                                    <span className="text-amber-800 font-medium">
+                                        Carregando lote {batchProgress.currentBatch} de {batchProgress.totalBatches} ({batchProgress.loaded}/{batchProgress.total} OPs)...
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={handleCancelAutoLoad}
+                                        className="bg-amber-200 hover:bg-amber-300 text-amber-900 px-2 py-0.5 rounded text-[10px] font-bold transition-colors ml-1"
+                                    >
+                                        Pausar
+                                    </button>
+                                </div>
+                            ) : (
+                                pagination.hasMore && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            disabled={loading}
+                                            onClick={handleLoadNextBatch}
+                                            className="px-3 py-1 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 rounded font-semibold transition-colors flex items-center gap-1 shadow-xs disabled:opacity-50"
+                                            title="Carrega o próximo lote de OPs"
+                                        >
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                            + Próximo Lote (+{batchSize})
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={loading}
+                                            onClick={handleLoadAllBatches}
+                                            className="px-3 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 rounded font-bold transition-colors flex items-center gap-1 shadow-xs disabled:opacity-50"
+                                            title="Carrega todos os lotes restantes automaticamente"
+                                        >
+                                            <Zap className="w-3.5 h-3.5 fill-current" />
+                                            Carregar Tudo ({((pagination.totalPages || 1) - page)} restantes)
+                                        </button>
+                                    </>
+                                )
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Barra de Progresso Visual durante Carga Total */}
+                    {autoLoadingAll && batchProgress.total > 0 && (
+                        <div className="w-full bg-slate-200 h-1.5 overflow-hidden">
+                            <div
+                                className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full transition-all duration-300 ease-out"
+                                style={{ width: `${Math.min(100, Math.round((batchProgress.loaded / batchProgress.total) * 100))}%` }}
+                            />
+                        </div>
+                    )}
+
                     <div className="overflow-auto flex-1 min-h-0">
                         <table className="w-full text-left text-sm">
                             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-20 shadow-sm">
@@ -1090,33 +1306,89 @@ export default function VerticalAppointmentPage() {
                             </tfoot>
                         </table>
                     </div>
-                    {/* Paginação / Carregamento em Lote */}
-                    <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50 text-sm">
-                        <div className="text-slate-600">
-                            {pagination.hasMore ? (
-                                <span>
-                                    Mostrando <strong>{filteredData.length}</strong> de <strong>{pagination.total > filteredData.length ? pagination.total : '200+'}</strong> resultados
-                                    <span className="ml-2 text-amber-600 font-medium">— carregando em lotes</span>
-                                </span>
-                            ) : (
-                                <span>
-                                    <strong>{filteredData.length}</strong> resultado(s) carregado(s)
+                    {/* Paginação / Carregamento em Lote Avançado */}
+                    <div className="flex flex-wrap items-center justify-between px-4 py-3 border-t bg-slate-50 text-sm gap-3">
+                        <div className="text-slate-600 flex items-center gap-2">
+                            <span>
+                                Mostrando <strong>{filteredData.length}</strong> de <strong>{pagination.total > filteredData.length ? pagination.total : filteredData.length}</strong> registros
+                            </span>
+                            {pagination.hasMore && (
+                                <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                                    <Clock className="w-3 h-3" />
+                                    Mais lotes disponíveis ({pagination.totalPages - page} restantes)
                                 </span>
                             )}
                         </div>
-                        <div className="flex items-center gap-2">
-                            {pagination.hasMore && (
+
+                        {/* Navegação de Páginas / Lotes */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {/* Botões de Navegação Estilo Paginador */}
+                            <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1 shadow-xs gap-1">
                                 <button
-                                    disabled={loading}
-                                    onClick={() => {
-                                        const nextPage = page + 1;
-                                        setPage(nextPage);
-                                        loadData(false, nextPage, true); // showLoader=false, targetPage, append=true
-                                    }}
-                                    className="px-6 py-1.5 bg-blue-50 border border-blue-200 rounded font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors shadow-sm flex items-center gap-2"
+                                    type="button"
+                                    disabled={loading || page <= 1 || autoLoadingAll}
+                                    onClick={() => handlePageChange(1)}
+                                    className="p-1 rounded text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:hover:bg-transparent"
+                                    title="Primeira página (Lote 1)"
                                 >
-                                    {loading ? 'Carregando lote...' : 'Carregar mais resultados (Lote) ↓'}
+                                    <ChevronsLeft className="w-4 h-4" />
                                 </button>
+                                <button
+                                    type="button"
+                                    disabled={loading || page <= 1 || autoLoadingAll}
+                                    onClick={() => handlePageChange(page - 1)}
+                                    className="p-1 rounded text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:hover:bg-transparent"
+                                    title="Página anterior"
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                </button>
+
+                                <span className="px-2 text-xs font-bold text-slate-700">
+                                    Lote {page} de {pagination.totalPages || 1}
+                                </span>
+
+                                <button
+                                    type="button"
+                                    disabled={loading || page >= (pagination.totalPages || 1) || autoLoadingAll}
+                                    onClick={() => handlePageChange(page + 1)}
+                                    className="p-1 rounded text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:hover:bg-transparent"
+                                    title="Próxima página"
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={loading || page >= (pagination.totalPages || 1) || autoLoadingAll}
+                                    onClick={() => handlePageChange(pagination.totalPages || 1)}
+                                    className="p-1 rounded text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-30 disabled:hover:bg-transparent"
+                                    title="Última página"
+                                >
+                                    <ChevronsRight className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            {/* Botões de Ação Acumulativa */}
+                            {pagination.hasMore && (
+                                <>
+                                    <button
+                                        type="button"
+                                        disabled={loading || autoLoadingAll}
+                                        onClick={handleLoadNextBatch}
+                                        className="px-4 py-1.5 bg-blue-50 border border-blue-200 rounded-lg font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors shadow-xs flex items-center gap-1.5"
+                                    >
+                                        <ChevronRight className="w-4 h-4" />
+                                        Carregar Mais (+{batchSize})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={loading || autoLoadingAll}
+                                        onClick={handleLoadAllBatches}
+                                        className="px-4 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition-colors shadow-xs flex items-center gap-1.5"
+                                    >
+                                        <Zap className="w-4 h-4 fill-current" />
+                                        Carregar Todos
+                                    </button>
+                                </>
                             )}
                         </div>
                     </div>

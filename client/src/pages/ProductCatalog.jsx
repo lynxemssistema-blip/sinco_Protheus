@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Package, Layers, ChevronLeft, ChevronRight, Database, FileText, X, FolderInput, FileSpreadsheet, Bot } from 'lucide-react';
+import { Search, Package, Layers, ChevronLeft, ChevronRight, Database, FileText, X, FolderInput, FileSpreadsheet, Bot, Box, Tablet, Zap } from 'lucide-react';
 import { getProdutos, saveProductImage, getFileUrl } from '../services/api';
 import { useFilters } from '../contexts/FilterContext';
 import ProductDocuments from '../components/ProductDocuments';
 import StockModal from '../components/StockModal';
+import StockTabletView from '../components/StockTabletView';
 import BulkImportModal from '../components/BulkImportModal';
 import ProductAssociationsModal from '../components/ProductAssociationsModal';
 import ProductImageModal from '../components/ProductImageModal';
@@ -15,6 +16,8 @@ import * as XLSX from 'xlsx';
 const ProductCatalog = () => {
     const { productFilters, updateProductFilters } = useFilters();
     const { search, page } = productFilters;
+
+    const [activeTab, setActiveTab] = useState('catalogo'); // 'catalogo' | 'tablet'
 
     // Estados locais apenas para dados carregados e UI
     const [products, setProducts] = useState([]);
@@ -93,9 +96,10 @@ const ProductCatalog = () => {
                     'UM': item.unidade,
                     'Grupo': item.grupo,
                     'Peso (kg)': item.metadados?.peso_kg ? Number(item.metadados.peso_kg) : '',
+                    'Saldo Levantamento Fábrica': Number(item.saldo_fabrica !== undefined ? item.saldo_fabrica : (item.estoque_total || 0)),
+                    'Saldo ERP Protheus': Number(item.saldo_protheus || 0),
                     'Operação': item.metadados?.operacao || '',
                     'Op c/ Doc.': item.tem_arquivos ? 'Sim' : 'Não',
-                    'Estoque Total': item.estoque_total || 0,
                     'Associações (Qtd)': item.associacoes?.length || 0
                 };
             });
@@ -114,9 +118,10 @@ const ProductCatalog = () => {
                 { wch: 10 }, // UM
                 { wch: 10 }, // Grupo
                 { wch: 12 }, // Peso
+                { wch: 26 }, // Saldo Levantamento Fábrica
+                { wch: 20 }, // Saldo ERP Protheus
                 { wch: 25 }, // Operacao
                 { wch: 12 }, // Com Doc
-                { wch: 15 }, // Estoque
                 { wch: 15 }  // Associacoes
             ];
 
@@ -134,8 +139,43 @@ const ProductCatalog = () => {
     return (
         <div className="min-h-screen bg-gray-50 p-4 md:p-8">
             <div className="max-w-[1920px] mx-auto">
-                {/* Header Container */}
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-col xl:flex-row items-center gap-4 justify-between">
+                
+                {/* Abas de Navegação Principal */}
+                <div className="flex items-center gap-2 mb-6 bg-slate-200/70 p-1.5 rounded-2xl w-fit border border-slate-300 shadow-2xs">
+                    <button
+                        onClick={() => setActiveTab('catalogo')}
+                        className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition-all cursor-pointer ${
+                            activeTab === 'catalogo'
+                                ? 'bg-white text-slate-900 shadow-md scale-[1.01]'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/50'
+                        }`}
+                    >
+                        <Package size={17} className={activeTab === 'catalogo' ? 'text-blue-600' : 'text-slate-400'} />
+                        <span>Catálogo de Produtos</span>
+                    </button>
+
+                    <button
+                        onClick={() => setActiveTab('tablet')}
+                        className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition-all cursor-pointer ${
+                            activeTab === 'tablet'
+                                ? 'bg-slate-900 text-white shadow-md scale-[1.01]'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/50'
+                        }`}
+                    >
+                        <Tablet size={17} className={activeTab === 'tablet' ? 'text-emerald-400' : 'text-slate-400'} />
+                        <span>Entrada / Saída Rápida (Tablet)</span>
+                        <span className="bg-emerald-500/20 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded font-black border border-emerald-400/30">
+                            FÁBRICA
+                        </span>
+                    </button>
+                </div>
+
+                {activeTab === 'tablet' ? (
+                    <StockTabletView onNavigateCatalog={() => { setActiveTab('catalogo'); fetchProducts(); }} />
+                ) : (
+                    <>
+                        {/* Header Container */}
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-col xl:flex-row items-center gap-4 justify-between">
 
                     {/* Left Group: Title */}
                     <div className="flex items-center gap-3 shrink-0 border-r border-gray-100 pr-6 mr-2">
@@ -293,14 +333,14 @@ const ProductCatalog = () => {
                                 value={productFilters.stock_status || ''}
                                 onChange={e => updateProductFilters({ stock_status: e.target.value, page: 1 })}
                                 className={`h-10 pl-3 pr-8 rounded-lg border focus:border-blue-500 outline-none text-sm appearance-none cursor-pointer font-medium transition-colors
-                                    ${productFilters.stock_status === 'with_stock' ? 'bg-green-50 text-green-700 border-green-200' :
+                                    ${productFilters.stock_status === 'with_stock' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                         productFilters.stock_status === 'without_stock' ? 'bg-orange-50 text-orange-700 border-orange-200' :
                                             'bg-gray-50 border-gray-200'
                                     }`}
                             >
-                                <option value="">Todos (Estoque)</option>
-                                <option value="with_stock">Com Estoque 📦</option>
-                                <option value="without_stock">Sem Estoque ⚠️</option>
+                                <option value="">Todos (Saldo Fábrica)</option>
+                                <option value="with_stock">Com Saldo Fábrica 🏭</option>
+                                <option value="without_stock">Sem Saldo Fábrica ⚪</option>
                             </select>
                         </div>
                         
@@ -340,9 +380,9 @@ const ProductCatalog = () => {
                             />
                         </div>
 
-                        {(productFilters.code || productFilters.search || productFilters.type || productFilters.client || productFilters.client_code || productFilters.file_path || productFilters.pdf_status) && (
+                        {(productFilters.code || productFilters.search || productFilters.type || productFilters.client || productFilters.client_code || productFilters.file_path || productFilters.pdf_status || productFilters.stock_status) && (
                             <button
-                                onClick={() => updateProductFilters({ search: '', code: '', type: '', client: '', client_code: '', file_path: '', pdf_status: '', page: 1 })}
+                                onClick={() => updateProductFilters({ search: '', code: '', type: '', client: '', client_code: '', file_path: '', pdf_status: '', stock_status: '', page: 1 })}
                                 className="h-10 w-10 flex items-center justify-center text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                 title="Limpar Filtros"
                             >
@@ -363,6 +403,7 @@ const ProductCatalog = () => {
                                     <th className="px-6 py-4 text-center font-semibold">Tipo</th>
                                     <th className="px-6 py-4 text-center font-semibold">UM</th>
                                     <th className="px-6 py-4 text-right font-semibold">Peso (kg)</th>
+                                    <th className="px-6 py-4 text-center font-semibold" title="Saldo do Levantamento de Estoque Local / Fábrica">Saldo Fábrica</th>
                                     <th className="px-6 py-4 font-semibold">Operação</th>
                                     <th className="px-6 py-4 font-semibold">Ref. Cliente</th>
                                     <th className="px-6 py-4 font-semibold">Associações</th>
@@ -372,13 +413,13 @@ const ProductCatalog = () => {
                             <tbody className="divide-y divide-gray-50">
                                 {loading ? (
                                     <tr>
-                                        <td colSpan="9" className="px-6 py-12 text-center">
+                                        <td colSpan="11" className="px-6 py-12 text-center">
                                             <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
                                         </td>
                                     </tr>
                                 ) : products.length === 0 ? (
                                     <tr>
-                                        <td colSpan="9" className="px-6 py-12 text-center text-gray-400">
+                                        <td colSpan="11" className="px-6 py-12 text-center text-gray-400">
                                             Nenhum produto encontrado.
                                         </td>
                                     </tr>
@@ -428,6 +469,36 @@ const ProductCatalog = () => {
                                                     </span>
                                                 ) : (
                                                     <span className="text-gray-300">-</span>
+                                                )}
+                                            </td>
+                                            {/* Saldo Levantamento de Fábrica */}
+                                            <td className="px-6 py-4 text-center">
+                                                {Number(prod.saldo_fabrica !== undefined ? prod.saldo_fabrica : prod.estoque_total) > 0 ? (
+                                                    <button
+                                                        onClick={() => setSelectedProductForStock(prod)}
+                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:shadow-xs transition-all cursor-pointer"
+                                                        title={`Levantamento Fábrica: ${prod.saldo_fabrica || prod.estoque_total} ${prod.unidade || ''} (ERP Protheus: ${prod.saldo_protheus || 0}) • Clique para ver/lançar movimentações`}
+                                                    >
+                                                        <Box className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                                        <span>{Number(prod.saldo_fabrica || prod.estoque_total).toLocaleString('pt-BR')}</span>
+                                                    </button>
+                                                ) : Number(prod.saldo_fabrica) < 0 ? (
+                                                    <button
+                                                        onClick={() => setSelectedProductForStock(prod)}
+                                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition-all cursor-pointer"
+                                                        title={`Saldo Negativo: ${prod.saldo_fabrica} ${prod.unidade || ''} • Clique para ver/lançar`}
+                                                    >
+                                                        <Box className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                                                        <span>{Number(prod.saldo_fabrica).toLocaleString('pt-BR')}</span>
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => setSelectedProductForStock(prod)}
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                                                        title={`Sem saldo na fábrica (ERP Protheus: ${prod.saldo_protheus || 0}) • Clique para lançar levantamento`}
+                                                    >
+                                                        <span>0</span>
+                                                    </button>
                                                 )}
                                             </td>
                                             <td className="px-6 py-4 text-sm text-gray-600">
@@ -601,6 +672,9 @@ const ProductCatalog = () => {
                         </div>
                     </div>
                 </div>
+            </>
+            )}
+
                 {/* Modals */}
                 {selectedProductForImage && (
                     <ProductImageModal

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors, ArrowUp, ArrowDown, Award, Droplets } from 'lucide-react';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors, ArrowUp, ArrowDown, Award, Droplets, Boxes } from 'lucide-react';
 import CorteForecastModal from './CorteForecastModal';
 import { getPedidos, getItensPedido, getPedidoPdfData, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, updateOrderItemTag, getSalesNotes, api, getFileUrl } from '../services/api';
 import jsPDFLib from 'jspdf';
@@ -23,6 +23,7 @@ import PCPBalanceModal from './PCPBalanceModal';
 import ClassificacaoModal from './orders/ClassificacaoModal';
 import PlanejamentoInteligenteModal from './PlanejamentoInteligenteModal';
 import BOMStructureModal from './BOMStructureModal';
+import ProductStructureStockModal from './orders/ProductStructureStockModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useFilters } from '../contexts/FilterContext';
 import { generateOrderPDF } from '../services/orderPdfGenerator';
@@ -132,6 +133,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     const [printingOrderId, setPrintingOrderId] = useState(null);
     const [priorityTarget, setPriorityTarget] = useState(null);
     const [bomStructureTarget, setBomStructureTarget] = useState(null); // { op, itemPv }
+    const [structureStockTarget, setStructureStockTarget] = useState(null); // { productCode, productDesc, orderNum, ... }
     const [priorityMode, setPriorityMode] = useState('faturamento'); // 'faturamento' | 'op' — quais delas nao se misturam mais
     const [priorityText, setPriorityText] = useState('');
     const [priorityGroup, setPriorityGroup] = useState(1);
@@ -981,9 +983,9 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPByOperationWithDrawings = async (pedido, e, itemId = null) => {
+    const handlePrintOPByOperationWithDrawings = async (pedido, e, itemId = null, includeStock = false) => {
         if (e) e.stopPropagation();
-        const loadKey = itemId ? `op-drawings-${pedido}-${itemId}` : `op-drawings-${pedido}`;
+        const loadKey = itemId ? `op-drawings-${pedido}-${itemId}${includeStock ? '-stock' : ''}` : `op-drawings-${pedido}${includeStock ? '-stock' : ''}`;
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
@@ -998,7 +1000,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const userName = user?.nome || 'Usuário';
             const { generateOPByOperationWithDrawingsPdf } = await import('../services/opByOperationWithDrawingsPdfGenerator');
-            await generateOPByOperationWithDrawingsPdf(mirrorData, userName);
+            await generateOPByOperationWithDrawingsPdf(mirrorData, userName, null, false, includeStock);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -1009,9 +1011,9 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPByResourceWithDrawings = async (pedido, e, itemId = null) => {
+    const handlePrintOPByResourceWithDrawings = async (pedido, e, itemId = null, includeStock = false) => {
         if (e) e.stopPropagation();
-        const loadKey = itemId ? `op-resource-drawings-${pedido}-${itemId}` : `op-resource-drawings-${pedido}`;
+        const loadKey = itemId ? `op-resource-drawings-${pedido}-${itemId}${includeStock ? '-stock' : ''}` : `op-resource-drawings-${pedido}${includeStock ? '-stock' : ''}`;
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
@@ -1023,7 +1025,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const userName = user?.nome || 'Usuário';
             const { generateOPDrawingsByResourcePdf } = await import('../services/opDrawingsByResourceGenerator');
-            await generateOPDrawingsByResourcePdf(mirrorData, userName, null);
+            await generateOPDrawingsByResourcePdf(mirrorData, userName, null, false, false, false, includeStock);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -1034,9 +1036,9 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPWithOpsStampWithDescDrawingsByResource = async (pedido, e, itemId = null) => {
+    const handlePrintOPWithOpsStampWithDescDrawingsByResource = async (pedido, e, itemId = null, includeStock = false) => {
         if (e) e.stopPropagation();
-        const loadKey = itemId ? `op-stamp-desc-resource-drawings-${pedido}-${itemId}` : `op-stamp-desc-resource-drawings-${pedido}`;
+        const loadKey = itemId ? `op-stamp-desc-resource-drawings-${pedido}-${itemId}${includeStock ? '-stock' : ''}` : `op-stamp-desc-resource-drawings-${pedido}${includeStock ? '-stock' : ''}`;
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
@@ -1048,7 +1050,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const userName = user?.nome || 'Usuário';
             const { generateOPDrawingsByResourcePdf } = await import('../services/opDrawingsByResourceGenerator');
-            await generateOPDrawingsByResourcePdf(mirrorData, userName, null, false, true, true);
+            await generateOPDrawingsByResourcePdf(mirrorData, userName, null, false, true, true, includeStock);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -1059,9 +1061,9 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPWithOpsStampDrawingsByResource = async (pedido, e, itemId = null) => {
+    const handlePrintOPWithOpsStampDrawingsByResource = async (pedido, e, itemId = null, includeStock = false) => {
         if (e) e.stopPropagation();
-        const loadKey = itemId ? `op-stamp-resource-drawings-${pedido}-${itemId}` : `op-stamp-resource-drawings-${pedido}`;
+        const loadKey = itemId ? `op-stamp-resource-drawings-${pedido}-${itemId}${includeStock ? '-stock' : ''}` : `op-stamp-resource-drawings-${pedido}${includeStock ? '-stock' : ''}`;
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
@@ -1073,7 +1075,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const userName = user?.nome || 'Usuário';
             const { generateOPDrawingsByResourcePdf } = await import('../services/opDrawingsByResourceGenerator');
-            await generateOPDrawingsByResourcePdf(mirrorData, userName, null, false, true, false);
+            await generateOPDrawingsByResourcePdf(mirrorData, userName, null, false, true, false, includeStock);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -1084,9 +1086,9 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPWithOpsStampWithDrawings = async (pedido, e, itemId = null) => {
+    const handlePrintOPWithOpsStampWithDrawings = async (pedido, e, itemId = null, includeStock = false) => {
         if (e) e.stopPropagation();
-        const loadKey = itemId ? `op-stamp-drawings-${pedido}-${itemId}` : `op-stamp-drawings-${pedido}`;
+        const loadKey = itemId ? `op-stamp-drawings-${pedido}-${itemId}${includeStock ? '-stock' : ''}` : `op-stamp-drawings-${pedido}${includeStock ? '-stock' : ''}`;
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
@@ -1098,7 +1100,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const userName = user?.nome || 'Usuário';
             const { generateOPDrawingsWithOpsStampPdf } = await import('../services/opDrawingsWithOpsStampGenerator');
-            await generateOPDrawingsWithOpsStampPdf(mirrorData, userName, null);
+            await generateOPDrawingsWithOpsStampPdf(mirrorData, userName, null, false, false, includeStock);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -1109,9 +1111,9 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPWithOpsStampWithDescDrawings = async (pedido, e, itemId = null) => {
+    const handlePrintOPWithOpsStampWithDescDrawings = async (pedido, e, itemId = null, includeStock = false) => {
         if (e) e.stopPropagation();
-        const loadKey = itemId ? `op-stamp-desc-drawings-${pedido}-${itemId}` : `op-stamp-desc-drawings-${pedido}`;
+        const loadKey = itemId ? `op-stamp-desc-drawings-${pedido}-${itemId}${includeStock ? '-stock' : ''}` : `op-stamp-desc-drawings-${pedido}${includeStock ? '-stock' : ''}`;
         setPrintingOrderId(loadKey);
         try {
             const endpoint = itemId
@@ -1123,7 +1125,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const userName = user?.nome || 'Usuário';
             const { generateOPDrawingsWithOpsStampPdf } = await import('../services/opDrawingsWithOpsStampGenerator');
-            await generateOPDrawingsWithOpsStampPdf(mirrorData, userName, null, false, true);
+            await generateOPDrawingsWithOpsStampPdf(mirrorData, userName, null, false, true, includeStock);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -2383,6 +2385,35 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                                                 {printingOrderId === `op-excel-${order.pedido}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-emerald-600" />}
                                                                                 <span>Por Operações (Excel)</span>
                                                                             </button>
+                                                                            <div className="border-t border-gray-100 my-1" />
+                                                                            <div className="px-3 py-1 text-[10px] font-bold text-emerald-800 bg-emerald-50/70 uppercase tracking-wider flex items-center gap-1.5">
+                                                                                <Boxes size={12} className="text-emerald-600" />
+                                                                                <span>Com Estudo de Estoque</span>
+                                                                            </div>
+                                                                            <button 
+                                                                                onClick={(e) => { handlePrintOPByOperationWithDrawings(order.pedido, e, null, true); setOpenActionMenu(null); }} 
+                                                                                disabled={printingOrderId === `op-drawings-${order.pedido}-stock`} 
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+                                                                            >
+                                                                                {printingOrderId === `op-drawings-${order.pedido}-stock` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0 text-emerald-600" /> : <Boxes className="h-4 w-4 flex-shrink-0 text-emerald-600" />} 
+                                                                                <span>OP + Desenhos + Estoque</span>
+                                                                            </button>
+                                                                            <button 
+                                                                                onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawings(order.pedido, e, null, true); setOpenActionMenu(null); }} 
+                                                                                disabled={!order.has_op || printingOrderId === `op-stamp-desc-drawings-${order.pedido}-stock`} 
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+                                                                            >
+                                                                                {printingOrderId === `op-stamp-desc-drawings-${order.pedido}-stock` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0 text-purple-600" /> : <Boxes className="h-4 w-4 flex-shrink-0 text-purple-600" />} 
+                                                                                <span>OP + Desenhos (Carimbo) + Estoque</span>
+                                                                            </button>
+                                                                            <button 
+                                                                                onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawingsByResource(order.pedido, e, null, true); setOpenActionMenu(null); }} 
+                                                                                disabled={!order.has_op || printingOrderId === `op-stamp-desc-resource-drawings-${order.pedido}-stock`} 
+                                                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+                                                                            >
+                                                                                {printingOrderId === `op-stamp-desc-resource-drawings-${order.pedido}-stock` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0 text-fuchsia-600" /> : <Boxes className="h-4 w-4 flex-shrink-0 text-fuchsia-600" />} 
+                                                                                <span>OP + Desenhos (Por Recurso) + Estoque</span>
+                                                                            </button>
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -2555,6 +2586,24 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                                                                                         }}
                                                                                                                     >
                                                                                                                         <button
+                                                                                                                            onClick={(e) => {
+                                                                                                                                e.stopPropagation();
+                                                                                                                                setStructureStockTarget({
+                                                                                                                                    productCode: item.codigo,
+                                                                                                                                    productDesc: item.descricao,
+                                                                                                                                    orderNum: order.pedido,
+                                                                                                                                    orderItem: item.item,
+                                                                                                                                    orderQty: item.qtd_faturar || item.quantidade,
+                                                                                                                                    clientName: order.nome_cliente
+                                                                                                                                });
+                                                                                                                                setOpenActionMenu(null);
+                                                                                                                            }}
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50 font-bold transition-colors"
+                                                                                                                        >
+                                                                                                                            <Boxes className="h-4 w-4 flex-shrink-0 text-emerald-600" />
+                                                                                                                            <span>Estoque da Estrutura (BOM)</span>
+                                                                                                                        </button>
+                                                                                                                        <button
                                                                                                                             onClick={(e) => { e.stopPropagation(); setEngineeringTarget({ orderId: order.pedido, item }); setOpenActionMenu(null); }}
                                                                                                                             className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors"
                                                                                                                         >
@@ -2663,6 +2712,35 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                                                                                         >
                                                                                                                             {printingOrderId === `op-excel-${order.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-emerald-600" />}
                                                                                                                             <span>Por Operações (Excel)</span>
+                                                                                                                        </button>
+                                                                                                                        <div className="border-t border-gray-100 my-1" />
+                                                                                                                        <div className="px-3 py-1 text-[10px] font-bold text-emerald-800 bg-emerald-50/70 uppercase tracking-wider flex items-center gap-1.5">
+                                                                                                                            <Boxes size={12} className="text-emerald-600" />
+                                                                                                                            <span>Com Estudo de Estoque</span>
+                                                                                                                        </div>
+                                                                                                                        <button 
+                                                                                                                            onClick={(e) => { handlePrintOPByOperationWithDrawings(order.pedido, e, item.item, true); setOpenActionMenu(null); }} 
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-drawings-${order.pedido}-${item.item}-stock`} 
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-drawings-${order.pedido}-${item.item}-stock` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0 text-emerald-600" /> : <Boxes className="h-4 w-4 flex-shrink-0 text-emerald-600" />} 
+                                                                                                                            <span>OP + Desenhos + Estoque</span>
+                                                                                                                        </button>
+                                                                                                                        <button 
+                                                                                                                            onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawings(order.pedido, e, item.item, true); setOpenActionMenu(null); }} 
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-drawings-${order.pedido}-${item.item}-stock`} 
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-stamp-desc-drawings-${order.pedido}-${item.item}-stock` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0 text-purple-600" /> : <Boxes className="h-4 w-4 flex-shrink-0 text-purple-600" />} 
+                                                                                                                            <span>OP + Desenhos (Carimbo) + Estoque</span>
+                                                                                                                        </button>
+                                                                                                                        <button 
+                                                                                                                            onClick={(e) => { handlePrintOPWithOpsStampWithDescDrawingsByResource(order.pedido, e, item.item, true); setOpenActionMenu(null); }} 
+                                                                                                                            disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-resource-drawings-${order.pedido}-${item.item}-stock`} 
+                                                                                                                            className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+                                                                                                                        >
+                                                                                                                            {printingOrderId === `op-stamp-desc-resource-drawings-${order.pedido}-${item.item}-stock` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0 text-fuchsia-600" /> : <Boxes className="h-4 w-4 flex-shrink-0 text-fuchsia-600" />} 
+                                                                                                                            <span>OP + Desenhos (Por Recurso) + Estoque</span>
                                                                                                                         </button>
                                                                                                                     </div>
                                                                                                                 )}
@@ -2855,6 +2933,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                 handleUpdateFaturamentoDate={handleUpdateFaturamentoDate}
                                                 onOpenClassificacaoModal={handleOpenClassificacaoModal}
                                                 onOpenBomStructure={(op, itemPv, pedido, produto) => setBomStructureTarget({ op, itemPv, pedido, produto })}
+                                                onOpenStructureStock={setStructureStockTarget}
                                             />
                                         )}
                                     </>
@@ -3030,6 +3109,19 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                         pedido={bomStructureTarget.pedido}
                         produto={bomStructureTarget.produto}
                         onClose={() => setBomStructureTarget(null)}
+                    />
+                )
+            }
+            {
+                structureStockTarget && (
+                    <ProductStructureStockModal
+                        productCode={structureStockTarget.productCode}
+                        productDesc={structureStockTarget.productDesc}
+                        orderNum={structureStockTarget.orderNum}
+                        orderItem={structureStockTarget.orderItem}
+                        orderQty={structureStockTarget.orderQty}
+                        clientName={structureStockTarget.clientName}
+                        onClose={() => setStructureStockTarget(null)}
                     />
                 )
             }

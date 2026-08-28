@@ -186,10 +186,10 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
         if (parseFloat(t.qtd_faturar || 0) <= 0) return { valid: false, reason: 'Já 100% faturado' };
         
         const hasOp = !!(t.op_num && String(t.op_num).trim() !== '-' && String(t.op_num).trim() !== '');
-        const qtdPedida = parseFloat(t.quantidade || 0);
+        const qtdSaldo = parseFloat(t.qtd_faturar ?? t.visual_qtd ?? t.quantidade ?? 0);
         const qtdOp = parseFloat(t.op_qtd || 0);
         
-        if (hasOp && qtdOp >= qtdPedida) return { valid: false, reason: 'Sem saldo para OP' };
+        if (hasOp && qtdOp >= qtdSaldo && qtdSaldo > 0) return { valid: false, reason: 'Sem saldo para OP' };
         return { valid: true, reason: '' };
     };
 
@@ -198,7 +198,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
 
     const pedido = isBatch ? 'Lote' : (item?.pedido || item?.pedido_id);
     const itemNum = isBatch ? `${targetItems.length} Itens` : item?.item;
-    const qtdTotal = isBatch ? 0 : parseFloat(item?.quantidade || 0);
+    const qtdTotal = isBatch ? 0 : parseFloat(item?.qtd_faturar ?? item?.visual_qtd ?? item?.quantidade ?? 0);
     const qtdTotalStr = isBatch ? '-' : qtdTotal.toLocaleString('pt-BR');
 
     const qtdProgramada = programacoes.reduce((s, p) => s + parseFloat(p.quantidade_pcp || 0), 0);

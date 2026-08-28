@@ -266,6 +266,18 @@ router.post('/lotes', async (req, res) => {
             lotesGerados.push(numero_lote);
         }
 
+        // Se veio de um LPF / Lote Aglutinado, travar o status do LPF como LIBERADO automaticamente
+        if (req.body.lpf_codigo) {
+            const lpfClean = String(req.body.lpf_codigo).trim();
+            await conn.query(
+                `UPDATE app_pcp_releases 
+                 SET status = 'LIBERADO', data_liberacao = NOW(), usuario_liberacao = ? 
+                 WHERE codigo_liberacao = ? OR lote_info = ?`,
+                [sanitizeStr(usuario || 'Sistema', 100), lpfClean, lpfClean]
+            );
+            console.log(`🔒 [CORTE LOTES] LPF ${lpfClean} marcado automaticamente como LIBERADO.`);
+        }
+
         await conn.commit();
 
         // ✅ Responder ao cliente IMEDIATAMENTE — antes de qualquer geração de arquivo

@@ -15,14 +15,22 @@ const SplitOPModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
     const descricao = item ? String(item.descricao || '').trim() : '';
     const opOriginal = item ? String(item.op_num_completa || item.op_num || '').trim() : '';
     
-    // Calcula a quantidade total do item (soma das frações se já existirem ou saldo total)
+    // Calcula a quantidade de referência para fracionamento: SEMPRE o Saldo a Faturar (qtd_faturar)
     const totalQtd = React.useMemo(() => {
         if (!item) return 0;
+        // Se a OP já foi fracionada anteriormente e as frações somam uma quantidade válida
         if (item.pcp_programacoes && item.pcp_programacoes.length > 1) {
             const sumPcp = item.pcp_programacoes.reduce((acc, p) => acc + (parseFloat(p.quantidade_pcp) || 0), 0);
             if (sumPcp > 0) return sumPcp;
         }
-        return parseFloat(item.quantidade || item.c6_qtdven || item.qtd_faturar || item.visual_qtd || 0);
+        // Prioridade absoluta: Saldo a Faturar (c6_qtdven - c6_qtdent)
+        if (item.qtd_faturar !== undefined && item.qtd_faturar !== null && item.qtd_faturar !== '') {
+            return parseFloat(item.qtd_faturar) || 0;
+        }
+        if (item.visual_qtd !== undefined && item.visual_qtd !== null && item.visual_qtd !== '') {
+            return parseFloat(item.visual_qtd) || 0;
+        }
+        return parseFloat(item.quantidade || item.c6_qtdven || 0);
     }, [item]);
 
     const formatDateForInput = (d) => {
@@ -291,7 +299,7 @@ const SplitOPModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                             </span>
                         )}
                         <span className="px-2.5 py-1 bg-indigo-600 text-white rounded-md font-bold shadow-xs">
-                            Qtd Total: {totalQtd.toLocaleString('pt-BR')} un
+                            Saldo a Faturar: {totalQtd.toLocaleString('pt-BR')} un
                         </span>
                     </div>
                 </div>

@@ -9,7 +9,7 @@ import { generateOPByOperationPdf } from './opByOperationPdfGenerator';
  * then merges all required engineering drawings at the end with dynamic watermarks.
  * @param {Object} mirrorData - Data returned by /api/pedidos/op-mirror/:id
  */
-export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false) => {
+export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false, includeStockStudy = false) => {
     try {
         if (!mirrorData || !mirrorData.pedido) {
             console.error('[opByOperationWithDrawingsPdfGenerator] Dados inválidos:', mirrorData);
@@ -23,15 +23,15 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
             return;
         }
 
-        console.log('[opByOperationWithDrawingsPdfGenerator] Gerando PDF para pedido:', mirrorData.pedido?.pedido, '| Itens:', mirrorData.itens?.length);
+        console.log('[opByOperationWithDrawingsPdfGenerator] Gerando PDF para pedido:', mirrorData.pedido?.pedido, '| Itens:', mirrorData.itens?.length, '| includeStockStudy:', includeStockStudy);
 
-        // Generate the ArrayBuffer of the front cover (Rastreabilidade Operações Mode)
+        // 1. Generate the ArrayBuffer of the front cover (Rastreabilidade Operações Mode)
         const espelhoBuffer = generateOPByOperationPdf(mirrorData, true, batchContext);
         if (!espelhoBuffer) {
             throw new Error('Falha ao gerar capa de Rastreabilidade.');
         }
 
-        // 3. Extract parts summary to fetch drawings
+        // 2. Extract parts summary to fetch drawings
         const partsSummaryMap = new Map();
         mirrorData.itens.forEach(itemGroup => {
             const processPart = (component) => {
@@ -106,15 +106,47 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
         // --- Iniciar Merge do PDF ---
         let finalPdf = await PDFDocument.create();
 
-        // 4. Copiar Capa
+        // 3. Copiar Capa
         const jspdfDoc = await PDFDocument.load(espelhoBuffer, { ignoreEncryption: true });
         const jspdfCopied = await finalPdf.copyPages(jspdfDoc, jspdfDoc.getPageIndices());
         jspdfCopied.forEach(p => finalPdf.addPage(p));
 
+        // 3.1. Anexar Estudo de Estoque da Estrutura (BOM) se solicitado
+        if (includeStockStudy) {
+            try {
+                const rootCode = mirrorData.itens?.[0]?.produto_principal?.codigo || mirrorData.pedido?.codigo || mirrorData.itens?.[0]?.codigo;
+                if (rootCode) {
+                    const { getProductStructureStock } = await import('./api');
+                    const { exportProductStructureStockPDF } = await import('./productStructureStockReportGenerator');
+                    
+                    const stockData = await getProductStructureStock(rootCode);
+                    if (stockData && stockData.estrutura && stockData.estrutura.length > 0) {
+                        const stockMeta = {
+                            productCode: rootCode,
+                            productDesc: stockData.descricao_pai || mirrorData.itens?.[0]?.produto_principal?.descricao,
+                            orderNum: mirrorData.pedido?.pedido,
+                            orderItem: mirrorData.pedido?.item,
+                            orderQty: mirrorData.pedido?.quantidade || mirrorData.itens?.[0]?.produto_principal?.quantidade,
+                            clientName: mirrorData.pedido?.nome_cliente
+                        };
+                        
+                        const stockPdfBytes = exportProductStructureStockPDF(stockData.estrutura, stockMeta, { nome: userName }, true);
+                        if (stockPdfBytes) {
+                            const stockPdfDoc = await PDFDocument.load(stockPdfBytes, { ignoreEncryption: true });
+                            const stockCopiedPages = await finalPdf.copyPages(stockPdfDoc, stockPdfDoc.getPageIndices());
+                            stockCopiedPages.forEach(p => finalPdf.addPage(p));
+                        }
+                    }
+                }
+            } catch (stockErr) {
+                console.warn('Erro ao anexar estudo de estoque da estrutura no PDF:', stockErr);
+            }
+        }
+
         const helveticaFont = await finalPdf.embedFont(StandardFonts.HelveticaBold);
         const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-        // 5. Copiar Desenhos e Carimbar
+        // 4. Copiar Desenhos e Carimbar
         for (const part of partsSummaryArray) {
             if (!part.hasPdf || !part.pdfUrl) continue;
             try {
@@ -158,7 +190,7 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                     finalPdf.addPage(page);
                     const { width, height } = page.getSize();
                     const minSide = Math.min(width, height);
-                    const scale = Math.max(1, minSide / 595);
+                    const scale = Math.max(1, minSide / 595); // 595 is A4 width in pt
 
                     // Draw Watermark in the middle
                     const clientFirstName = String(mirrorData.pedido?.nome_cliente || '').trim().split(' ')[0].toUpperCase();
@@ -171,70 +203,65 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
                         y: (height - textHeight) / 2,
                         size: watermarkFontSize,
                         font: helveticaFont,
-                        color: rgb(0.9, 0.9, 0.9),
-                        opacity: 0.12,
-                        rotate: degrees(30)
+                        color: rgb(0.85, 0.85, 0.85),
+                        opacity: 0.35,
+                        rotate: degrees(45)
                     });
 
-                    const fontSize = 8 * scale;
-                    const lineHeight = 13 * scale;
-                    const padding = 5 * scale;
-                    
-                    const rectWidth = 470 * scale; // Mesma largura
-                    const rectHeight = (allLines.length * lineHeight) + padding;
-                    
-                    // offsetY mantém a caixa na mesma altitudade proporcional
-                    const offsetY = 10 * scale + rectHeight; 
+                    // Draw Stamp Background at bottom right
+                    const stampFontSize = Math.max(7, 8.5 * scale);
+                    const lineHeight = stampFontSize + (3 * scale);
+                    const stampWidth = Math.max(340, 360 * scale);
+                    const stampHeight = (allLines.length * lineHeight) + (10 * scale);
+                    const margin = 10 * scale;
+                    const stampX = width - stampWidth - margin;
+                    const stampY = margin;
 
                     page.drawRectangle({
-                        x: 10 * scale,
-                        y: height - offsetY,
-                        width: rectWidth,
-                        height: rectHeight,
-                        // Sem cor de fundo = Transparente
-                        borderColor: rgb(0.8, 0.1, 0.1),
-                        borderWidth: 1 * scale,
+                        x: stampX,
+                        y: stampY,
+                        width: stampWidth,
+                        height: stampHeight,
+                        color: rgb(1, 1, 1),
+                        opacity: 0.92,
+                        borderColor: rgb(0.2, 0.2, 0.2),
+                        borderWidth: 1.2 * scale,
                     });
-                    
-                    let currY = height - offsetY + rectHeight - padding - fontSize + (2 * scale);
-                    for (const textLine of allLines) {
-                        page.drawText(textLine, {
-                            x: 15 * scale,
-                            y: currY,
-                            size: fontSize,
+
+                    allLines.forEach((line, index) => {
+                        page.drawText(line, {
+                            x: stampX + (8 * scale),
+                            y: stampY + stampHeight - ((index + 1) * lineHeight),
+                            size: stampFontSize,
                             font: helveticaFont,
-                            color: rgb(0.8, 0.1, 0.1),
+                            color: rgb(0.1, 0.1, 0.1),
                         });
-                        currY -= lineHeight;
-                    }
+                    });
                 }
             } catch (err) {
-                console.warn(`Não foi possível carregar ou carimbar o desenho para ${part.codigo}`, err);
+                console.error(`Erro ao processar desenho do item ${part.codigo}:`, err);
             }
         }
 
-        const mergedPdfBytes = await finalPdf.save({ useObjectStreams: false });
+        // 5. Finalizar e salvar PDF
+        const finalPdfBytes = await finalPdf.save();
         if (returnBuffer) {
-            return mergedPdfBytes;
+            return finalPdfBytes;
         }
 
-        const batchOpSafe = batchContext && batchContext.visual_op ? batchContext.visual_op : mirrorData.pedido.pedido;
-        const safePedido = String(batchOpSafe).replace(/[^a-zA-Z0-9-]/g, '');
-        
-        const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+        const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-    const opNumRaw = mirrorData.opNumFromTable || ((mirrorData.items && mirrorData.items.length > 0) ? (mirrorData.items[0].op_num_completa || mirrorData.items[0].op_num || '') : '');
-    const opSuffix = opNumRaw ? `_OP_${opNumRaw.replace(/[^a-zA-Z0-9]/g, '')}` : '';
-        link.download = `Pacote_OP_${safePedido}${opSuffix}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const a = document.createElement('a');
+        a.href = url;
+        const opSuffix = includeStockStudy ? '_Estoque_Desenhos.pdf' : '_Desenhos.pdf';
+        a.download = `OP_${mirrorData.pedido?.pedido || 'OP'}${opSuffix}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
     } catch (error) {
-        console.error("Error generating OP Operation Refresh PDF with drawings:", error);
-        alert("Erro ao gerar PDF de rastreabilidade com desenhos. Verifique o console.");
+        console.error('[opByOperationWithDrawingsPdfGenerator] Erro fatal na geração do PDF com desenhos:', error);
+        alert(`Erro ao gerar PDF de Desenhos: ${error.message}`);
     }
 };

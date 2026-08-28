@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
+const pgDb = require('../db');
 const nodemailer = require('nodemailer');
 const { hasFinancialAccess } = require('../util/permissionHelper');
 
@@ -1273,6 +1274,207 @@ router.get('/dashboard', async (req, res) => {
     } catch (err) {
         console.error('Erro GET /faturamento/dashboard:', err);
         res.status(500).json({ error: 'Erro ao gerar dashboard de faturamento.' });
+    }
+});
+
+// =========================================================================
+// ROTA: Buscar todas as NFs emitidas de faturamento válido no Protheus
+// =========================================================================
+router.get('/nfs-emitidas', async (req, res) => {
+    try {
+        const canViewFinancials = await hasFinancialAccess(req);
+        let { data_inicio, data_fim, busca, cliente, produto } = req.query;
+
+        // Datas padrão: se não informado, pega os últimos 30 dias
+        const hoje = new Date();
+        const dFimDefault = hoje.toISOString().slice(0,10).replace(/-/g, '');
+        const dIniObj = new Date();
+        dIniObj.setDate(dIniObj.getDate() - 30);
+        const dIniDefault = dIniObj.toISOString().slice(0,10).replace(/-/g, '');
+
+        let dIni = data_inicio ? data_inicio.replace(/-/g, '').trim() : dIniDefault;
+        let dFim = data_fim ? data_fim.replace(/-/g, '').trim() : dFimDefault;
+
+        const params = [dIni, dFim];
+        let extraWhere = '';
+
+        if (busca && busca.trim()) {
+            const b = `%${busca.trim().toUpperCase()}%`;
+            params.push(b);
+            const idx = params.length;
+            extraWhere += ` AND (
+                f2.f2_doc ILIKE $${idx} OR 
+                sa1.a1_nome ILIKE $${idx} OR 
+                f2.f2_chvnfe ILIKE $${idx} OR 
+                f2.f2_cliente ILIKE $${idx} OR
+                EXISTS (
+                    SELECT 1 FROM public.sd2010 d2_sub
+                    LEFT JOIN public.sb1010 sb1_sub ON sb1_sub.b1_cod = d2_sub.d2_cod AND COALESCE(sb1_sub.d_e_l_e_t_, ' ') = ' '
+                    WHERE d2_sub.d2_doc = f2.f2_doc 
+                      AND d2_sub.d2_serie = f2.f2_serie 
+                      AND d2_sub.d2_cliente = f2.f2_cliente 
+                      AND d2_sub.d2_loja = f2.f2_loja
+                      AND COALESCE(d2_sub.d_e_l_e_t_, ' ') = ' '
+                      AND (d2_sub.d2_cod ILIKE $${idx} OR d2_sub.d2_pedido ILIKE $${idx} OR sb1_sub.b1_desc ILIKE $${idx})
+                )
+            )`;
+        }
+
+        if (cliente && cliente.trim()) {
+            const c = `%${cliente.trim().toUpperCase()}%`;
+            params.push(c);
+            const idx = params.length;
+            extraWhere += ` AND (f2.f2_cliente ILIKE $${idx} OR sa1.a1_nome ILIKE $${idx})`;
+        }
+
+        if (produto && produto.trim()) {
+            const p = `%${produto.trim().toUpperCase()}%`;
+            params.push(p);
+            const idx = params.length;
+            extraWhere += ` AND EXISTS (
+                SELECT 1 FROM public.sd2010 d2_prod
+                WHERE d2_prod.d2_doc = f2.f2_doc 
+                  AND d2_prod.d2_serie = f2.f2_serie 
+                  AND d2_prod.d2_cliente = f2.f2_cliente 
+                  AND d2_prod.d2_loja = f2.f2_loja
+                  AND COALESCE(d2_prod.d_e_l_e_t_, ' ') = ' '
+                  AND d2_prod.d2_cod ILIKE $${idx}
+            )`;
+        }
+
+        const sql = `
+            WITH nfs_base AS (
+                SELECT 
+                    TRIM(f2.f2_doc) as doc,
+                    TRIM(f2.f2_serie) as serie,
+                    TRIM(f2.f2_emissao) as emissao_raw,
+                    TRIM(f2.f2_cliente) as cliente_cod,
+                    TRIM(f2.f2_loja) as cliente_loja,
+                    TRIM(sa1.a1_nome) as cliente_nome,
+                    TRIM(sa1.a1_cgc) as cliente_cnpj,
+                    TRIM(sa1.a1_est) as cliente_uf,
+                    TRIM(sa1.a1_mun) as cliente_municipio,
+                    f2.f2_valbrut as valor_bruto,
+                    f2.f2_valmerc as valor_mercadoria,
+                    f2.f2_valfat as valor_faturado,
+                    TRIM(f2.f2_chvnfe) as chvnfe,
+                    TRIM(f2.f2_tipo) as tipo,
+                    TRIM(f2.f2_transp) as transp
+                FROM public.sf2010 f2
+                LEFT JOIN public.sa1010 sa1 ON sa1.a1_cod = f2.f2_cliente AND sa1.a1_loja = f2.f2_loja AND COALESCE(sa1.d_e_l_e_t_, ' ') = ' '
+                WHERE COALESCE(f2.d_e_l_e_t_, ' ') = ' '
+                  AND COALESCE(f2.f2_chvnfe, ' ') <> ' '
+                  AND COALESCE(f2.f2_status, ' ') NOT IN ('A', 'C')
+                  AND f2.f2_emissao >= $1 AND f2.f2_emissao <= $2
+                  ${extraWhere}
+                ORDER BY f2.f2_emissao DESC, f2.f2_doc DESC
+                LIMIT 1000
+            ),
+            itens_agrupados AS (
+                SELECT 
+                    d2.d2_doc as doc,
+                    d2.d2_serie as serie,
+                    d2.d2_cliente as cliente_cod,
+                    d2.d2_loja as cliente_loja,
+                    json_agg(
+                        json_build_object(
+                            'item', TRIM(d2.d2_item),
+                            'codigo', TRIM(d2.d2_cod),
+                            'descricao', TRIM(COALESCE(sb1.b1_desc, '')),
+                            'um', TRIM(COALESCE(sb1.b1_um, d2.d2_um)),
+                            'quantidade', d2.d2_quant,
+                            'preco_unitario', d2.d2_prunit,
+                            'valor_total', d2.d2_total,
+                            'pedido', TRIM(d2.d2_pedido),
+                            'itempv', TRIM(d2.d2_itempv),
+                            'tes', TRIM(d2.d2_tes),
+                            'cfop', TRIM(d2.d2_cf),
+                            'peso', d2.d2_peso
+                        ) ORDER BY d2.d2_item
+                    ) as itens
+                FROM public.sd2010 d2
+                JOIN nfs_base nb ON nb.doc = d2.d2_doc AND nb.serie = d2.d2_serie AND nb.cliente_cod = d2.d2_cliente AND nb.cliente_loja = d2.d2_loja
+                LEFT JOIN public.sb1010 sb1 ON sb1.b1_cod = d2.d2_cod AND COALESCE(sb1.d_e_l_e_t_, ' ') = ' '
+                WHERE COALESCE(d2.d_e_l_e_t_, ' ') = ' '
+                GROUP BY d2.d2_doc, d2.d2_serie, d2.d2_cliente, d2.d2_loja
+            )
+            SELECT 
+                nb.*,
+                COALESCE(ia.itens, '[]'::json) as itens
+            FROM nfs_base nb
+            LEFT JOIN itens_agrupados ia ON ia.doc = nb.doc AND ia.serie = nb.serie AND ia.cliente_cod = nb.cliente_cod AND ia.cliente_loja = nb.cliente_loja
+            ORDER BY nb.emissao_raw DESC, nb.doc DESC
+        `;
+
+        const { rows } = await pgDb.query(sql, params);
+
+        const fmtDate = (dStr) => {
+            if (!dStr || dStr.length !== 8) return dStr;
+            return `${dStr.substring(6,8)}/${dStr.substring(4,6)}/${dStr.substring(0,4)}`;
+        };
+
+        const mapTipo = (tipo) => {
+            const t = (tipo || '').trim().toUpperCase();
+            if (t === 'N') return 'Faturamento';
+            if (t === 'C') return 'Complemento';
+            if (t === 'P') return 'Devolução';
+            if (t === 'I') return 'Importação';
+            if (t === 'B') return 'Beneficiamento';
+            if (t === 'D') return 'Remessa';
+            return t || 'Faturamento';
+        };
+
+        const formatted = rows.map(r => {
+            const itens = (r.itens || []).map(it => ({
+                ...it,
+                quantidade: parseFloat(it.quantidade) || 0,
+                preco_unitario: canViewFinancials ? (parseFloat(it.preco_unitario) || 0) : undefined,
+                valor_total: canViewFinancials ? (parseFloat(it.valor_total) || 0) : undefined,
+                peso: parseFloat(it.peso) || 0
+            }));
+
+            return {
+                doc: r.doc,
+                serie: r.serie,
+                emissao: fmtDate(r.emissao_raw),
+                emissao_raw: r.emissao_raw,
+                cliente_cod: r.cliente_cod,
+                cliente_loja: r.cliente_loja,
+                cliente_nome: r.cliente_nome || 'Não identificado',
+                cliente_cnpj: r.cliente_cnpj || '',
+                cliente_uf: r.cliente_uf || '',
+                cliente_municipio: r.cliente_municipio || '',
+                valor_total: canViewFinancials ? (parseFloat(r.valor_bruto || r.valor_faturado || 0)) : undefined,
+                valor_mercadoria: canViewFinancials ? (parseFloat(r.valor_mercadoria || 0)) : undefined,
+                chvnfe: r.chvnfe,
+                tipo: r.tipo,
+                tipo_descricao: mapTipo(r.tipo),
+                transp: r.transp,
+                qtd_itens: itens.length,
+                total_pecas: itens.reduce((acc, it) => acc + (it.quantidade || 0), 0),
+                itens
+            };
+        });
+
+        // Totais gerais do resultado
+        const totalFaturado = canViewFinancials ? formatted.reduce((acc, r) => acc + (r.valor_total || 0), 0) : undefined;
+        const totalPecas = formatted.reduce((acc, r) => acc + (r.total_pecas || 0), 0);
+        const totalNFs = formatted.length;
+        const clientesSet = new Set(formatted.map(r => r.cliente_cod).filter(Boolean));
+
+        res.json({
+            totais: {
+                total_faturado: totalFaturado,
+                total_pecas: totalPecas,
+                total_nfs: totalNFs,
+                total_clientes: clientesSet.size
+            },
+            nfs: formatted
+        });
+
+    } catch (err) {
+        console.error('Erro GET /faturamento/nfs-emitidas:', err);
+        res.status(500).json({ error: 'Erro ao buscar notas fiscais emitidas.' });
     }
 });
 

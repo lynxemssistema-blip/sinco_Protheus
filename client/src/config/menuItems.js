@@ -4,7 +4,7 @@ import {
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
-    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck, Award, Smartphone
+    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck, Award, Smartphone, AlertOctagon
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -199,6 +199,7 @@ export const MENU_GROUPS = [
         items: [
             { id: 'vmi_demanda', label: 'VMI Forecast', path: '/vmi/forecast', icon: ClipboardList },
             { id: 'vmi_demanda_mes', label: 'Demanda Mês', path: '/vmi/demanda-mes', icon: Calendar },
+            { id: 'vmi_criticos', label: 'Tabela de Críticos', path: '/vmi/criticos', icon: AlertOctagon },
             { id: 'vmi_pedido', label: 'VMI Pedido', path: '/vmi/pedido', icon: ListOrdered },
             { id: 'vmi_leitura', label: 'Leitura de Planilha', path: '/vmi/leitura', icon: FileUp },
             { id: 'vmi_dashboard', label: 'Visão de Entrega', path: '/vmi/dashboard', icon: Target },

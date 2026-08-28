@@ -71,6 +71,9 @@ truncate_page.ps1
 
 # Uploads & Temp
 server/uploads/
+scratch/
+input.txt
+server/check_*.js
 tmp/
 
 # Engineering / CAD files

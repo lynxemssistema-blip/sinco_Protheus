@@ -109,14 +109,15 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
             }
         };
 
-        drawMainHeader("LOTE AGLUTINADO - RESUMO DE PRODUTOS");
+        drawMainHeader("ÍNDICE GERAL — LOTE AGLUTINADO PCP");
 
-        const coverTableData = fractionOrders.map(order => {
+        const coverTableData = fractionOrders.map((order, idx) => {
             const dataPcpRaw = order.data_entrega_pcp || order.pcp_delivery_forecast_date || order.data_pcp;
             const dataPcpVal = dataPcpRaw ? new Date(dataPcpRaw).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-';
             const codProduto = order.cod_produto || order.codigo || order.produto || '-';
             const pedCompra = order.ped_cliente || order.pedido_cliente || order.pedido_compra || '-';
             return [
+                idx + 1,
                 order.pedido || '-',
                 dataPcpVal,
                 order.nome_cliente || '-',
@@ -130,13 +131,13 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
 
         autoTable(doc, {
             startY: yOffset + 5,
-            head: [['Pedido Venda', 'Data PCP', 'Cliente', 'Ped. Compra', 'OP', 'Cód. Prod', 'Descrição', 'Qtd Lote']],
+            head: [['#', 'Pedido Venda', 'Data PCP', 'Cliente', 'Ped. Compra', 'OP / Fração', 'Cód. Produto', 'Descrição', 'Qtd Lote']],
             body: coverTableData,
             theme: 'grid',
             headStyles: { fillColor: [41, 128, 185], fontSize: 9 },
             styles: { fontSize: 8 },
             margin: { left: 10, right: 10, bottom: 20 },
-            didDrawPage: (data) => drawMainHeader("LOTE AGLUTINADO - RESUMO DE PRODUTOS")
+            didDrawPage: (data) => drawMainHeader("ÍNDICE GERAL — LOTE AGLUTINADO PCP")
         });
 
 
@@ -151,12 +152,12 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 const mirrorData = mirrorRes.data;
 
                 if (mirrorData && mirrorData.itens && mirrorData.itens.length > 0) {
-                    const itemGroup = mirrorData.itens.find(i => String(i.item).trim() === String(order.item).trim()) || mirrorData.itens[0];
+                    const itemGroup = mirrorData.itens.find(i => String(i.item || i.item_pedido).trim() === String(order.item).trim()) || mirrorData.itens[0];
                     
                     // quantidade_venda do nível 0 = quantidade total do pedido de vendas para este item
                     // fractionQty = quantidade_pcp da fração selecionada (order.visual_qtd)
-                    const fullOrderQty = parseFloat(itemGroup?.produto_principal?.quantidade_venda || order.qtd_faturar || order.quantidade || 1);
-                    const fractionQty = parseFloat(order.visual_qtd || fullOrderQty);
+                    const fullOrderQty = parseFloat(itemGroup?.produto_principal?.quantidade_venda || itemGroup?.quantidade_venda || order.qtd_faturar || order.quantidade || 1);
+                    const fractionQty = parseFloat(order.visual_qtd || order.qtd || order.quantidade_pcp || fullOrderQty);
                     // Ratio: proporção da fração em relação ao pedido total
                     const ratio = fullOrderQty > 0 ? fractionQty / fullOrderQty : 1;
 
@@ -607,16 +608,14 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
 
                 const roundedQtd = Number(part.qtdFrac);
                 const finalQtdStr = roundedQtd % 1 === 0 ? roundedQtd.toString() : roundedQtd.toFixed(2);
+                const loteCodeSafe = codigoLiberacao || loteInfo || 'LOTE AGLUTINADO';
 
-                const uniquePedidos = part.pedidos ? Array.from(part.pedidos).join(', ') : '-';
-                const watermarkClients = part.pedidos 
-                    ? Array.from(part.pedidos).map(p => clientNameMap.get(String(p).trim())).filter(Boolean)
-                    : [];
-                const uniqueClients = [...new Set(watermarkClients)].join(', ');
-                const watermarkText = `PEDIDO: ${uniquePedidos} - ${uniqueClients}`;
+                // Marca d'água limpa e focada no Lote PCP
+                const watermarkText = `LOTE: ${loteCodeSafe} - METALFISA PCP`;
 
-                const textLine1 = `CÓPIA CONTROLADA | DATA: ${dataGeracao} | USUÁRIO: ${userName} | PEDIDO: ${uniquePedidos}`;
-                const textLine2 = `CÓD: ${part.codigo} | LOTE: ${loteInfo} | DATA PCP: ${dataPcp} | QTD AGLUTINADA: ${finalQtdStr} ${part.um}`;
+                // Carimbo da Garantia da Qualidade: Focado no Lote e Quantidade Total Consolidada
+                const textLine1 = `CÓPIA CONTROLADA | METALFISA GARANTIA DA QUALIDADE | DATA: ${dataGeracao} | USUÁRIO: ${userName}`;
+                const textLine2 = `CÓD: ${part.codigo} | LOTE: ${loteCodeSafe} | DATA PCP: ${dataPcp ? formatDatePCP(dataPcp) : '-'} | QTD TOTAL A FABRICAR: ${finalQtdStr} ${part.um || 'UN'}`;
 
                 for (const page of copiedPages) {
                     mergedPdf.addPage(page);

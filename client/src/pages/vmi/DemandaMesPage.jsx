@@ -1028,6 +1028,36 @@ export default function DemandaMesPage() {
         });
     }, [resultData, filterText, filterStatus, filterMonth]);
 
+    const filteredTotais = useMemo(() => {
+        let totalComSaldo = 0;
+        let totalSemSaldo = 0;
+        let totalFaturadoGeral = 0;
+        let totalComFaturamento = 0;
+        let totalSaldoGeral = 0;
+        let totalDemandaGeral = 0;
+
+        filteredItems.forEach(item => {
+            if (item.possui_saldo) totalComSaldo++;
+            else totalSemSaldo++;
+            
+            totalFaturadoGeral += Number(item.total_faturado) || 0;
+            if ((Number(item.total_faturado) || 0) > 0) totalComFaturamento++;
+            
+            totalSaldoGeral += Number(item.total_saldo_faturar) || 0;
+            totalDemandaGeral += Number(item.total_demanda) || 0;
+        });
+
+        return {
+            totalItens: filteredItems.length,
+            totalComSaldo,
+            totalSemSaldo,
+            totalFaturadoGeral,
+            totalComFaturamento,
+            totalSaldoGeral,
+            totalDemandaGeral
+        };
+    }, [filteredItems]);
+
     // Export to Excel / Complementar Planilha Original do Cliente
     const handleTemplateFileSelected = async (e) => {
         const selectedFile = e.target.files?.[0];
@@ -1853,7 +1883,7 @@ export default function DemandaMesPage() {
                         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
                             <div>
                                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Itens na Planilha</p>
-                                <h3 className="text-2xl font-extrabold text-slate-900 mt-1">{resultData.totais.totalItens.toLocaleString('pt-BR')}</h3>
+                                <h3 className="text-2xl font-extrabold text-slate-900 mt-1">{filteredTotais.totalItens.toLocaleString('pt-BR')}</h3>
                                 <p className="text-xs text-slate-400 mt-0.5">Aba: {resultData.sheetName}</p>
                             </div>
                             <div className="p-3 bg-slate-100 text-slate-600 rounded-xl">
@@ -1864,9 +1894,9 @@ export default function DemandaMesPage() {
                         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
                             <div>
                                 <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Com Saldo Protheus</p>
-                                <h3 className="text-2xl font-extrabold text-emerald-700 mt-1">{resultData.totais.totalComSaldo.toLocaleString('pt-BR')}</h3>
+                                <h3 className="text-2xl font-extrabold text-emerald-700 mt-1">{filteredTotais.totalComSaldo.toLocaleString('pt-BR')}</h3>
                                 <p className="text-xs text-slate-400 mt-0.5">
-                                    {((resultData.totais.totalComSaldo / (resultData.totais.totalItens || 1)) * 100).toFixed(1)}% dos itens
+                                    {((filteredTotais.totalComSaldo / (filteredTotais.totalItens || 1)) * 100).toFixed(1)}% dos itens
                                 </p>
                             </div>
                             <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
@@ -1877,7 +1907,7 @@ export default function DemandaMesPage() {
                         <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between">
                             <div>
                                 <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">Sem Saldo Aberto</p>
-                                <h3 className="text-2xl font-extrabold text-amber-700 mt-1">{resultData.totais.totalSemSaldo.toLocaleString('pt-BR')}</h3>
+                                <h3 className="text-2xl font-extrabold text-amber-700 mt-1">{filteredTotais.totalSemSaldo.toLocaleString('pt-BR')}</h3>
                                 <p className="text-xs text-slate-400 mt-0.5">Sem pedidos pendentes</p>
                             </div>
                             <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
@@ -1889,10 +1919,10 @@ export default function DemandaMesPage() {
                             <div>
                                 <p className="text-xs font-bold text-sky-600 uppercase tracking-wider">Total Faturado VMI</p>
                                 <h3 className="text-2xl font-extrabold text-sky-800 mt-1">
-                                    {(resultData.totais.totalFaturadoGeral || 0).toLocaleString('pt-BR')} un
+                                    {(filteredTotais.totalFaturadoGeral || 0).toLocaleString('pt-BR')} un
                                 </h3>
                                 <p className="text-xs text-slate-400 mt-0.5">
-                                    {resultData.totais.totalComFaturamento || 0} itens com NF
+                                    {filteredTotais.totalComFaturamento || 0} itens com NF
                                 </p>
                             </div>
                             <div className="p-3 bg-sky-50 text-sky-600 rounded-xl">
@@ -1904,10 +1934,10 @@ export default function DemandaMesPage() {
                             <div>
                                 <p className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Saldo Total Carteira</p>
                                 <h3 className="text-2xl font-extrabold text-indigo-900 mt-1">
-                                    {resultData.totais.totalSaldoGeral.toLocaleString('pt-BR')} un
+                                    {filteredTotais.totalSaldoGeral.toLocaleString('pt-BR')} un
                                 </h3>
                                 <p className="text-xs text-slate-400 mt-0.5">
-                                    Demanda: {resultData.totais.totalDemandaGeral.toLocaleString('pt-BR')} un
+                                    Demanda: {filteredTotais.totalDemandaGeral.toLocaleString('pt-BR')} un
                                 </p>
                             </div>
                             <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
@@ -2286,7 +2316,7 @@ export default function DemandaMesPage() {
                                                                                                      title={`NF ${nf.nota}/${nf.serie} emitida em ${nf.emissao} - Qtd: ${nf.qtd_faturada} un (Clique para detalhes)`}
                                                                                                  >
                                                                                                      <Receipt className="w-2.5 h-2.5 text-sky-700 shrink-0" />
-                                                                                                     <span>NF {nf.nota}</span>
+                                                                                                     <span>NF {nf.nota} <span className="font-normal text-sky-700 ml-0.5">({nf.emissao})</span></span>
                                                                                                      {nf.qtd_faturada > 0 && (
                                                                                                          <span className="text-[8px] bg-sky-200 text-sky-950 px-1 rounded font-bold">
                                                                                                              {nf.qtd_faturada} un
@@ -2371,7 +2401,7 @@ export default function DemandaMesPage() {
                                                                                                      title={`NF ${nf.nota}/${nf.serie} emitida em ${nf.emissao} - Qtd: ${nf.qtd_faturada} un (Clique para detalhes)`}
                                                                                                  >
                                                                                                      <Receipt className="w-2.5 h-2.5 text-sky-700 shrink-0" />
-                                                                                                     <span>NF {nf.nota}</span>
+                                                                                                     <span>NF {nf.nota} <span className="font-normal text-sky-700 ml-0.5">({nf.emissao})</span></span>
                                                                                                      {nf.qtd_faturada > 0 && (
                                                                                                          <span className="text-[8px] bg-sky-200 text-sky-950 px-1 rounded font-bold">
                                                                                                              {nf.qtd_faturada} un
@@ -2483,7 +2513,7 @@ export default function DemandaMesPage() {
                                                                                              title={`NF ${nf.nota}/${nf.serie} emitida em ${nf.emissao} - Qtd: ${nf.qtd_faturada} un (Clique para detalhes)`}
                                                                                          >
                                                                                              <Receipt className="w-2.5 h-2.5 text-sky-700 shrink-0" />
-                                                                                             <span>NF {nf.nota}</span>
+                                                                                             <span>NF {nf.nota} <span className="font-normal text-sky-700 ml-0.5">({nf.emissao})</span></span>
                                                                                              {nf.qtd_faturada > 0 && (
                                                                                                  <span className="text-[8px] bg-sky-200 text-sky-950 px-1 rounded font-bold">
                                                                                                      {nf.qtd_faturada} un
@@ -2568,7 +2598,7 @@ export default function DemandaMesPage() {
                                                                                              title={`NF ${nf.nota}/${nf.serie} emitida em ${nf.emissao} - Qtd: ${nf.qtd_faturada} un (Clique para detalhes)`}
                                                                                          >
                                                                                              <Receipt className="w-2.5 h-2.5 text-sky-700 shrink-0" />
-                                                                                             <span>NF {nf.nota}</span>
+                                                                                             <span>NF {nf.nota} <span className="font-normal text-sky-700 ml-0.5">({nf.emissao})</span></span>
                                                                                              {nf.qtd_faturada > 0 && (
                                                                                                  <span className="text-[8px] bg-sky-200 text-sky-950 px-1 rounded font-bold">
                                                                                                      {nf.qtd_faturada} un

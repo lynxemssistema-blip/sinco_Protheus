@@ -9,7 +9,7 @@ import { generateOPByOperationPdf } from './opByOperationPdfGenerator';
  * Scans component.operacoes to build a full routing sequence (e.g., MO0013 -> MO0014)
  * and injects this sequence into the PDF stamp to save paper but maintain full traceability.
  */
-export const generateOPDrawingsWithOpsStampPdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false, includeDescription = false) => {
+export const generateOPDrawingsWithOpsStampPdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false, includeDescription = false, includeStockStudy = false) => {
     try {
         if (!mirrorData || !mirrorData.pedido) {
             console.error('[opDrawingsWithOpsStampGenerator] Dados inválidos:', mirrorData);
@@ -23,7 +23,7 @@ export const generateOPDrawingsWithOpsStampPdf = async (mirrorData, userName = '
             return;
         }
 
-        console.log('[opDrawingsWithOpsStampGenerator] Gerando PDF para pedido:', mirrorData.pedido?.pedido, '| Itens:', mirrorData.itens?.length);
+        console.log('[opDrawingsWithOpsStampGenerator] Gerando PDF para pedido:', mirrorData.pedido?.pedido, '| Itens:', mirrorData.itens?.length, '| includeStockStudy:', includeStockStudy);
 
         const espelhoBuffer = generateOPByOperationPdf(mirrorData, true, batchContext);
         if (!espelhoBuffer) {
@@ -41,10 +41,10 @@ export const generateOPDrawingsWithOpsStampPdf = async (mirrorData, userName = '
                     ? parseFloat(component.quantidade_venda || component.quantidade_calculada || component.qtd_total || 0)
                     : parseFloat(component.quantidade_calculada || component.qtd_total || 0);
 
-                if (batchContext && batchContext.is_fraction && batchContext.visual_qtd) {
-                    const orderQtyOriginal = mirrorData.pedido.quantidade || 1;
-                    const fractionQty = parseFloat(batchContext.visual_qtd);
-                    rawQtd = isLevel0 ? fractionQty : (rawQtd / orderQtyOriginal) * fractionQty;
+                if (batchContext && (batchContext.is_fraction || batchContext.visual_qtd || batchContext.qtd)) {
+                    const orderQtyOriginal = parseFloat(itemGroup?.produto_principal?.quantidade_venda || itemGroup?.quantidade_venda || mirrorData.pedido?.quantidade || 1);
+                    const fractionQty = parseFloat(batchContext.visual_qtd || batchContext.qtd || orderQtyOriginal);
+                    rawQtd = isLevel0 ? fractionQty : (orderQtyOriginal > 0 ? (rawQtd / orderQtyOriginal) * fractionQty : rawQtd);
                 }
 
                 const op_num = component.op_num || itemGroup.produto_principal?.op_num || '-';
@@ -119,9 +119,42 @@ export const generateOPDrawingsWithOpsStampPdf = async (mirrorData, userName = '
 
         let finalPdf = await PDFDocument.create();
 
+        // 1. Capa / Espelho de Rastreabilidade
         const jspdfDoc = await PDFDocument.load(espelhoBuffer, { ignoreEncryption: true });
         const jspdfCopied = await finalPdf.copyPages(jspdfDoc, jspdfDoc.getPageIndices());
         jspdfCopied.forEach(p => finalPdf.addPage(p));
+
+        // 2. Estudo de Estoque da Estrutura (BOM) se solicitado
+        if (includeStockStudy) {
+            try {
+                const rootCode = mirrorData.itens?.[0]?.produto_principal?.codigo || mirrorData.pedido?.codigo || mirrorData.itens?.[0]?.codigo;
+                if (rootCode) {
+                    const { getProductStructureStock } = await import('./api');
+                    const { exportProductStructureStockPDF } = await import('./productStructureStockReportGenerator');
+                    
+                    const stockData = await getProductStructureStock(rootCode);
+                    if (stockData && stockData.estrutura && stockData.estrutura.length > 0) {
+                        const stockMeta = {
+                            productCode: rootCode,
+                            productDesc: stockData.descricao_pai || mirrorData.itens?.[0]?.produto_principal?.descricao,
+                            orderNum: mirrorData.pedido?.pedido,
+                            orderItem: mirrorData.pedido?.item,
+                            orderQty: mirrorData.pedido?.quantidade || mirrorData.itens?.[0]?.produto_principal?.quantidade,
+                            clientName: mirrorData.pedido?.nome_cliente
+                        };
+                        
+                        const stockPdfBytes = exportProductStructureStockPDF(stockData.estrutura, stockMeta, { nome: userName }, true);
+                        if (stockPdfBytes) {
+                            const stockPdfDoc = await PDFDocument.load(stockPdfBytes, { ignoreEncryption: true });
+                            const stockCopiedPages = await finalPdf.copyPages(stockPdfDoc, stockPdfDoc.getPageIndices());
+                            stockCopiedPages.forEach(p => finalPdf.addPage(p));
+                        }
+                    }
+                }
+            } catch (stockErr) {
+                console.warn('Erro ao anexar estudo de estoque da estrutura no PDF:', stockErr);
+            }
+        }
 
         const helveticaFont = await finalPdf.embedFont(StandardFonts.HelveticaBold);
         const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -154,10 +187,13 @@ export const generateOPDrawingsWithOpsStampPdf = async (mirrorData, userName = '
                 const loteNome = batchContext && batchContext.visual_op ? batchContext.visual_op : '';
                 
                 const visualOpStr = loteNome && loteNome !== uniqueOps ? `${loteNome} (OPs: ${uniqueOps})` : uniqueOps;
+                const isAglutinado = !!(batchContext && (batchContext.is_fraction || batchContext.lote || batchContext.visual_op));
                 
                 const safePedidoNum = mirrorData?.pedido?.pedido || '-';
-                const textLine1 = `CÓPIA CONTROLADA | DATA: ${dataGeracao} | USUÁRIO: ${userName} | PEDIDO: ${safePedidoNum}`;
-                const baseInfo = `ROTEIRO: ${part.roteiro} | CÓD: ${part.codigo} | ENT. LOTE: ${batchContext && batchContext.data_pcp ? batchContext.data_pcp : '-'} | QTD: ${finalQtdStr} ${part.um} | LOTE/OP: ${visualOpStr}`;
+                const textLine1 = isAglutinado
+                    ? `CÓPIA CONTROLADA | METALFISA GARANTIA DA QUALIDADE | DATA: ${dataGeracao} | USUÁRIO: ${userName}`
+                    : `CÓPIA CONTROLADA | METALFISA GARANTIA DA QUALIDADE | DATA: ${dataGeracao} | USUÁRIO: ${userName} | PEDIDO: ${safePedidoNum}`;
+                const baseInfo = `ROTEIRO: ${part.roteiro} | CÓD: ${part.codigo} | ENT. LOTE: ${batchContext && batchContext.data_pcp ? batchContext.data_pcp : '-'} | QTD TOTAL: ${finalQtdStr} ${part.um} | LOTE/OP: ${visualOpStr}`;
                 
                 const chunkedInfo = chunkText(baseInfo, 105);
                 const allLines = [textLine1, ...chunkedInfo];

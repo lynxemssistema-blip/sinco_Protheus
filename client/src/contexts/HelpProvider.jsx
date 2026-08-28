@@ -90,31 +90,45 @@ export function HelpProvider({ children }) {
         if (isOpen) setForcedPath(null);
     }, [isOpen]);
 
-    const getHelpByPath = useCallback((pathname) => {
-        // First priority: Database-driven modules (SGQ SOPs)
-        if(allModules && allModules.length > 0) {
-            let exact = allModules.find(m => m.route_path === pathname);
+    const getHelpByPath = useCallback((rawPathname) => {
+        if (!rawPathname) return HELP_CONTENT['/'] || null;
+
+        // Clean pathname (remove query string, hash, and trailing slash)
+        let pathname = rawPathname.split('?')[0].split('#')[0];
+        if (pathname.length > 1 && pathname.endsWith('/')) {
+            pathname = pathname.slice(0, -1);
+        }
+
+        // 1. Exact match in allModules (SGQ Database)
+        if (allModules && allModules.length > 0) {
+            const exact = allModules.find(m => m.route_path === pathname || m.path === pathname);
             if (exact) return exact;
         }
 
-        // Secondary priority: Local static helpContent.js (Fallback)
+        // 2. Exact match in static HELP_CONTENT
         if (HELP_CONTENT[pathname]) {
             return HELP_CONTENT[pathname];
         }
 
-        // Tertiary priority: Dynamic patterns
+        // 3. Dynamic route regex matching
         const dynamicPatterns = [
             { regex: /^\/estrutura\/.+$/, key: '/estrutura/:codigo' },
             { regex: /^\/bom\/.+$/, key: '/bom-generator' },
+            { regex: /^\/fornecedor\/romaneio\/.+$/, key: '/fornecedor/romaneios' },
+            { regex: /^\/producao\/op\/.+$/, key: '/producao/op' },
+            { regex: /^\/portal-cliente\/tablet.*$/, key: '/portal-cliente/tablet' },
+            { regex: /^\/vmi\/criticos.*$/, key: '/vmi/criticos' },
+            { regex: /^\/suprimentos\/espelho-nf.*$/, key: '/suprimentos/espelho-nf' },
         ];
 
         for (const pattern of dynamicPatterns) {
             if (pattern.regex.test(pathname)) {
-                return (allModules && allModules.find(m => m.route_path === pattern.key)) || HELP_CONTENT[pattern.key];
+                const found = (allModules && allModules.find(m => m.route_path === pattern.key || m.path === pattern.key)) || HELP_CONTENT[pattern.key];
+                if (found) return found;
             }
         }
         
-        return HELP_CONTENT['/']; // Global fallback
+        return HELP_CONTENT['/'] || Object.values(HELP_CONTENT)[0]; // Global fallback
     }, [allModules]);
 
     return (

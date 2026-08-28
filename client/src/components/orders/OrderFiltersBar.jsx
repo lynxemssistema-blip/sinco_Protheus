@@ -2,8 +2,9 @@ import React from 'react';
 import {
     Search, Filter, Calendar, AlertCircle, Package,
     AlignJustify, List, FileSpreadsheet, FileText,
-    Loader2, StickyNote
+    Loader2, StickyNote, HelpCircle
 } from 'lucide-react';
+import { useHelp } from '../../contexts/HelpContext';
 
 /**
  * OrderFiltersBar — extracted filter form from OrdersTable.
@@ -21,6 +22,7 @@ const OrderFiltersBar = ({
     onDownloadPDF,
     onOpenReport,
 }) => {
+    const { openHelp } = useHelp();
     return (
         <div className="border-b border-gray-100 bg-white print:hidden">
             {/* ── Top progress bar ── */}
@@ -40,23 +42,34 @@ const OrderFiltersBar = ({
                     )}
                 </div>
 
-                {/* View Mode Toggle */}
-                <div className="bg-gray-100 p-1 rounded-lg flex items-center">
+                {/* View Mode Toggle & Help */}
+                <div className="flex items-center gap-2">
+                    <div className="bg-gray-100 p-1 rounded-lg flex items-center">
+                        <button
+                            onClick={() => onViewModeChange('tree')}
+                            aria-label="Ver visão agrupada"
+                            className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'tree' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <AlignJustify className="w-4 h-4" />
+                            Agrupado
+                        </button>
+                        <button
+                            onClick={() => onViewModeChange('flat')}
+                            aria-label="Ver visão de lista plana"
+                            className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'flat' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <List className="w-4 h-4" />
+                            Lista Plana
+                        </button>
+                    </div>
+
                     <button
-                        onClick={() => onViewModeChange('tree')}
-                        aria-label="Ver visão agrupada"
-                        className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'tree' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        type="button"
+                        onClick={() => openHelp('/visao-geral')}
+                        title="Ajuda e Manual da Visão Geral e Planilha Mestra"
+                        className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all border border-slate-200 bg-white"
                     >
-                        <AlignJustify className="w-4 h-4" />
-                        Agrupado
-                    </button>
-                    <button
-                        onClick={() => onViewModeChange('flat')}
-                        aria-label="Ver visão de lista plana"
-                        className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'flat' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                        <List className="w-4 h-4" />
-                        Lista Plana
+                        <HelpCircle className="w-4 h-4" />
                     </button>
                 </div>
             </div>

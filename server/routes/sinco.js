@@ -1039,8 +1039,11 @@ router.get('/operacoes/:codigo', async (req, res) => {
                 TRIM(h1.h1_descri)                                          AS descricao,
                 TRIM(g2.g2_recurso)                                         AS recurso,
                 TRIM(h1.h1_descri)                                          AS recurso_descricao,
+                TRIM(COALESCE(g2.g2_ctrab, h1.h1_ctrab, ''))                AS ctrab,
                 ROUND(g2.g2_tempad::numeric, 3)                             AS tempo,
-                g2.g2_setup                                                 AS setup
+                COALESCE(g2.g2_setup, 0)                                    AS setup,
+                COALESCE(g2.g2_lotepad, 1)                                  AS lotepad,
+                COALESCE(g2.g2_maoobra, 1)                                  AS maoobra
             FROM public.sg2010 g2
             LEFT JOIN public.sh1010 h1
                 ON h1.h1_codigo = g2.g2_recurso

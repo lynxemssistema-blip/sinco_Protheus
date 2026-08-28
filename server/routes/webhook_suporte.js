@@ -28,11 +28,18 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Cache do HelpContent (lê a base de conhecimento dinâmica)
 let helpContentText = '';
-try {
-    const filePath = path.join(__dirname, '../../client/src/config/helpContent.js');
-    helpContentText = fs.readFileSync(filePath, 'utf8');
-} catch (error) {
-    console.error('[AI Suporte] Falha ao ler helpContent.js:', error.message);
+const potentialPaths = [
+    path.join(__dirname, '../../client/src/config/helpContent.js'),
+    path.join(__dirname, '../config/helpContent.js'),
+    path.join(__dirname, '../../client/dist/helpContent.js')
+];
+for (const p of potentialPaths) {
+    try {
+        if (fs.existsSync(p)) {
+            helpContentText = fs.readFileSync(p, 'utf8');
+            break;
+        }
+    } catch (_) {}
 }
 
 // Histórico de Conversas

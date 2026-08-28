@@ -630,14 +630,23 @@ export default function SINCOFormularioPrincipal() {
             const editada = editedOperacoes.find(op => op._original_operacao === original.operacao && !op.isNew);
             
             if (!editada || editada.deleted) {
-                // Foi excluída ou não existe mais
+                // Foi excluída
                 roteirosParaEnviar.push({
                     G2_OPERAC: String(original.operacao).trim().padStart(2, '0'),
                     G2_DESCRI: (original.descricao || original.recurso_descricao || '').substring(0, 30),
                     G2_RECURSO: (original.recurso || '').trim(),
-                    G2_FERRAM: "", G2_TPALOCF: "", G2_SETUP: Number(original.setup || 0), G2_FORMSTP: "", G2_LOTEPAD: 1,
-                    G2_TEMPAD: Number(original.tempo || 0),
-                    G2_TPOPER: "1", G2_TPSOBRE: "", G2_TEMPSOB: "", G2_CTRAB: "", G2_TEMPEND: "", G2_MAOOBRA: 1,
+                    G2_FERRAM: "",
+                    G2_TPALOCF: "",
+                    G2_SETUP: original.setup !== undefined && original.setup !== '' ? String(original.setup) : "",
+                    G2_FORMSTP: "",
+                    G2_LOTEPAD: 1,
+                    G2_TEMPAD: Number(original.tempo || 1),
+                    G2_TPOPER: "1",
+                    G2_TPSOBRE: "",
+                    G2_TEMPSOB: "",
+                    G2_CTRAB: "",
+                    G2_TEMPEND: "",
+                    G2_MAOOBRA: 1,
                     OPERACAO: "EXCLUIR"
                 });
             } else if (String(editada.operacao).trim() !== String(original.operacao).trim()) {
@@ -646,38 +655,58 @@ export default function SINCOFormularioPrincipal() {
                     G2_OPERAC: String(original.operacao).trim().padStart(2, '0'),
                     G2_DESCRI: (original.descricao || original.recurso_descricao || '').substring(0, 30),
                     G2_RECURSO: (original.recurso || '').trim(),
-                    G2_FERRAM: "", G2_TPALOCF: "", G2_SETUP: Number(original.setup || 0), G2_FORMSTP: "", G2_LOTEPAD: 1,
-                    G2_TEMPAD: Number(original.tempo || 0),
-                    G2_TPOPER: "1", G2_TPSOBRE: "", G2_TEMPSOB: "", G2_CTRAB: "", G2_TEMPEND: "", G2_MAOOBRA: 1,
+                    G2_FERRAM: "",
+                    G2_TPALOCF: "",
+                    G2_SETUP: original.setup !== undefined && original.setup !== '' ? String(original.setup) : "",
+                    G2_FORMSTP: "",
+                    G2_LOTEPAD: 1,
+                    G2_TEMPAD: Number(original.tempo || 1),
+                    G2_TPOPER: "1",
+                    G2_TPSOBRE: "",
+                    G2_TEMPSOB: "",
+                    G2_CTRAB: "",
+                    G2_TEMPEND: "",
+                    G2_MAOOBRA: 1,
                     OPERACAO: "EXCLUIR"
                 });
                 roteirosParaEnviar.push({
                     G2_OPERAC: String(editada.operacao).trim().padStart(2, '0'),
                     G2_DESCRI: (editada.descricao || editada.recurso_descricao || '').substring(0, 30),
                     G2_RECURSO: (editada.recurso || '').trim(),
-                    G2_FERRAM: "", G2_TPALOCF: "", G2_SETUP: Number(editada.setup || 0), G2_FORMSTP: "", G2_LOTEPAD: 1,
-                    G2_TEMPAD: Number(editada.tempo || 0),
-                    G2_TPOPER: "1", G2_TPSOBRE: "", G2_TEMPSOB: "", G2_CTRAB: "", G2_TEMPEND: "", G2_MAOOBRA: 1,
+                    G2_FERRAM: "",
+                    G2_TPALOCF: "",
+                    G2_SETUP: editada.setup !== undefined && editada.setup !== '' ? String(editada.setup) : "",
+                    G2_FORMSTP: "",
+                    G2_LOTEPAD: 1,
+                    G2_TEMPAD: Number(editada.tempo || 1),
+                    G2_TPOPER: "1",
+                    G2_TPSOBRE: "",
+                    G2_TEMPSOB: "",
+                    G2_CTRAB: "",
+                    G2_TEMPEND: "",
+                    G2_MAOOBRA: 1,
                     OPERACAO: "INCLUIR"
                 });
             } else {
-                // Mesma operação, verifica se mudou algo
-                if (
-                    String(original.descricao || original.recurso_descricao || '').trim() !== String(editada.descricao || editada.recurso_descricao || '').trim() ||
-                    String(original.recurso).trim() !== String(editada.recurso).trim() ||
-                    Number(original.tempo) !== Number(editada.tempo) ||
-                    Number(original.setup) !== Number(editada.setup)
-                ) {
-                    roteirosParaEnviar.push({
-                        G2_OPERAC: String(editada.operacao).trim().padStart(2, '0'),
-                        G2_DESCRI: (editada.descricao || editada.recurso_descricao || '').substring(0, 30),
-                        G2_RECURSO: (editada.recurso || '').trim(),
-                        G2_FERRAM: "", G2_TPALOCF: "", G2_SETUP: Number(editada.setup || 0), G2_FORMSTP: "", G2_LOTEPAD: 1,
-                        G2_TEMPAD: Number(editada.tempo || 0),
-                        G2_TPOPER: "1", G2_TPSOBRE: "", G2_TEMPSOB: "", G2_CTRAB: "", G2_TEMPEND: "", G2_MAOOBRA: 1,
-                        OPERACAO: "ALTERAR"
-                    });
-                }
+                // Mesma operação mantida ou alterada (sempre enviada na alteração de roteiro)
+                roteirosParaEnviar.push({
+                    G2_OPERAC: String(editada.operacao).trim().padStart(2, '0'),
+                    G2_DESCRI: (editada.descricao || editada.recurso_descricao || '').substring(0, 30),
+                    G2_RECURSO: (editada.recurso || '').trim(),
+                    G2_FERRAM: "",
+                    G2_TPALOCF: "",
+                    G2_SETUP: editada.setup !== undefined && editada.setup !== '' ? String(editada.setup) : "",
+                    G2_FORMSTP: "",
+                    G2_LOTEPAD: 1,
+                    G2_TEMPAD: Number(editada.tempo || 1),
+                    G2_TPOPER: "1",
+                    G2_TPSOBRE: "",
+                    G2_TEMPSOB: "",
+                    G2_CTRAB: "",
+                    G2_TEMPEND: "",
+                    G2_MAOOBRA: 1,
+                    OPERACAO: "ALTERAR"
+                });
             }
         }
 
@@ -690,9 +719,18 @@ export default function SINCOFormularioPrincipal() {
                     G2_OPERAC: String(op.operacao).trim().padStart(2, '0'),
                     G2_DESCRI: (op.descricao || op.recurso_descricao || '').substring(0, 30),
                     G2_RECURSO: (op.recurso || '').trim(),
-                    G2_FERRAM: "", G2_TPALOCF: "", G2_SETUP: Number(op.setup || 0), G2_FORMSTP: "", G2_LOTEPAD: 1,
-                    G2_TEMPAD: Number(op.tempo || 0),
-                    G2_TPOPER: "1", G2_TPSOBRE: "", G2_TEMPSOB: "", G2_CTRAB: "", G2_TEMPEND: "", G2_MAOOBRA: 1,
+                    G2_FERRAM: "",
+                    G2_TPALOCF: "",
+                    G2_SETUP: op.setup !== undefined && op.setup !== '' ? String(op.setup) : "",
+                    G2_FORMSTP: "",
+                    G2_LOTEPAD: 1,
+                    G2_TEMPAD: Number(op.tempo || 1),
+                    G2_TPOPER: "1",
+                    G2_TPSOBRE: "",
+                    G2_TEMPSOB: "",
+                    G2_CTRAB: "",
+                    G2_TEMPEND: "",
+                    G2_MAOOBRA: 1,
                     OPERACAO: "INCLUIR"
                 });
             }

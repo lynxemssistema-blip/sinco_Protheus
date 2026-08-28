@@ -287,6 +287,7 @@ app.use('/api/protheus-study', require('./routes/protheusStudy'));
 // VMI — Vendor Managed Inventory
 app.use('/api/vmi', require('./routes/vmi'));
 app.use('/api/vmi-pedidos', require('./routes/vmiPedidos'));
+app.use('/api/vmi-criticos', require('./routes/vmiCriticos'));
 
 // WabTec — Escopos e Engenharia
 app.use('/api/wabtec', require('./routes/wabtec'));

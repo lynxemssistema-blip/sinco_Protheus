@@ -9,7 +9,7 @@ import { generateOPByOperationPdf } from './opByOperationPdfGenerator';
  * Adds a divider page for each Resource.
  * Prints multiple copies of the same part drawing if it passes through multiple resources.
  */
-export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false, includeRoteiroStamp = false, includeDesc = false) => {
+export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Usuário', batchContext = null, returnBuffer = false, includeRoteiroStamp = false, includeDesc = false, includeStockStudy = false) => {
     try {
         if (!mirrorData || !mirrorData.pedido) {
             console.error('[opDrawingsByResourceGenerator] Dados inválidos:', mirrorData);
@@ -23,68 +23,73 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
             return;
         }
 
-        console.log('[opDrawingsByResourceGenerator] Gerando PDF para pedido:', mirrorData.pedido?.pedido, '| Itens:', mirrorData.itens?.length);
+        console.log('[opDrawingsByResourceGenerator] Gerando PDF para pedido:', mirrorData.pedido?.pedido, '| Itens:', mirrorData.itens?.length, '| includeStockStudy:', includeStockStudy);
 
         const espelhoBuffer = generateOPByOperationPdf(mirrorData, true, batchContext);
         if (!espelhoBuffer) {
             throw new Error('Falha ao gerar capa de Rastreabilidade.');
         }
 
-        // 1. Mapear Peças e seus Recursos
+        // 1. Extrair peças com operações
         const partsSummaryMap = new Map();
 
         mirrorData.itens.forEach(itemGroup => {
             const processPart = (component) => {
                 const code = component.codigo || 'S/COD';
-
                 const isLevel0 = component.nivel === 0 || component.nivel === undefined;
                 let rawQtd = isLevel0
                     ? parseFloat(component.quantidade_venda || component.quantidade_calculada || component.qtd_total || 0)
                     : parseFloat(component.quantidade_calculada || component.qtd_total || 0);
 
-                if (batchContext && batchContext.is_fraction && batchContext.visual_qtd) {
-                    const orderQtyOriginal = mirrorData.pedido.quantidade || 1;
-                    const fractionQty = parseFloat(batchContext.visual_qtd);
-                    rawQtd = isLevel0 ? fractionQty : (rawQtd / orderQtyOriginal) * fractionQty;
+                if (batchContext && (batchContext.is_fraction || batchContext.visual_qtd || batchContext.qtd)) {
+                    const orderQtyOriginal = parseFloat(itemGroup?.produto_principal?.quantidade_venda || itemGroup?.quantidade_venda || mirrorData.pedido?.quantidade || 1);
+                    const fractionQty = parseFloat(batchContext.visual_qtd || batchContext.qtd || orderQtyOriginal);
+                    rawQtd = isLevel0 ? fractionQty : (orderQtyOriginal > 0 ? (rawQtd / orderQtyOriginal) * fractionQty : rawQtd);
                 }
 
                 const op_num = component.op_num || itemGroup.produto_principal?.op_num || '-';
                 
-                const recursosComponente = [];
-                const roteiroArr = [];
+                const recursos = [];
                 if (component.operacoes && Array.isArray(component.operacoes)) {
                     component.operacoes.forEach(op => {
-                         if (op.recurso) {
-                             const recCode = op.recurso.trim().toUpperCase();
-                             const desc = (op.desc_operacao || op.descricao || op.desc || op.operacao_cod || '').trim().toUpperCase();
-                             recursosComponente.push({
-                                 recurso: recCode,
-                                 descricao: desc
-                             });
-                             if (includeRoteiroStamp) {
-                                 if (includeDesc && desc) {
-                                     roteiroArr.push(`${recCode}-${desc}`);
-                                 } else {
-                                     roteiroArr.push(recCode);
-                                 }
-                             }
-                         }
+                        if (op.recurso) {
+                            recursos.push({
+                                recurso: op.recurso.trim().toUpperCase(),
+                                operacao: op.operacao_cod || '',
+                                descricao: op.desc_operacao || op.descricao || ''
+                            });
+                        }
                     });
                 }
-                const roteiroStr = includeRoteiroStamp && roteiroArr.length > 0 ? roteiroArr.join(' -> ') : '';
+
+                const roteiroArray = [];
+                if (component.operacoes && Array.isArray(component.operacoes)) {
+                    component.operacoes.forEach(op => {
+                        if (op.recurso) {
+                            const recCode = op.recurso.trim().toUpperCase();
+                            const desc = (op.desc_operacao || op.descricao || op.desc || op.operacao_cod || '').trim().toUpperCase();
+                            if (includeDesc && desc) {
+                                roteiroArray.push(`${recCode}-${desc}`);
+                            } else {
+                                roteiroArray.push(recCode);
+                            }
+                        }
+                    });
+                }
+                const roteiroStr = roteiroArray.length > 0 ? roteiroArray.join(' -> ') : 'S/ROTEIRO';
 
                 if (partsSummaryMap.has(code)) {
                     const existingPart = partsSummaryMap.get(code);
                     existingPart.qtdTotal += rawQtd;
                     existingPart.sources.push(op_num);
-                    recursosComponente.forEach(rc => {
-                        if (!existingPart.recursos.find(r => r.recurso === rc.recurso)) {
+                    if (existingPart.roteiro === 'S/ROTEIRO' && roteiroStr !== 'S/ROTEIRO') {
+                        existingPart.roteiro = roteiroStr;
+                    }
+                    recursos.forEach(rc => {
+                        if (!existingPart.recursos.some(r => r.recurso === rc.recurso && r.operacao === rc.operacao)) {
                             existingPart.recursos.push(rc);
                         }
                     });
-                    if (existingPart.roteiro === '' && roteiroStr !== '') {
-                        existingPart.roteiro = roteiroStr;
-                    }
                 } else {
                     partsSummaryMap.set(code, {
                         codigo: code,
@@ -93,8 +98,8 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
                         tipo: component.tipoProduto || component.tipo_produto || component.tipo || '',
                         qtdTotal: rawQtd,
                         sources: [op_num],
-                        recursos: recursosComponente,
-                        roteiro: roteiroStr
+                        roteiro: roteiroStr,
+                        recursos: recursos
                     });
                 }
             };
@@ -152,6 +157,38 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
         const jspdfDoc = await PDFDocument.load(espelhoBuffer, { ignoreEncryption: true });
         const jspdfCopied = await finalPdf.copyPages(jspdfDoc, jspdfDoc.getPageIndices());
         jspdfCopied.forEach(p => finalPdf.addPage(p));
+
+        // 4.1. Anexar Estudo de Estoque da Estrutura (BOM) se solicitado
+        if (includeStockStudy) {
+            try {
+                const rootCode = mirrorData.itens?.[0]?.produto_principal?.codigo || mirrorData.pedido?.codigo || mirrorData.itens?.[0]?.codigo;
+                if (rootCode) {
+                    const { getProductStructureStock } = await import('./api');
+                    const { exportProductStructureStockPDF } = await import('./productStructureStockReportGenerator');
+                    
+                    const stockData = await getProductStructureStock(rootCode);
+                    if (stockData && stockData.estrutura && stockData.estrutura.length > 0) {
+                        const stockMeta = {
+                            productCode: rootCode,
+                            productDesc: stockData.descricao_pai || mirrorData.itens?.[0]?.produto_principal?.descricao,
+                            orderNum: mirrorData.pedido?.pedido,
+                            orderItem: mirrorData.pedido?.item,
+                            orderQty: mirrorData.pedido?.quantidade || mirrorData.itens?.[0]?.produto_principal?.quantidade,
+                            clientName: mirrorData.pedido?.nome_cliente
+                        };
+                        
+                        const stockPdfBytes = exportProductStructureStockPDF(stockData.estrutura, stockMeta, { nome: userName }, true);
+                        if (stockPdfBytes) {
+                            const stockPdfDoc = await PDFDocument.load(stockPdfBytes, { ignoreEncryption: true });
+                            const stockCopiedPages = await finalPdf.copyPages(stockPdfDoc, stockPdfDoc.getPageIndices());
+                            stockCopiedPages.forEach(p => finalPdf.addPage(p));
+                        }
+                    }
+                }
+            } catch (stockErr) {
+                console.warn('Erro ao anexar estudo de estoque da estrutura no PDF:', stockErr);
+            }
+        }
 
         const helveticaFont = await finalPdf.embedFont(StandardFonts.HelveticaBold);
         const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });

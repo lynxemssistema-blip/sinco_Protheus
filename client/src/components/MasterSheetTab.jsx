@@ -3,6 +3,7 @@ import { getSalesPlanningMasterSheet } from '../services/api';
 import { exportMasterSheetExcel, exportMasterSheetPdf } from '../services/masterSheetExportGenerator';
 import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { toast } from 'react-toastify';
 import { Download, Info, Table, Box, List, Settings, Activity, BarChart2, X, ChevronDown, FileText, Loader2, Play } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LabelList } from 'recharts';
 
@@ -122,33 +123,55 @@ const MasterSheetTab = ({ filterParams }) => {
         }, 800);
         return () => clearTimeout(timeoutId);
     }, [filterParams]);
+    const [exportingExcel, setExportingExcel] = useState(false);
+    const [exportingPdf, setExportingPdf] = useState(false);
 
     const handleRunSimulation = () => {
         loadData(true);
     };
 
-    const handleExportExcel = () => {
+    const handleExportExcel = async () => {
+        if (!data) {
+            toast.warning('Nenhum dado carregado para exportação.');
+            return;
+        }
+        setExportingExcel(true);
+        toast.info('Gerando planilha Excel com todas as abas da Planilha Mestra...');
         try {
-            exportMasterSheetExcel(data, {
+            await exportMasterSheetExcel(data, {
                 ...filterParams,
                 baseCalculo,
                 exibirCustos: canViewValues && exibirCustos,
                 filtroTipo
             });
+            toast.success('Planilha Mestra exportada com sucesso!');
         } catch (err) {
-            alert(err.message || 'Erro ao exportar Excel');
+            console.error('Erro ao exportar Planilha Mestra:', err);
+            toast.error(err.message || 'Erro ao exportar Planilha Mestra.');
+        } finally {
+            setExportingExcel(false);
         }
     };
 
-    const handleExportPdf = () => {
+    const handleExportPdf = async () => {
+        if (!data) {
+            toast.warning('Nenhum dado carregado para exportação.');
+            return;
+        }
+        setExportingPdf(true);
+        toast.info('Gerando relatório PDF da Planilha Mestra...');
         try {
-            exportMasterSheetPdf(data, activeTab, {
+            await exportMasterSheetPdf(data, activeTab, {
                 ...filterParams,
                 baseCalculo,
                 exibirCustos: canViewValues && exibirCustos
             });
+            toast.success('Relatório PDF exportado com sucesso!');
         } catch (err) {
-            alert(err.message || 'Erro ao exportar PDF');
+            console.error('Erro ao exportar PDF:', err);
+            toast.error(err.message || 'Erro ao exportar PDF.');
+        } finally {
+            setExportingPdf(false);
         }
     };
 
@@ -166,46 +189,56 @@ const MasterSheetTab = ({ filterParams }) => {
 
     if (error) {
         return (
-            <div className="p-6 bg-red-50 border border-red-200 text-red-700 rounded-lg">
+            <div className="p-8 bg-rose-50 border border-rose-200 rounded-lg text-rose-700">
                 <h3 className="font-bold mb-2">Erro ao carregar a Planilha Mestra</h3>
                 <p>{error}</p>
+                <button
+                    onClick={() => loadData(false)}
+                    className="mt-4 px-4 py-2 bg-rose-600 text-white font-semibold rounded hover:bg-rose-700 transition-colors"
+                >
+                    Tentar Novamente
+                </button>
             </div>
         );
     }
 
-    if (!data) return null;
-
     const tabs = [
-        { id: 'capa', label: 'Capa', icon: <Info className="w-4 h-4" /> },
-        { id: 'docs', label: 'Entendendo a Planilha', icon: <Info className="w-4 h-4" /> },
-        { id: 'resumo', label: 'Resumo', icon: <Box className="w-4 h-4" /> },
-        { id: 'pedidos', label: 'Pedidos', icon: <Table className="w-4 h-4" /> },
-        { id: 'itens', label: 'Itens Detalhados', icon: <List className="w-4 h-4" /> },
-        { id: 'estruturas', label: 'Estrutura dos Produtos', icon: <List className="w-4 h-4" /> },
-        { id: 'materiais_necessarios', label: 'Materiais Necessários', icon: <Box className="w-4 h-4" /> },
-        { id: 'carga', label: 'Carga por Recurso', icon: <Settings className="w-4 h-4" /> },
-        { id: 'capacidade_periodo', label: 'Capacidade do Período', icon: <BarChart2 className="w-4 h-4" /> },
-        { id: 'execucao', label: 'Execução OP', icon: <Activity className="w-4 h-4" /> },
-        { id: 'analise', label: 'Análise de Carga', icon: <BarChart2 className="w-4 h-4" /> },
-        { id: 'grafico_capacidade', label: 'Gráfico Capacidade', icon: <BarChart2 className="w-4 h-4" /> }
+        { id: 'capa', label: 'Capa', icon: Info },
+        { id: 'docs', label: 'Entendendo a Planilha', icon: Info },
+        { id: 'resumo', label: 'Resumo', icon: Box },
+        { id: 'pedidos', label: 'Pedidos', icon: Table },
+        { id: 'itens', label: 'Itens Detalhados', icon: List },
+        { id: 'estruturas', label: 'Estrutura dos Produtos', icon: List },
+        { id: 'materiais_necessarios', label: 'Materiais Necessários', icon: Box },
+        { id: 'carga', label: 'Carga por Recurso', icon: Settings },
+        { id: 'capacidade_periodo', label: 'Capacidade do Período', icon: BarChart2 },
+        { id: 'execucao', label: 'Execução OP', icon: Activity },
+        { id: 'analise', label: 'Análise de Carga', icon: BarChart2 },
+        { id: 'grafico_capacidade', label: 'Gráfico Capacidade', icon: BarChart2 }
     ];
 
     return (
-        <div className="flex flex-col h-full border border-slate-300 shadow-sm bg-white rounded-md overflow-hidden">
-            {/* Header Tabs Row */}
-            <div className="flex bg-slate-100 border-b border-slate-300 overflow-x-auto shrink-0 scrollbar-hide">
-                {tabs.map(t => (
-                    <button
-                        key={t.id}
-                        onClick={() => setActiveTab(t.id)}
-                        className={`flex items-center gap-2 px-6 py-3 text-sm font-semibold border-r border-slate-300 transition-colors whitespace-nowrap
-                            ${activeTab === t.id
-                                ? 'bg-white text-[#1E3A5F] border-b-2 border-b-[#0D6EFD]'
-                                : 'text-slate-600 hover:bg-slate-200'}`}
-                    >
-                        {t.icon} {t.label}
-                    </button>
-                ))}
+        <div className="flex flex-col h-full bg-white border border-slate-300 rounded-lg shadow-sm overflow-hidden min-h-[700px]">
+            {/* Header Tabs Navigation */}
+            <div className="flex items-center bg-[#1E3A5F] px-2 pt-2 border-b border-slate-400 overflow-x-auto select-none shrink-0 scrollbar-thin">
+                {tabs.map(tab => {
+                    const Icon = tab.icon;
+                    const isActive = activeTab === tab.id;
+                    return (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-t-md transition-all border-t border-x whitespace-nowrap cursor-pointer ${
+                                isActive
+                                    ? 'bg-slate-50 text-[#1E3A5F] border-slate-300 font-bold border-b-transparent shadow-xs'
+                                    : 'text-slate-200 hover:bg-[#254670] border-transparent hover:text-white'
+                            }`}
+                        >
+                            <Icon className="w-3.5 h-3.5" />
+                            {tab.label}
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Simulation and Actions Control Row */}
@@ -225,8 +258,8 @@ const MasterSheetTab = ({ filterParams }) => {
                     />
                     <button
                         onClick={handleRunSimulation}
-                        disabled={loading}
-                        className="px-3 py-1.5 bg-[#1E3A5F] text-white text-xs font-semibold rounded hover:bg-[#0D6EFD] transition-colors disabled:opacity-50 flex items-center gap-2"
+                        disabled={loading || simulating}
+                        className="px-3 py-1.5 bg-[#1E3A5F] text-white text-xs font-semibold rounded hover:bg-[#0D6EFD] transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer"
                     >
                         {simulating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
                         Simular Prazos
@@ -235,21 +268,21 @@ const MasterSheetTab = ({ filterParams }) => {
                     <div className="flex items-center gap-2 border-l border-slate-300 pl-3">
                         <button
                             onClick={handleExportExcel}
-                            disabled={!data || loading}
-                            className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                            disabled={!data || loading || exportingExcel}
+                            className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm cursor-pointer"
                             title="Exportar todas as abas da Planilha Mestra para Excel (.xlsx)"
                         >
-                            <Download className="w-3.5 h-3.5" />
-                            Excel
+                            {exportingExcel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                            <span>Excel</span>
                         </button>
                         <button
                             onClick={handleExportPdf}
-                            disabled={!data || loading}
-                            className="px-3 py-1.5 bg-rose-700 text-white text-xs font-semibold rounded hover:bg-rose-800 transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                            disabled={!data || loading || exportingPdf}
+                            className="px-3 py-1.5 bg-rose-700 text-white text-xs font-semibold rounded hover:bg-rose-800 transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-sm cursor-pointer"
                             title="Exportar aba atual para PDF (.pdf)"
                         >
-                            <FileText className="w-3.5 h-3.5" />
-                            PDF
+                            {exportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                            <span>PDF</span>
                         </button>
                     </div>
                 </div>
@@ -1471,34 +1504,56 @@ const ExecucaoTab = ({ data }) => {
             res[`previsto_${r}`] = 0;
             res[`apontado_${r}`] = 0;
             res[`qtd_apontada_${r}`] = 0;
+            res[`qtd_falta_${r}`] = 0;
+            res[`tempo_falta_${r}`] = 0;
         });
 
         (data.execucao_op || []).forEach(c => {
             res.qtd_planejada += (c.qtd_planejada || 0);
             (data.recursos || []).forEach(r => {
-                res[`previsto_${r}`] += (c[`previsto_${r}`] || 0);
-                res[`apontado_${r}`] += (c[`apontado_${r}`] || 0);
-                res[`qtd_apontada_${r}`] += (c[`qtd_apontada_${r}`] || 0);
+                const rawPrev = c[`previsto_${r}`];
+                const rawApon = c[`apontado_${r}`];
+                const rawQtdApon = c[`qtd_apontada_${r}`];
+                const rawQtdFalta = c[`qtd_falta_${r}`];
+                const rawTempoFalta = c[`tempo_falta_${r}`];
+
+                const hasResource = (rawPrev !== null && rawPrev !== undefined && Number(rawPrev) > 0) ||
+                                    (rawApon !== null && rawApon !== undefined && Number(rawApon) > 0) ||
+                                    (rawQtdApon !== null && rawQtdApon !== undefined && Number(rawQtdApon) > 0);
+
+                if (hasResource) {
+                    const prev = Number(rawPrev || 0);
+                    const apon = Number(rawApon || 0);
+                    const qtdApon = Number(rawQtdApon || 0);
+                    const qtdFalta = rawQtdFalta !== undefined && rawQtdFalta !== null ? Number(rawQtdFalta) : Math.max(0, (c.qtd_planejada || 0) - qtdApon);
+                    const tempoFalta = rawTempoFalta !== undefined && rawTempoFalta !== null ? Number(rawTempoFalta) : Math.max(0, prev - apon);
+
+                    res[`previsto_${r}`] += prev;
+                    res[`apontado_${r}`] += apon;
+                    res[`qtd_apontada_${r}`] += qtdApon;
+                    res[`qtd_falta_${r}`] += qtdFalta;
+                    res[`tempo_falta_${r}`] += tempoFalta;
+                }
             });
         });
         return res;
     }, [data.execucao_op, data.recursos]);
 
     return (
-        <div className="w-full h-full relative">
+        <div className="w-full h-full relative overflow-auto">
             <table className="w-full text-[13px] text-left border-collapse">
-                <thead className="sticky top-0 z-10 shadow">
+                <thead className="sticky top-0 z-20 shadow">
                     <tr>
-                        <th rowSpan={2} className="px-3 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap">Pedido</th>
-                        <th rowSpan={2} className="px-3 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap">Cliente</th>
-                        <th rowSpan={2} className="px-3 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap">OP</th>
-                        <th rowSpan={2} className="px-3 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap">Produto</th>
-                        <th rowSpan={2} className="px-3 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap text-right">Qtd Plan</th>
-                        <th rowSpan={2} className="px-3 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap text-center">Data PCP</th>
-                        <th rowSpan={2} className="px-3 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap text-right">Qtde PCP</th>
+                        <th rowSpan={2} className="px-2.5 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap sticky left-0 top-0 z-30 w-[75px] min-w-[75px] max-w-[75px]">Pedido</th>
+                        <th rowSpan={2} className="px-2.5 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap sticky left-[75px] top-0 z-30 w-[150px] min-w-[150px] max-w-[150px]">Cliente</th>
+                        <th rowSpan={2} className="px-2.5 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap sticky left-[225px] top-0 z-30 w-[110px] min-w-[110px] max-w-[110px]">OP</th>
+                        <th rowSpan={2} className="px-2.5 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap sticky left-[335px] top-0 z-30 w-[110px] min-w-[110px] max-w-[110px]">Produto</th>
+                        <th rowSpan={2} className="px-2.5 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap text-right sticky left-[445px] top-0 z-30 w-[80px] min-w-[80px] max-w-[80px]">Qtd Plan</th>
+                        <th rowSpan={2} className="px-2.5 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap text-center sticky left-[525px] top-0 z-30 w-[85px] min-w-[85px] max-w-[85px]">Data PCP</th>
+                        <th rowSpan={2} className="px-2.5 py-3 bg-[#1E3A5F] text-white border-r-2 border-r-[#0D6EFD] border-b border-[#304C71] whitespace-nowrap text-right sticky left-[610px] top-0 z-30 w-[80px] min-w-[80px] max-w-[80px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.35)]">Qtde PCP</th>
                         {/* Dynamic Resource Columns */}
                         {data.recursos.map(r => (
-                            <th colSpan={3} key={r} className="px-3 py-1 bg-[#0D6EFD] text-white border-r border-b border-[#2C80FF] text-center whitespace-nowrap">
+                            <th colSpan={5} key={r} className="px-3 py-1 bg-[#0D6EFD] text-white border-r border-b border-[#2C80FF] text-center whitespace-nowrap">
                                 {data.recursoNomeMap[r] || r}
                             </th>
                         ))}
@@ -1507,8 +1562,10 @@ const ExecucaoTab = ({ data }) => {
                         {data.recursos.map(r => (
                             <React.Fragment key={r + '_subs'}>
                                 <th className="px-2 py-1 bg-[#0958CC] text-white border-r border-[#2C80FF] text-right font-medium text-xs">Prev (min)</th>
-                                <th className="px-2 py-1 bg-[#0958CC] text-white border-r border-[#2C80FF] text-right font-medium text-xs">Apon (min)</th>
-                                <th className="px-2 py-1 bg-[#084FB8] text-white border-r border-[#2C80FF] text-right font-medium text-xs">Qtd (un)</th>
+                                <th className="px-2 py-1 bg-[#084FB8] text-white border-r border-[#2C80FF] text-right font-medium text-xs">Apon (min)</th>
+                                <th className="px-2 py-1 bg-[#0369A1] text-white border-r border-[#2C80FF] text-right font-medium text-xs">Qtd Apon</th>
+                                <th className="px-2 py-1 bg-[#B45309] text-white border-r border-[#D97706] text-right font-medium text-xs">Qtd Falta</th>
+                                <th className="px-2 py-1 bg-[#C2410C] text-white border-r border-[#EA580C] text-right font-medium text-xs">Falta (min)</th>
                             </React.Fragment>
                         ))}
                     </tr>
@@ -1516,22 +1573,46 @@ const ExecucaoTab = ({ data }) => {
                 <tbody>
                     {data.execucao_op.map((c, idx) => (
                         <tr key={idx} className={`hover:bg-blue-50 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
-                            <td className="px-3 py-2 border-b border-slate-200 border-r font-semibold">{c.pedido}</td>
-                            <td className="px-3 py-2 border-b border-slate-200 border-r truncate max-w-[150px]">{c.cliente}</td>
-                            <td className="px-3 py-2 border-b border-slate-200 border-r font-mono text-xs">{c.op}</td>
-                            <td className="px-3 py-2 border-b border-slate-200 border-r">
-                                <div className="flex items-center gap-2">
-                                    <span>{c.produto}</span>
+                            <td className={`px-2.5 py-2 border-b border-slate-200 border-r font-semibold sticky left-0 z-10 w-[75px] min-w-[75px] max-w-[75px] truncate ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>{c.pedido}</td>
+                            <td className={`px-2.5 py-2 border-b border-slate-200 border-r truncate sticky left-[75px] z-10 w-[150px] min-w-[150px] max-w-[150px] ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`} title={c.cliente}>{c.cliente}</td>
+                            <td className={`px-2.5 py-2 border-b border-slate-200 border-r font-mono text-xs sticky left-[225px] z-10 w-[110px] min-w-[110px] max-w-[110px] truncate ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>{c.op}</td>
+                            <td className={`px-2.5 py-2 border-b border-slate-200 border-r sticky left-[335px] z-10 w-[110px] min-w-[110px] max-w-[110px] ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
+                                <div className="flex items-center gap-1.5 truncate">
+                                    <span className="truncate">{c.produto}</span>
                                     <DrawingIcon produto={c.produto} />
                                 </div>
                             </td>
-                            <td className="px-3 py-2 border-b border-slate-200 border-r text-right">{formatNum(c.qtd_planejada)}</td>
-                            <td className="px-3 py-2 border-b border-slate-200 border-r text-center whitespace-nowrap">{formatDate(c.data_pcp)}</td>
-                            <td className="px-3 py-2 border-b border-slate-200 border-r text-right">{c.qtde_pcp != null ? formatNum(c.qtde_pcp) : '-'}</td>
+                            <td className={`px-2.5 py-2 border-b border-slate-200 border-r text-right sticky left-[445px] z-10 w-[80px] min-w-[80px] max-w-[80px] ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>{formatNum(c.qtd_planejada)}</td>
+                            <td className={`px-2.5 py-2 border-b border-slate-200 border-r text-center whitespace-nowrap sticky left-[525px] z-10 w-[85px] min-w-[85px] max-w-[85px] ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>{formatDate(c.data_pcp)}</td>
+                            <td className={`px-2.5 py-2 border-b border-slate-200 border-r-2 border-r-slate-300 text-right sticky left-[610px] z-10 w-[80px] min-w-[80px] max-w-[80px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.12)] ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>{c.qtde_pcp != null ? formatNum(c.qtde_pcp) : '-'}</td>
                             {data.recursos.map(r => {
-                                const previsto = c[`previsto_${r}`] || 0;
-                                const apontado = c[`apontado_${r}`] || 0;
-                                const qtdApontada = c[`qtd_apontada_${r}`] || 0;
+                                const rawPrev = c[`previsto_${r}`];
+                                const rawApon = c[`apontado_${r}`];
+                                const rawQtdApon = c[`qtd_apontada_${r}`];
+                                const rawQtdFalta = c[`qtd_falta_${r}`];
+                                const rawTempoFalta = c[`tempo_falta_${r}`];
+
+                                const hasResource = (rawPrev !== null && rawPrev !== undefined && Number(rawPrev) > 0) ||
+                                                    (rawApon !== null && rawApon !== undefined && Number(rawApon) > 0) ||
+                                                    (rawQtdApon !== null && rawQtdApon !== undefined && Number(rawQtdApon) > 0);
+
+                                if (!hasResource) {
+                                    return (
+                                        <React.Fragment key={r + '_vals'}>
+                                            <td className="px-2 py-2 border-b border-slate-200 border-r text-right text-slate-400">-</td>
+                                            <td className="px-2 py-2 border-b border-slate-200 border-r text-right text-slate-400">-</td>
+                                            <td className="px-2 py-2 border-b border-slate-200 border-r text-right text-slate-400">-</td>
+                                            <td className="px-2 py-2 border-b border-slate-200 border-r text-right text-slate-400">-</td>
+                                            <td className="px-2 py-2 border-b border-slate-200 border-r text-right text-slate-400">-</td>
+                                        </React.Fragment>
+                                    );
+                                }
+
+                                const previsto = Number(rawPrev || 0);
+                                const apontado = Number(rawApon || 0);
+                                const qtdApontada = Number(rawQtdApon || 0);
+                                const qtdFalta = rawQtdFalta !== undefined && rawQtdFalta !== null ? Number(rawQtdFalta) : Math.max(0, (c.qtd_planejada || 0) - qtdApontada);
+                                const tempoFalta = rawTempoFalta !== undefined && rawTempoFalta !== null ? Number(rawTempoFalta) : Math.max(0, previsto - apontado);
                                 return (
                                     <React.Fragment key={r + '_vals'}>
                                         <td className={`px-2 py-2 border-b border-slate-200 border-r text-right ${previsto > 0 ? 'text-[#0D6EFD] font-bold' : 'text-slate-400'}`}>
@@ -1543,6 +1624,12 @@ const ExecucaoTab = ({ data }) => {
                                         <td className={`px-2 py-2 border-b border-slate-200 border-r text-right ${qtdApontada > 0 ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}>
                                             {qtdApontada > 0 ? formatNum(qtdApontada) : '-'}
                                         </td>
+                                        <td className={`px-2 py-2 border-b border-slate-200 border-r text-right ${qtdFalta > 0 ? 'text-amber-700 font-bold' : 'text-slate-400'}`}>
+                                            {qtdFalta > 0 ? formatNum(qtdFalta) : '-'}
+                                        </td>
+                                        <td className={`px-2 py-2 border-b border-slate-200 border-r text-right ${tempoFalta > 0 ? 'text-orange-700 font-bold' : 'text-slate-400'}`}>
+                                            {tempoFalta > 0 ? formatNum(tempoFalta) : '-'}
+                                        </td>
                                     </React.Fragment>
                                 );
                             })}
@@ -1550,20 +1637,24 @@ const ExecucaoTab = ({ data }) => {
                     ))}
                 </tbody>
                 <tfoot>
-                    <tr className="bg-slate-100 font-bold text-slate-800 border-t-2 border-slate-300 sticky bottom-0 z-10 shadow">
-                        <td className="px-3 py-2 border-r" colSpan={4}>TOTAL</td>
-                        <td className="px-3 py-2 border-r text-right">{formatNum(totals.qtd_planejada)}</td>
-                        <td className="px-3 py-2 border-r text-center">-</td>
-                        <td className="px-3 py-2 border-r text-right">-</td>
+                    <tr className="bg-slate-100 font-bold text-slate-800 border-t-2 border-slate-300 sticky bottom-0 z-20 shadow">
+                        <td className="px-3 py-2 border-r sticky left-0 bottom-0 z-30 bg-slate-100 w-[445px] min-w-[445px]" colSpan={4}>TOTAL</td>
+                        <td className="px-2.5 py-2 border-r text-right sticky left-[445px] bottom-0 z-30 bg-slate-100 w-[80px] min-w-[80px]">{formatNum(totals.qtd_planejada)}</td>
+                        <td className="px-2.5 py-2 border-r text-center sticky left-[525px] bottom-0 z-30 bg-slate-100 w-[85px] min-w-[85px]">-</td>
+                        <td className="px-2.5 py-2 border-r-2 border-r-slate-300 text-right sticky left-[610px] bottom-0 z-30 bg-slate-100 w-[80px] min-w-[80px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.15)]">-</td>
                         {data.recursos.map(r => {
                             const totPrev = totals[`previsto_${r}`] || 0;
                             const totApon = totals[`apontado_${r}`] || 0;
                             const totQtd = totals[`qtd_apontada_${r}`] || 0;
+                            const totQtdFalta = totals[`qtd_falta_${r}`] || 0;
+                            const totTempoFalta = totals[`tempo_falta_${r}`] || 0;
                             return (
                                 <React.Fragment key={r + '_tots'}>
                                     <td className="px-2 py-2 border-r text-right text-blue-700">{totPrev > 0 ? formatNum(totPrev) : '-'}</td>
                                     <td className="px-2 py-2 border-r text-right text-green-700">{totApon > 0 ? formatNum(totApon) : '-'}</td>
                                     <td className="px-2 py-2 border-r text-right text-emerald-700">{totQtd > 0 ? formatNum(totQtd) : '-'}</td>
+                                    <td className="px-2 py-2 border-r text-right text-amber-700">{totQtdFalta > 0 ? formatNum(totQtdFalta) : '-'}</td>
+                                    <td className="px-2 py-2 border-r text-right text-orange-700">{totTempoFalta > 0 ? formatNum(totTempoFalta) : '-'}</td>
                                 </React.Fragment>
                             );
                         })}

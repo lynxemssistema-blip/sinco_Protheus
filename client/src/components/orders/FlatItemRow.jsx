@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
     Calendar, FileText, Settings, Layers, Package,
     StickyNote, MoreVertical, Loader2, Truck,
-    Factory, ClipboardList, ImageIcon, FileSpreadsheet, AlertTriangle, Award
+    Factory, ClipboardList, ImageIcon, FileSpreadsheet, AlertTriangle, Award, Boxes
 } from 'lucide-react';
 import ItemStatusBadge from './ItemStatusBadge';
 import { getFileUrl } from '../../services/api';
@@ -49,6 +49,7 @@ const FlatItemRow = ({
     onUpdateFaturamentoDate,
     onOpenClassificacaoModal,
     onOpenBomStructure,
+    onOpenStructureStock,
     canEdit,
 }) => {
     const { user } = useAuth();
@@ -193,11 +194,25 @@ const FlatItemRow = ({
                         </td>
                     );
                     case 'acoes': return (
-                        <td key={col.key} className="px-4 py-2 text-center print:hidden min-w-[100px]">
+                        <td key={col.key} className="px-4 py-2 text-center print:hidden min-w-[120px]">
                             <div className="flex items-center justify-center gap-1">
                                 <button onClick={() => { if (item.has_drawing && item.drawing_url) { window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.drawing_url)}`), '_blank'); } else if (item.docs_count === 1 && item.first_doc) { window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(item.first_doc)}`), '_blank'); } else { onOpenDocs(item.codigo, item.descricao); } }} className={`p-1.5 rounded-lg transition-all relative ${item.has_docs ? 'text-red-600 bg-red-50 hover:bg-red-100 ring-1 ring-red-200' : 'text-gray-400 hover:text-red-600 hover:bg-red-50'}`} title={item.has_docs ? `${item.docs_count} Documento(s) - Clique para abrir` : 'Documentos'}>
                                     <FileText className="h-4 w-4" />
                                     {item.has_docs && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" /><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" /></span>}
+                                </button>
+                                <button
+                                    onClick={() => onOpenStructureStock && onOpenStructureStock({
+                                        productCode: item.codigo,
+                                        productDesc: item.descricao,
+                                        orderNum: item.pedido,
+                                        orderItem: item.item,
+                                        orderQty: item.qtd_faturar || item.c6_qtdven || item.qtd_pedida,
+                                        clientName: item.cliente_nome || item.cliente
+                                    })}
+                                    className="p-1.5 text-emerald-600 hover:text-emerald-800 transition-all bg-emerald-50 hover:bg-emerald-100 rounded flex items-center justify-center cursor-pointer"
+                                    title="Consultar Estoque da Estrutura (Fábrica + Protheus)"
+                                >
+                                    <Boxes className="h-4 w-4" />
                                 </button>
                                 {canEdit && (
                                     <button onClick={() => onSetEngineeringTarget({ orderId: item.pedido, item })} className="p-1.5 text-gray-400 hover:text-blue-500 transition-all bg-gray-50/50 hover:bg-blue-50 rounded flex items-center justify-center" title="Controle Engenharia / BOM">
@@ -205,11 +220,32 @@ const FlatItemRow = ({
                                     </button>
                                 )}
                                 <div className="relative" onClick={e => e.stopPropagation()}>
-                                    <button title="Mais ações" onClick={(e) => { e.stopPropagation(); if (isMenuOpen) { onOpenActionMenu(null); } else { const rect = e.currentTarget.getBoundingClientRect(); const spaceBelow = window.innerHeight - rect.bottom; const spaceAbove = rect.top; const menuHeight = 350; if (spaceBelow < menuHeight && spaceAbove > spaceBelow) { onSetMenuPosition({ top: undefined, bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right }); } else { onSetMenuPosition({ top: rect.bottom + 4, bottom: undefined, right: window.innerWidth - rect.right }); } onOpenActionMenu(menuKey); } }} className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all flex items-center justify-center">
+                                    <button title="Mais ações" onClick={(e) => { e.stopPropagation(); if (isMenuOpen) { onOpenActionMenu(null); } else { const rect = e.currentTarget.getBoundingClientRect(); const spaceBelow = window.innerHeight - rect.bottom; const spaceAbove = rect.top; const menuHeight = 350; if (spaceBelow < menuHeight && spaceAbove > spaceBelow) { onSetMenuPosition({ top: undefined, bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right }); } else { onSetMenuPosition({ top: rect.bottom + 4, bottom: undefined, right: window.innerWidth - rect.right }); } onOpenActionMenu(menuKey); } }} className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all flex items-center justify-center cursor-pointer">
                                         <MoreVertical className="h-4 w-4" />
                                     </button>
                                     {isMenuOpen && (
                                         <div className="fixed z-[9999] bg-white rounded-lg border border-gray-200 shadow-xl py-1 min-w-[220px]" style={{ top: menuPosition?.top !== undefined ? `${menuPosition.top}px` : 'auto', bottom: menuPosition?.bottom !== undefined ? `${menuPosition.bottom}px` : 'auto', right: `${menuPosition?.right}px` }}>
+                                            <button 
+                                                onClick={(e) => { 
+                                                    e.stopPropagation(); 
+                                                    if (onOpenStructureStock) {
+                                                        onOpenStructureStock({
+                                                            productCode: item.codigo,
+                                                            productDesc: item.descricao,
+                                                            orderNum: item.pedido,
+                                                            orderItem: item.item,
+                                                            orderQty: item.qtd_faturar || item.c6_qtdven || item.qtd_pedida,
+                                                            clientName: item.cliente_nome || item.cliente
+                                                        });
+                                                    }
+                                                    onOpenActionMenu(null); 
+                                                }} 
+                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50 font-bold transition-colors"
+                                            >
+                                                <Boxes className="h-4 w-4 flex-shrink-0 text-emerald-600" />
+                                                <span>Estoque da Estrutura (BOM)</span>
+                                            </button>
+                                            <div className="border-t border-gray-100 my-1" />
                                             <button onClick={(e) => { e.stopPropagation(); onSetPriorityTarget({ pedido: item.pedido, item: item.item, codigo: item.codigo, op_num_completa: item.op_num_completa || item.op_num }, 'faturamento'); onOpenActionMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-red-50 hover:text-red-700 transition-colors">
                                                 <AlertTriangle className="h-4 w-4 flex-shrink-0 text-red-500" />
                                                 <span>Prioridade Faturamento</span>
@@ -248,6 +284,35 @@ const FlatItemRow = ({
                                             </button>
                                             <button onClick={(e) => { onExportOPByOperationExcel(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-excel-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-excel-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-emerald-600" />} <span>Por Operações (Excel)</span>
+                                            </button>
+                                            <div className="border-t border-gray-100 my-1" />
+                                            <div className="px-3 py-1 text-[10px] font-bold text-emerald-800 bg-emerald-50/70 uppercase tracking-wider flex items-center gap-1.5">
+                                                <Boxes size={12} className="text-emerald-600" />
+                                                <span>Com Estudo de Estoque</span>
+                                            </div>
+                                            <button 
+                                                onClick={(e) => { onPrintOPByOperationWithDrawings(item.pedido, e, item.item, true); onOpenActionMenu(null); }} 
+                                                disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-drawings-${item.pedido}-${item.item}-stock`} 
+                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+                                            >
+                                                {printingOrderId === `op-drawings-${item.pedido}-${item.item}-stock` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0 text-emerald-600" /> : <Boxes className="h-4 w-4 flex-shrink-0 text-emerald-600" />} 
+                                                <span>OP + Desenhos + Estoque</span>
+                                            </button>
+                                            <button 
+                                                onClick={(e) => { onPrintOPWithOpsStampWithDescDrawings(item.pedido, e, item.item, true); onOpenActionMenu(null); }} 
+                                                disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-drawings-${item.pedido}-${item.item}-stock`} 
+                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+                                            >
+                                                {printingOrderId === `op-stamp-desc-drawings-${item.pedido}-${item.item}-stock` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0 text-purple-600" /> : <Boxes className="h-4 w-4 flex-shrink-0 text-purple-600" />} 
+                                                <span>OP + Desenhos (Carimbo) + Estoque</span>
+                                            </button>
+                                            <button 
+                                                onClick={(e) => { onPrintOPWithOpsStampWithDescDrawingsByResource(item.pedido, e, item.item, true); onOpenActionMenu(null); }} 
+                                                disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-resource-drawings-${item.pedido}-${item.item}-stock`} 
+                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
+                                            >
+                                                {printingOrderId === `op-stamp-desc-resource-drawings-${item.pedido}-${item.item}-stock` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0 text-fuchsia-600" /> : <Boxes className="h-4 w-4 flex-shrink-0 text-fuchsia-600" />} 
+                                                <span>OP + Desenhos (Por Recurso) + Estoque</span>
                                             </button>
                                         </div>
                                     )}

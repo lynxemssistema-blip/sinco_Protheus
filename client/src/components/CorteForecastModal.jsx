@@ -262,7 +262,7 @@ const MetalfisaHeader = ({ title, subtitle, itemsCount, onClose }) => (
 // ============================================================================
 // [3] MAIN MODAL
 // ============================================================================
-export default function CorteForecastModal({ isOpen, onClose, items, onSaveSuccess, usuario, canEdit = true }) {
+export default function CorteForecastModal({ isOpen, onClose, items, onSaveSuccess, usuario, canEdit = true, lpfCodigo = null }) {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [explodedData, setExplodedData] = useState([]);
@@ -505,7 +505,12 @@ export default function CorteForecastModal({ isOpen, onClose, items, onSaveSucce
                 groupedLotes[key].items.push(item);
             });
 
-            const res = await api.post('/corte/lotes', { lotes: Object.values(groupedLotes), usuario, gerar_planilha: gerarPlanilha });
+            const res = await api.post('/corte/lotes', { 
+                lotes: Object.values(groupedLotes), 
+                usuario, 
+                gerar_planilha: gerarPlanilha,
+                lpf_codigo: lpfCodigo 
+            });
             if (res.data?.success) {
                 toast.success('LOTES GERADOS COM SUCESSO!');
                 if (onSaveSuccess) onSaveSuccess();

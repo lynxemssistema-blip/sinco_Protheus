@@ -393,6 +393,29 @@ export const addStockMovement = async (data) => {
     return response.data;
 };
 
+export const getStockCandidateOps = async (codigo) => {
+    const encodedCod = encodeURIComponent(codigo);
+    const response = await api.get(`/stock/${encodedCod}/ops-candidatas`);
+    return response.data;
+};
+
+export const empenharStockToOp = async (data) => {
+    const response = await api.post('/stock/empenhar-op', data);
+    return response.data;
+};
+
+export const getStockEmpenhos = async (codigo) => {
+    const encodedCod = encodeURIComponent(codigo);
+    const response = await api.get(`/stock/${encodedCod}/empenhos`);
+    return response.data;
+};
+
+export const getProductStructureStock = async (codigo) => {
+    const encodedCod = encodeURIComponent(codigo);
+    const response = await api.get(`/stock/estrutura-saldo/${encodedCod}`);
+    return response.data;
+};
+
 // CLIENTS
 export const getClientes = async (query) => {
     const response = await api.get('/clients/search', { params: { q: query } });
@@ -631,6 +654,11 @@ export const getFaturamentoSolicitacoes = async (params) => {
     return response.data;
 };
 
+export const getFaturamentoNFsEmitidas = async (params) => {
+    const response = await api.get('/faturamento/nfs-emitidas', { params });
+    return response.data;
+};
+
 export const updateFaturamentoSolicitacaoStatus = async (id, status) => {
     const response = await api.put(`/faturamento/solicitacoes/${id}/status`, { status });
     return response.data;
@@ -751,6 +779,11 @@ export const getProductStatusHistory = (codigo) => api.get(`/product-status/${en
 
 export const getProductStatusesBatch = (codigos) => api.post('/product-status/batch/get', { codigos }).then(res => res.data);
 export const setProductStatusBatch = (codigos, estado, usuario, acao = 'MARCACAO_MANUAL_LOTE') => api.post('/product-status/batch/update', { codigos, estado, usuario, acao }).then(res => res.data);
+
+// Ajuste em Lote de Apontamentos (Configurações / PCP)
+export const getRecursosAjusteApontamento = () => api.get('/producao/ajuste-apontamento/recursos').then(res => res.data);
+export const previewAjusteApontamento = (payload) => api.post('/producao/ajuste-apontamento/preview', payload).then(res => res.data);
+export const executarAjusteApontamento = (payload) => api.post('/producao/ajuste-apontamento/executar', payload).then(res => res.data);
 
 export { api };
 export default api;

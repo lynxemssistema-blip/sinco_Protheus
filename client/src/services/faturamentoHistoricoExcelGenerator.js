@@ -42,6 +42,54 @@ export const exportFaturamentoHistoricoExcel = (viewMode, rows, includeValues = 
                 item['Status'] = r.status;
                 itemsList.push(item);
             });
+        } else if (viewMode === 'nfs_emitidas') {
+            rows.forEach(r => {
+                if (Array.isArray(r.itens) && r.itens.length > 0) {
+                    r.itens.forEach(it => {
+                        const item = {
+                            'Data Emissão': r.emissao,
+                            'NF': r.doc,
+                            'Série': r.serie || '',
+                            'Cliente': r.cliente_nome,
+                            'CNPJ': r.cliente_cnpj || '',
+                            'UF': r.cliente_uf || '',
+                            'Tipo': r.tipo_descricao || r.tipo,
+                            'Item NF': it.item,
+                            'Cód. Produto': it.codigo,
+                            'Descrição': it.descricao,
+                            'UM': it.um || '',
+                            'Quantidade': parseFloat(it.quantidade) || 0,
+                            'Pedido': it.pedido || '',
+                            'Item PV': it.itempv || '',
+                            'CFOP': it.cfop || '',
+                        };
+                        if (includeValues) {
+                            item['Preço Unit.'] = parseFloat(it.preco_unitario) || 0;
+                            item['Valor Total Item'] = parseFloat(it.valor_total) || 0;
+                            item['Valor Total NF'] = parseFloat(r.valor_total) || 0;
+                        }
+                        item['Chave NFe'] = r.chvnfe || '';
+                        itemsList.push(item);
+                    });
+                } else {
+                    const item = {
+                        'Data Emissão': r.emissao,
+                        'NF': r.doc,
+                        'Série': r.serie || '',
+                        'Cliente': r.cliente_nome,
+                        'CNPJ': r.cliente_cnpj || '',
+                        'UF': r.cliente_uf || '',
+                        'Tipo': r.tipo_descricao || r.tipo,
+                        'Qtd Itens': r.qtd_itens || 0,
+                        'Total Peças': r.total_pecas || 0,
+                    };
+                    if (includeValues) {
+                        item['Valor Total NF'] = parseFloat(r.valor_total) || 0;
+                    }
+                    item['Chave NFe'] = r.chvnfe || '';
+                    itemsList.push(item);
+                }
+            });
         } else {
             // tabela_produtos
             rows.forEach(r => {
@@ -70,6 +118,7 @@ export const exportFaturamentoHistoricoExcel = (viewMode, rows, includeValues = 
         let sheetName = 'Historico_Faturamento';
         if (viewMode === 'tabela_solicitacoes') sheetName = 'Solicitacoes';
         if (viewMode === 'tabela_produtos') sheetName = 'Agrupado_Produto';
+        if (viewMode === 'nfs_emitidas') sheetName = 'NFs_Emitidas_ERP';
 
         XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
 

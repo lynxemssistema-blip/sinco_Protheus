@@ -18,6 +18,492 @@ const dbConfig = {
 const db = require('../db'); // Import Postgres Connection
 const mysqlPool = require('../services/mysqlService'); // Import MySQL Connection
 const { hasFinancialAccess } = require('../util/permissionHelper');
+const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
+
+// --- INITIALIZE EMPENHOS TABLE ---
+(async () => {
+    try {
+        await mysqlPool.query(`
+            CREATE TABLE IF NOT EXISTS app_estoque_empenhos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                produto_codigo VARCHAR(50) NOT NULL,
+                op_numero VARCHAR(50) NOT NULL,
+                op_item VARCHAR(10) DEFAULT '',
+                op_sequencia VARCHAR(10) DEFAULT '',
+                pedido_venda VARCHAR(50) DEFAULT '',
+                produto_pai VARCHAR(50) DEFAULT '',
+                quantidade DECIMAL(15,4) NOT NULL,
+                modo_apontamento VARCHAR(30) NOT NULL,
+                operacoes_apontadas JSON DEFAULT NULL,
+                observacao TEXT,
+                usuario VARCHAR(100) NOT NULL,
+                data_empenho TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_prod (produto_codigo),
+                INDEX idx_op (op_numero)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        `);
+        console.log('✅ [STOCK] Tabela app_estoque_empenhos verificada/criada com sucesso.');
+    } catch (err) {
+        console.error('❌ [STOCK] Erro ao criar app_estoque_empenhos:', err.message);
+    }
+})();
+
+// GET /estrutura-saldo/:codigo - Retorna a árvore completa da estrutura (BOM) com saldos de Fábrica e Protheus
+router.get('/estrutura-saldo/:codigo', async (req, res) => {
+    try {
+        const { codigo } = req.params;
+        const codLimpo = String(codigo || '').trim().toUpperCase();
+
+        if (!codLimpo) {
+            return res.status(400).json({ error: 'Código de produto é obrigatório.' });
+        }
+
+        // 1. Árvore recursiva de BOM da SG1010 + SB1010
+        const bomSQL = `
+            WITH RECURSIVE bom_tree AS (
+                -- Nível 0: O próprio produto pai
+                SELECT 
+                    TRIM(b1.b1_cod) AS codigo,
+                    TRIM(b1.b1_desc) AS descricao,
+                    TRIM(b1.b1_um) AS unidade,
+                    TRIM(b1.b1_tipo) AS tipo,
+                    1::numeric AS qtd_necessaria_unitaria,
+                    0 AS nivel,
+                    ''::text AS codigo_pai,
+                    ARRAY[TRIM(b1.b1_cod)] AS path
+                FROM public.sb1010 b1
+                WHERE TRIM(b1.b1_cod) = $1 AND COALESCE(b1.d_e_l_e_t_, '') = ''
+                
+                UNION ALL
+                
+                -- Níveis filhos recursivos
+                SELECT 
+                    TRIM(g1.g1_comp) AS codigo,
+                    TRIM(COALESCE(b1_comp.b1_desc, '')) AS descricao,
+                    TRIM(COALESCE(b1_comp.b1_um, 'UN')) AS unidade,
+                    TRIM(COALESCE(b1_comp.b1_tipo, '')) AS tipo,
+                    (bt.qtd_necessaria_unitaria * g1.g1_quant::numeric)::numeric AS qtd_necessaria_unitaria,
+                    bt.nivel + 1 AS nivel,
+                    bt.codigo AS codigo_pai,
+                    bt.path || TRIM(g1.g1_comp) AS path
+                FROM bom_tree bt
+                JOIN public.sg1010 g1 ON TRIM(g1.g1_cod) = bt.codigo AND COALESCE(g1.d_e_l_e_t_, '') = ''
+                LEFT JOIN public.sb1010 b1_comp ON TRIM(b1_comp.b1_cod) = TRIM(g1.g1_comp) AND COALESCE(b1_comp.d_e_l_e_t_, '') = ''
+                WHERE NOT (TRIM(g1.g1_comp) = ANY(bt.path)) -- Previne loops
+            )
+            SELECT DISTINCT ON (codigo, nivel, codigo_pai) 
+                codigo, descricao, unidade, tipo, qtd_necessaria_unitaria, nivel, codigo_pai
+            FROM bom_tree
+            ORDER BY nivel ASC, codigo ASC;
+        `;
+
+        const bomRes = await db.query(bomSQL, [codLimpo]);
+        let rows = bomRes.rows;
+
+        // Se o produto não tiver estrutura (ex: MP isolada ou sem SG1), busca pelo menos o próprio item
+        if (rows.length === 0) {
+            const singleSQL = `
+                SELECT 
+                    TRIM(b1_cod) AS codigo,
+                    TRIM(b1_desc) AS descricao,
+                    TRIM(b1_um) AS unidade,
+                    TRIM(b1_tipo) AS tipo,
+                    1::numeric AS qtd_necessaria_unitaria,
+                    0 AS nivel,
+                    '' AS codigo_pai
+                FROM public.sb1010 
+                WHERE TRIM(b1_cod) = $1 AND COALESCE(d_e_l_e_t_, '') = ''
+            `;
+            const singleRes = await db.query(singleSQL, [codLimpo]);
+            rows = singleRes.rows;
+        }
+
+        const allCodes = [...new Set(rows.map(r => r.codigo))];
+
+        // 2. Buscar Saldo Fábrica no MySQL (app_estoque_movimentos)
+        let fabricaMap = {};
+        if (allCodes.length > 0) {
+            try {
+                const placeholders = allCodes.map(() => '?').join(',');
+                const [fabRows] = await mysqlPool.query(
+                    `SELECT produto_codigo, SUM(CASE WHEN tipo = 'E' THEN quantidade ELSE -quantidade END) as saldo_fabrica
+                     FROM app_estoque_movimentos
+                     WHERE produto_codigo IN (${placeholders})
+                     GROUP BY produto_codigo`,
+                    allCodes
+                );
+                if (Array.isArray(fabRows)) {
+                    fabRows.forEach(r => {
+                        fabricaMap[String(r.produto_codigo).trim().toUpperCase()] = parseFloat(r.saldo_fabrica || 0);
+                    });
+                }
+            } catch (e) {
+                console.warn('Erro ao buscar saldo fábrica para estrutura:', e.message);
+            }
+        }
+
+        // 3. Buscar Saldo Protheus ERP (sb2010 + sb2990)
+        let protheusMap = {};
+        if (allCodes.length > 0) {
+            try {
+                const sb2SQL = `
+                    SELECT 
+                        TRIM(b2_cod) AS codigo,
+                        SUM(COALESCE(b2_qatu, 0) - COALESCE(b2_reserva, 0))::numeric AS saldo_protheus
+                    FROM (
+                        SELECT b2_cod, b2_qatu, b2_reserva FROM public.sb2010 WHERE TRIM(b2_cod) = ANY($1) AND COALESCE(d_e_l_e_t_, '') = ''
+                        UNION ALL
+                        SELECT b2_cod, b2_qatu, b2_reserva FROM public.sb2990 WHERE TRIM(b2_cod) = ANY($1) AND COALESCE(d_e_l_e_t_, '') = ''
+                    ) u
+                    GROUP BY TRIM(b2_cod)
+                `;
+                const sb2Res = await db.query(sb2SQL, [allCodes]);
+                sb2Res.rows.forEach(r => {
+                    protheusMap[r.codigo] = parseFloat(r.saldo_protheus || 0);
+                });
+            } catch (e) {
+                console.warn('Erro ao buscar saldo protheus para estrutura:', e.message);
+            }
+        }
+
+        // 4. Montar retorno detalhado
+        let countFabrica = 0;
+        let countProtheus = 0;
+        let countSemEstoque = 0;
+
+        const estrutura = rows.map((r, idx) => {
+            const cod = r.codigo;
+            const saldoFab = fabricaMap[cod] || 0;
+            const saldoProt = protheusMap[cod] || 0;
+            const temEstoque = saldoFab > 0 || saldoProt > 0;
+
+            if (saldoFab > 0) countFabrica++;
+            if (saldoProt > 0) countProtheus++;
+            if (!temEstoque) countSemEstoque++;
+
+            return {
+                id: `${cod}-${idx}`,
+                nivel: parseInt(r.nivel, 10) || 0,
+                codigo: cod,
+                descricao: r.descricao || 'SEM DESCRIÇÃO',
+                unidade: r.unidade || 'UN',
+                tipo: r.tipo || 'PI',
+                codigo_pai: r.codigo_pai || '',
+                qtd_unitaria: parseFloat(r.qtd_necessaria_unitaria) || 1,
+                saldo_fabrica: saldoFab,
+                saldo_protheus: saldoProt,
+                tem_estoque: temEstoque,
+                status_disponibilidade: saldoFab > 0 
+                    ? 'DISPONIVEL_FABRICA' 
+                    : (saldoProt > 0 ? 'DISPONIVEL_ERP' : 'SEM_ESTOQUE')
+            };
+        });
+
+        const paiInfo = rows.find(r => r.nivel === 0) || { codigo: codLimpo, descricao: '' };
+
+        res.json({
+            codigo_pai: paiInfo.codigo,
+            descricao_pai: paiInfo.descricao,
+            total_componentes: estrutura.length,
+            itens_com_saldo_fabrica: countFabrica,
+            itens_com_saldo_protheus: countProtheus,
+            itens_sem_saldo: countSemEstoque,
+            estrutura
+        });
+
+    } catch (err) {
+        console.error('Erro ao buscar estrutura e saldos de estoque:', err);
+        res.status(500).json({ error: 'Erro ao consultar estoque da estrutura', details: err.message });
+    }
+});
+
+// GET /:codigo/ops-candidatas - Lista OPs abertas que consomem ou produzem este item com FILTROS INTELIGENTES
+router.get('/:codigo/ops-candidatas', async (req, res) => {
+    try {
+        const { codigo } = req.params;
+        const codLimpo = String(codigo || '').trim().toUpperCase();
+
+        if (!codLimpo) {
+            return res.status(400).json({ error: 'Código de produto é obrigatório.' });
+        }
+
+        // 1. Carregar lista de pedidos inativos do MySQL
+        let inativosSet = new Set();
+        try {
+            const [inativosRows] = await mysqlPool.query("SELECT pedido_numero FROM app_pedidos_inativos");
+            if (Array.isArray(inativosRows)) {
+                inativosRows.forEach(r => {
+                    if (r.pedido_numero) inativosSet.add(String(r.pedido_numero).trim().toUpperCase());
+                });
+            }
+        } catch (e) {
+            console.warn('Erro ao carregar app_pedidos_inativos:', e.message);
+        }
+
+        // 2. Query completa no Postgres com resolução de pedido pai e BOM
+        const sql = `
+            SELECT DISTINCT
+                TRIM(c2.c2_num) AS op,
+                TRIM(c2.c2_item) AS item_op,
+                TRIM(c2.c2_sequen) AS sequen_op,
+                TRIM(c2.c2_produto) AS produto_pai,
+                TRIM(COALESCE(b1.b1_desc, '')) AS desc_produto_pai,
+                c2.c2_quant::numeric AS qtd_op,
+                TRIM(COALESCE(NULLIF(c2.c2_pedido, ''), NULLIF(c2_pai.c2_pedido, ''), '')) AS pedido,
+                TRIM(COALESCE(NULLIF(c2.c2_itempv, ''), NULLIF(c2_pai.c2_itempv, ''), '')) AS item_pedido,
+                TRIM(COALESCE(a1.a1_nome, '')) AS cliente,
+                TRIM(c2.c2_datprf) AS prazo_entrega,
+                COALESCE(bom.qtd_por_pai, 1)::numeric AS qtd_por_pai,
+                COALESCE(c6.c6_qtdven, 0)::numeric AS c6_qtdven,
+                COALESCE(c6.c6_qtdent, 0)::numeric AS c6_qtdent,
+                CASE WHEN TRIM(c2.c2_produto) = $1 THEN true ELSE false END AS eh_produto_direto
+            FROM public.sc2010 c2
+            LEFT JOIN public.sc2010 c2_pai 
+                ON TRIM(c2_pai.c2_num) = TRIM(c2.c2_num) 
+               AND TRIM(c2_pai.c2_item) = TRIM(c2.c2_item) 
+               AND TRIM(c2_pai.c2_sequen) = '001'
+               AND COALESCE(c2_pai.d_e_l_e_t_, '') = ''
+            LEFT JOIN public.sb1010 b1 ON TRIM(b1.b1_cod) = TRIM(c2.c2_produto) AND COALESCE(b1.d_e_l_e_t_, '') = ''
+            LEFT JOIN public.sc5010 c5 
+                ON TRIM(c5.c5_num) = TRIM(COALESCE(NULLIF(c2.c2_pedido, ''), c2_pai.c2_pedido, '')) 
+               AND COALESCE(c5.d_e_l_e_t_, '') = ''
+            LEFT JOIN public.sc6010 c6 
+                ON TRIM(c6.c6_num) = TRIM(COALESCE(NULLIF(c2.c2_pedido, ''), c2_pai.c2_pedido, '')) 
+               AND TRIM(c6.c6_item) = TRIM(COALESCE(NULLIF(c2.c2_itempv, ''), c2_pai.c2_itempv, '')) 
+               AND COALESCE(c6.d_e_l_e_t_, '') = ''
+            LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli AND COALESCE(a1.d_e_l_e_t_, '') = ''
+            LEFT JOIN (
+                SELECT TRIM(g1_cod) as pai, TRIM(g1_comp) as comp, g1_quant::numeric as qtd_por_pai
+                FROM public.sg1010
+                WHERE TRIM(g1_comp) = $1 AND COALESCE(d_e_l_e_t_, '') = ''
+            ) bom ON bom.pai = TRIM(c2.c2_produto)
+            WHERE COALESCE(c2.d_e_l_e_t_, '') = ''
+              AND (c2.c2_datrf IS NULL OR TRIM(c2.c2_datrf) = '')
+              AND (TRIM(c2.c2_produto) = $1 OR bom.comp IS NOT NULL)
+            ORDER BY TRIM(c2.c2_datprf) ASC, TRIM(c2.c2_num) DESC
+            LIMIT 150
+        `;
+
+        const pgResult = await db.query(sql, [codLimpo]);
+        const rows = pgResult.rows;
+
+        if (rows.length === 0) {
+            return res.json([]);
+        }
+
+        // Buscar apontamentos já feitos nessas OPs no MySQL
+        const opKeys = rows.map(r => r.op);
+        const uniqueOps = [...new Set(opKeys)];
+        const placeholders = uniqueOps.map(() => '?').join(',');
+
+        let apptMap = {};
+        if (uniqueOps.length > 0) {
+            try {
+                const [apptRows] = await mysqlPool.query(
+                    `SELECT op_numero, op_item, op_sequencia, COALESCE(MAX(quantidade), 0) as qtd_apontada
+                     FROM app_production_appointments
+                     WHERE op_numero IN (${placeholders})
+                     GROUP BY op_numero, op_item, op_sequencia`,
+                    uniqueOps
+                );
+                apptRows.forEach(a => {
+                    const k = `${String(a.op_numero).trim()}_${String(a.op_item).trim()}_${String(a.op_sequencia).trim()}`;
+                    apptMap[k] = parseFloat(a.qtd_apontada || 0);
+                });
+            } catch (e) {
+                console.warn('Erro ao buscar apontamentos das OPs:', e.message);
+            }
+        }
+
+        const candidates = [];
+        const seenKeys = new Set();
+
+        for (const r of rows) {
+            const k = `${String(r.op).trim()}_${String(r.item_op).trim()}_${String(r.sequen_op).trim()}`;
+            if (seenKeys.has(k)) continue;
+
+            const pedLimpo = String(r.pedido || '').trim().toUpperCase();
+            const opLimpa = String(r.op || '').trim().toUpperCase();
+
+            // 1. FILTRO INTELIGENTE: Desconsiderar pedidos inativos (pelo número do pedido ou pelo número da OP se for igual ao pedido)
+            if (pedLimpo && inativosSet.has(pedLimpo)) {
+                continue;
+            }
+            if (inativosSet.has(opLimpa)) {
+                continue;
+            }
+
+            // 2. FILTRO INTELIGENTE: Se possui pedido de venda vinculado, descartar se saldo a faturar já zerou
+            if (pedLimpo && r.c6_qtdven > 0 && (r.c6_qtdven - r.c6_qtdent <= 0)) {
+                continue;
+            }
+
+            // 3. FILTRO INTELIGENTE: Desconsiderar se pendência de apontamento <= 0
+            const qtdOp = parseFloat(r.qtd_op || 0);
+            const qtdPorPai = parseFloat(r.qtd_por_pai || 1);
+            const qtdNecessaria = qtdOp * qtdPorPai;
+            const qtdApontada = apptMap[k] || 0;
+            const qtdPendente = Math.max(0, qtdNecessaria - qtdApontada);
+
+            if (qtdPendente <= 0) {
+                continue;
+            }
+
+            seenKeys.add(k);
+
+            let prazoFormatado = '-';
+            if (r.prazo_entrega && r.prazo_entrega.trim().length === 8) {
+                const p = r.prazo_entrega.trim();
+                prazoFormatado = `${p.slice(6, 8)}/${p.slice(4, 6)}/${p.slice(0, 4)}`;
+            }
+
+            candidates.push({
+                op: r.op,
+                item_op: r.item_op,
+                sequen_op: r.sequen_op,
+                produto_pai: r.produto_pai,
+                desc_produto_pai: r.desc_produto_pai,
+                pedido: r.pedido,
+                item_pedido: r.item_pedido,
+                cliente: r.cliente,
+                prazo_entrega: prazoFormatado,
+                qtd_op: qtdOp,
+                qtd_por_pai: qtdPorPai,
+                qtd_necessaria: qtdNecessaria,
+                qtd_apontada: qtdApontada,
+                qtd_pendente: qtdPendente,
+                eh_produto_direto: r.eh_produto_direto
+            });
+        }
+
+        res.json(candidates);
+    } catch (err) {
+        console.error('Erro ao buscar OPs candidatas para estoque:', err);
+        res.status(500).json({ error: 'Erro ao buscar OPs candidatas', details: err.message });
+    }
+});
+
+// POST /empenhar-op - Realiza o empenho do saldo de fábrica para uma OP/Pedido com apontamento
+router.post('/empenhar-op', async (req, res) => {
+    try {
+        const {
+            produto_codigo,
+            op_numero,
+            op_item,
+            op_sequencia,
+            pedido_venda,
+            produto_pai,
+            quantidade,
+            modo_apontamento, // 'CASCATA' | 'PONTUAL' | 'SEM_APONTAMENTO'
+            operacoes, // Array of { operacao_codigo, recurso, nome, sequencia }
+            usuario,
+            observacao
+        } = req.body;
+
+        const codLimpo = String(produto_codigo || '').trim().toUpperCase();
+        const opTrim = String(op_numero || '').trim();
+        const qtdNum = parseFloat(quantidade);
+
+        if (!codLimpo || !opTrim || !qtdNum || qtdNum <= 0) {
+            return res.status(400).json({ error: 'Parâmetros inválidos para empenho de estoque.' });
+        }
+
+        // 1. Validar saldo físico disponível na fábrica
+        const [localRows] = await mysqlPool.query(
+            'SELECT SUM(CASE WHEN tipo = "E" THEN quantidade ELSE -quantidade END) as saldo FROM app_estoque_movimentos WHERE produto_codigo = ?',
+            [codLimpo]
+        );
+        const saldoAtual = (localRows.length > 0 && localRows[0].saldo) ? parseFloat(localRows[0].saldo) : 0;
+
+        if (qtdNum > saldoAtual) {
+            return res.status(400).json({
+                error: `Saldo insuficiente na fábrica! Saldo disponível: ${saldoAtual} un. Quantidade informada: ${qtdNum} un.`
+            });
+        }
+
+        // 2. Realizar Baixa no Estoque Fábrica (app_estoque_movimentos)
+        const opCountStr = Array.isArray(operacoes) && operacoes.length > 0 
+            ? `${operacoes.length} operação(ões) apontada(s)` 
+            : 'Sem apontamento de produção';
+        const obsMov = `Empenho para OP ${opTrim}${op_item ? '.' + op_item : ''} (Pedido: ${pedido_venda || 'S/P'}) - ${opCountStr}${observacao ? ' | ' + observacao : ''}`;
+        
+        await mysqlPool.query(
+            'INSERT INTO app_estoque_movimentos (produto_codigo, tipo, quantidade, saldo_anterior, observacao, usuario, data_movimento) VALUES (?, "S", ?, ?, ?, ?, NOW())',
+            [codLimpo, qtdNum, saldoAtual, obsMov, usuario || 'Chão de Fábrica']
+        );
+
+        // 3. Inserir Apontamentos em app_production_appointments (se não for SEM_APONTAMENTO)
+        const now = new Date();
+        if (modo_apontamento !== 'SEM_APONTAMENTO' && Array.isArray(operacoes) && operacoes.length > 0) {
+            for (const opItem of operacoes) {
+                const opCod = String(opItem.operacao_codigo || opItem.codigo || '').trim();
+                const obsAppt = `[EMPENHO ESTOQUE] Atendido pelo estoque físico (${codLimpo}) - Modo: ${modo_apontamento || 'DIRETO'}`;
+                
+                await mysqlPool.query(
+                    `INSERT INTO app_production_appointments 
+                     (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, conferencia_status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OK')`,
+                    [
+                        opTrim,
+                        String(op_item || '01').trim(),
+                        String(op_sequencia || '001').trim(),
+                        opCod,
+                        usuario || 'Empenho Estoque',
+                        qtdNum,
+                        now,
+                        now,
+                        obsAppt
+                    ]
+                );
+            }
+        }
+
+        // 4. Gravar Histórico Mestre em app_estoque_empenhos
+        await mysqlPool.query(
+            `INSERT INTO app_estoque_empenhos
+             (produto_codigo, op_numero, op_item, op_sequencia, pedido_venda, produto_pai, quantidade, modo_apontamento, operacoes_apontadas, observacao, usuario)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                codLimpo,
+                opTrim,
+                String(op_item || '').trim(),
+                String(op_sequencia || '').trim(),
+                String(pedido_venda || '').trim(),
+                String(produto_pai || codLimpo).trim(),
+                qtdNum,
+                modo_apontamento || 'CASCATA',
+                JSON.stringify(operacoes || []),
+                observacao || null,
+                usuario || 'Chão de Fábrica'
+            ]
+        );
+
+        res.json({
+            success: true,
+            message: `Empenho de ${qtdNum} unidades realizado com sucesso para a OP ${opTrim}!`,
+            saldo_restante: saldoAtual - qtdNum
+        });
+    } catch (err) {
+        console.error('Erro ao empenhar estoque para OP:', err);
+        res.status(500).json({ error: 'Erro ao processar empenho de estoque', details: err.message });
+    }
+});
+
+// GET /:codigo/empenhos - Lista histórico de empenhos do produto
+router.get('/:codigo/empenhos', async (req, res) => {
+    try {
+        const { codigo } = req.params;
+        const codLimpo = String(codigo || '').trim().toUpperCase();
+        const [rows] = await mysqlPool.query(
+            'SELECT * FROM app_estoque_empenhos WHERE produto_codigo = ? ORDER BY data_empenho DESC LIMIT 50',
+            [codLimpo]
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro ao buscar histórico de empenhos:', err);
+        res.status(500).json({ error: 'Erro ao buscar histórico de empenhos' });
+    }
+});
 
 // GET /:codigo/saldo - Retorna saldo atual do produto (Protheus SB2010/SB2990) e Fábrica
 router.get('/:codigo/saldo', async (req, res) => {

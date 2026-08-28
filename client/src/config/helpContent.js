@@ -3821,8 +3821,806 @@ export const HELP_CONTENT = {
       { path: '/comercial/visao-geral', label: 'Visão Geral Comercial' },
       { path: '/comercial/itens-faturar', label: 'Itens a Faturar' }
     ]
+  },
+
+
+
+  '/visao-geral': {
+      "category": "Comercial / PCP",
+      "categoryColor": "#2563eb",
+      "title": "Pedidos de Venda & Planilha Mestra de Produção",
+      "icon": "ShoppingCart",
+      "description": "Interface principal de visualização da carteira de pedidos de venda do Protheus (SC5/SC6), programação de entregas, simulação de capacidade finita (FCS), conferência de matérias-primas e Planilha Mestra de Planejamento da Produção com detalhamento de execução por máquina.",
+      "tabs": [
+          {
+              "id": "pedidos_venda",
+              "label": "Carteira de Pedidos de Venda",
+              "description": "Gestão da carteira com filtros inteligentes, agrupamento por cliente e prioridades.",
+              "steps": [
+                  "Filtros Globais: Filtre por Cliente, Pedido, Ordem de Compra, Referência, Código de Produto, Datas de Emissão e Classificação (PCP, Restrição, Revisão, Novo).",
+                  "Visões Agrupada e Lista Plana: Alterne entre visualização agrupada por pedido de venda ou lista plana item a item para análise rápida.",
+                  "Ações em Lote: Alteração de datas de entrega, atribuição de prioridades comerciais e envio de comunicados via WhatsApp/Ata Viva."
+              ]
+          },
+          {
+              "id": "planilha_mestra",
+              "label": "Planilha Mestra de Produção (Master Sheet)",
+              "description": "Suíte completa de planejamento, capacidade e execução fabril.",
+              "steps": [
+                  "Aba Capa & Resumo: Visão executiva da carteira com indicadores consolidados de peças planejadas, horas de máquina e peso total.",
+                  "Aba Itens Detalhados: Relação item a item com códigos de produto, desenhos vinculados, quantidades e prazos contratuais.",
+                  "Aba Estrutura dos Produtos: Árvore completa de componentes com cálculo de necessidade de matéria-prima e saldos de Almoxarifado (Almox 01 e 03).",
+                  "Aba Carga por Recurso: Matriz de carga calculada por posto de trabalho (Guilhotina, Puncionadeira, Laser, Dobradeira, Prensa, Usinagem, Solda, Pintura).",
+                  "Aba Execução OP (COM COLUNAS CONGELADAS): Monitoramento detalhado de execução em chão de fábrica com 7 colunas fixas à esquerda (Pedido, Cliente, OP, Produto com ícone CAD, Qtd Plan, Data PCP, Qtde PCP) que permanecem visíveis durante o scroll horizontal.",
+                  "Subcolunas de Execução por Recurso: Para cada máquina, acompanhe Prev (min), Apon (min), Qtd Apon, Qtd Falta (peças faltantes para concluir) e Falta min (tempo restante de máquina), com valores limpos em traço (-) para recursos não utilizados pelo produto.",
+                  "Simulação de Prazos FCS: Algoritmo de sequenciamento de capacidade finita que calcula a data estimada de término de cada OP considerando a capacidade instalada."
+              ]
+          },
+          {
+              "id": "exportacoes_mestre",
+              "label": "Exportações e Relatórios Executivos",
+              "description": "Geração de planilhas Excel nativas e documentos PDF de alta resolução.",
+              "steps": [
+                  "Exportação Excel Completa: Gera planilha multi-aba com formatação profissional, fórmulas automáticas e totais de horas e quantidades por recurso.",
+                  "Exportação PDF: Emite relatórios diagramados prontos para reuniões de diretoria e apresentações para clientes."
+              ]
+          }
+      ],
+      "tips": [
+          "Na aba \"Execução OP\", utilize o scroll horizontal para conferir todos os postos de trabalho; as colunas de identificação da OP e do produto ficam fixas para fácil leitura.",
+          "Itens sem operação em um determinado recurso são exibidos com \"-\" e não afetam o cálculo do tempo total de execução da máquina.",
+          "Clique no ícone de desenho técnico ao lado de qualquer código de produto para abrir a pré-visualização imediata do desenho de engenharia."
+      ],
+      "links": [
+          {
+              "path": "/comercial/gestao-ops",
+              "label": "Gestão de OPs"
+          },
+          {
+              "path": "/pcp/fila-dependencias",
+              "label": "Fila e Dependências (WIP)"
+          },
+          {
+              "path": "/pcp/controle-execucao",
+              "label": "Controle de Execução"
+          }
+      ]
+  },
+
+  '/vmi/criticos': {
+      "category": "VMI / PCP",
+      "categoryColor": "#ef4444",
+      "title": "Tabela de Itens Críticos VMI",
+      "icon": "AlertOctagon",
+      "description": "Painel executivo de monitoramento e gestão preventiva de itens em situação crítica de desabastecimento, atraso ou risco de ruptura na cadeia VMI. Inclui gestão de versões de planilhas importadas, comparador de versões com cálculo de delta (resolvidos, novos, alterados), curvas de evolução temporal, visualização de espelho operacional com detalhamento de status e exportação em PDF e Excel.",
+      "tabs": [
+          {
+              "id": "espelho",
+              "label": "Espelho de Críticos & Status",
+              "description": "Visualização consolidada de todos os itens em situação crítica com cruzamento inteligente com o Protheus.",
+              "steps": [
+                  "Filtros por Status: Filtre rapidamente por \"Falta de Entrega\", \"Material OK\", \"Com Pedido\" ou \"Com NF\" para orientar as ações imediatas.",
+                  "Detalhes do Item: Expanda a linha de qualquer produto para visualizar pedidos de venda (SC6), ordens de produção (SC2), saldo em estoque e faturamentos recentes.",
+                  "Identificação Visual: Ícones e cores destacadas indicam se o item já possui ordem de produção em andamento ou se necessita de abertura urgente de pedido."
+              ]
+          },
+          {
+              "id": "importar",
+              "label": "Importação e Versionamento",
+              "description": "Carregamento de planilhas com seletor de aba e criação de versões históricas.",
+              "steps": [
+                  "Upload de Planilha: Arraste ou selecione o arquivo Excel (.xlsx) enviado pelo cliente com o relatório de críticos.",
+                  "Seletor de Abas: Caso o arquivo possua múltiplas abas, selecione qual aba contém a relação de peças críticas a ser importada.",
+                  "Título da Versão: Defina um nome identificador para a versão (ex: \"Semana 35 - Atualização Cliente X\") para facilitar comparações futuras.",
+                  "Processamento Automático: O sistema processa os códigos de produto, calcula os status operacionais e armazena o lote no banco de dados."
+              ]
+          },
+          {
+              "id": "comparador",
+              "label": "Comparador de Versões",
+              "description": "Análise de variações e evolução de criticidade entre duas datas/versões.",
+              "steps": [
+                  "Seleção de Versões: Escolha a Versão A (anterior) e a Versão B (mais recente) nos seletores do topo.",
+                  "Itens Novos Críticos: Identifica peças que entraram na lista de criticidade na versão mais recente.",
+                  "Itens Resolvidos: Destaca itens que deixaram de ser críticos devido a produção concluída ou entregas realizadas.",
+                  "Itens Alterados: Mostra variações de quantidade demandada ou alterações de prazo solicitadas pelo cliente."
+              ]
+          },
+          {
+              "id": "evolucao",
+              "label": "Curva de Evolução & Tendência",
+              "description": "Histórico gráfico do volume de itens críticos ao longo do tempo.",
+              "steps": [
+                  "Gráfico de Área Temporal: Acompanhe a evolução do número total de itens críticos por semana/mês.",
+                  "Métricas de Eficácia: Meça o impacto das ações de produção e compras na redução da curva de itens críticos."
+              ]
+          },
+          {
+              "id": "exportacoes",
+              "label": "Exportações PDF e Excel",
+              "description": "Geração de relatórios executivos para reuniões e clientes.",
+              "steps": [
+                  "Espelho PDF: Gera documento formatado em PDF profissional pronto para impressão ou envio por e-mail.",
+                  "Exportação Excel: Baixa a planilha completa com todas as colunas de rastreabilidade para auditoria externa."
+              ]
+          }
+      ],
+      "tips": [
+          "Sempre crie uma nova versão a cada envio de planilha do cliente para manter a curva histórica de evolução atualizada.",
+          "Utilize o Comparador de Versões antes de reuniões de alinhamento com clientes para demonstrar a quantidade exata de itens já resolvidos pela fábrica."
+      ],
+      "links": [
+          {
+              "path": "/vmi/demanda-mes",
+              "label": "Demanda Mês"
+          },
+          {
+              "path": "/vmi/dashboard",
+              "label": "Visão de Entrega VMI"
+          },
+          {
+              "path": "/comercial/gestao-ops",
+              "label": "Gestão de OPs"
+          }
+      ]
+  },
+
+  '/suprimentos/espelho-nf': {
+      "category": "Suprimentos / Fiscal",
+      "categoryColor": "#0284c7",
+      "title": "Visualizador de Espelho de NF-e",
+      "icon": "FileText",
+      "description": "Interface de consulta detalhada, conferência e impressão do Espelho de Nota Fiscal Eletrônica (NF-e) do Protheus (SF2/SD2 e SF1/SD1). Permite auditar impostos (ICMS, IPI, PIS, COFINS, ST), itens faturados, dados de transportadora, volumes, chave de acesso de 44 dígitos e romaneios de expedição atrelados.",
+      "tabs": [
+          {
+              "id": "conferencia",
+              "label": "Conferência Fiscal & Itens",
+              "description": "Detalhamento completo dos produtos faturados e alíquotas aplicadas.",
+              "steps": [
+                  "Busca por Chave / Número: Localize a nota digitando o número da NF, série ou chave de acesso de 44 dígitos.",
+                  "Conferência de Itens: Exibe código Metalfisa, descrição, quantidade faturada, valor unitário, valor total e NCM.",
+                  "Cálculo de Tributos: Visualização dos destaques de base de cálculo e valores de ICMS, IPI, ICMS-ST e retenções federais."
+              ]
+          },
+          {
+              "id": "transporte_volumes",
+              "label": "Dados de Transporte & Romaneios",
+              "description": "Identificação logística da carga e vínculos operacionais.",
+              "steps": [
+                  "Transportadora: Dados cadastrais da transportadora, placa do veículo, tipo de frete (CIF/FOB) e volumes.",
+                  "Vínculo com Romaneios: Identifica quais romaneios de expedição foram agrupados nesta nota fiscal."
+              ]
+          },
+          {
+              "id": "emissao_pdf",
+              "label": "Impressão de Espelho Padronizado",
+              "description": "Geração de espelho para conferência física na expedição e portaria.",
+              "steps": [
+                  "Gerar PDF: Clique em \"Imprimir Espelho\" para gerar o documento formatado.",
+                  "Conferência Física: Utilizado pela equipe de expedição para checar os volumes físicos no caminhão antes da liberação final."
+              ]
+          }
+      ],
+      "tips": [
+          "Utilize o Espelho de NF para conferir divergências fiscais com fornecedores antes de autorizar o recebimento físico.",
+          "O documento em PDF contém código de barras da chave de acesso para leitura rápida com leitor óptico."
+      ],
+      "links": [
+          {
+              "path": "/romaneios",
+              "label": "Expedição (Romaneios)"
+          },
+          {
+              "path": "/auditoria-pc",
+              "label": "Auditoria PC x XML"
+          },
+          {
+              "path": "/comercial/faturamento",
+              "label": "Controle de Faturamento"
+          }
+      ]
+  },
+
+  '/auditoria-pc': {
+      "category": "Suprimentos / Qualidade",
+      "categoryColor": "#059669",
+      "title": "Auditoria de Pedidos de Compra (PC x XML)",
+      "icon": "ShieldCheck",
+      "description": "Ferramenta automatizada de conciliação fiscal e auditoria comparativa entre os Pedidos de Compra (SC7) cadastrados no Protheus e o arquivo XML da Nota Fiscal Eletrônica transmitido pelo fornecedor.",
+      "tabs": [
+          {
+              "id": "leitura_xml",
+              "label": "Upload e Leitura de XML",
+              "description": "Processamento do arquivo XML da NF-e do fornecedor.",
+              "steps": [
+                  "Carregar XML: Arraste o arquivo .xml da NF-e para a área de upload.",
+                  "Leitura Automática: O sistema extrai dados do emitente (CNPJ), número da nota, itens, NCM, preços unitários e tributos destacados.",
+                  "Cruzamento Protheus: Localiza automaticamente o Pedido de Compra (PC) correspondente registrado no ERP."
+              ]
+          },
+          {
+              "id": "matriz_auditoria",
+              "label": "Matriz de Divergências",
+              "description": "Semáforo de conformidade item a item.",
+              "steps": [
+                  "Verde (Conforme): Preço unitário, quantidade e alíquotas coincidem perfeitamente.",
+                  "Amarelo (Tolerância): Pequena variação aceitável de arredondamento de centavos.",
+                  "Vermelho (Divergente): Preço unitário maior que o negociado, NCM incorreto, IPI/ICMS divergente ou quantidade acima do pedido."
+              ]
+          },
+          {
+              "id": "parecer_fiscal",
+              "label": "Parecer e Liberação",
+              "description": "Registro de autorização de entrada ou devolução.",
+              "steps": [
+                  "Liberar para Recebimento: Autoriza a entrada fiscal no almoxarifado caso os dados estejam conformes.",
+                  "Rejeitar / Solicitar Carta de Correção: Notifica o comprador para alinhamento com o fornecedor."
+              ]
+          }
+      ],
+      "tips": [
+          "Nunca receba mercadoria com divergência de preço em vermelho sem aprovação formal da Gerência de Suprimentos.",
+          "Auditar o XML antes do descarregamento evita devoluções de mercadoria e notas de estorno complexas."
+      ],
+      "links": [
+          {
+              "path": "/solicitacoes-compras",
+              "label": "Solicitações de Compras"
+          },
+          {
+              "path": "/suprimentos/espelho-nf",
+              "label": "Espelho da NF"
+          },
+          {
+              "path": "/saldo-materiais",
+              "label": "Estoque & Saldos"
+          }
+      ]
+  },
+
+  '/engenharia/sinco/estrutura-completa': {
+      "category": "Engenharia / Produto",
+      "categoryColor": "#6366f1",
+      "title": "SolidEdge Estrutura Completa de Produto",
+      "icon": "Layers",
+      "description": "Visualização da árvore hierárquica multinível completa da estrutura de produtos (BOM) gerada pelo SolidEdge e integrada ao SINCO / Protheus (SG1/SB1). Permite navegar por conjuntos pais, subconjuntos, peças usinadas/estampadas, matéria-prima e roteiros de centros de trabalho.",
+      "tabs": [
+          {
+              "id": "arvore_engenharia",
+              "label": "Árvore Multinível de Engenharia",
+              "description": "Explosão estrutural nó a nó de montagens e submontagens.",
+              "steps": [
+                  "Navegação Expansível: Clique nos nós da árvore para expandir conjuntos, peças e insumos.",
+                  "Quantidades Acumuladas: Mostra a quantidade unitária por conjunto e a quantidade total acumulada para a estrutura mestre.",
+                  "Detalhamento de Peça: Visualize descrição completa, tipo de material (chapa, tubo, barra), espessura e acabamento."
+              ]
+          },
+          {
+              "id": "roteiro_fabricacao",
+              "label": "Roteiros de Produção & Centros de Trabalho",
+              "description": "Operações fabris e tempos padrão cadastrados.",
+              "steps": [
+                  "Centros de Trabalho: Visualização sequencial das operações (Corte Laser, Guilhotina, Puncionadeira, Dobradeira, Usinagem CNC, Solda, Pintura).",
+                  "Tempos Padrão: Tempos de preparação (setup) e tempo unitário por peça cadastrados no Protheus.",
+                  "Cálculo de Carga: Base oficial de tempos utilizada pelo módulo de Planejamento de Carga Máquina da Planilha Mestra."
+              ]
+          },
+          {
+              "id": "desenhos_cad",
+              "label": "Desenhos Técnicos & Modelos CAD",
+              "description": "Acesso direto a arquivos de engenharia.",
+              "steps": [
+                  "Desenho 2D: Acesso rápido aos arquivos de desenho técnico (.dft, .dwg, .pdf) da peça.",
+                  "Visualização 3D: Link direto para o módulo de Análise 3D para inspeção geométrica do componente."
+              ]
+          }
+      ],
+      "tips": [
+          "Utilize esta tela para auditar se a estrutura cadastrada no Protheus reflete 100% o modelo de montagem do SolidEdge.",
+          "Erros em tempos de roteiro nesta tela afetam diretamente a precisão do agendamento de capacidade no PCP."
+      ],
+      "links": [
+          {
+              "path": "/produtos",
+              "label": "Catálogo de Produtos"
+          },
+          {
+              "path": "/bom-generator",
+              "label": "Gerador de BOM"
+          },
+          {
+              "path": "/analise-3d",
+              "label": "Visualizador 3D"
+          }
+      ]
+  },
+
+  '/analise-3d': {
+      "category": "Engenharia / CAD",
+      "categoryColor": "#8b5cf6",
+      "title": "Visualizador de Modelos 3D (CAD Web)",
+      "icon": "Box",
+      "description": "Ambiente interativo de renderização e análise tridimensional de modelos CAD (peças individuais e conjuntos mecânicos) diretamente no navegador via WebGL, sem necessidade de licença CAD local.",
+      "tabs": [
+          {
+              "id": "visualizacao_3d",
+              "label": "Navegação e Câmera 3D",
+              "description": "Controles tridimensionais de visualização.",
+              "steps": [
+                  "Órbita e Rotação: Clique e arraste com o botão esquerdo para girar o modelo em 360 graus.",
+                  "Pan e Zoom: Botão direito ou roda do mouse para mover a cena e aplicar zoom nos detalhes.",
+                  "Modos de Exibição: Alterne entre visualização com texturas realistas, sombreado suave, modo aramado (wireframe) e transparência de peças."
+              ]
+          },
+          {
+              "id": "medicao_inspecao",
+              "label": "Medição & Cotas",
+              "description": "Ferramentas de inspeção dimensional em tempo real.",
+              "steps": [
+                  "Distância entre Faces: Meça a distância exata entre duas superfícies selecionadas.",
+                  "Diâmetros e Furações: Verifique diâmetros de furos e raios de curvatura.",
+                  "Ângulos de Dobra: Inspecione ângulos de dobras em chapas metálicas."
+              ]
+          },
+          {
+              "id": "vista_explodida",
+              "label": "Vista Explodida Interativa",
+              "description": "Análise sequencial de montagem.",
+              "steps": [
+                  "Slider de Explosão: Mova a barra de explosão para afastar os componentes do conjunto ao longo dos seus eixos de montagem.",
+                  "Instrução de Trabalho: Utilize a vista explodida para orientar operadores de montagem no chão de fábrica."
+              ]
+          }
+      ],
+      "tips": [
+          "Pressione a tecla \"R\" para resetar a visualização para a perspectiva isométrica padrão.",
+          "O visualizador suporta modelos de peças estampadas, conjuntos soldados e submontagens completas."
+      ],
+      "links": [
+          {
+              "path": "/produtos",
+              "label": "Catálogo de Produtos"
+          },
+          {
+              "path": "/engenharia/sinco/estrutura-completa",
+              "label": "SolidEdge Estrutura Completa"
+          }
+      ]
+  },
+
+  '/wabtec/ppaps': {
+      "category": "Gestão de Clientes / WabTec",
+      "categoryColor": "#4f46e5",
+      "title": "Gestão de PPAPs WabTec",
+      "icon": "Award",
+      "description": "Módulo de controle e acompanhamento dos Processos de Aprovação de Peças de Produção (PPAP) conforme as normas do setor ferroviário e os requisitos contratuais específicos da WabTec. Gerencia os níveis de submissão 1 a 5 e a homologação formal do PSW.",
+      "tabs": [
+          {
+              "id": "status_psw",
+              "label": "Controle de PSW & Submissão",
+              "description": "Acompanhamento do Part Submission Warrant.",
+              "steps": [
+                  "Status do PSW: Monitore o status de aprovação (Aprovado, Aprovado Provisório, Em Análise, Rejeitado).",
+                  "Níveis de Submissão: Níveis 1 a 5 configurados de acordo com a exigência técnica do cliente.",
+                  "Vencimento de Homologação: Alertas de revisão periódica e revalidação de peças homologadas."
+              ]
+          },
+          {
+              "id": "elementos_ppap",
+              "label": "18 Elementos do PPAP",
+              "description": "Repositório de documentação comprobatória.",
+              "steps": [
+                  "Registros de Projeto: Desenhos técnicos e especificações aprovadas.",
+                  "FMEA e Plano de Controle: PFMEA de fabricação e planos de inspeção da qualidade.",
+                  "Relatórios Dimensionais: Medições de peças do lote piloto.",
+                  "Ensaios de Materiais: Certificados de matéria-prima, ensaios de tração, dureza e camada de tratamento superficial."
+              ]
+          }
+      ],
+      "tips": [
+          "Nenhum item sob PPAP pode ter alteração de ferramental ou matéria-prima sem a prévia notificação e aprovação do cliente.",
+          "Mantenha os laudos de ensaio dimensional sempre vinculados ao lote da amostra inicial submetida."
+      ],
+      "links": [
+          {
+              "path": "/wabtec/escopo",
+              "label": "Escopo WabTec"
+          },
+          {
+              "path": "/wabtec/datas-solicitacao",
+              "label": "Datas de Solicitação"
+          },
+          {
+              "path": "/sgq/gestao-rncs",
+              "label": "Gestão de RNCs"
+          }
+      ]
+  },
+
+  '/wabtec/escopo': {
+      "category": "Gestão de Clientes / WabTec",
+      "categoryColor": "#4f46e5",
+      "title": "Escopo de Fornecimento WabTec",
+      "icon": "FileText",
+      "description": "Matriz técnica consolidada do escopo de fornecimento para a WabTec, integrando desenhos técnicos homologados, controle de revisões de engenharia (ECN), especificações de embalagem e normas aplicáveis.",
+      "tabs": [
+          {
+              "id": "matriz_pecas",
+              "label": "Matriz de Códigos & Especificações",
+              "description": "Mapeamento Metalfisa x Código Cliente.",
+              "steps": [
+                  "De-Para de Códigos: Código interno Protheus x Código WabTec e Descrição Técnica.",
+                  "Especificações de Processo: Tipo de aço, espessura, tratamento superficial e requisitos especiais de soldagem.",
+                  "Embalagens Homologadas: Tipo de rack, caixa retornável ou proteção especial para transporte."
+              ]
+          },
+          {
+              "id": "historico_revisoes",
+              "label": "Controle de Revisões (ECN)",
+              "description": "Rastreabilidade de alterações de projeto.",
+              "steps": [
+                  "Histórico de Mudanças: Registro das alterações de cotas, furações ou dobras com data de entrada em vigor.",
+                  "Desenho Vigente: Download da revisão oficial liberada pela Engenharia da WabTec."
+              ]
+          }
+      ],
+      "tips": [
+          "Antes de programar qualquer lote no PCP, verifique no Escopo se não houve emissão de nova revisão de desenho pelo cliente.",
+          "Dúvidas técnicas de tolerância dimensional devem ser esclarecidas via RNC ou consulta formal à Engenharia."
+      ],
+      "links": [
+          {
+              "path": "/wabtec/ppaps",
+              "label": "PPAPs WabTec"
+          },
+          {
+              "path": "/wabtec/datas-solicitacao",
+              "label": "Datas de Solicitação"
+          }
+      ]
+  },
+
+  '/engetron/dashboard': {
+      "category": "Gestão de Clientes / Engetron",
+      "categoryColor": "#059669",
+      "title": "Painel de Demandas Engetron",
+      "icon": "LayoutDashboard",
+      "description": "Painel de controle dedicado ao acompanhamento de carteira de pedidos, ordens de produção e entregas contratuais para o cliente Engetron, assegurando atendimento Just-In-Time e cumprimento de metas de OTD.",
+      "tabs": [
+          {
+              "id": "carteira_engetron",
+              "label": "Carteira de Pedidos & Prazos",
+              "description": "Visão detalhada dos pedidos em aberto.",
+              "steps": [
+                  "Pedidos Ativos: Lista de pedidos de venda com datas contratuais de entrega.",
+                  "Saldos a Entregar: Quantidades faturadas x saldos pendentes.",
+                  "Priorização: Itens com data de entrega mais próxima são destacados automaticamente no topo."
+              ]
+          },
+          {
+              "id": "producao_engetron",
+              "label": "Acompanhamento Fabril",
+              "description": "Status de avanço das OPs na fábrica.",
+              "steps": [
+                  "OPs Vinculadas: Ordens de produção em andamento para atender aos pedidos da Engetron.",
+                  "Progresso por Setor: Visualização das etapas concluídas (Corte, Dobra, Solda, Pintura e Montagem)."
+              ]
+          }
+      ],
+      "tips": [
+          "Acompanhe o painel diariamente para garantir que nenhuma etapa de fabricação atrase o cronograma de faturamento.",
+          "Utilize os filtros rápidos para exportar relatórios de posição de carteira para reuniões semanais de alinhamento."
+      ],
+      "links": [
+          {
+              "path": "/comercial/gestao-ops",
+              "label": "Gestão de OPs"
+          },
+          {
+              "path": "/comercial/faturamento",
+              "label": "Controle de Faturamento"
+          }
+      ]
+  },
+
+  '/rh/offboarding': {
+      "category": "Recursos Humanos",
+      "categoryColor": "#dc2626",
+      "title": "Offboarding e Custódia de Ativos",
+      "icon": "UserMinus",
+      "description": "Processo estruturado de desligamento e encerramento de vínculo de colaboradores. Gerencia a conferência e devolução de ferramentas de trabalho, EPIs, crachás, uniformes, notebooks e a revogação formal de acessos aos sistemas de informação da empresa.",
+      "tabs": [
+          {
+              "id": "conferencia_ativos",
+              "label": "Checklist de Devolução de Ativos",
+              "description": "Conferência física dos bens em posse do colaborador.",
+              "steps": [
+                  "Itens em Custódia: Listagem automática de ferramentas, armários, caixas de ferramentas, notebooks e crachás vinculados ao funcionário.",
+                  "Conferência de Estado: Registro do estado de conservação no momento da entrega.",
+                  "Baixa no Sistema: Atualização do status do item para \"Disponível\" no módulo de Gestão de Ativos/SGQ."
+              ]
+          },
+          {
+              "id": "termo_devolucao",
+              "label": "Termo de Devolução e Quitação",
+              "description": "Emissão e formalização do documento de desligamento.",
+              "steps": [
+                  "Gerar Termo: Emissão do documento oficial contendo a relação de todos os itens entregues.",
+                  "Assinatura: Coleta da assinatura do colaborador e do responsável pelo RH/Almoxarifado.",
+                  "Arquivo Digital: Armazenamento seguro do termo no prontuário do colaborador no SGQ."
+              ]
+          },
+          {
+              "id": "revogacao_acessos",
+              "label": "Revogação de Acessos de TI",
+              "description": "Segurança da informação e bloqueio de credenciais.",
+              "steps": [
+                  "Cancelamento de Usuário: Bloqueio imediato do login no Protheus, SINCO e e-mail corporativo.",
+                  "Revogação de VPN: Cancelamento de acessos remotos e chaves de segurança."
+              ]
+          }
+      ],
+      "tips": [
+          "Nenhum processo de homologação de rescisão deve ser finalizado sem a emissão e assinatura do Termo de Quitação de Ativos.",
+          "A baixa de ferramentas devolvidas atualiza automaticamente o inventário de caixas de ferramentas do SGQ."
+      ],
+      "links": [
+          {
+              "path": "/rh/vagas",
+              "label": "Gestão de Vagas"
+          },
+          {
+              "path": "/sgq/ativos",
+              "label": "Gestão de Ativos"
+          },
+          {
+              "path": "/sgq/caixas",
+              "label": "Caixas de Ferramenta"
+          }
+      ]
+  },
+
+  '/portal-cliente/tablet': {
+      "category": "Acesso Cliente",
+      "categoryColor": "#2563eb",
+      "title": "Solicitação Rápida (Modo Tablet / Quiosque)",
+      "icon": "Smartphone",
+      "description": "Interface otimizada para tablets industriais, smartphones e quiosques de chão de fábrica, permitindo que operadores e clientes realizem solicitações rápidas de entrega, abram chamados e consultem o andamento de projetos com botões ampliados e toque simplificado.",
+      "tabs": [
+          {
+              "id": "solicitacao_touch",
+              "label": "Abertura Rápida de Solicitação",
+              "description": "Fluxo simplificado de solicitação por toque.",
+              "steps": [
+                  "Seleção de Projeto: Escolha o projeto ou linha de montagem com botões visuais ampliados.",
+                  "Código da Peça: Digite o código ou selecione na lista rápida de itens frequentes.",
+                  "Quantidade e Urgência: Defina a quantidade demandada e o grau de prioridade da entrega.",
+                  "Confirmar: Clique em \"Enviar Solicitação\" para registrar a demanda instantaneamente no painel de PCP e Montagem."
+              ]
+          },
+          {
+              "id": "meus_chamados",
+              "label": "Status dos Chamados & Entregas",
+              "description": "Acompanhamento do atendimento das solicitações.",
+              "steps": [
+                  "Em Análise: Solicitação recebida pelo time de PCP.",
+                  "Em Produção / Separação: Peças em processo de corte/dobra ou sendo separadas no almoxarifado.",
+                  "Pronto para Retirada / Entregue: Lote liberado na expedição ou entregue no posto de trabalho."
+              ]
+          }
+      ],
+      "tips": [
+          "Fixe o tablet na estação de trabalho da expedição ou montagem para agilizar a comunicação sem necessidade de deslocamento físico.",
+          "O teclado virtual na tela facilita a digitação rápida de observações pelo operador."
+      ],
+      "links": [
+          {
+              "path": "/portal-cliente",
+              "label": "Portal do Cliente Completo"
+          },
+          {
+              "path": "/pcp/montagem-solicitacoes",
+              "label": "Pendências da Montagem"
+          }
+      ]
+  },
+
+  '/dashboard': {
+      "category": "Meu Painel",
+      "categoryColor": "#3b82f6",
+      "title": "Meu Canal (Dashboard Executivo & Produtividade)",
+      "icon": "BarChart2",
+      "description": "Painel executivo personalizado para o usuário conectado, consolidando indicadores de produtividade pessoal, tarefas atribuídas na Ata Viva, chamados abertos sob sua responsabilidade, métricas de eficiência e atalhos rápidos para as rotinas diárias.",
+      "tabs": [
+          {
+              "id": "kpis_pessoais",
+              "label": "Métricas & Desempenho Pessoal",
+              "description": "Indicadores individuais de produtividade.",
+              "steps": [
+                  "Taxa de Cumprimento de Tarefas: Percentual de atividades concluídas dentro do prazo estipulado.",
+                  "Apontamentos Realizados: Volume de horas e operações apontadas nos módulos de produção/manutenção.",
+                  "Gráfico Semanal: Evolução diária de produtividade e entregas realizadas."
+              ]
+          },
+          {
+              "id": "minhas_atividades",
+              "label": "Tarefas da Ata Viva & Pendências",
+              "description": "Gestão da lista de prioridades do dia.",
+              "steps": [
+                  "Tarefas Atribuídas: Relação de compromissos gerados em reuniões ou pelo gestor da área.",
+                  "Conclusão Rápida: Marque tarefas como concluídas diretamente pelo painel para atualizar a Ata Viva global.",
+                  "Prazos Críticos: Itens com prazo vencendo hoje são destacados em vermelho para ação prioritária."
+              ]
+          }
+      ],
+      "tips": [
+          "Inicie seu expediente conferindo a lista de tarefas do \"Meu Canal\" para organizar a ordem de prioridades do dia.",
+          "Mantenha as atividades da Ata Viva sempre atualizadas para que seu índice de eficiência reflita seu trabalho real."
+      ],
+      "links": [
+          {
+              "path": "/calendario-atividades",
+              "label": "Calendário de Atividades"
+          },
+          {
+              "path": "/comercial/gestao-ops",
+              "label": "Gestão de OPs"
+          }
+      ]
+  },
+
+  '/fornecedor/romaneios': {
+      "category": "Logística / Fornecedores",
+      "categoryColor": "#059669",
+      "title": "Portal do Fornecedor (Beneficiamento Externo)",
+      "icon": "Truck",
+      "description": "Portal de acesso externo seguro para fornecedores parceiros que realizam serviços de beneficiamento (galvanoplastia, zincagem, bicromatização, pintura eletrostática e tratamento térmico). Permite consultar romaneios emitidos pela Metalfisa, confirmar recebimento físico de cargas e registrar o envio de lotes prontos.",
+      "tabs": [
+          {
+              "id": "romaneios_recebidos",
+              "label": "Romaneios Enviados pela Metalfisa",
+              "description": "Consulta de lotes e ordens de serviço em trânsito.",
+              "steps": [
+                  "Lista de Romaneios: Visualização de romaneios expedidos pela Metalfisa destinados à sua empresa.",
+                  "Detalhes das Peças: Código, descrição, quantidade enviada, peso líquido/bruto e tratamento solicitado.",
+                  "Download de Desenhos: Acesso direto aos desenhos técnicos para conferência de especificações e camadas."
+              ]
+          },
+          {
+              "id": "confirmacao_lote",
+              "label": "Confirmação de Recebimento Físico",
+              "description": "Validação da contagem de peças recebidas na fábrica do parceiro.",
+              "steps": [
+                  "Confirmar Chegada: Registre a data e hora do recebimento da carga.",
+                  "Divergência de Contagem: Caso haja diferença de quantidade ou peças danificadas no transporte, registre a ressalva imediatamente no portal."
+              ]
+          },
+          {
+              "id": "retorno_beneficiado",
+              "label": "Registro de Retorno à Metalfisa",
+              "description": "Notificação de peças prontas para entrega.",
+              "steps": [
+                  "Informar Retorno: Registre o número da NF de retorno e a quantidade de peças beneficiadas.",
+                  "Laudo de Qualidade: Anexe certificados de espessura de camada ou ensaio de névoa salina (Salt Spray)."
+              ]
+          }
+      ],
+      "tips": [
+          "A confirmação ágil de recebimento no portal mantém o PCP da Metalfisa ciente da data real de início do beneficiamento.",
+          "Anexar o certificado de banho/pintura no momento do envio agiliza a liberação das peças no controle de qualidade da Metalfisa."
+      ],
+      "links": [
+          {
+              "path": "/romaneios",
+              "label": "Expedição Metalfisa"
+          },
+          {
+              "path": "/recebimentos",
+              "label": "Recebimento de Retornos"
+          }
+      ]
+  },
+
+  '/comercial/gestao-ops': {
+    category: 'Comercial / PCP / Produção',
+    categoryColor: '#2563eb',
+    title: 'Gestão de OPs por Lote (LPF & Fracionamento)',
+    icon: 'Layers',
+    description: 'Cockpit operacional integrado para gestão de ordens de produção (OPs), fracionamento de saldos (Split OPs), formação de lotes de fabricação (LPF), controle estrito por Saldo a Faturar, aglutinação de planos de corte e liberação fabril irreversível com estampa de carimbo de qualidade nos desenhos técnicos.',
+    tabs: [
+      {
+        id: 'saldo_faturar',
+        label: 'Regra Soberana: Saldo a Faturar',
+        description: 'Entenda por que a quantidade de referência é sempre o saldo pendente a faturar no ERP.',
+        steps: [
+          '1. Definição do Saldo Real: O sistema calcula o saldo ativo em tempo real direto do Protheus através da fórmula: Saldo Fat. = (C6_QTDVEN - C6_QTDENT), onde C6_QTDVEN é a quantidade vendida original e C6_QTDENT é a quantidade já entregue/faturada em Notas Fiscais anteriores.',
+          '2. Prevenção de Superprodução: Se um pedido foi vendido para 100 peças e já foram faturadas 70 peças em entregas passadas, a fábrica só deve produzir o saldo restante de 30 peças. O sistema bloqueia o uso de 100 peças para que não haja consumo indevido de matéria-prima.',
+          '3. Itens Concluídos (100% Entregues): Quando o Saldo Fat. chega a zero (C6_QTDVEN <= C6_QTDENT), o item recebe a tag verde "ENTREGUE" e as ações de corte/fracionamento são desabilitadas.',
+          '4. Rastreabilidade de NFs: Ao passar o mouse sobre as tags de status, o sistema lista instantaneamente todas as Notas Fiscais parciais emitidas com número, série, data e quantidade entregue.'
+        ]
+      },
+      {
+        id: 'fracionamento_op',
+        label: 'Fracionamento de OPs (Split AA, AB...)',
+        description: 'Divisão de um saldo pendente em múltiplos sublotes independentes com datas e quantidades customizadas.',
+        steps: [
+          '1. Abertura do Modal de Partição: No menu de ações do item (...), clique em "Partir / Fracionar OP".',
+          '2. Base de Distribuição: A quantidade total a ser particionada é estritamente o Saldo a Faturar pendente.',
+          '3. Frações Customizadas: Divida o saldo em 2 ou mais frações. Cada fração recebe um identificador alfabético sequencial (ex: Fração #1 = AA, Fração #2 = AB, Fração #3 = AC...).',
+          '4. Numeração Exclusiva de OP: As frações recebem o número base da OP com o sufixo da fração (ex: OP 00461809AA, 00461809AB) para garantir rastreabilidade completa no chão de fábrica e nos apontamentos.',
+          '5. Validação de Soma Exata: O sistema impede o salvamento se a soma das quantidades das frações for diferente do Saldo a Faturar total do item.',
+          '6. Desfazer Fracionamento (Unificação): Caso necessário antes da liberação, o usuário pode clicar em "Unificar / Desfazer Fracionamento", retornando o item para lote único.'
+        ]
+      },
+      {
+        id: 'lotes_lpf',
+        label: 'Formação de Lotes de Fabricação (LPF)',
+        description: 'Agrupamento inteligente de OPs e frações em lotes unificados de corte e montagem.',
+        steps: [
+          '1. Seleção Múltipla: Marque as caixas de seleção (checkboxes) dos itens ou frações que deseja agrupar no mesmo lote.',
+          '2. Criar Lote LPF: No rodapé ou cabeçalho, clique em "Gerenciar Lote / Agrupar em Lote". O sistema gera automaticamente um código único sequencial (ex: LPF-000124).',
+          '3. Agrupamento Visual na Grade: As linhas agrupadas passam a ser exibidas sob o cabeçalho destacado em verde esmeralda do Lote LPF, exibindo a quantidade total consolidada de peças e a Data PCP unificada.',
+          '4. Edição de Lote: É possível incluir novas OPs em um lote existente ou remover itens antes da liberação fabril.'
+        ]
+      },
+      {
+        id: 'liberacao_irreversivel',
+        label: 'Liberação Irreversível & Carimbos de Qualidade',
+        description: 'Regra de bloqueio permanente e estampa de dados fabris nos desenhos técnicos.',
+        steps: [
+          '1. Momento da Trava Permanente (Irreversibilidade): Uma vez que o usuário clica em "Liberar Produção / Aglutinar" ou salva uma estratégia de corte para o lote LPF, o status é gravado como LIBERADO. Esta ação é IRREVERSÍVEL — não é permitido desmembrar nem excluir o lote após a liberação.',
+          '2. Reflexo Bidirecional: A trava de liberação no lote LPF reflete instantaneamente em todos os itens e frações vinculados a ele.',
+          '3. Carimbo da Qualidade nos Desenhos Técnicos: Ao gerar os PDFs do lote, o sistema renderiza automaticamente o carimbo oficial no canto superior do desenho contendo o código LPF, a quantidade consolidada e o roteiro operacional.',
+          '4. Desenhos de Peças Aglutinadas: Para peças com múltiplos pedidos/clientes agrupados na mesma chapa de corte, o carimbo exibe a quantidade total somada do lote, garantindo que o operador execute a produção sem ambiguidades de pedidos parciais.'
+        ]
+      },
+      {
+        id: 'planilha_mestra',
+        label: 'Planilha Mestra e Relatórios Excel',
+        description: 'Geração e exportação da matriz completa de planejamento e roteiros.',
+        steps: [
+          '1. Botão Planilha Mestra: Localizado no topo da página, gera um arquivo Excel (.xlsx) de alta performance com a explosão completa dos itens filtrados.',
+          '2. Aba Inicial (Índice de Lotes): A primeira aba da planilha funciona como um sumário executivo com links rápidos e resumo de todos os lotes LPF gerados.',
+          '3. Lista Completa de Itens Aglutinados: Detalha código do produto, descrição, espessura da chapa, matéria-prima (MTC), peso unitário, tempo de máquina e sequência de operações (Corte a Laser, Dobra, Solda, Usinagem, Pintura).',
+          '4. Download Assíncrono Seguro: O arquivo é processado e baixado mantendo compatibilidade total com redes locais HTTP e HTTPS.'
+        ]
+      }
+    ],
+    tips: [
+      'Sempre verifique a coluna "Saldo Fat." antes de fracionar uma OP; ela reflete o saldo real restante após qualquer entrega parcial em NF.',
+      'A liberação de um Lote LPF é irreversível. Certifique-se de que todas as OPs e frações desejadas foram inseridas antes de confirmar a liberação.',
+      'Você pode filtrar simultaneamente por Cliente, Pedido, Produto e Período de Data PCP para visualizar apenas a carteira que deseja planejar.'
+    ],
+    links: [
+      { path: '/vmi/demanda-mes', label: 'VMI / Demanda Mensal' },
+      { path: '/wabtec/datas-solicitacao', label: 'WabTec Forecast' },
+      { path: '/pcp/fila-dependencias', label: 'Fila de Dependências PCP' }
+    ]
+  },
+
+  '/gestao-ops': {
+    category: 'Comercial / PCP / Produção',
+    categoryColor: '#2563eb',
+    title: 'Gestão de OPs por Lote (LPF & Fracionamento)',
+    icon: 'Layers',
+    description: 'Cockpit operacional integrado para gestão de ordens de produção (OPs), fracionamento de saldos (Split OPs), formação de lotes de fabricação (LPF), controle estrito por Saldo a Faturar, aglutinação de planos de corte e liberação fabril irreversível.',
+    tabs: [
+      {
+        id: 'saldo_faturar',
+        label: 'Regra Soberana: Saldo a Faturar',
+        description: 'Entenda por que a quantidade de referência é sempre o saldo pendente a faturar no ERP.',
+        steps: [
+          '1. Definição do Saldo Real: Saldo Fat. = (C6_QTDVEN - C6_QTDENT).',
+          '2. Prevenção de Superprodução: Apenas a quantidade não entregue é considerada para corte e produção.',
+          '3. Rastreabilidade de NFs: Histórico completo de notas fiscais parciais diretamente na linha da OP.'
+        ]
+      }
+    ],
+    tips: [
+      'Consulte a documentação completa no painel de Ajuda em /comercial/gestao-ops.'
+    ],
+    links: [
+      { path: '/comercial/gestao-ops', label: 'Gestão de OPs por Lote' }
+    ]
   }
-
 };
-
-

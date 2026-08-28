@@ -1,10 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { getFaturamentoSolicitacoes, updateFaturamentoSolicitacaoStatus, enviarFaturamentoEmailLote } from '../services/api';
-import { History, FileText, Calendar, Box, CheckCircle, Clock, XCircle, Search, ChevronDown, ChevronUp, Download, LayoutList, Table, FileSpreadsheet } from 'lucide-react';
+import { 
+    getFaturamentoSolicitacoes, 
+    getFaturamentoNFsEmitidas, 
+    updateFaturamentoSolicitacaoStatus, 
+    enviarFaturamentoEmailLote 
+} from '../services/api';
+import { 
+    History, FileText, Calendar, Box, CheckCircle, Clock, XCircle, Search, 
+    ChevronDown, ChevronUp, Download, LayoutList, Table, FileSpreadsheet, 
+    Receipt, RefreshCw, Copy, Check, DollarSign, Package, Users, Filter, X, Printer
+} from 'lucide-react';
 import { toast } from 'react-toastify';
 import generateFaturamentoPdf from '../services/faturamentoPdfGenerator';
 import { generateFaturamentoHistoricoPdf } from '../services/faturamentoHistoricoPdfGenerator';
 import { exportFaturamentoHistoricoExcel } from '../services/faturamentoHistoricoExcelGenerator';
+import { generateEspelhoNfPdf } from '../services/espelhoNfPdfGenerator';
 import { useAuth } from '../contexts/AuthContext';
 import useStickyState from '../hooks/useStickyState';
 
@@ -32,6 +42,30 @@ const FaturamentoSolicitacoesHistorico = () => {
     const [dataEmissaoFim, setDataEmissaoFim] = useState('');
     const [produtoFilter, setProdutoFilter] = useState('');
 
+    // --- ABA NFs EMITIDAS (ERP/PROTHEUS) STATE --- //
+    const getInitialNfDates = () => {
+        const hoje = new Date();
+        const dFim = hoje.toISOString().slice(0, 10);
+        const dIniObj = new Date();
+        dIniObj.setDate(dIniObj.getDate() - 30);
+        const dIni = dIniObj.toISOString().slice(0, 10);
+        return { dIni, dFim };
+    };
+
+    const initialDates = getInitialNfDates();
+    const [nfDataInicio, setNfDataInicio] = useStickyState(initialDates.dIni, '@metalfisa:histFat_nfDataInicio');
+    const [nfDataFim, setNfDataFim] = useStickyState(initialDates.dFim, '@metalfisa:histFat_nfDataFim');
+    const [nfSearchTerm, setNfSearchTerm] = useState('');
+    const [nfClienteFilter, setNfClienteFilter] = useState('');
+    const [nfProdutoFilter, setNfProdutoFilter] = useState('');
+    const [nfsEmitidas, setNfsEmitidas] = useState([]);
+    const [nfsTotais, setNfsTotais] = useState({ total_faturado: 0, total_pecas: 0, total_nfs: 0, total_clientes: 0 });
+    const [loadingNfs, setLoadingNfs] = useState(false);
+    const [errorNfs, setErrorNfs] = useState(null);
+    const [expandedNfDocs, setExpandedNfDocs] = useState({});
+    const [copiedChave, setCopiedChave] = useState('');
+    const [nfSortConfig, setNfSortConfig] = useState({ key: 'emissao_raw', direction: 'desc' });
+
     // O Protheus não guarda qual NF pertence a qual solicitação: quando o mesmo pedido+item é
     // pedido em mais de uma solicitação de faturamento (remessas parciais em lotes diferentes),
     // buildNFLookup devolve a MESMA lista de NFs para cada uma. "seenPedidoItem" garante que o
@@ -50,7 +84,7 @@ const FaturamentoSolicitacoesHistorico = () => {
 
     const faturamentosFlat = React.useMemo(() => {
         const flat = [];
-        const seenNfRow = new Set(); // pedido|item|nota — evita listar a mesma NF real 2x quando o pedido+item foi solicitado mais de uma vez
+        const seenNfRow = new Set();
         solicitacoes.forEach(sol => {
             if (!sol.itens) return;
             sol.itens.forEach(it => {
@@ -99,8 +133,6 @@ const FaturamentoSolicitacoesHistorico = () => {
         });
 
         let result = [...flat];
-
-        // Grouping removed as per user request to show 1 line per product
         
         if (searchTerm) {
             const lower = searchTerm.toLowerCase();
@@ -114,7 +146,7 @@ const FaturamentoSolicitacoesHistorico = () => {
 
         if (dataEmissaoInicio || dataEmissaoFim) {
             result = result.filter(r => {
-                const parts = r.emissao.split('/'); // DD/MM/YYYY
+                const parts = r.emissao.split('/');
                 if (parts.length === 3) {
                     const [d, m, y] = parts;
                     const rowDate = new Date(`${y}-${m}-${d}T00:00:00`);
@@ -148,64 +180,94 @@ const FaturamentoSolicitacoesHistorico = () => {
                 if (sortConfig.key === 'quantidade' || sortConfig.key === 'valor_total') {
                     aVal = parseFloat(aVal || 0);
                     bVal = parseFloat(bVal || 0);
+                } else if (sortConfig.key === 'emissao') {
+                    const parseDate = (dStr) => {
+                        if (!dStr) return 0;
+                        const p = dStr.split('/');
+                        return p.length === 3 ? new Date(`${p[2]}-${p[1]}-${p[0]}`).getTime() : 0;
+                    };
+                    aVal = parseDate(aVal);
+                    bVal = parseDate(bVal);
+                } else {
+                    aVal = (aVal || '').toString().toLowerCase();
+                    bVal = (bVal || '').toString().toLowerCase();
                 }
                 if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
                 if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
             });
         }
+
         return result;
     }, [solicitacoes, searchTerm, dataEmissaoInicio, dataEmissaoFim, produtoFilter, sortConfig]);
 
     const faturamentosSolicitacoesFlat = React.useMemo(() => {
-        // Compartilhado entre todas as solicitações: garante que o valor real de um pedido+item só
-        // seja contado na primeira solicitação (mais recente, já que a API devolve por s.id DESC)
-        // que o referencia, mesmo que o mesmo pedido+item tenha sido pedido em lotes diferentes.
-        const seenPedidoItem = new Set();
-        let result = solicitacoes.map(sol => {
-            const clientes = [...new Set(sol.itens?.map(it => it.nome_cliente).filter(Boolean))].join(' / ') || 'Não informado';
-            const totalItens = sol.itens ? sol.itens.length : 0;
-            const valorTotal = sol.itens ? sol.itens.reduce((acc, it) => acc + getItemValorNF(it, seenPedidoItem), 0) : 0;
-            const emissaoDateStr = new Date(sol.created_at).toLocaleDateString('pt-BR');
-            
-            const nfs = [...new Set(sol.itens?.flatMap(it => 
-                it.notas_fiscais_protheus?.map(n => n.nota) || [it.nota_fiscal || sol.nota_fiscal]
-            ).filter(Boolean))].join(', ');
-            
-            const codigos = [...new Set(sol.itens?.map(it => it.codigo_produto).filter(Boolean))].join(', ');
+        const list = solicitacoes.map(sol => {
+            const seenItens = new Set();
+            let totalItens = 0;
+            const seenForVal = new Set();
+            let valorTotal = 0;
+
+            const nfsSet = new Set();
+            const codigosSet = new Set();
+            const clientesSet = new Set();
+
+            if (sol.itens) {
+                sol.itens.forEach(it => {
+                    const itemKey = `${it.pedido}-${it.item}`;
+                    if (!seenItens.has(itemKey)) {
+                        seenItens.add(itemKey);
+                        totalItens += parseFloat(it.quantidade_solicitada) || 0;
+                    }
+                    valorTotal += getItemValorNF(it, seenForVal);
+
+                    if (it.codigo_produto) codigosSet.add(it.codigo_produto);
+                    if (it.nome_cliente) clientesSet.add(it.nome_cliente);
+
+                    if (Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0) {
+                        it.notas_fiscais_protheus.forEach(nf => {
+                            if (nf.nota) nfsSet.add(nf.nota);
+                        });
+                    } else if (it.nota_fiscal) {
+                        nfsSet.add(it.nota_fiscal);
+                    }
+                });
+            }
+            if (sol.nota_fiscal) nfsSet.add(sol.nota_fiscal);
 
             return {
                 id: sol.id,
                 numero_solicitacao: sol.numero_solicitacao,
-                emissao: emissaoDateStr,
-                clientes,
+                emissao: new Date(sol.created_at).toLocaleDateString('pt-BR'),
+                clientes: [...clientesSet].join(', ') || 'Não informado',
+                nfs: [...nfsSet].join(', '),
+                codigos: [...codigosSet].join(', '),
                 total_itens: totalItens,
                 valor_total: valorTotal,
                 usuario: sol.usuario,
-                status: sol.status,
-                nfs,
-                codigos
+                status: sol.status
             };
         });
+
+        let result = [...list];
 
         if (searchTerm) {
             const lower = searchTerm.toLowerCase();
             result = result.filter(r => 
-                (r.numero_solicitacao && r.numero_solicitacao.toString().toLowerCase().includes(lower)) ||
+                (r.numero_solicitacao && r.numero_solicitacao.toLowerCase().includes(lower)) ||
                 (r.clientes && r.clientes.toLowerCase().includes(lower)) ||
-                (r.usuario && r.usuario.toLowerCase().includes(lower)) ||
                 (r.nfs && r.nfs.toLowerCase().includes(lower)) ||
-                (r.codigos && r.codigos.toLowerCase().includes(lower))
+                (r.codigos && r.codigos.toLowerCase().includes(lower)) ||
+                (r.usuario && r.usuario.toLowerCase().includes(lower))
             );
         }
 
         if (dataEmissaoInicio || dataEmissaoFim) {
             result = result.filter(r => {
-                const parts = r.emissao.split('/'); // DD/MM/YYYY
+                const parts = r.emissao.split('/');
                 if (parts.length === 3) {
                     const [d, m, y] = parts;
                     const rowDate = new Date(`${y}-${m}-${d}T00:00:00`);
-                    
                     if (dataEmissaoInicio) {
                         const inicioDate = new Date(`${dataEmissaoInicio}T00:00:00`);
                         if (rowDate < inicioDate) return false;
@@ -220,55 +282,106 @@ const FaturamentoSolicitacoesHistorico = () => {
             });
         }
 
-        // We ignore produtoFilter since solicitacoes view doesn't directly have the product codes at top level here, 
-        // though we could extract them if strictly necessary. 
+        if (produtoFilter) {
+            const lowerProd = produtoFilter.toLowerCase();
+            result = result.filter(r => r.codigos && r.codigos.toLowerCase().includes(lowerProd));
+        }
 
         if (sortConfig.key) {
             result.sort((a, b) => {
                 let aVal = a[sortConfig.key];
                 let bVal = b[sortConfig.key];
-                if (sortConfig.key === 'valor_total' || sortConfig.key === 'total_itens' || sortConfig.key === 'numero_solicitacao') {
+                if (sortConfig.key === 'total_itens' || sortConfig.key === 'valor_total') {
                     aVal = parseFloat(aVal || 0);
                     bVal = parseFloat(bVal || 0);
+                } else if (sortConfig.key === 'emissao') {
+                    const parseDate = (dStr) => {
+                        if (!dStr) return 0;
+                        const p = dStr.split('/');
+                        return p.length === 3 ? new Date(`${p[2]}-${p[1]}-${p[0]}`).getTime() : 0;
+                    };
+                    aVal = parseDate(aVal);
+                    bVal = parseDate(bVal);
+                } else {
+                    aVal = (aVal || '').toString().toLowerCase();
+                    bVal = (bVal || '').toString().toLowerCase();
                 }
                 if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
                 if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
             });
         }
+
         return result;
-    }, [solicitacoes, searchTerm, dataEmissaoInicio, dataEmissaoFim, sortConfig]);
+    }, [solicitacoes, searchTerm, dataEmissaoInicio, dataEmissaoFim, produtoFilter, sortConfig]);
 
     const faturamentosProdutosFlat = React.useMemo(() => {
-        const map = {};
-        faturamentosFlat.forEach(f => {
-            if (!map[f.codigo_produto]) {
-                map[f.codigo_produto] = {
-                    codigo_produto: f.codigo_produto,
-                    quantidade: 0,
-                    valor_total: 0,
-                    clientes: new Set(),
-                    notas: new Set(),
-                    pedidos: new Set(),
-                    emissao: new Set()
-                };
-            }
-            map[f.codigo_produto].quantidade += parseFloat(f.quantidade || 0);
-            map[f.codigo_produto].valor_total += parseFloat(f.valor_total || 0);
-            if (f.cliente && f.cliente !== 'Não informado') map[f.codigo_produto].clientes.add(f.cliente);
-            if (f.nota) map[f.codigo_produto].notas.add(f.nota);
-            if (f.pedido) map[f.codigo_produto].pedidos.add(f.pedido);
-            if (f.emissao) map[f.codigo_produto].emissao.add(f.emissao);
+        const prodMap = {};
+
+        solicitacoes.forEach(sol => {
+            if (!sol.itens) return;
+            const seenForVal = new Set();
+            sol.itens.forEach(it => {
+                const cod = (it.codigo_produto || 'SEM_CODIGO').trim();
+                if (!prodMap[cod]) {
+                    prodMap[cod] = {
+                        codigo_produto: cod,
+                        quantidade: 0,
+                        valor_total: 0,
+                        pedidosSet: new Set(),
+                        nfsSet: new Set(),
+                        clientesSet: new Set(),
+                        emissaoSet: new Set()
+                    };
+                }
+
+                prodMap[cod].quantidade += (parseFloat(it.quantidade_solicitada) || 0);
+                prodMap[cod].valor_total += getItemValorNF(it, seenForVal);
+
+                if (it.pedido) prodMap[cod].pedidosSet.add(it.pedido);
+                if (it.nome_cliente) prodMap[cod].clientesSet.add(it.nome_cliente);
+
+                if (Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0) {
+                    it.notas_fiscais_protheus.forEach(nf => {
+                        if (nf.nota) prodMap[cod].nfsSet.add(nf.nota);
+                        if (nf.emissao) prodMap[cod].emissaoSet.add(nf.emissao);
+                    });
+                } else if (it.nota_fiscal) {
+                    prodMap[cod].nfsSet.add(it.nota_fiscal);
+                }
+                
+                const emDate = new Date(sol.created_at).toLocaleDateString('pt-BR');
+                if (emDate) prodMap[cod].emissaoSet.add(emDate);
+            });
         });
-        
-        let result = Object.values(map).map(r => ({
-            ...r,
-            clientes: [...r.clientes].join(', ') || '-',
-            notas: [...r.notas].join(', ') || '-',
-            pedidos: [...r.pedidos].join(', ') || '-',
-            emissao: [...r.emissao].join(', ') || '-'
+
+        const list = Object.values(prodMap).map(p => ({
+            codigo_produto: p.codigo_produto,
+            quantidade: p.quantidade,
+            valor_total: p.valor_total,
+            pedidos: [...p.pedidosSet].join(', '),
+            notas: [...p.nfsSet].join(', '),
+            clientes: [...p.clientesSet].join(', '),
+            emissao: [...p.emissaoSet].join(', ')
         }));
-        
+
+        let result = [...list];
+
+        if (searchTerm) {
+            const lower = searchTerm.toLowerCase();
+            result = result.filter(r => 
+                r.codigo_produto.toLowerCase().includes(lower) ||
+                r.pedidos.toLowerCase().includes(lower) ||
+                r.notas.toLowerCase().includes(lower) ||
+                r.clientes.toLowerCase().includes(lower)
+            );
+        }
+
+        if (produtoFilter) {
+            const lowerProd = produtoFilter.toLowerCase();
+            result = result.filter(r => r.codigo_produto.toLowerCase().includes(lowerProd));
+        }
+
         if (sortConfig.key) {
             result.sort((a, b) => {
                 let aVal = a[sortConfig.key];
@@ -276,14 +389,18 @@ const FaturamentoSolicitacoesHistorico = () => {
                 if (sortConfig.key === 'quantidade' || sortConfig.key === 'valor_total') {
                     aVal = parseFloat(aVal || 0);
                     bVal = parseFloat(bVal || 0);
+                } else {
+                    aVal = (aVal || '').toString().toLowerCase();
+                    bVal = (bVal || '').toString().toLowerCase();
                 }
                 if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
                 if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
                 return 0;
             });
         }
+
         return result;
-    }, [faturamentosFlat, sortConfig]);
+    }, [solicitacoes, searchTerm, produtoFilter, sortConfig]);
 
     const requestSort = (key) => {
         let direction = 'asc';
@@ -311,9 +428,107 @@ const FaturamentoSolicitacoesHistorico = () => {
     };
 
     useEffect(() => {
-        fetchHistorico();
+        if (viewMode !== 'nfs_emitidas') {
+            fetchHistorico();
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [statusFilter]);
+    }, [statusFilter, viewMode]);
+
+    // --- BUSCA NFs EMITIDAS DO ERP --- //
+    const fetchNfsEmitidas = async () => {
+        setLoadingNfs(true);
+        setErrorNfs(null);
+        try {
+            const res = await getFaturamentoNFsEmitidas({
+                data_inicio: nfDataInicio,
+                data_fim: nfDataFim,
+                busca: nfSearchTerm,
+                cliente: nfClienteFilter,
+                produto: nfProdutoFilter
+            });
+            setNfsEmitidas(res.nfs || []);
+            setNfsTotais(res.totais || { total_faturado: 0, total_pecas: 0, total_nfs: 0, total_clientes: 0 });
+        } catch (err) {
+            console.error('Erro ao buscar NFs emitidas:', err);
+            setErrorNfs('Erro ao carregar as Notas Fiscais emitidas do ERP.');
+        } finally {
+            setLoadingNfs(false);
+        }
+    };
+
+    useEffect(() => {
+        if (viewMode === 'nfs_emitidas') {
+            fetchNfsEmitidas();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewMode, nfDataInicio, nfDataFim]);
+
+    const sortedNfsEmitidas = React.useMemo(() => {
+        let list = [...nfsEmitidas];
+        if (nfSortConfig.key) {
+            list.sort((a, b) => {
+                let aVal = a[nfSortConfig.key];
+                let bVal = b[nfSortConfig.key];
+                if (nfSortConfig.key === 'valor_total' || nfSortConfig.key === 'total_pecas' || nfSortConfig.key === 'qtd_itens') {
+                    aVal = parseFloat(aVal || 0);
+                    bVal = parseFloat(bVal || 0);
+                } else {
+                    aVal = (aVal || '').toString().toLowerCase();
+                    bVal = (bVal || '').toString().toLowerCase();
+                }
+                if (aVal < bVal) return nfSortConfig.direction === 'asc' ? -1 : 1;
+                if (aVal > bVal) return nfSortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+        return list;
+    }, [nfsEmitidas, nfSortConfig]);
+
+    const requestNfSort = (key) => {
+        let direction = 'asc';
+        if (nfSortConfig.key === key && nfSortConfig.direction === 'asc') direction = 'desc';
+        setNfSortConfig({ key, direction });
+    };
+
+    const renderNfSortIcon = (key) => {
+        if (nfSortConfig.key !== key) return null;
+        return nfSortConfig.direction === 'asc' ? <ChevronUp className="w-3 h-3 inline ml-1" /> : <ChevronDown className="w-3 h-3 inline ml-1" />;
+    };
+
+    const toggleNfDoc = (doc) => {
+        setExpandedNfDocs(prev => ({
+            ...prev,
+            [doc]: !prev[doc]
+        }));
+    };
+
+    const handleCopyChave = (chave) => {
+        if (!chave) return;
+        navigator.clipboard.writeText(chave);
+        setCopiedChave(chave);
+        toast.info('Chave da NF-e copiada!');
+        setTimeout(() => setCopiedChave(''), 2500);
+    };
+
+    const handleSetQuickDates = (tipo) => {
+        const hoje = new Date();
+        const dFim = hoje.toISOString().slice(0, 10);
+        let dIni = dFim;
+
+        if (tipo === '30dias') {
+            const d = new Date();
+            d.setDate(d.getDate() - 30);
+            dIni = d.toISOString().slice(0, 10);
+        } else if (tipo === 'mesAtual') {
+            const d = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+            dIni = d.toISOString().slice(0, 10);
+        } else if (tipo === 'anoAtual') {
+            const d = new Date(hoje.getFullYear(), 0, 1);
+            dIni = d.toISOString().slice(0, 10);
+        }
+        setNfDataInicio(dIni);
+        setNfDataFim(dFim);
+    };
 
     const toggleRow = (id) => {
         setExpandedRows(prev => ({
@@ -367,20 +582,41 @@ const FaturamentoSolicitacoesHistorico = () => {
         }
     };
 
+    const TipoNfBadge = ({ tipo, desc }) => {
+        const t = (tipo || '').toUpperCase();
+        if (t === 'N') {
+            return <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold rounded">Faturamento</span>;
+        }
+        if (t === 'C') {
+            return <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 text-[11px] font-bold rounded">Complemento</span>;
+        }
+        if (t === 'P') {
+            return <span className="px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-200 text-[11px] font-bold rounded">Devolução</span>;
+        }
+        if (t === 'B') {
+            return <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold rounded">Beneficiamento</span>;
+        }
+        return <span className="px-2 py-0.5 bg-gray-100 text-gray-700 border border-gray-200 text-[11px] font-bold rounded">{desc || tipo}</span>;
+    };
+
     return (
-        <div className="p-4 md:p-6 lg:p-8 max-w-[1200px] mx-auto animate-fadeIn relative">
+        <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto animate-fadeIn relative">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative">
+                {/* CABEÇALHO DA PÁGINA */}
                 <div className="p-5 border-b border-gray-100 bg-white">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
                         <div>
                             <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                                 <History className="h-6 w-6 text-blue-600" />    
-                                Histórico de Solicitações
+                                Histórico de Faturamento
                             </h2>
-                            <p className="text-sm text-gray-500 mt-1">Acompanhe os pedidos de faturamento enviados pela expedição.</p>
+                            <p className="text-sm text-gray-500 mt-1">
+                                Acompanhe as solicitações de expedição e todas as Notas Fiscais emitidas diretamente no ERP Protheus.
+                            </p>
                         </div>
-                        <div className="flex flex-col gap-2 items-end">
-                            <div className="flex bg-gray-100 p-1 rounded-lg">
+                        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center justify-end">
+                            {/* SELETOR DE ABAS */}
+                            <div className="flex bg-gray-100 p-1 rounded-lg flex-wrap gap-1">
                                 <button 
                                     onClick={() => setViewMode('solicitacoes')}
                                     className={`px-3 py-1.5 text-sm font-bold flex items-center gap-2 rounded-md transition-colors ${viewMode === 'solicitacoes' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
@@ -391,112 +627,568 @@ const FaturamentoSolicitacoesHistorico = () => {
                                     onClick={() => setViewMode('tabela_solicitacoes')}
                                     className={`px-3 py-1.5 text-sm font-bold flex items-center gap-2 rounded-md transition-colors ${viewMode === 'tabela_solicitacoes' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
                                 >
-                                    <Table className="w-4 h-4" /> Tabela (Por Solicitação)
+                                    <Table className="w-4 h-4" /> Por Solicitação
                                 </button>
                                 <button 
                                     onClick={() => setViewMode('tabela_produtos')}
                                     className={`px-3 py-1.5 text-sm font-bold flex items-center gap-2 rounded-md transition-colors ${viewMode === 'tabela_produtos' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
                                 >
-                                    <Box className="w-4 h-4" /> Agrupado por Produto
+                                    <Box className="w-4 h-4" /> Por Produto
                                 </button>
                                 <button 
                                     onClick={() => setViewMode('tabela')}
                                     className={`px-3 py-1.5 text-sm font-bold flex items-center gap-2 rounded-md transition-colors ${viewMode === 'tabela' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
                                 >
-                                    <Table className="w-4 h-4" /> Tabela (Por NF)
+                                    <Table className="w-4 h-4" /> Por NF Solicitada
+                                </button>
+                                <button 
+                                    onClick={() => setViewMode('nfs_emitidas')}
+                                    className={`px-3 py-1.5 text-sm font-bold flex items-center gap-2 rounded-md transition-colors shadow-sm ${viewMode === 'nfs_emitidas' ? 'bg-blue-600 text-white shadow' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+                                >
+                                    <Receipt className="w-4 h-4" /> NFs Emitidas (ERP)
                                 </button>
                             </div>
-                            <div className="flex bg-gray-50 rounded-lg p-1 border border-gray-200">
-                            <button 
-                                onClick={() => setStatusFilter('')}
-                                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${statusFilter === '' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
-                            >
-                                Todas
-                            </button>
-                            <button 
-                                onClick={() => setStatusFilter('Pendente')}
-                                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${statusFilter === 'Pendente' ? 'bg-white shadow-sm text-yellow-700' : 'text-gray-500 hover:text-gray-700'}`}
-                            >
-                                Pendentes
-                            </button>
-                            <button 
-                                onClick={() => setStatusFilter('Atendido')}
-                                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${statusFilter === 'Atendido' ? 'bg-white shadow-sm text-green-700' : 'text-gray-500 hover:text-gray-700'}`}
-                            >
-                                Atendidas
-                            </button>
-                        </div>
+
+                            {/* FILTRO DE STATUS (Apenas para abas de solicitações) */}
+                            {viewMode !== 'nfs_emitidas' && (
+                                <div className="flex bg-gray-50 rounded-lg p-1 border border-gray-200">
+                                    <button 
+                                        onClick={() => setStatusFilter('')}
+                                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${statusFilter === '' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        Todas
+                                    </button>
+                                    <button 
+                                        onClick={() => setStatusFilter('Pendente')}
+                                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${statusFilter === 'Pendente' ? 'bg-white shadow-sm text-yellow-700' : 'text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        Pendentes
+                                    </button>
+                                    <button 
+                                        onClick={() => setStatusFilter('Atendido')}
+                                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${statusFilter === 'Atendido' ? 'bg-white shadow-sm text-green-700' : 'text-gray-500 hover:text-gray-700'}`}
+                                    >
+                                        Atendidas
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
 
+                {/* CORPO DA PÁGINA */}
                 <div className="p-0">
-                    {loading ? (
-                        <div className="flex flex-col items-center justify-center p-12 text-gray-500 gap-4">
-                            <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
-                            Carregando histórico...
+                    {/* ========================================================================= */}
+                    {/* ABA DEDICADA: NFs EMITIDAS (ERP/PROTHEUS)                                  */}
+                    {/* ========================================================================= */}
+                    {viewMode === 'nfs_emitidas' ? (
+                        <div className="p-4 md:p-6 bg-slate-50/50 flex flex-col gap-5">
+                            {/* CARDS DE TOTALIZADORES / KPIS */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                                    <div>
+                                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Faturado</p>
+                                        <p className="text-xl font-extrabold text-emerald-700 mt-1">
+                                            {canViewValues 
+                                                ? (nfsTotais.total_faturado > 0 
+                                                    ? `R$ ${parseFloat(nfsTotais.total_faturado).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
+                                                    : 'R$ 0,00')
+                                                : '******'}
+                                        </p>
+                                    </div>
+                                    <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100">
+                                        <DollarSign className="w-6 h-6" />
+                                    </div>
+                                </div>
+
+                                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                                    <div>
+                                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Notas Fiscais</p>
+                                        <p className="text-xl font-extrabold text-blue-800 mt-1">
+                                            {nfsTotais.total_nfs} <span className="text-sm font-normal text-gray-500">emitidas</span>
+                                        </p>
+                                    </div>
+                                    <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
+                                        <Receipt className="w-6 h-6" />
+                                    </div>
+                                </div>
+
+                                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                                    <div>
+                                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total de Peças</p>
+                                        <p className="text-xl font-extrabold text-indigo-800 mt-1">
+                                            {parseFloat(nfsTotais.total_pecas || 0).toLocaleString('pt-BR')} <span className="text-sm font-normal text-gray-500">un.</span>
+                                        </p>
+                                    </div>
+                                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
+                                        <Package className="w-6 h-6" />
+                                    </div>
+                                </div>
+
+                                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                                    <div>
+                                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Clientes Atendidos</p>
+                                        <p className="text-xl font-extrabold text-amber-700 mt-1">
+                                            {nfsTotais.total_clientes} <span className="text-sm font-normal text-gray-500">clientes</span>
+                                        </p>
+                                    </div>
+                                    <div className="p-3 bg-amber-50 text-amber-600 rounded-xl border border-amber-100">
+                                        <Users className="w-6 h-6" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* BARRA DE FILTROS AVANÇADOS */}
+                            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-4">
+                                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                                    <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                                        <Filter className="w-4 h-4 text-blue-600" />
+                                        Filtros de Pesquisa no Protheus
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-medium text-gray-400">Atalhos:</span>
+                                        <button 
+                                            onClick={() => handleSetQuickDates('hoje')}
+                                            className="text-xs font-semibold px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors"
+                                        >
+                                            Hoje
+                                        </button>
+                                        <button 
+                                            onClick={() => handleSetQuickDates('30dias')}
+                                            className="text-xs font-semibold px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors"
+                                        >
+                                            Últimos 30 dias
+                                        </button>
+                                        <button 
+                                            onClick={() => handleSetQuickDates('mesAtual')}
+                                            className="text-xs font-semibold px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors"
+                                        >
+                                            Este Mês
+                                        </button>
+                                        <button 
+                                            onClick={() => handleSetQuickDates('anoAtual')}
+                                            className="text-xs font-semibold px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md transition-colors"
+                                        >
+                                            Este Ano
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                                    {/* DATA INÍCIO */}
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-600 mb-1">Emissão De:</label>
+                                        <input 
+                                            type="date"
+                                            value={nfDataInicio}
+                                            onChange={(e) => setNfDataInicio(e.target.value)}
+                                            className="w-full text-xs font-medium border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+
+                                    {/* DATA FIM */}
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-600 mb-1">Emissão Até:</label>
+                                        <input 
+                                            type="date"
+                                            value={nfDataFim}
+                                            onChange={(e) => setNfDataFim(e.target.value)}
+                                            className="w-full text-xs font-medium border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+
+                                    {/* BUSCA GERAL */}
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-600 mb-1">Busca Geral (NF/Chave/Ped):</label>
+                                        <div className="relative">
+                                            <input 
+                                                type="text"
+                                                placeholder="Ex: 000042767 ou pedido..."
+                                                value={nfSearchTerm}
+                                                onChange={(e) => setNfSearchTerm(e.target.value)}
+                                                onKeyDown={(e) => e.key === 'Enter' && fetchNfsEmitidas()}
+                                                className="w-full text-xs font-medium border border-gray-300 rounded-lg p-2 pl-8 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                            />
+                                            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2.5" />
+                                        </div>
+                                    </div>
+
+                                    {/* CLIENTE */}
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-600 mb-1">Cliente:</label>
+                                        <input 
+                                            type="text"
+                                            placeholder="Nome ou código..."
+                                            value={nfClienteFilter}
+                                            onChange={(e) => setNfClienteFilter(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && fetchNfsEmitidas()}
+                                            className="w-full text-xs font-medium border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+
+                                    {/* PRODUTO */}
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-600 mb-1">Cód. Produto:</label>
+                                        <input 
+                                            type="text"
+                                            placeholder="Ex: MT3-..."
+                                            value={nfProdutoFilter}
+                                            onChange={(e) => setNfProdutoFilter(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && fetchNfsEmitidas()}
+                                            className="w-full text-xs font-medium border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                                    <div className="flex items-center gap-2">
+                                        <button 
+                                            onClick={fetchNfsEmitidas}
+                                            disabled={loadingNfs}
+                                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs flex items-center gap-2 shadow-sm transition-colors"
+                                        >
+                                            <RefreshCw className={`w-3.5 h-3.5 ${loadingNfs ? 'animate-spin' : ''}`} />
+                                            {loadingNfs ? 'Consultando Protheus...' : 'Aplicar Filtros / Buscar'}
+                                        </button>
+                                        <button 
+                                            onClick={() => {
+                                                setNfSearchTerm('');
+                                                setNfClienteFilter('');
+                                                setNfProdutoFilter('');
+                                                handleSetQuickDates('30dias');
+                                            }}
+                                            className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg text-xs flex items-center gap-1.5 transition-colors"
+                                        >
+                                            <X className="w-3.5 h-3.5 text-gray-500" /> Limpar
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <button 
+                                            onClick={() => exportFaturamentoHistoricoExcel('nfs_emitidas', sortedNfsEmitidas, canViewValues)}
+                                            className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg text-xs flex items-center gap-2 shadow-sm transition-colors"
+                                        >
+                                            <FileSpreadsheet className="w-4 h-4" /> Exportar Excel
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* TABELA DE NFs EMITIDAS COM ITENS EXPANSÍVEIS */}
+                            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                                {loadingNfs ? (
+                                    <div className="flex flex-col items-center justify-center p-12 text-gray-500 gap-4">
+                                        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+                                        <p className="text-sm font-semibold">Consultando notas fiscais no Protheus...</p>
+                                    </div>
+                                ) : errorNfs ? (
+                                    <div className="p-12 text-center text-red-500 font-semibold">{errorNfs}</div>
+                                ) : sortedNfsEmitidas.length === 0 ? (
+                                    <div className="p-12 text-center text-gray-400 flex flex-col items-center gap-3">
+                                        <Receipt className="h-12 w-12 opacity-20" />
+                                        <p className="text-sm font-medium">Nenhuma Nota Fiscal encontrada com os filtros selecionados.</p>
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-sm whitespace-nowrap">
+                                            <thead className="bg-gray-100/70 text-gray-600 text-xs uppercase border-b border-gray-200">
+                                                <tr>
+                                                    <th className="w-10 px-3 py-3 text-center"></th>
+                                                    <th 
+                                                        className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-200 transition-colors" 
+                                                        onClick={() => requestNfSort('emissao_raw')}
+                                                    >
+                                                        Data Emissão {renderNfSortIcon('emissao_raw')}
+                                                    </th>
+                                                    <th 
+                                                        className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-200 transition-colors" 
+                                                        onClick={() => requestNfSort('doc')}
+                                                    >
+                                                        NF / Série {renderNfSortIcon('doc')}
+                                                    </th>
+                                                    <th 
+                                                        className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-200 transition-colors" 
+                                                        onClick={() => requestNfSort('cliente_nome')}
+                                                    >
+                                                        Cliente {renderNfSortIcon('cliente_nome')}
+                                                    </th>
+                                                    <th className="px-4 py-3 font-semibold">Tipo</th>
+                                                    <th className="px-4 py-3 font-semibold">Chave NF-e</th>
+                                                    <th 
+                                                        className="px-4 py-3 font-semibold text-center cursor-pointer hover:bg-gray-200 transition-colors" 
+                                                        onClick={() => requestNfSort('qtd_itens')}
+                                                    >
+                                                        Itens {renderNfSortIcon('qtd_itens')}
+                                                    </th>
+                                                    <th 
+                                                        className="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-gray-200 transition-colors" 
+                                                        onClick={() => requestNfSort('total_pecas')}
+                                                    >
+                                                        Total Peças {renderNfSortIcon('total_pecas')}
+                                                    </th>
+                                                    {canViewValues && (
+                                                        <th 
+                                                            className="px-4 py-3 font-semibold text-right cursor-pointer hover:bg-gray-200 transition-colors" 
+                                                            onClick={() => requestNfSort('valor_total')}
+                                                        >
+                                                            Valor Total {renderNfSortIcon('valor_total')}
+                                                        </th>
+                                                    )}
+                                                    <th className="px-3 py-3 font-semibold text-center w-24">Ações</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {sortedNfsEmitidas.map((nf) => {
+                                                    const isExpanded = !!expandedNfDocs[nf.doc];
+                                                    return (
+                                                        <React.Fragment key={nf.doc}>
+                                                            <tr 
+                                                                onClick={() => toggleNfDoc(nf.doc)}
+                                                                className={`cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50/40 font-medium' : 'hover:bg-gray-50/80'}`}
+                                                            >
+                                                                <td className="px-3 py-3 text-center text-gray-400">
+                                                                    {isExpanded ? (
+                                                                        <ChevronUp className="w-4 h-4 inline text-blue-600" />
+                                                                    ) : (
+                                                                        <ChevronDown className="w-4 h-4 inline text-gray-400" />
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-4 py-3 font-mono text-[13px] text-gray-700">{nf.emissao}</td>
+                                                                <td className="px-4 py-3 font-mono font-bold text-blue-700 text-[14px]">
+                                                                    {nf.doc} {nf.serie && <span className="text-gray-400 font-normal text-xs">S.{nf.serie}</span>}
+                                                                </td>
+                                                                <td className="px-4 py-3 max-w-[280px]">
+                                                                    <p className="font-semibold text-gray-900 truncate" title={nf.cliente_nome}>{nf.cliente_nome}</p>
+                                                                    <div className="flex items-center gap-2 text-[11px] text-gray-500 font-mono">
+                                                                        <span>{nf.cliente_cnpj || nf.cliente_cod}</span>
+                                                                        {nf.cliente_uf && <span>• {nf.cliente_municipio}/{nf.cliente_uf}</span>}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-4 py-3">
+                                                                    <TipoNfBadge tipo={nf.tipo} desc={nf.tipo_descricao} />
+                                                                </td>
+                                                                <td className="px-4 py-3">
+                                                                    {nf.chvnfe ? (
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <span className="font-mono text-[11px] text-gray-600 truncate max-w-[140px]" title={nf.chvnfe}>
+                                                                                {nf.chvnfe.slice(0, 10)}...{nf.chvnfe.slice(-6)}
+                                                                            </span>
+                                                                            <button 
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    handleCopyChave(nf.chvnfe);
+                                                                                }}
+                                                                                className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-700 transition-colors"
+                                                                                title="Copiar Chave NFe"
+                                                                            >
+                                                                                {copiedChave === nf.chvnfe ? (
+                                                                                    <Check className="w-3.5 h-3.5 text-green-600" />
+                                                                                ) : (
+                                                                                    <Copy className="w-3.5 h-3.5" />
+                                                                                )}
+                                                                            </button>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className="text-gray-400 text-xs">-</span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-4 py-3 text-center font-bold text-gray-700">
+                                                                    <span className="px-2 py-0.5 bg-gray-100 rounded-full text-xs">
+                                                                        {nf.qtd_itens}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-4 py-3 text-right font-bold text-gray-900">
+                                                                    {parseFloat(nf.total_pecas).toLocaleString('pt-BR')}
+                                                                </td>
+                                                                {canViewValues && (
+                                                                    <td className="px-4 py-3 text-right font-extrabold text-emerald-700">
+                                                                        {nf.valor_total > 0 
+                                                                            ? `R$ ${parseFloat(nf.valor_total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
+                                                                            : '-'}
+                                                                    </td>
+                                                                )}
+                                                                <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                                    <button 
+                                                                        onClick={() => generateEspelhoNfPdf(nf, canViewValues, user)}
+                                                                        className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs mx-auto"
+                                                                        title="Imprimir Espelho da NF em PDF"
+                                                                    >
+                                                                        <Printer className="w-3.5 h-3.5 text-blue-600" />
+                                                                        <span>Espelho</span>
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+
+                                                            {/* ITENS DETALHADOS EXPANDIDOS DA NF */}
+                                                            {isExpanded && (
+                                                                <tr>
+                                                                    <td colSpan={canViewValues ? 10 : 9} className="p-0 bg-slate-50">
+                                                                        <div className="p-4 pl-12 pr-6 border-y border-blue-100/60 bg-blue-50/20">
+                                                                            <div className="flex items-center justify-between mb-2">
+                                                                                <span className="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                                                                                    <Package className="w-3.5 h-3.5 text-blue-600" /> Itens Faturados na NF {nf.doc}
+                                                                                </span>
+                                                                                <div className="flex items-center gap-3">
+                                                                                    {nf.transp && (
+                                                                                        <span className="text-xs text-gray-500 font-medium">
+                                                                                            Transportadora: <strong className="text-gray-700">{nf.transp}</strong>
+                                                                                        </span>
+                                                                                    )}
+                                                                                    <button 
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            generateEspelhoNfPdf(nf, canViewValues, user);
+                                                                                        }}
+                                                                                        className="px-3 py-1 bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+                                                                                        title="Gerar Espelho da NF em PDF"
+                                                                                    >
+                                                                                        <Printer className="w-3.5 h-3.5 text-blue-600" /> Imprimir Espelho (PDF)
+                                                                                    </button>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+                                                                                <table className="w-full text-left text-xs whitespace-nowrap">
+                                                                                    <thead className="bg-gray-100/80 text-gray-500 text-[11px] uppercase border-b border-gray-200">
+                                                                                        <tr>
+                                                                                            <th className="px-3 py-2 font-semibold">Item</th>
+                                                                                            <th className="px-3 py-2 font-semibold">Pedido / Item PV</th>
+                                                                                            <th className="px-3 py-2 font-semibold">Cód. Produto</th>
+                                                                                            <th className="px-3 py-2 font-semibold">Descrição</th>
+                                                                                            <th className="px-3 py-2 font-semibold text-center">UM</th>
+                                                                                            <th className="px-3 py-2 font-semibold text-right">Quantidade</th>
+                                                                                            {canViewValues && (
+                                                                                                <th className="px-3 py-2 font-semibold text-right">Preço Unit.</th>
+                                                                                            )}
+                                                                                            {canViewValues && (
+                                                                                                <th className="px-3 py-2 font-semibold text-right">Valor Total</th>
+                                                                                            )}
+                                                                                            <th className="px-3 py-2 font-semibold text-center">CFOP / TES</th>
+                                                                                            <th className="px-3 py-2 font-semibold text-right">Peso (kg)</th>
+                                                                                        </tr>
+                                                                                    </thead>
+                                                                                    <tbody className="divide-y divide-gray-100">
+                                                                                        {nf.itens.map((it, itIdx) => (
+                                                                                            <tr key={itIdx} className="hover:bg-blue-50/30 transition-colors">
+                                                                                                <td className="px-3 py-2 font-mono text-gray-500 font-bold">{it.item}</td>
+                                                                                                <td className="px-3 py-2 font-mono text-gray-800">
+                                                                                                    {it.pedido ? `${it.pedido} - ${it.itempv}` : '-'}
+                                                                                                </td>
+                                                                                                <td className="px-3 py-2 font-mono font-bold text-blue-700">{it.codigo}</td>
+                                                                                                <td className="px-3 py-2 font-medium text-gray-800 max-w-[300px] truncate" title={it.descricao}>
+                                                                                                    {it.descricao || '-'}
+                                                                                                </td>
+                                                                                                <td className="px-3 py-2 text-center text-gray-600 font-mono">{it.um}</td>
+                                                                                                <td className="px-3 py-2 text-right font-bold text-gray-900">
+                                                                                                    {parseFloat(it.quantidade).toLocaleString('pt-BR')}
+                                                                                                </td>
+                                                                                                {canViewValues && (
+                                                                                                    <td className="px-3 py-2 text-right font-medium text-gray-600">
+                                                                                                        {parseFloat(it.preco_unitario) > 0 
+                                                                                                            ? `R$ ${parseFloat(it.preco_unitario).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
+                                                                                                            : '-'}
+                                                                                                    </td>
+                                                                                                )}
+                                                                                                {canViewValues && (
+                                                                                                    <td className="px-3 py-2 text-right font-bold text-emerald-700">
+                                                                                                        {parseFloat(it.valor_total) > 0 
+                                                                                                            ? `R$ ${parseFloat(it.valor_total).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` 
+                                                                                                            : '-'}
+                                                                                                    </td>
+                                                                                                )}
+                                                                                                <td className="px-3 py-2 text-center font-mono text-gray-500 text-[11px]">
+                                                                                                    {it.cfop || it.tes || '-'}
+                                                                                                </td>
+                                                                                                <td className="px-3 py-2 text-right font-mono text-gray-600">
+                                                                                                    {parseFloat(it.peso) > 0 ? parseFloat(it.peso).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '-'}
+                                                                                                </td>
+                                                                                            </tr>
+                                                                                        ))}
+                                                                                    </tbody>
+                                                                                </table>
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            )}
+                                                        </React.Fragment>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    ) : error ? (
-                        <div className="p-12 text-center text-red-500">{error}</div>
-                    ) : solicitacoes.length === 0 ? (
-                        <div className="p-12 text-center text-gray-400 flex flex-col items-center gap-3">
-                            <FileText className="h-12 w-12 opacity-20" />
-                            <p>Nenhuma solicitação encontrada.</p>
-                        </div>
-                    ) : viewMode === 'tabela' || viewMode === 'tabela_solicitacoes' || viewMode === 'tabela_produtos' ? (
+                    ) : (
+                        /* ========================================================================= */
+                        /* ABAS ORIGINAIS: SOLICITAÇÕES / TABELAS                                     */
+                        /* ========================================================================= */
+                        <div>
+                            {loading ? (
+                                <div className="flex flex-col items-center justify-center p-12 text-gray-500 gap-4">
+                                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent"></div>
+                                    Carregando histórico...
+                                </div>
+                            ) : error ? (
+                                <div className="p-12 text-center text-red-500">{error}</div>
+                            ) : solicitacoes.length === 0 ? (
+                                <div className="p-12 text-center text-gray-400 flex flex-col items-center gap-3">
+                                    <FileText className="h-12 w-12 opacity-20" />
+                                    <p>Nenhuma solicitação encontrada.</p>
+                                </div>
+                            ) : viewMode === 'tabela' || viewMode === 'tabela_solicitacoes' || viewMode === 'tabela_produtos' ? (
                                 <div className="p-4 bg-gray-50 flex flex-col gap-4">
                                     <div className="flex flex-wrap items-center gap-3">
                                         <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 flex-1 min-w-[250px] shadow-sm">
                                             <Search className="w-4 h-4 text-gray-400" />
                                             <input 
-                                                type="text"
-                                                placeholder="Buscar NF, Pedido ou Cliente..."
-                                                className="bg-transparent border-none outline-none text-sm w-full"
+                                                type="text" 
+                                                placeholder="Buscar por NF, Pedido, Cliente ou Produto..."
                                                 value={searchTerm}
                                                 onChange={(e) => setSearchTerm(e.target.value)}
+                                                className="w-full text-sm outline-none bg-transparent"
                                             />
                                         </div>
-                                        <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm min-w-[280px]">
-                                            <Calendar className="w-4 h-4 text-gray-400" />
+
+                                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm">
+                                            <span className="text-xs font-semibold text-gray-500">Emissão De:</span>
                                             <input 
-                                                type="date"
-                                                className="bg-transparent border-none outline-none text-sm w-full text-gray-700"
+                                                type="date" 
                                                 value={dataEmissaoInicio}
                                                 onChange={(e) => setDataEmissaoInicio(e.target.value)}
-                                                title="Data Inicial"
+                                                className="text-xs outline-none bg-transparent text-gray-700"
                                             />
-                                            <span className="text-gray-400 text-sm">até</span>
+                                            <span className="text-xs font-semibold text-gray-500">Até:</span>
                                             <input 
-                                                type="date"
-                                                className="bg-transparent border-none outline-none text-sm w-full text-gray-700"
+                                                type="date" 
                                                 value={dataEmissaoFim}
                                                 onChange={(e) => setDataEmissaoFim(e.target.value)}
-                                                title="Data Final"
+                                                className="text-xs outline-none bg-transparent text-gray-700"
                                             />
                                         </div>
-                                        <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm w-48">
-                                            <Box className="w-4 h-4 text-gray-400" />
+
+                                        <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
                                             <input 
-                                                type="text"
-                                                placeholder="Cód. Produto..."
-                                                className="bg-transparent border-none outline-none text-sm w-full"
+                                                type="text" 
+                                                placeholder="Filtrar por Cód. Produto..."
                                                 value={produtoFilter}
                                                 onChange={(e) => setProdutoFilter(e.target.value)}
+                                                className="text-sm outline-none bg-transparent"
                                             />
                                         </div>
-                                        <div className="flex-1"></div>
-                                        <div className="flex items-center gap-2 mr-2">
-                                            <input 
-                                                type="checkbox" 
-                                                id="includePdfValues" 
-                                                checked={includePdfValues} 
-                                                onChange={(e) => setIncludePdfValues(e.target.checked)}
-                                                className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                                            />
-                                            <label htmlFor="includePdfValues" className="text-sm font-medium text-gray-700 cursor-pointer">
-                                                Valores no PDF
+
+                                        {canViewValues && (
+                                            <label className="flex items-center gap-2 text-xs font-medium text-gray-600 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm cursor-pointer hover:bg-gray-50">
+                                                <input 
+                                                    type="checkbox"
+                                                    checked={includePdfValues}
+                                                    onChange={(e) => setIncludePdfValues(e.target.checked)}
+                                                    className="w-4 h-4 rounded text-blue-600 border-gray-300"
+                                                />
+                                                Valores em R$
                                             </label>
-                                        </div>
+                                        )}
+
                                         <button 
                                             onClick={() => {
                                                 const rows = viewMode === 'tabela' ? faturamentosFlat 
@@ -647,160 +1339,162 @@ const FaturamentoSolicitacoesHistorico = () => {
                                     </div>
                                 </div>
                             ) : (
-<div className="divide-y divide-gray-100">
-                            {solicitacoes.map(solicitacao => {
-                                const isExpanded = !!expandedRows[solicitacao.id];
-                                return (
-                                    <div key={solicitacao.id} className="group flex flex-col">
-                                        {/* CABEÇALHO DA SOLICITAÇÃO */}
-                                        <div 
-                                            className={`flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors ${isExpanded ? 'bg-blue-50/20' : ''}`}
-                                            onClick={() => toggleRow(solicitacao.id)}
-                                        >
-                                            <div className="flex items-center gap-4">
-                                                <input 
-                                                    type="checkbox"
-                                                    className="w-5 h-5 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                                    checked={selectedItems.includes(solicitacao.id)}
-                                                    onChange={(e) => {
-                                                        e.stopPropagation();
-                                                        toggleSelection(solicitacao.id);
-                                                    }}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                />
-                                                <div className="bg-blue-50 text-blue-700 p-2.5 rounded-lg border border-blue-100">
-                                                    <FileText className="h-5 w-5" />
-                                                </div>
-                                                <div>
-                                                    <div className="flex items-center gap-3 mb-1">
-                                                        <span className="font-bold text-gray-900 text-lg">{solicitacao.numero_solicitacao}</span>
-                                                        <StatusBadge status={solicitacao.status} />
+                                <div className="divide-y divide-gray-100">
+                                    {solicitacoes.map(solicitacao => {
+                                        const isExpanded = !!expandedRows[solicitacao.id];
+                                        return (
+                                            <div key={solicitacao.id} className="group flex flex-col">
+                                                {/* CABEÇALHO DA SOLICITAÇÃO */}
+                                                <div 
+                                                    className={`flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 transition-colors ${isExpanded ? 'bg-blue-50/20' : ''}`}
+                                                    onClick={() => toggleRow(solicitacao.id)}
+                                                >
+                                                    <div className="flex items-center gap-4">
+                                                        <input 
+                                                            type="checkbox"
+                                                            className="w-5 h-5 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                            checked={selectedItems.includes(solicitacao.id)}
+                                                            onChange={(e) => {
+                                                                e.stopPropagation();
+                                                                toggleSelection(solicitacao.id);
+                                                            }}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        />
+                                                        <div className="bg-blue-50 text-blue-700 p-2.5 rounded-lg border border-blue-100">
+                                                            <FileText className="h-5 w-5" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex items-center gap-3 mb-1">
+                                                                <span className="font-bold text-gray-900 text-lg">{solicitacao.numero_solicitacao}</span>
+                                                                <StatusBadge status={solicitacao.status} />
+                                                            </div>
+                                                            <div className="flex items-center gap-4 text-xs text-gray-500 font-medium whitespace-nowrap overflow-hidden">
+                                                                <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> Data: {new Date(solicitacao.created_at).toLocaleString('pt-BR')}</span>
+                                                                <span className="flex items-center gap-1.5"><Box className="h-3.5 w-3.5" /> Itens: {solicitacao.qtd_itens_diferentes} un.</span>
+                                                                <span className="flex items-center gap-1.5 truncate max-w-[300px]" title={
+                                                                    [...new Set(solicitacao.itens?.map(it => it.nome_cliente).filter(Boolean))].join(' / ') || 'Nenhum Item / Não informado'
+                                                                }>
+                                                                    <span className="font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate">
+                                                                        {[...new Set(solicitacao.itens?.map(it => it.nome_cliente).filter(Boolean))].join(' / ') || 'Nenhum Item / Não informado'}
+                                                                    </span>
+                                                                </span>
+                                                                <span>Usuário: {solicitacao.usuario}</span>
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                    <div className="flex items-center gap-4 text-xs text-gray-500 font-medium whitespace-nowrap overflow-hidden">
-                                                        <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> Data: {new Date(solicitacao.created_at).toLocaleString('pt-BR')}</span>
-                                                        <span className="flex items-center gap-1.5"><Box className="h-3.5 w-3.5" /> Itens: {solicitacao.qtd_itens_diferentes} un.</span>
-                                                        <span className="flex items-center gap-1.5 truncate max-w-[300px]" title={
-                                                            [...new Set(solicitacao.itens?.map(it => it.nome_cliente).filter(Boolean))].join(' / ') || 'Nenhum Item / Não informado'
-                                                        }>
-                                                            <span className="font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 truncate">
-                                                                {[...new Set(solicitacao.itens?.map(it => it.nome_cliente).filter(Boolean))].join(' / ') || 'Nenhum Item / Não informado'}
-                                                            </span>
-                                                        </span>
-                                                        <span>Usuário: {solicitacao.usuario}</span>
+                                                    
+                                                    <div className="flex items-center gap-6">
+                                                        <div className="hidden md:flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                                            <button 
+                                                                onClick={() => generateFaturamentoPdf(solicitacao, user)}
+                                                                className="text-xs font-bold px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-md transition-colors flex items-center gap-1.5"
+                                                            >
+                                                                <Download className="w-3.5 h-3.5" /> PDF
+                                                            </button>
+                                                            {solicitacao.status === 'Pendente' && (
+                                                                <button 
+                                                                    onClick={() => handleUpdateStatus(solicitacao.id, 'Atendido')}
+                                                                    className="text-xs font-bold px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-md transition-colors"
+                                                                >
+                                                                    Marcar Atendido
+                                                                </button>
+                                                            )}
+                                                            {solicitacao.status === 'Pendente' && (
+                                                                <button 
+                                                                    onClick={() => handleUpdateStatus(solicitacao.id, 'Cancelado')}
+                                                                    className="text-xs font-bold px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-md transition-colors"
+                                                                >
+                                                                    Cancelar
+                                                                </button>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="text-gray-400 p-1">
+                                                            {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="flex items-center gap-6">
-                                                {/* Botões rápidos de ação administrativa */}
-                                                <div className="hidden md:flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                                    <button 
-                                                        onClick={() => generateFaturamentoPdf(solicitacao, user)}
-                                                        className="text-xs font-bold px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-md transition-colors flex items-center gap-1.5"
-                                                    >
-                                                        <Download className="w-3.5 h-3.5" /> PDF
-                                                    </button>
-                                                    {solicitacao.status === 'Pendente' && (
-                                                        <button 
-                                                            onClick={() => handleUpdateStatus(solicitacao.id, 'Atendido')}
-                                                            className="text-xs font-bold px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-md transition-colors"
-                                                        >
-                                                            Marcar Atendido
-                                                        </button>
-                                                    )}
-                                                    {solicitacao.status === 'Pendente' && (
-                                                        <button 
-                                                            onClick={() => handleUpdateStatus(solicitacao.id, 'Cancelado')}
-                                                            className="text-xs font-bold px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-md transition-colors"
-                                                        >
-                                                            Cancelar
-                                                        </button>
-                                                    )}
                                                 </div>
 
-                                                <div className="text-gray-400 p-1">
-                                                    {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* DETALHES EXPANDIDOS */}
-                                        {isExpanded && (
-                                            <div className="p-4 pt-2 pb-6 pl-[72px] bg-gray-50/50 border-t border-gray-100">
-                                                {solicitacao.observacao && (
-                                                    <div className="mb-4 p-3 bg-yellow-50/50 border border-yellow-100 rounded-md text-sm text-yellow-800">
-                                                        <span className="font-bold mr-2">Observações: </span>
-                                                        {solicitacao.observacao}
+                                                {/* DETALHES EXPANDIDOS */}
+                                                {isExpanded && (
+                                                    <div className="p-4 pt-2 pb-6 pl-[72px] bg-gray-50/50 border-t border-gray-100">
+                                                        {solicitacao.observacao && (
+                                                            <div className="mb-4 p-3 bg-yellow-50/50 border border-yellow-100 rounded-md text-sm text-yellow-800">
+                                                                <span className="font-bold mr-2">Observações: </span>
+                                                                {solicitacao.observacao}
+                                                            </div>
+                                                        )}
+                                                        
+                                                        <div className="bg-white border text-sm border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                                                            <table className="w-full text-left whitespace-nowrap">
+                                                                <thead className="bg-gray-100/50 text-gray-500 text-xs uppercase border-b border-gray-200">
+                                                                    <tr>
+                                                                        <th className="px-4 py-2 font-semibold">T.</th>
+                                                                        <th className="px-4 py-2 font-semibold">Pedido/Item</th>
+                                                                        <th className="px-4 py-2 font-semibold">Cód. Produto</th>
+                                                                        <th className="px-4 py-2 font-semibold bg-blue-50/50 text-blue-800">Ped. Cli</th>
+                                                                        <th className="px-4 py-2 font-semibold bg-blue-50/50 text-blue-800">Desenho Cli.</th>
+                                                                        <th className="px-4 py-2 font-semibold bg-blue-50/50 text-blue-800">Nota Fiscal</th>
+                                                                        <th className="px-4 py-2 font-semibold bg-green-50 text-green-800">Emissão NF</th>
+                                                                        <th className="px-4 py-2 font-semibold text-right">Saldo Faturar</th>
+                                                                        <th className="px-4 py-2 font-semibold text-right text-blue-700">Qtd. a Faturar</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-gray-100">
+                                                                    {solicitacao.itens?.map((it, idx) => (
+                                                                        <tr key={idx} className="hover:bg-blue-50/30 transition-colors">
+                                                                            <td className="px-4 py-2">
+                                                                                <div className="px-1 rounded border border-gray-300 text-[9px] font-bold text-center text-gray-500 w-fit uppercase">
+                                                                                    ITM
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="px-4 py-2 font-mono text-gray-900">{it.pedido} <span className="text-gray-400 mx-1">-</span> {it.item}</td>
+                                                                            <td className="px-4 py-2 font-mono text-blue-700 font-semibold">{it.codigo_produto}</td>
+                                                                            <td className="px-4 py-2 font-mono text-[11px] text-gray-600 bg-blue-50/30 whitespace-nowrap">{it.pedido_cliente || '-'}</td>
+                                                                            <td className="px-4 py-2 font-mono text-[11px] text-blue-900 font-bold bg-blue-50/30 whitespace-nowrap">{it.desenho_cliente || '-'}</td>
+                                                                            <td className="px-4 py-2 bg-blue-50/30">
+                                                                                {Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0 ? (
+                                                                                    <div className="flex flex-col gap-0.5">
+                                                                                        {it.notas_fiscais_protheus.map((nf, nfIdx) => (
+                                                                                            <span key={nfIdx} className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 whitespace-nowrap">
+                                                                                                NF {nf.nota}
+                                                                                            </span>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <span className="font-mono text-[11px] text-gray-400">{it.nota_fiscal || solicitacao.nota_fiscal || '-'}</span>
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="px-4 py-2 font-mono text-[11px] font-bold bg-green-50/30 whitespace-nowrap">
+                                                                                {Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0
+                                                                                    ? it.notas_fiscais_protheus[0].emissao || '-'
+                                                                                    : new Date(solicitacao.updated_at || solicitacao.created_at).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                                                                            </td>
+                                                                            <td className="px-4 py-2 text-right text-gray-400 font-medium">
+                                                                                {parseFloat(it.saldo_faturar_momentaneo).toLocaleString('pt-BR')}
+                                                                            </td>
+                                                                            <td className="px-4 py-2 text-right font-bold text-[15px] text-blue-700">
+                                                                                {parseFloat(it.quantidade_solicitada).toLocaleString('pt-BR')}
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
                                                     </div>
                                                 )}
-                                                
-                                                <div className="bg-white border text-sm border-gray-200 rounded-lg overflow-hidden shadow-sm">
-                                                    <table className="w-full text-left whitespace-nowrap">
-                                                        <thead className="bg-gray-100/50 text-gray-500 text-xs uppercase border-b border-gray-200">
-                                                            <tr>
-                                                                <th className="px-4 py-2 font-semibold">T.</th>
-                                                                <th className="px-4 py-2 font-semibold">Pedido/Item</th>
-                                                                <th className="px-4 py-2 font-semibold">Cód. Produto</th>
-                                                                <th className="px-4 py-2 font-semibold bg-blue-50/50 text-blue-800">Ped. Cli</th>
-                                                                <th className="px-4 py-2 font-semibold bg-blue-50/50 text-blue-800">Desenho Cli.</th>
-                                                                <th className="px-4 py-2 font-semibold bg-blue-50/50 text-blue-800">Nota Fiscal</th>
-                                                                <th className="px-4 py-2 font-semibold bg-green-50 text-green-800">Emissão NF</th>
-                                                                <th className="px-4 py-2 font-semibold text-right">Saldo Faturar</th>
-                                                                <th className="px-4 py-2 font-semibold text-right text-blue-700">Qtd. a Faturar</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-gray-100">
-                                                            {solicitacao.itens?.map((it, idx) => (
-                                                                <tr key={idx} className="hover:bg-blue-50/30 transition-colors">
-                                                                    <td className="px-4 py-2">
-                                                                        <div className="px-1 rounded border border-gray-300 text-[9px] font-bold text-center text-gray-500 w-fit uppercase">
-                                                                            ITM
-                                                                        </div>
-                                                                    </td>
-                                                                    <td className="px-4 py-2 font-mono text-gray-900">{it.pedido} <span className="text-gray-400 mx-1">-</span> {it.item}</td>
-                                                                    <td className="px-4 py-2 font-mono text-blue-700 font-semibold">{it.codigo_produto}</td>
-                                                                    <td className="px-4 py-2 font-mono text-[11px] text-gray-600 bg-blue-50/30 whitespace-nowrap">{it.pedido_cliente || '-'}</td>
-                                                                    <td className="px-4 py-2 font-mono text-[11px] text-blue-900 font-bold bg-blue-50/30 whitespace-nowrap">{it.desenho_cliente || '-'}</td>
-                                                                    <td className="px-4 py-2 bg-blue-50/30">
-                                                                        {Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0 ? (
-                                                                            <div className="flex flex-col gap-0.5">
-                                                                                {it.notas_fiscais_protheus.map((nf, nfIdx) => (
-                                                                                    <span key={nfIdx} className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 whitespace-nowrap">
-                                                                                        NF {nf.nota}
-                                                                                    </span>
-                                                                                ))}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <span className="font-mono text-[11px] text-gray-400">{it.nota_fiscal || solicitacao.nota_fiscal || '-'}</span>
-                                                                        )}
-                                                                    </td>
-                                                                    <td className="px-4 py-2 font-mono text-[11px] font-bold bg-green-50/30 whitespace-nowrap">
-                                                                        {Array.isArray(it.notas_fiscais_protheus) && it.notas_fiscais_protheus.length > 0
-                                                                            ? it.notas_fiscais_protheus[0].emissao || '-'
-                                                                            : new Date(solicitacao.updated_at || solicitacao.created_at).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
-                                                                    </td>
-                                                                    <td className="px-4 py-2 text-right text-gray-400 font-medium">
-                                                                        {parseFloat(it.saldo_faturar_momentaneo).toLocaleString('pt-BR')}
-                                                                    </td>
-                                                                    <td className="px-4 py-2 text-right font-bold text-[15px] text-blue-700">
-                                                                        {parseFloat(it.quantidade_solicitada).toLocaleString('pt-BR')}
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
                                             </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
             </div>
+
             {/* FLOATING ACTION BAR PARA ENVIO DE E-MAIL LOTE */}
-            {selectedItems.length > 0 && (
+            {selectedItems.length > 0 && viewMode !== 'nfs_emitidas' && (
                 <div className="fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-xl shadow-2xl flex items-center gap-4 z-50 animate-fadeIn">
                     <div>
                         <span className="font-bold text-lg">{selectedItems.length}</span> selecionados
@@ -822,5 +1516,3 @@ const FaturamentoSolicitacoesHistorico = () => {
 };
 
 export default FaturamentoSolicitacoesHistorico;
-
-// aria-label fix for ux_audit

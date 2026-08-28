@@ -1044,19 +1044,10 @@ router.get('/flat', async (req, res) => {
                     c6.c6_pedcli,
                     ${fcJoin ? 'fc.data_entrega_pcp, fc.data_prevista_faturamento' : 'NULL::timestamp as data_entrega_pcp, NULL::timestamp as data_prevista_faturamento'}
                 FROM public.sc5010 c5
-                JOIN (
-                    -- DISTINCT ON garante 1 linha por (pedido, item) mesmo quando o Protheus
-                    -- possui múltiplas entradas em sc6010 para o mesmo par (ex: entregas parceladas).
-                    SELECT DISTINCT ON (TRIM(c6_num), TRIM(c6_item))
-                        c6_filial, c6_num, c6_item, c6_produto,
-                        c6_xrevm, c6_xrevc, c6_um, c6_qtdven, c6_qtdent,
-                        c6_prcven, c6_valor, c6_entreg, c6_pedcli, c6_qtdlib
-                    FROM public.sc6010
-                    WHERE COALESCE(d_e_l_e_t_, '') = ''
-                    ORDER BY TRIM(c6_num), TRIM(c6_item), c6_qtdven DESC
-                ) c6
+                JOIN public.sc6010 c6
                     ON c6.c6_filial = c5.c5_filial
                     AND c6.c6_num = c5.c5_num
+                    AND COALESCE(c6.d_e_l_e_t_, '') = ''
                 ${fcJoin}
                 ${whereClause}
                 ${orderClauseInner}
@@ -1464,14 +1455,14 @@ router.get('/flat', async (req, res) => {
             }
             // --- FIM BUSCA DE TIPO DE STATUS ---
 
-            // --- INÍCIO BUSCA DE DOCUMENTOS (app_produto_docs) ---
+            // --- INÍCIO BUSCA DE DOCUMENTOS (produtos_docs) ---
             try {
                 const productCodes = [...new Set(result.rows.map(r => (r.codigo || '').trim()).filter(Boolean))];
                 if (productCodes.length > 0) {
                     const qPlaceholdersDocs = productCodes.map(() => '?').join(',');
                     const [docsRows] = await mysqlPool.query(
                         `SELECT id, produto_codigo, tipo, url_arquivo, titulo, created_at
-                         FROM app_produto_docs
+                         FROM produtos_docs
                          WHERE produto_codigo IN (${qPlaceholdersDocs})
                          ORDER BY created_at DESC`,
                         productCodes
@@ -1549,7 +1540,8 @@ router.get('/flat', async (req, res) => {
                             designer_start_real, designer_end_real, designer_notes,
                             pcp_mat_req_date, pcp_mat_req_user, pcp_mech_start_date, pcp_mech_start_user,
                             pcp_cut_rel_date, pcp_cut_rel_user, pcp_notes,
-                            designer_production_release_date, pcp_planned_eng_date, pcp_planned_eng_obs
+                            designer_production_release_date, pcp_planned_eng_date, pcp_planned_eng_obs,
+                            lpf_codigo
                          FROM app_sales_order_item_notes
                          WHERE TRIM(pedido) IN (${placeholders})`,
                         uniquePedidos
@@ -1585,6 +1577,7 @@ router.get('/flat', async (req, res) => {
                             r.designer_production_release_date = notes.designer_production_release_date;
                             r.pcp_planned_eng_date = notes.pcp_planned_eng_date;
                             r.pcp_planned_eng_obs = notes.pcp_planned_eng_obs;
+                            r.lpf_codigo_base = notes.lpf_codigo || null;
                         } else {
                             r.project_type = null;
                             r.engineering_start_date = null;
@@ -1608,6 +1601,7 @@ router.get('/flat', async (req, res) => {
                             r.designer_production_release_date = null;
                             r.pcp_planned_eng_date = null;
                             r.pcp_planned_eng_obs = null;
+                            r.lpf_codigo_base = null;
                         }
                     });
                 } else {
@@ -1634,6 +1628,7 @@ router.get('/flat', async (req, res) => {
                         r.designer_production_release_date = null;
                         r.pcp_planned_eng_date = null;
                         r.pcp_planned_eng_obs = null;
+                        r.lpf_codigo_base = null;
                     });
                 }
             } catch (err) {
@@ -1671,6 +1666,11 @@ router.get('/flat', async (req, res) => {
                             r.pcp_delivery_forecast_date = first.data_entrega_pcp;
                             r.pcp_delivery_forecast_qtd = first.quantidade_pcp;
                             r.data_prevista_faturamento = first.data_prevista_faturamento;
+                            if (itemForecasts.length === 1 && !r.lpf_codigo_base && first.lpf_codigo) {
+                                r.lpf_codigo_base = first.lpf_codigo;
+                            } else if (itemForecasts.length > 1) {
+                                r.lpf_codigo_base = null;
+                            }
                         } else {
                             r.data_entrega_pcp = r.data_entrega_pcp || null;
                             r.pcp_delivery_forecast_date = r.data_entrega_pcp || null;
@@ -3706,6 +3706,7 @@ router.get('/op-mirror/:id', checkOrderAccess, async (req, res) => {
                 const fc = forecastMap.get(fcKey);
                 const dataPcp = fc && fc.data_entrega_pcp ? fc.data_entrega_pcp : null;
                 itemsMap.set(row.item_pedido, {
+                    item: row.item_pedido,
                     item_pedido: row.item_pedido,
                     data_pcp: dataPcp,
                     produto_principal: null,
@@ -3714,21 +3715,45 @@ router.get('/op-mirror/:id', checkOrderAccess, async (req, res) => {
             }
             const itemGroup = itemsMap.get(row.item_pedido);
             if (row.nivel === 0) {
+                const qtdVenda = parseFloat(row.qtd_necessaria || 1);
                 itemGroup.produto_principal = {
                     codigo: row.componente,
                     descricao: row.descricao,
                     tipo: row.tipo,
                     revisao: row.revisao,
                     unidade: row.unidade,
-                    quantidade_venda: parseFloat(row.qtd_necessaria),
+                    quantidade_venda: qtdVenda,
                     op_num: row.op_relacionada,
                     op_tipo: row.op_tipo_relacionada,
                     operacoes: row.operacoes,
                     data_pcp: itemGroup.data_pcp
                 };
+                itemGroup.quantidade_venda = qtdVenda;
+            } else {
+                const fullOrderQty = itemGroup.produto_principal?.quantidade_venda || 1;
+                const qtdCalculada = parseFloat(row.qtd_necessaria || 0);
+                const qtdUnitaria = fullOrderQty > 0 ? qtdCalculada / fullOrderQty : qtdCalculada;
+                itemGroup.estrutura_linear.push({
+                    nivel: parseInt(row.nivel),
+                    pai: row.produto_pai,
+                    codigo: row.componente,
+                    descricao: row.descricao,
+                    tipo: row.tipo,
+                    unidade: row.unidade,
+                    qtd_unitaria: qtdUnitaria,
+                    qtd_base: qtdUnitaria,
+                    quantidade_calculada: qtdCalculada,
+                    op_num: row.op_relacionada,
+                    op_tipo: row.op_tipo_relacionada,
+                    operacoes: row.operacoes
+                });
             }
-            else itemGroup.estrutura_linear.push({ nivel: parseInt(row.nivel), pai: row.produto_pai, codigo: row.componente, descricao: row.descricao, tipo: row.tipo, unidade: row.unidade, quantidade_calculada: parseFloat(row.qtd_necessaria), op_num: row.op_relacionada, op_tipo: row.op_tipo_relacionada, operacoes: row.operacoes });
         });
+
+        if (orderData) {
+            orderData.quantidade = Array.from(itemsMap.values()).reduce((acc, ig) => acc + (parseFloat(ig.produto_principal?.quantidade_venda || 0)), 0);
+        }
+
         res.json({ pedido: orderData, itens: Array.from(itemsMap.values()) });
     } catch (err) {
         console.error('[OP Mirror Error]', err);

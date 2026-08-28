@@ -795,6 +795,39 @@ router.post('/roteiro-produtivo/editar', async (req, res) => {
             return res.status(400).json({ error: 'Existem operações com a mesma sequência. O Protheus rejeita duplicidade. Recarregue a página e tente novamente.' });
         }
 
+        const sanitizedRoteiros = data.roteiros.map(r => {
+            const recursoCod = String(r.G2_RECURSO || '').trim();
+            return {
+                G2_OPERAC: String(r.G2_OPERAC || '').trim().padStart(2, '0'),
+                G2_DESCRI: String(r.G2_DESCRI || '').substring(0, 30),
+                G2_RECURSO: recursoCod,
+                G2_FERRAM: String(r.G2_FERRAM || ''),
+                G2_TPALOCF: String(r.G2_TPALOCF || ''),
+                G2_SETUP: r.G2_SETUP !== undefined && r.G2_SETUP !== '' ? String(r.G2_SETUP) : "",
+                G2_FORMSTP: String(r.G2_FORMSTP || ''),
+                G2_LOTEPAD: 1,
+                G2_TEMPAD: Number(r.G2_TEMPAD || 1),
+                G2_TPOPER: "1",
+                G2_TPSOBRE: String(r.G2_TPSOBRE || ''),
+                G2_TEMPSOB: String(r.G2_TEMPSOB || ''),
+                G2_CTRAB: String(r.G2_CTRAB || ''),
+                G2_TEMPEND: String(r.G2_TEMPEND || ''),
+                G2_MAOOBRA: Number(r.G2_MAOOBRA || r.G2_MAOBRA || 1),
+                OPERACAO: r.OPERACAO || "ALTERAR"
+            };
+        });
+
+        const normalizedPayload = {
+            data: {
+                NOPER: data.NOPER || 4,
+                EMPRESA: data.EMPRESA || "01",
+                CFILANT: data.CFILANT || "0101",
+                G2_CODIGO: data.G2_CODIGO || "01",
+                G2_PRODUTO: String(data.G2_PRODUTO).trim().toUpperCase(),
+                roteiros: sanitizedRoteiros
+            }
+        };
+
         // 1. Requisitar Token (Login)
         let accessToken = '';
         try {
@@ -809,11 +842,11 @@ router.post('/roteiro-produtivo/editar', async (req, res) => {
             throw new Error('Token JWT retornado estava em branco.');
         }
 
-        console.log('🚀 [ROTEIRO] Payload enviado para o Protheus:', JSON.stringify(req.body, null, 2));
+        console.log('🚀 [ROTEIRO] Payload normalizado enviado para o Protheus:', JSON.stringify(normalizedPayload, null, 2));
 
         // 2. Envio POST
         const createUrl = 'https://192.168.1.60:47500/roteiro-produtivo/editar';
-        const createRes = await axios.post(createUrl, req.body, {
+        const createRes = await axios.post(createUrl, normalizedPayload, {
             headers: { 'Authorization': `Bearer ${accessToken}` },
             httpsAgent,
             timeout: 30000

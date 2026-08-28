@@ -765,7 +765,7 @@ router.get('/vertical/:operacao', async (req, res) => {
     const { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate, status, sort_key, sort_dir } = req.query;
 
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit = Math.min(   parseInt(req.query.limit) || 200, 500);
+    const limit = Math.min(   parseInt(req.query.limit) || 200, 1000);
     const offset = (page - 1) * limit;
 
     console.log(`🏭 [VERTICAL] ${operacao} | page=${page} limit=${limit}`, { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate });
@@ -1256,13 +1256,14 @@ router.get('/vertical/:operacao', async (req, res) => {
     });
 
     const total = finalList.length;
+    const totalPages = Math.ceil(total / limit) || 1;
     const offsetCalc = (page - 1) * limit;
     const paginatedList = finalList.slice(offsetCalc, offsetCalc + limit);
     const hasMore = (offsetCalc + limit) < total;
 
     res.json({
       data: paginatedList,
-      pagination: { page, limit, hasMore, total }
+      pagination: { page, limit, hasMore, total, totalPages }
     });
 
   } catch (err) {
@@ -1529,19 +1530,13 @@ router.get('/op-roteiro-saldo', async (req, res) => {
         TRIM(g2.g2_produto)  AS produto,
         TRIM(g2.g2_operac)   AS operacao_codigo,
         TRIM(g2.g2_recurso)  AS recurso_codigo,
-        TRIM(h1.h1_descri)   AS operacao_desc
+        TRIM(COALESCE(h1.h1_descri, g2.g2_descri, g2.g2_recurso)) AS operacao_desc
       FROM public.sg2010 g2
       LEFT JOIN public.sh1010 h1
         ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso)
         AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
       WHERE TRIM(g2.g2_produto) = $1
         AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
-        AND TRIM(g2.g2_codigo) = (
-           SELECT MAX(TRIM(sub.g2_codigo))
-           FROM public.sg2010 sub
-           WHERE TRIM(sub.g2_produto) = TRIM(g2.g2_produto)
-             AND COALESCE(sub.d_e_l_e_t_, '') = ''
-        )
       ORDER BY g2.g2_operac ASC
     `;
     const sgResult = await db.query(sgQuery, [produto.trim()]);
@@ -1863,6 +1858,327 @@ router.post('/checklist/upload', checklistUpload.single('file'), (req, res) => {
     } catch (error) {
         console.error('Erro no upload de foto do checklist:', error);
         res.status(500).json({ error: 'Erro ao processar upload da foto.' });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. AJUSTE EM LOTE DE APONTAMENTOS (CONFIGURAÇÕES & PCP)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/producao/ajuste-apontamento/recursos - Lista completa de recursos (SH1010 + contagem SG2010)
+router.get('/ajuste-apontamento/recursos', async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                TRIM(h1.h1_codigo) as codigo,
+                TRIM(h1.h1_descri) as nome,
+                COUNT(g2.g2_operac) as qtd_usos
+            FROM public.sh1010 h1
+            LEFT JOIN public.sg2010 g2 ON TRIM(g2.g2_recurso) = TRIM(h1.h1_codigo) AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+            WHERE COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+              AND TRIM(h1.h1_codigo) NOT LIKE 'T000%'
+            GROUP BY h1.h1_codigo, h1.h1_descri
+            ORDER BY 
+                CASE WHEN TRIM(h1.h1_codigo) LIKE 'MO%' THEN 1 WHEN TRIM(h1.h1_codigo) LIKE 'ST%' THEN 2 ELSE 3 END,
+                COUNT(g2.g2_operac) DESC,
+                h1.h1_codigo ASC
+        `;
+        const pgRes = await db.query(query);
+        const rows = pgRes.rows || [];
+
+        const recursos = rows.map(r => {
+            const cod = String(r.codigo || '').trim().toUpperCase();
+            let categoria = 'OUTROS';
+            if (cod.startsWith('MO')) categoria = 'INTERNO';
+            else if (cod.startsWith('ST') || cod.startsWith('MST')) categoria = 'TERCEIRO';
+
+            return {
+                codigo: cod,
+                nome: String(r.nome || cod).trim(),
+                categoria,
+                qtd_usos: parseInt(r.qtd_usos || 0, 10)
+            };
+        });
+
+        res.json(recursos);
+    } catch (error) {
+        console.error('❌ [AJUSTE APONTAMENTO RECURSOS ERRO]:', error);
+        res.status(500).json({ error: error.message || 'Erro ao carregar lista de recursos.' });
+    }
+});
+
+// POST /api/producao/ajuste-apontamento/preview - Simulação prévia das pendências
+router.post('/ajuste-apontamento/preview', async (req, res) => {
+    try {
+        let { pedidos, recursos, modo } = req.body;
+
+        // Normalização de Pedidos (suporta com e sem zeros à esquerda)
+        let pedidosRaw = [];
+        if (Array.isArray(pedidos)) {
+            pedidosRaw = pedidos.map(p => String(p).trim()).filter(p => p.length > 0);
+        } else if (typeof pedidos === 'string') {
+            pedidosRaw = pedidos.split(/[\s,;]+/).map(p => p.trim()).filter(p => p.length > 0);
+        }
+
+        if (pedidosRaw.length === 0) {
+            return res.status(400).json({ error: 'Informe ao menos um número de pedido válido.' });
+        }
+
+        const pedidosList = [...new Set([
+            ...pedidosRaw.map(p => p.padStart(6, '0')),
+            ...pedidosRaw.map(p => p.replace(/^0+/, '')).filter(p => p.length > 0)
+        ])];
+
+        // Normalização de Recursos
+        let recursosList = [];
+        if (Array.isArray(recursos) && recursos.length > 0) {
+            recursosList = recursos.map(r => String(r).trim().toUpperCase());
+        }
+
+        console.log(`🔍 [AJUSTE APONTAMENTO PREVIEW] Pedidos: [${pedidosList.join(', ')}] | Recursos: [${recursosList.join(', ')}] | Modo: ${modo || 'FALTANTE_TOTAL'}`);
+
+        // 1. Buscar OPs no Protheus (SC2010 + SG2010 + SB1010 + SH1010)
+        let sc2Query = `
+            SELECT 
+                TRIM(c2.c2_num) as op_num,
+                TRIM(c2.c2_item) as op_item,
+                TRIM(c2.c2_sequen) as op_sequen,
+                TRIM(c2.c2_produto) as produto,
+                TRIM(sb1.b1_desc) as descricao,
+                COALESCE(c2.c2_quant, 0) as qtd_op,
+                COALESCE(c2.c2_quje, 0) as qtd_protheus,
+                TRIM(c2.c2_pedido) as pedido,
+                TRIM(c2.c2_itempv) as item_pedido,
+                TRIM(g2.g2_operac) as operacao_codigo,
+                TRIM(g2.g2_recurso) as recurso_codigo,
+                TRIM(COALESCE(h1.h1_descri, g2.g2_recurso)) as recurso_nome,
+                COALESCE(g2.g2_tempad, 0) as tempad
+            FROM public.sc2010 c2
+            INNER JOIN public.sg2010 g2 ON TRIM(g2.g2_produto) = TRIM(c2.c2_produto) AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sh1010 h1 ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso) AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sb1010 sb1 ON TRIM(sb1.b1_cod) = TRIM(c2.c2_produto) AND COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
+            WHERE (TRIM(c2.c2_pedido) = ANY($1) OR TRIM(c2.c2_num) = ANY($1))
+              AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+        `;
+
+        const params = [pedidosList];
+        if (recursosList.length > 0) {
+            sc2Query += ` AND TRIM(g2.g2_recurso) = ANY($2)`;
+            params.push(recursosList);
+        }
+
+        sc2Query += ` ORDER BY TRIM(c2.c2_pedido), TRIM(c2.c2_num), TRIM(c2.c2_item), g2.g2_operac`;
+
+        const pgRes = await db.query(sc2Query, params);
+        const rows = pgRes.rows || [];
+
+        if (rows.length === 0) {
+            return res.json({
+                items: [],
+                totals: { total_ops: 0, concluidas: 0, pendentes: 0, total_pecas_faltantes: 0 },
+                byRecurso: {},
+                message: 'Nenhuma operação encontrada para os pedidos e recursos informados.'
+            });
+        }
+
+        // 2. Buscar apontamentos acumulados no MySQL
+        const opNums = [...new Set(rows.map(r => r.op_num))];
+        const [appts] = await mysqlPool.query(`
+            SELECT 
+                TRIM(op_numero) as op_numero,
+                TRIM(op_item) as op_item,
+                TRIM(op_sequencia) as op_sequencia,
+                TRIM(operacao_codigo) as operacao_codigo,
+                SUM(CAST(quantidade AS DECIMAL(10,2))) as total_apontado
+            FROM app_production_appointments
+            WHERE op_numero IN (?)
+              AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
+            GROUP BY op_numero, op_item, op_sequencia, operacao_codigo
+        `, [opNums]);
+
+        const apptMap = {};
+        appts.forEach(a => {
+            const num = String(a.op_numero || '').trim().padStart(6, '0');
+            const it = String(a.op_item || '').trim();
+            const seq = String(a.op_sequencia || '').trim();
+            const opc = String(a.operacao_codigo || '').trim();
+            const val = parseFloat(a.total_apontado || 0);
+
+            const k1 = `${num}-${it}-${seq}-${opc}`;
+            const k2 = `${num}-${it}-${opc}`;
+            apptMap[k1] = (apptMap[k1] || 0) + val;
+            apptMap[k2] = (apptMap[k2] || 0) + val;
+        });
+
+        // 3. Montar resultado detalhado e totalizadores
+        let totalPecasFaltantes = 0;
+        let concluidas = 0;
+        let pendentes = 0;
+        const byRecurso = {};
+
+        const items = rows.map(r => {
+            const num = String(r.op_num || '').trim().padStart(6, '0');
+            const it = String(r.op_item || '').trim();
+            const seq = String(r.op_sequen || '').trim();
+            const opc = String(r.operacao_codigo || '').trim();
+
+            const k1 = `${num}-${it}-${seq}-${opc}`;
+            const k2 = `${num}-${it}-${opc}`;
+            const qtdApontada = apptMap[k1] || apptMap[k2] || 0;
+            const qtdOp = parseFloat(r.qtd_op || 0);
+            const qtdProtheus = parseFloat(r.qtd_protheus || 0);
+
+            let alvoCalculo = (modo === 'PROTHEUS_QUJE') ? qtdProtheus : qtdOp;
+            const saldoFaltante = Math.max(0, alvoCalculo - qtdApontada);
+            const isConcluido = saldoFaltante <= 0.001;
+
+            if (isConcluido) {
+                concluidas++;
+            } else {
+                pendentes++;
+                totalPecasFaltantes += saldoFaltante;
+            }
+
+            const recKey = r.recurso_codigo;
+            if (!byRecurso[recKey]) {
+                byRecurso[recKey] = { codigo: recKey, nome: r.recurso_nome, total: 0, concluidas: 0, pendentes: 0, faltante: 0 };
+            }
+            byRecurso[recKey].total++;
+            if (isConcluido) byRecurso[recKey].concluidas++;
+            else {
+                byRecurso[recKey].pendentes++;
+                byRecurso[recKey].faltante += saldoFaltante;
+            }
+
+            return {
+                pedido: r.pedido,
+                item_pedido: r.item_pedido,
+                op_numero: num,
+                op_item: it,
+                op_sequencia: seq,
+                op_completa: `${num}-${it}-${seq}`,
+                produto: r.produto,
+                descricao: r.descricao,
+                operacao_codigo: opc,
+                recurso_codigo: r.recurso_codigo,
+                recurso_nome: r.recurso_nome,
+                qtd_op: qtdOp,
+                qtd_protheus: qtdProtheus,
+                qtd_apontada: qtdApontada,
+                saldo_faltante: saldoFaltante,
+                status: isConcluido ? 'CONCLUIDO' : 'PENDENTE'
+            };
+        });
+
+        res.json({
+            items,
+            totals: {
+                total_ops: rows.length,
+                concluidas,
+                pendentes,
+                total_pecas_faltantes: totalPecasFaltantes
+            },
+            byRecurso
+        });
+
+    } catch (error) {
+        console.error('❌ [AJUSTE APONTAMENTO PREVIEW ERRO]:', error);
+        res.status(500).json({ error: error.message || 'Erro ao simular ajuste de apontamento.' });
+    }
+});
+
+// POST /api/producao/ajuste-apontamento/executar - Execução da gravação em lote
+router.post('/ajuste-apontamento/executar', async (req, res) => {
+    let connection;
+    try {
+        const { items, usuario, observacao } = req.body;
+
+        if (!Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ error: 'Nenhum item selecionado para apontamento.' });
+        }
+
+        const userAssigned = usuario && String(usuario).trim().length > 0
+            ? String(usuario).trim()
+            : 'Sistema Automatico SINCO';
+
+        const obsAssigned = observacao && String(observacao).trim().length > 0
+            ? String(observacao).trim()
+            : '[AJUSTE EM LOTE] Apontamento automático complementar PCP';
+
+        const now = new Date();
+        const nowStr = now.toISOString().slice(0, 19).replace('T', ' ');
+
+        connection = await mysqlPool.getConnection();
+        await connection.beginTransaction();
+
+        let inseridos = 0;
+        const opsAfetadas = new Set();
+
+        for (const it of items) {
+            const qtdNum = parseFloat(it.saldo_faltante || it.quantidade || 0);
+            if (qtdNum <= 0.001) continue;
+
+            const opNum = String(it.op_numero || '').trim().padStart(6, '0');
+            const opItem = String(it.op_item || '').trim();
+            const opSeq = String(it.op_sequencia || '').trim();
+            const opCod = String(it.operacao_codigo || '').trim();
+
+            await connection.execute(`
+                INSERT INTO app_production_appointments
+                (op_numero, op_item, op_sequencia, operacao_codigo, recurso_codigo, produto_codigo, usuario, quantidade, data_inicio, data_fim, observacao, conferencia_status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OK', NOW())
+            `, [
+                opNum,
+                opItem,
+                opSeq,
+                opCod,
+                it.recurso_codigo || null,
+                it.produto || null,
+                userAssigned,
+                qtdNum,
+                nowStr,
+                nowStr,
+                obsAssigned
+            ]);
+
+            const concatenatedOp = opNum + opItem + opSeq;
+            await connection.execute(`
+                UPDATE app_lotes_corte_itens
+                SET status = 'Concluído'
+                WHERE op_numero = ?
+            `, [concatenatedOp]);
+
+            opsAfetadas.add(opNum);
+            inseridos++;
+        }
+
+        await connection.commit();
+
+        console.log(`✅ [AJUSTE APONTAMENTO EXECUTADO] Inseridos ${inseridos} registros por ${userAssigned}`);
+
+        // Broadcast Socket.io se disponível
+        try {
+            const io = req.app.get('io');
+            if (io) {
+                io.emit('production_updated', { type: 'batch_appointment', ops: Array.from(opsAfetadas) });
+            }
+        } catch (socketErr) {
+            console.warn('Socket broadcast aviso:', socketErr.message);
+        }
+
+        res.json({
+            success: true,
+            total_inseridos: inseridos,
+            ops_afetadas: opsAfetadas.size,
+            message: `Apontamento em lote concluído com sucesso! ${inseridos} operações apontadas.`
+        });
+
+    } catch (error) {
+        if (connection) await connection.rollback();
+        console.error('❌ [AJUSTE APONTAMENTO EXECUTAR ERRO]:', error);
+        res.status(500).json({ error: error.message || 'Erro ao executar apontamento em lote.' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
