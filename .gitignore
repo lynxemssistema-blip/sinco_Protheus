@@ -15,6 +15,8 @@ linux-deployment/
 # Logs & Debug
 *.log
 npm-debug.log*
+*.sql
+server/smart_plan_error.txt
 server/output.txt
 server/sql_debug.txt
 server/auth_debug.txt
