@@ -2,13 +2,12 @@ const cron = require('node-cron');
 const path = require('path');
 const fs = require('fs');
 const mysqldump = require('mysqldump');
-require('dotenv').config();
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
-// mysqldump abre a conexão de dump via mysql2.createConnection, usando sua própria
-// cópia aninhada em node_modules/mysqldump/node_modules/mysql2 (separada da top-level).
-// Hospedagens compartilhadas (ex.: Hostinger) aplicam max_statement_time por sessão,
-// o que interrompe o SELECT * em tabelas grandes (ex.: app_pcp_historico_revisao, ~2M linhas).
-// Removemos o limite nessa sessão antes de qualquer query de dump, em ambas as cópias.
+/**
+ * Aplica patch seguro no mysql2.createConnection para remover limites de tempo de query
+ * com compatibilidade total para MySQL 8.0, MySQL 5.7 e MariaDB (10.x/11.x).
+ */
 function patchMysql2CreateConnection(pkgPath) {
     let mod;
     try {
@@ -20,7 +19,22 @@ function patchMysql2CreateConnection(pkgPath) {
     const originalCreateConnection = mod.createConnection;
     mod.createConnection = function patchedCreateConnection(...args) {
         const connection = originalCreateConnection.apply(mod, args);
-        connection.query('SET SESSION max_statement_time=0');
+
+        // 1. MySQL 8.0 & MariaDB: desativa max_statement_time (se suportado)
+        connection.query('SET SESSION max_statement_time=0', (err) => {
+            // Ignora silenciosamente caso a variável não exista na versão do banco (ex: MySQL 5.7 puro)
+        });
+
+        // 2. MySQL 5.7.8+ & MySQL 8.0: desativa max_execution_time (em milissegundos, 0 = infinito)
+        connection.query('SET SESSION max_execution_time=0', (err) => {
+            // Ignora silenciosamente caso não exista
+        });
+
+        // 3. MySQL 5.7 & 8.0: eleva timeouts de rede e espera para evitar 'MySQL server has gone away'
+        connection.query('SET SESSION wait_timeout=28800, interactive_timeout=28800, net_read_timeout=3600, net_write_timeout=3600', (err) => {
+            // Ignora caso restrito por permissão
+        });
+
         return connection;
     };
     mod.__maxStatementTimePatched = true;
@@ -30,9 +44,9 @@ patchMysql2CreateConnection('mysql2');
 patchMysql2CreateConnection('mysqldump/node_modules/mysql2');
 
 function startBackupCron() {
-    // Run everyday at 00:00 (midnight)
+    // Executa diariamente à meia-noite (00:00)
     cron.schedule('0 0 * * *', async () => {
-        console.log('[CRON] Iniciando rotina de backup do banco de dados MySQL (via pacote nativo)...');
+        console.log('[CRON] Iniciando rotina de backup do banco de dados (compatível com MySQL 8.0 e 5.7)...');
         await runBackup();
     });
 }
@@ -44,8 +58,9 @@ function getFormattedDate() {
 }
 
 async function runBackup() {
+    let filePath = null;
     try {
-        // Determine target directory based on OS
+        // Determina o diretório de destino de acordo com o Sistema Operacional
         let targetDir;
         if (process.platform === 'win32') {
             targetDir = '\\\\192.168.1.253\\Estrutura Lynx\\020-BACKUP_BD';
@@ -53,9 +68,9 @@ async function runBackup() {
             targetDir = '/mnt/lynx/020-BACKUP_BD';
         }
 
-        // Ensure directory exists or is accessible
+        // Garante que o diretório de destino exista ou cria recursivamente
         if (!fs.existsSync(targetDir)) {
-            console.warn(`[BACKUP DB] Aviso: O diretório de destino (${targetDir}) não existe ou está inacessível. O script tentará criá-lo localmente se possível.`);
+            console.warn(`[BACKUP DB] Aviso: O diretório de destino (${targetDir}) não existe ou está inacessível. Tentando criar localmente/rede...`);
             try {
                 fs.mkdirSync(targetDir, { recursive: true });
             } catch (err) {
@@ -75,9 +90,9 @@ async function runBackup() {
         }
 
         const fileName = `backup_${db}_${getFormattedDate()}.sql`;
-        const filePath = path.join(targetDir, fileName);
+        filePath = path.join(targetDir, fileName);
 
-        console.log(`[BACKUP DB] Gerando dump de segurança (via mysqldump npm). Destino: ${filePath}`);
+        console.log(`[BACKUP DB] Gerando dump completo (MySQL 8.0 / 5.7). Destino: ${filePath}`);
 
         await mysqldump({
             connection: {
@@ -85,19 +100,47 @@ async function runBackup() {
                 user: user,
                 password: pass,
                 database: db,
+                charset: 'utf8mb4',
+                connectTimeout: 60000,
+                multipleStatements: true
+            },
+            dump: {
+                schema: {
+                    table: {
+                        dropIfExist: true
+                    }
+                },
+                data: {
+                    maxRowsPerInsertStatement: 1000 // Compatível com limites de max_allowed_packet do MySQL 5.7 e 8.0
+                },
+                trigger: {
+                    dropIfExist: true
+                }
             },
             dumpToFile: filePath,
         });
 
-        console.log(`[BACKUP DB] Backup concluído com sucesso: ${fileName}`);
+        const stats = fs.statSync(filePath);
+        const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+        console.log(`[BACKUP DB] Backup concluído com sucesso: ${fileName} (${sizeMB} MB)`);
         return filePath;
     } catch (err) {
         console.error(`[BACKUP DB] Erro inesperado na rotina de backup: ${err.message}`);
+        // Remove arquivo corrompido ou vazio se gerado parcialmente
+        if (filePath && fs.existsSync(filePath)) {
+            try {
+                const s = fs.statSync(filePath);
+                if (s.size === 0) {
+                    fs.unlinkSync(filePath);
+                    console.log(`[BACKUP DB] Arquivo vazio removido: ${filePath}`);
+                }
+            } catch (e) {}
+        }
         throw err;
     }
 }
 
 module.exports = {
     startBackupCron,
-    runBackup // Exported for manual testing
+    runBackup // Exportado para execução sob demanda ou testes manuais
 };
