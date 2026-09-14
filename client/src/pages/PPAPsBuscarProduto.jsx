@@ -139,7 +139,7 @@ export default function PPAPsBuscarProduto() {
                 </div>
 
                 {/* Content */}
-                <div className="p-8 max-w-4xl mx-auto w-full">
+                <div className="p-4 md:p-8 w-full max-w-[1920px] mx-auto">
                     
                     {/* Status Alerts */}
                     {error && (

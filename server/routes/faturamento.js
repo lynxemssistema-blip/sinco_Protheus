@@ -305,102 +305,209 @@ router.post('/solicitacoes', async (req, res) => {
         // Log Assíncrono fora da transação principal para não bloquear
         registrarAuditoria(mysqlPool, solicitacaoId, null, usuario || 'Sistema', 'CRIACAO', { qtd_itens: items.length }).catch(console.error);
 
-        // 3. Apontamento de Produção no Protheus (Síncrono)
-        const apontarItems = validItems.filter(it => it.executar_apontamento && (it.op_num_completa || it.op_num));
+        // 3. Apontamento de Produção no Protheus (Síncrono com Auto-Lookup e Validação Rígida)
+        const candidatosApontamento = validItems.filter(it => it.executar_apontamento);
         let apontamentoResult = null;
-        if (apontarItems.length > 0) {
-            try {
-                const axios = require('axios');
-                const https = require('https');
-                const agent = new https.Agent({ rejectUnauthorized: false });
 
-                // 1. Obter token Protheus
-                let accessToken = '';
-                try {
-                    const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
-                    const tokenRes = await axios.get(tokenUrl, { httpsAgent: agent, timeout: 10000 });
-                    accessToken = tokenRes.data.access_token;
-                } catch (authError) {
-                    console.error('[PROTHEUS APONTAMENTO] Falha na obtenção do token Protheus:', authError.message);
-                    throw new Error('Falha de autenticação Protheus (OAuth2): ' + authError.message);
+        if (candidatosApontamento.length > 0) {
+            const itensParaEnviar = [];
+            const avisosSemOp = [];
+
+            for (const it of candidatosApontamento) {
+                let op = String(it.op_num_completa || it.op_num || '').trim();
+                const produto = String(it.codigo || it.codigo_produto || '').trim();
+                const pedido = String(it.pedido || '').trim();
+                const itemPv = String(it.item || '').trim();
+                const qtdApontar = it.quantidade_apontamento !== undefined && it.quantidade_apontamento !== null
+                    ? parseFloat(it.quantidade_apontamento)
+                    : parseFloat(it.quantidade_solicitada || 0);
+
+                // Se a OP não veio preenchida ou está vazia, tenta buscar a OP ativa no Postgres (SC2010)
+                if (!op || op.length === 0) {
+                    try {
+                        // 1. Tenta buscar por Pedido + Item + Produto
+                        let opQuery = await pgDb.query(`
+                            SELECT 
+                                TRIM(c2_num) || TRIM(c2_item) || TRIM(c2_sequen) AS op_completa,
+                                c2_quant - c2_quje AS saldo_produzir
+                            FROM public.sc2010
+                            WHERE TRIM(c2_pedido) = $1
+                              AND (TRIM(c2_itempv) = $2 OR TRIM(c2_item) = $2)
+                              AND TRIM(c2_produto) = $3
+                              AND c2_quant > c2_quje
+                              AND d_e_l_e_t_ = ' '
+                            ORDER BY c2_emissao DESC, r_e_c_n_o_ DESC
+                            LIMIT 1
+                        `, [pedido, itemPv, produto]);
+
+                        // 2. Se não achou, tenta buscar por Pedido + Produto
+                        if (opQuery.rows.length === 0) {
+                            opQuery = await pgDb.query(`
+                                SELECT 
+                                    TRIM(c2_num) || TRIM(c2_item) || TRIM(c2_sequen) AS op_completa,
+                                    c2_quant - c2_quje AS saldo_produzir
+                                FROM public.sc2010
+                                WHERE TRIM(c2_pedido) = $1
+                                  AND TRIM(c2_produto) = $2
+                                  AND c2_quant > c2_quje
+                                  AND d_e_l_e_t_ = ' '
+                                ORDER BY c2_emissao DESC, r_e_c_n_o_ DESC
+                                LIMIT 1
+                            `, [pedido, produto]);
+                        }
+
+                        // 3. Se não achou, tenta buscar pelo Produto aberto mais recente
+                        if (opQuery.rows.length === 0) {
+                            opQuery = await pgDb.query(`
+                                SELECT 
+                                    TRIM(c2_num) || TRIM(c2_item) || TRIM(c2_sequen) AS op_completa,
+                                    c2_quant - c2_quje AS saldo_produzir
+                                FROM public.sc2010
+                                WHERE TRIM(c2_produto) = $1
+                                  AND c2_quant > c2_quje
+                                  AND d_e_l_e_t_ = ' '
+                                ORDER BY c2_emissao DESC, r_e_c_n_o_ DESC
+                                LIMIT 1
+                            `, [produto]);
+                        }
+
+                        if (opQuery.rows.length > 0 && opQuery.rows[0].op_completa) {
+                            op = String(opQuery.rows[0].op_completa).trim();
+                            console.log(`[PROTHEUS APONTAMENTO] OP auto-localizada para Produto ${produto} (Pedido ${pedido}): ${op}`);
+                        }
+                    } catch (dbErr) {
+                        console.warn(`[PROTHEUS APONTAMENTO] Erro ao buscar OP automática no SC2010 para ${produto}:`, dbErr.message);
+                    }
                 }
 
-                if (!accessToken) {
-                    throw new Error('Token Protheus retornado em branco.');
+                // Validação final: se a OP ainda for vazia, NÃO envia para o Protheus para não gerar erro 500
+                if (!op || op.length === 0) {
+                    avisosSemOp.push({
+                        pedido,
+                        item: itemPv,
+                        produto,
+                        motivo: 'Nenhuma Ordem de Produção (OP) aberta encontrada no Protheus para apontamento.'
+                    });
+                } else {
+                    itensParaEnviar.push({
+                        C2_OP: op,
+                        C2_PRODUTO: produto,
+                        C2_QUANT: qtdApontar
+                    });
                 }
-                
-                const payload = {
-                    data: {
-                        CFILANT: "0101",
-                        EMPRESA: "01",
-                        NOPER: 3,
-                        apontamentosOrdensProducao: apontarItems.map(it => {
-                            const op = String(it.op_num_completa || it.op_num || '').trim();
-                            const qtdApontar = it.quantidade_apontamento !== undefined && it.quantidade_apontamento !== null
-                                ? parseFloat(it.quantidade_apontamento)
-                                : parseFloat(it.quantidade_solicitada);
-                            return {
-                                C2_OP: op,
-                                C2_PRODUTO: String(it.codigo || it.codigo_produto || '').trim(),
-                                C2_QUANT: qtdApontar
-                            };
-                        })
-                    }
-                };
+            }
 
-                console.log(`[PROTHEUS APONTAMENTO] Enviando payload síncrono para ${solicitacaoId}:`, JSON.stringify(payload));
-
-                const response = await axios.post(
-                    'https://192.168.1.60:47500/ordem-producao/apontamento-simples',
-                    payload,
-                    { 
-                        httpsAgent: agent,
-                        headers: {
-                            'Authorization': `Bearer ${accessToken}`
-                        },
-                        timeout: 15000
-                    }
-                );
-
-                console.log(`[PROTHEUS APONTAMENTO] Resposta síncrona recebida para ${solicitacaoId}:`, response.status, response.data);
-                
-                await registrarAuditoria(
-                    mysqlPool, 
-                    solicitacaoId, 
-                    null, 
-                    usuario || 'Sistema', 
-                    'APONTAMENTO_PROTHEUS_SUCESSO', 
-                    { 
-                        payload: payload.data,
-                        resposta: response.data 
-                    }
-                );
-
-                apontamentoResult = {
-                    sucesso: true,
-                    resposta: response.data
-                };
-            } catch (err) {
-                console.error(`[PROTHEUS APONTAMENTO] Falha síncrona ao executar apontamento para ${solicitacaoId}:`, err.message);
-                const errorDetail = err.response?.data || err.message;
-                
-                await registrarAuditoria(
-                    mysqlPool, 
-                    solicitacaoId, 
-                    null, 
-                    usuario || 'Sistema', 
-                    'APONTAMENTO_PROTHEUS_ERRO', 
-                    { 
-                        erro: err.message,
-                        detalhe: errorDetail 
-                    }
-                );
-
+            if (itensParaEnviar.length === 0) {
+                console.warn(`[PROTHEUS APONTAMENTO] Nenhum item com OP válida para apontar na solicitação ${solicitacaoId}. Chamada evitada.`);
                 apontamentoResult = {
                     sucesso: false,
-                    erro: err.message,
-                    detalhe: errorDetail
+                    ignorado: true,
+                    aviso: 'Nenhum dos itens possui Ordem de Produção (OP) aberta no Protheus para apontamento.',
+                    detalhes: avisosSemOp
                 };
+
+                await registrarAuditoria(
+                    mysqlPool,
+                    solicitacaoId,
+                    null,
+                    usuario || 'Sistema',
+                    'APONTAMENTO_PROTHEUS_AVISO',
+                    {
+                        aviso: 'Apontamento não disparado por ausência de OP aberta',
+                        itensSemOp: avisosSemOp
+                    }
+                );
+            } else {
+                try {
+                    const axios = require('axios');
+                    const https = require('https');
+                    const agent = new https.Agent({ rejectUnauthorized: false });
+
+                    // 1. Obter token Protheus
+                    let accessToken = '';
+                    try {
+                        const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
+                        const tokenRes = await axios.get(tokenUrl, { httpsAgent: agent, timeout: 10000 });
+                        accessToken = tokenRes.data.access_token;
+                    } catch (authError) {
+                        console.error('[PROTHEUS APONTAMENTO] Falha na obtenção do token Protheus:', authError.message);
+                        throw new Error('Falha de autenticação Protheus (OAuth2): ' + authError.message);
+                    }
+
+                    if (!accessToken) {
+                        throw new Error('Token Protheus retornado em branco.');
+                    }
+
+                    const payload = {
+                        data: {
+                            CFILANT: "0101",
+                            EMPRESA: "01",
+                            NOPER: 3,
+                            apontamentosOrdensProducao: itensParaEnviar
+                        }
+                    };
+
+                    console.log(`[PROTHEUS APONTAMENTO] Enviando payload síncrono para ${solicitacaoId}:`, JSON.stringify(payload, null, 2));
+
+                    const response = await axios.post(
+                        'https://192.168.1.60:47500/ordem-producao/apontamento-simples',
+                        payload,
+                        {
+                            httpsAgent: agent,
+                            headers: {
+                                'Authorization': `Bearer ${accessToken}`
+                            },
+                            timeout: 15000
+                        }
+                    );
+
+                    console.log(`[PROTHEUS APONTAMENTO] Resposta síncrona recebida para ${solicitacaoId}:`, response.status, response.data);
+
+                    await registrarAuditoria(
+                        mysqlPool,
+                        solicitacaoId,
+                        null,
+                        usuario || 'Sistema',
+                        'APONTAMENTO_PROTHEUS_SUCESSO',
+                        {
+                            payload: payload.data,
+                            resposta: response.data,
+                            avisosSemOp: avisosSemOp.length > 0 ? avisosSemOp : undefined
+                        }
+                    );
+
+                    apontamentoResult = {
+                        sucesso: true,
+                        resposta: response.data,
+                        itensApontados: itensParaEnviar,
+                        avisosSemOp: avisosSemOp.length > 0 ? avisosSemOp : undefined
+                    };
+                } catch (err) {
+                    console.error(`[PROTHEUS APONTAMENTO] Falha síncrona ao executar apontamento para ${solicitacaoId}:`, err.message);
+                    const errorDetail = err.response?.data || err.message;
+
+                    await registrarAuditoria(
+                        mysqlPool,
+                        solicitacaoId,
+                        null,
+                        usuario || 'Sistema',
+                        'APONTAMENTO_PROTHEUS_ERRO',
+                        {
+                            erro: err.message,
+                            detalhe: errorDetail,
+                            itensTentados: itensParaEnviar,
+                            avisosSemOp: avisosSemOp.length > 0 ? avisosSemOp : undefined
+                        }
+                    );
+
+                    apontamentoResult = {
+                        sucesso: false,
+                        erro: err.message,
+                        detalhe: errorDetail,
+                        itensTentados: itensParaEnviar,
+                        avisosSemOp: avisosSemOp.length > 0 ? avisosSemOp : undefined
+                    };
+                }
             }
         }
 

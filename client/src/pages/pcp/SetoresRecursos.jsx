@@ -146,7 +146,7 @@ export default function SetoresRecursos() {
     // ── Render ─────────────────────────────────────────────────────────────────
     return (
         <div className="bg-slate-50 min-h-screen p-4 md:p-6 font-sans">
-            <div className="max-w-6xl mx-auto space-y-5">
+            <div className="w-full max-w-[1920px] mx-auto space-y-5">
 
                 {/* Header */}
                 <div>

@@ -668,7 +668,7 @@ export default function ControleExecucao() {
     };
 
     return (
-        <div className="p-6 max-w-[1600px] mx-auto space-y-6">
+        <div className="p-4 md:p-6 w-full max-w-[1920px] mx-auto space-y-6">
             
             {/* Header com estilo moderno */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900 text-white p-6 rounded-2xl shadow-xl border border-slate-800 relative overflow-hidden">

@@ -91,20 +91,16 @@ router.post('/send', upload.array('attachments'), async (req, res) => {
             }
             for (const origPath of pathsArray) {
                 if (origPath && typeof origPath === 'string') {
-                    let filePath = origPath.trim().replace(/^["']+|["']+$/g, '').trim();
-                    filePath = filePath.replace(/^Q:[\/\\]/i, '\\\\192.168.1.253\\Engenharia\\');
-                    if (process.platform !== 'win32') {
-                        filePath = filePath.replace(/\\/g, '/').replace(/^\/\/192\.168\.1\.253\/Engenharia\//i, '/mnt/engenharia/');
-                    } else {
-                        filePath = filePath.replace(/^\/mnt\/engenharia\//i, '\\\\192.168.1.253\\Engenharia\\').replace(/\//g, '\\');
-                    }
-                    const absolutePath = require('path').resolve(filePath);
+                    const { normalizeFilePath, resolveCaseInsensitivePath } = require('../utils/pathResolver');
+                    const normalized = normalizeFilePath(origPath);
+                    const absolutePath = require('path').resolve(normalized);
+                    const resolvedPath = resolveCaseInsensitivePath(absolutePath);
                     try {
-                        const fileBuffer = await fs.readFile(absolutePath);
-                        mailAttachments.push({ filename: require('path').basename(absolutePath), content: fileBuffer });
-                        console.log(`📎 Anexado arquivo local: ${absolutePath}`);
+                        const fileBuffer = await fs.readFile(resolvedPath);
+                        mailAttachments.push({ filename: require('path').basename(resolvedPath), content: fileBuffer });
+                        console.log(`📎 Anexado arquivo local: ${resolvedPath}`);
                     } catch(fileErr) {
-                        console.error(`⚠️ Falha ao ler anexo local (${absolutePath}):`, fileErr.message);
+                        console.error(`⚠️ Falha ao ler anexo local (${resolvedPath}):`, fileErr.message);
                     }
                 }
             }

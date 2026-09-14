@@ -290,29 +290,49 @@ const MasterSheetTab = ({ filterParams }) => {
 
             {/* Content Area */}
             <div className="flex-1 overflow-auto bg-slate-50 relative">
-                {activeTab === 'capa' && <CapaTab data={data} />}
-                {activeTab === 'docs' && <DocsTab />}
-                {activeTab === 'resumo' && <ResumoTab data={data} />}
-                {activeTab === 'pedidos' && <PedidosTab data={data} />}
-                {activeTab === 'itens' && <ItensTab data={data} />}
-                {activeTab === 'estruturas' && <EstruturasTab data={data} />}
-                {activeTab === 'materiais_necessarios' && (
-                    <MateriaisNecessariosTab
-                        data={data}
-                        baseCalculo={baseCalculo}
-                        setBaseCalculo={setBaseCalculo}
-                        exibirCustos={exibirCustos}
-                        setExibirCustos={setExibirCustos}
-                        canViewValues={canViewValues}
-                        filtroTipo={filtroTipo}
-                        setFiltroTipo={setFiltroTipo}
-                    />
+                {activeTab === 'docs' ? (
+                    <DocsTab />
+                ) : loading ? (
+                    <div className="flex flex-col items-center justify-center h-full py-20 text-slate-500">
+                        <Loader2 className="w-8 h-8 text-[#0D6EFD] animate-spin mb-3" />
+                        <span className="text-sm font-medium">Carregando dados da Planilha Mestra...</span>
+                    </div>
+                ) : error ? (
+                    <div className="flex flex-col items-center justify-center h-full py-20 text-red-500">
+                        <Info className="w-8 h-8 mb-2" />
+                        <span className="text-sm font-semibold">Erro ao carregar dados: {error}</span>
+                    </div>
+                ) : !data ? (
+                    <div className="flex flex-col items-center justify-center h-full py-20 text-slate-400">
+                        <Table className="w-10 h-10 mb-2 opacity-30" />
+                        <span className="text-sm">Nenhum dado encontrado para os filtros selecionados.</span>
+                    </div>
+                ) : (
+                    <>
+                        {activeTab === 'capa' && <CapaTab data={data} />}
+                        {activeTab === 'resumo' && <ResumoTab data={data} />}
+                        {activeTab === 'pedidos' && <PedidosTab data={data} />}
+                        {activeTab === 'itens' && <ItensTab data={data} />}
+                        {activeTab === 'estruturas' && <EstruturasTab data={data} />}
+                        {activeTab === 'materiais_necessarios' && (
+                            <MateriaisNecessariosTab
+                                data={data}
+                                baseCalculo={baseCalculo}
+                                setBaseCalculo={setBaseCalculo}
+                                exibirCustos={exibirCustos}
+                                setExibirCustos={setExibirCustos}
+                                canViewValues={canViewValues}
+                                filtroTipo={filtroTipo}
+                                setFiltroTipo={setFiltroTipo}
+                            />
+                        )}
+                        {activeTab === 'carga' && <CargaTab data={data} />}
+                        {activeTab === 'capacidade_periodo' && <CapacidadePeriodoTab data={data} filterParams={filterParams} />}
+                        {activeTab === 'execucao' && <ExecucaoTab data={data} />}
+                        {activeTab === 'analise' && <AnaliseTab data={data} />}
+                        {activeTab === 'grafico_capacidade' && <CapacidadeGraficoTab data={data} filterParams={filterParams} />}
+                    </>
                 )}
-                {activeTab === 'carga' && <CargaTab data={data} />}
-                {activeTab === 'capacidade_periodo' && <CapacidadePeriodoTab data={data} filterParams={filterParams} />}
-                {activeTab === 'execucao' && <ExecucaoTab data={data} />}
-                {activeTab === 'analise' && <AnaliseTab data={data} />}
-                {activeTab === 'grafico_capacidade' && <CapacidadeGraficoTab data={data} filterParams={filterParams} />}
             </div>
         </div>
     );
@@ -334,9 +354,12 @@ const formatDate = (dateStr) => {
 };
 
 const CapaTab = ({ data }) => {
-    const totalPedidos = data.pedidos.length;
-    const totalItens = data.itens.length;
-    const saldoTotal = data.itens.reduce((acc, it) => acc + (parseFloat(it.qtd_faturar) || 0), 0);
+    if (!data) return null;
+    const pedidos = data.pedidos || [];
+    const itens = data.itens || [];
+    const totalPedidos = pedidos.length;
+    const totalItens = itens.length;
+    const saldoTotal = itens.reduce((acc, it) => acc + (parseFloat(it.qtd_faturar) || 0), 0);
 
     return (
         <div className="p-8 max-w-4xl mx-auto">
@@ -458,6 +481,10 @@ const DocsTab = () => (
 
 
 const ResumoTab = ({ data }) => {
+    const recursos = data?.recursos || [];
+    const resumo = data?.resumo || [];
+    const recursoNomeMap = data?.recursoNomeMap || {};
+
     // Agrupa a carga total de cada recurso por produto (em minutos na origem)
     const productLoads = useMemo(() => {
         const loads = {};
@@ -466,14 +493,16 @@ const ResumoTab = ({ data }) => {
                 const prod = item.produto;
                 if (!loads[prod]) loads[prod] = {};
 
-                (data.recursos || []).forEach(r => {
+                recursos.forEach(r => {
                     const valMinutos = item[`rec_${r}`] || 0;
                     loads[prod][r] = (loads[prod][r] || 0) + valMinutos;
                 });
             });
         }
         return loads;
-    }, [data.carga, data.recursos]);
+    }, [data?.carga, recursos]);
+
+    if (!data) return null;
 
     return (
         <div className="w-full h-full relative">
@@ -525,6 +554,11 @@ const ResumoTab = ({ data }) => {
 };
 
 const PedidosTab = ({ data }) => {
+    if (!data) return null;
+    const recursos = data.recursos || [];
+    const pedidos = data.pedidos || [];
+    const recursoNomeMap = data.recursoNomeMap || {};
+
     return (
         <div className="w-full h-full relative">
             <table className="w-full text-[13px] text-left border-collapse">
@@ -539,15 +573,15 @@ const PedidosTab = ({ data }) => {
                         <th className="px-3 py-3 bg-[#1E3A5F] text-white border-r border-[#304C71] whitespace-nowrap">1ª Data PCP</th>
                         <th className="px-3 py-3 bg-[#1E3A5F] text-white border-r border-[#304C71] whitespace-nowrap">Últ. Data PCP</th>
                         {/* Dynamic Resource Columns (Azul Claro) */}
-                        {data.recursos.map(r => (
+                        {recursos.map(r => (
                             <th key={r} className="px-3 py-3 bg-[#0D6EFD] text-white border-r border-[#2C80FF] text-right whitespace-nowrap">
-                                {data.recursoNomeMap[r] || r} (h)
+                                {recursoNomeMap[r] || r} (h)
                             </th>
                         ))}
                     </tr>
                 </thead>
                 <tbody>
-                    {data.pedidos.map((p, idx) => (
+                    {pedidos.map((p, idx) => (
                         <tr key={idx} className={`hover:bg-blue-50 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
                             <td className="px-3 py-2 border-b border-slate-200 border-r whitespace-nowrap font-semibold">{p.pedido}</td>
                             <td className="px-3 py-2 border-b border-slate-200 border-r whitespace-nowrap">{formatDate(p.emissao)}</td>
@@ -557,7 +591,7 @@ const PedidosTab = ({ data }) => {
                             <td className="px-3 py-2 border-b border-slate-200 border-r whitespace-nowrap">{formatDate(p.proxima_entrega)}</td>
                             <td className="px-3 py-2 border-b border-slate-200 border-r whitespace-nowrap">{formatDate(p.pcp_inicio)}</td>
                             <td className="px-3 py-2 border-b border-slate-200 border-r whitespace-nowrap">{formatDate(p.pcp_fim)}</td>
-                            {data.recursos.map(r => {
+                            {recursos.map(r => {
                                 const val = p[`rec_${r}`];
                                 return (
                                     <td key={r} className={`px-3 py-2 border-b border-slate-200 border-r text-right ${val > 0 ? 'text-[#0D6EFD] font-bold' : 'text-slate-400'}`}>
@@ -1002,18 +1036,22 @@ const MateriaisNecessariosTab = ({
     );
 };
 
-const ItensTab = ({ data }) => (
-    <div className="w-full h-full relative">
-        <table className="w-full text-[13px] text-left border-collapse">
-            <thead className="bg-[#1E3A5F] text-white sticky top-0 z-10 shadow">
-                <tr>
-                    {['Pedido', 'Cliente', 'Item', 'Produto', 'Descri\u00e7\u00e3o', 'UM', 'Prioridade', 'Qtd do Pedido', 'Qtd Faturada', 'Qtd Faturar (Produzir)', 'Entrega', 'Data PCP', 'Nova Data PCP', 'Status do Prazo'].map(h => (
-                        <th key={h} className="px-3 py-3 border-r border-[#304C71] whitespace-nowrap">{h}</th>
-                    ))}
-                </tr>
-            </thead>
-            <tbody>
-                {data.itens.map((it, idx) => (
+const ItensTab = ({ data }) => {
+    if (!data) return null;
+    const itens = data.itens || [];
+
+    return (
+        <div className="w-full h-full relative">
+            <table className="w-full text-[13px] text-left border-collapse">
+                <thead className="bg-[#1E3A5F] text-white sticky top-0 z-10 shadow">
+                    <tr>
+                        {['Pedido', 'Cliente', 'Item', 'Produto', 'Descrição', 'UM', 'Prioridade', 'Qtd do Pedido', 'Qtd Faturada', 'Qtd Faturar (Produzir)', 'Entrega', 'Data PCP', 'Nova Data PCP', 'Status do Prazo'].map(h => (
+                            <th key={h} className="px-3 py-3 border-r border-[#304C71] whitespace-nowrap">{h}</th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {itens.map((it, idx) => (
                     <tr key={idx} className={`hover:bg-blue-50 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
                         <td className="px-3 py-2 border-b border-slate-200 border-r font-semibold">{it.pedido}</td>
                         <td className="px-3 py-2 border-b border-slate-200 border-r truncate max-w-[150px]">{it.cliente}</td>
@@ -1070,9 +1108,15 @@ const ItensTab = ({ data }) => (
             </tbody>
         </table>
     </div>
-);
+    );
+};
 
 const CargaTab = ({ data }) => {
+    if (!data) return null;
+    const recursos = data.recursos || [];
+    const carga = data.carga || [];
+    const recursoNomeMap = data.recursoNomeMap || {};
+
     return (
         <div className="w-full h-full relative">
             <table className="w-full text-[13px] text-left border-collapse">
@@ -1082,15 +1126,15 @@ const CargaTab = ({ data }) => {
                             <th key={h} className="px-3 py-3 bg-[#1E3A5F] text-white border-r border-[#304C71] whitespace-nowrap">{h}</th>
                         ))}
                         {/* Dynamic Resource Columns (Azul Claro) */}
-                        {data.recursos.map(r => (
+                        {recursos.map(r => (
                             <th key={r} className="px-3 py-3 bg-[#0D6EFD] text-white border-r border-[#2C80FF] text-right whitespace-nowrap">
-                                {data.recursoNomeMap[r] || r} (min)
+                                {recursoNomeMap[r] || r} (min)
                             </th>
                         ))}
                     </tr>
                 </thead>
                 <tbody>
-                    {data.carga.map((c, idx) => (
+                    {carga.map((c, idx) => (
                         <tr key={idx} className={`hover:bg-blue-50 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
                             <td className="px-3 py-2 border-b border-slate-200 border-r font-semibold">{c.pedido}</td>
                             <td className="px-3 py-2 border-b border-slate-200 border-r truncate max-w-[150px]">{c.cliente}</td>
@@ -1114,7 +1158,7 @@ const CargaTab = ({ data }) => {
                                     </span>
                                 ) : <span className="text-slate-400">-</span>}
                             </td>
-                            {data.recursos.map(r => {
+                            {recursos.map(r => {
                                 const val = c[`rec_${r}`];
                                 return (
                                     <td key={r} className={`px-3 py-2 border-b border-slate-200 border-r text-right ${val > 0 ? 'text-[#0D6EFD] font-bold' : 'text-slate-400'}`}>
@@ -1131,10 +1175,10 @@ const CargaTab = ({ data }) => {
 };
 
 const CapacidadePeriodoTab = ({ data, filterParams }) => {
-    const recursos = data.recursos || [];
-    const nomeMap = data.recursoNomeMap || {};
-    const carga = data.carga || [];
-    const capacidades = data.capacidades || {};
+    const recursos = data?.recursos || [];
+    const nomeMap = data?.recursoNomeMap || {};
+    const carga = data?.carga || [];
+    const capacidades = data?.capacidades || {};
 
     // ── Calculate days in period ──
     const days = useMemo(() => {
@@ -1289,10 +1333,10 @@ const CapacidadePeriodoTab = ({ data, filterParams }) => {
 };
 
 const CapacidadeGraficoTab = ({ data, filterParams }) => {
-    const recursos = data.recursos || [];
-    const nomeMap = data.recursoNomeMap || {};
-    const carga = data.carga || [];
-    const capacidades = data.capacidades || {};
+    const recursos = data?.recursos || [];
+    const nomeMap = data?.recursoNomeMap || {};
+    const carga = data?.carga || [];
+    const capacidades = data?.capacidades || {};
 
     // ── Calculate days in period ──
     const days = useMemo(() => {
@@ -1488,8 +1532,12 @@ const CapacidadeGraficoTab = ({ data, filterParams }) => {
 };
 
 const ExecucaoTab = ({ data }) => {
+    const recursos = data?.recursos || [];
+    const execucao_op = data?.execucao_op || [];
+    const recursoNomeMap = data?.recursoNomeMap || {};
+
     // Retorna vazio caso execucao_op não exista no payload ainda (retrocompatibilidade)
-    if (!data.execucao_op) return (
+    if (!data || !data.execucao_op) return (
         <div className="p-8 text-center text-slate-500">
             Nenhum dado de execução encontrado.
         </div>
@@ -1500,7 +1548,7 @@ const ExecucaoTab = ({ data }) => {
         const res = {
             qtd_planejada: 0,
         };
-        (data.recursos || []).forEach(r => {
+        recursos.forEach(r => {
             res[`previsto_${r}`] = 0;
             res[`apontado_${r}`] = 0;
             res[`qtd_apontada_${r}`] = 0;
@@ -1508,9 +1556,9 @@ const ExecucaoTab = ({ data }) => {
             res[`tempo_falta_${r}`] = 0;
         });
 
-        (data.execucao_op || []).forEach(c => {
+        execucao_op.forEach(c => {
             res.qtd_planejada += (c.qtd_planejada || 0);
-            (data.recursos || []).forEach(r => {
+            recursos.forEach(r => {
                 const rawPrev = c[`previsto_${r}`];
                 const rawApon = c[`apontado_${r}`];
                 const rawQtdApon = c[`qtd_apontada_${r}`];
@@ -1537,7 +1585,7 @@ const ExecucaoTab = ({ data }) => {
             });
         });
         return res;
-    }, [data.execucao_op, data.recursos]);
+    }, [execucao_op, recursos]);
 
     return (
         <div className="w-full h-full relative overflow-auto">
@@ -1552,14 +1600,14 @@ const ExecucaoTab = ({ data }) => {
                         <th rowSpan={2} className="px-2.5 py-3 bg-[#1E3A5F] text-white border-r border-b border-[#304C71] whitespace-nowrap text-center sticky left-[525px] top-0 z-30 w-[85px] min-w-[85px] max-w-[85px]">Data PCP</th>
                         <th rowSpan={2} className="px-2.5 py-3 bg-[#1E3A5F] text-white border-r-2 border-r-[#0D6EFD] border-b border-[#304C71] whitespace-nowrap text-right sticky left-[610px] top-0 z-30 w-[80px] min-w-[80px] max-w-[80px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.35)]">Qtde PCP</th>
                         {/* Dynamic Resource Columns */}
-                        {data.recursos.map(r => (
+                        {recursos.map(r => (
                             <th colSpan={5} key={r} className="px-3 py-1 bg-[#0D6EFD] text-white border-r border-b border-[#2C80FF] text-center whitespace-nowrap">
-                                {data.recursoNomeMap[r] || r}
+                                {recursoNomeMap[r] || r}
                             </th>
                         ))}
                     </tr>
                     <tr>
-                        {data.recursos.map(r => (
+                        {recursos.map(r => (
                             <React.Fragment key={r + '_subs'}>
                                 <th className="px-2 py-1 bg-[#0958CC] text-white border-r border-[#2C80FF] text-right font-medium text-xs">Prev (min)</th>
                                 <th className="px-2 py-1 bg-[#084FB8] text-white border-r border-[#2C80FF] text-right font-medium text-xs">Apon (min)</th>
@@ -1571,7 +1619,7 @@ const ExecucaoTab = ({ data }) => {
                     </tr>
                 </thead>
                 <tbody>
-                    {data.execucao_op.map((c, idx) => (
+                    {execucao_op.map((c, idx) => (
                         <tr key={idx} className={`hover:bg-blue-50 ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>
                             <td className={`px-2.5 py-2 border-b border-slate-200 border-r font-semibold sticky left-0 z-10 w-[75px] min-w-[75px] max-w-[75px] truncate ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>{c.pedido}</td>
                             <td className={`px-2.5 py-2 border-b border-slate-200 border-r truncate sticky left-[75px] z-10 w-[150px] min-w-[150px] max-w-[150px] ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`} title={c.cliente}>{c.cliente}</td>
@@ -1585,7 +1633,7 @@ const ExecucaoTab = ({ data }) => {
                             <td className={`px-2.5 py-2 border-b border-slate-200 border-r text-right sticky left-[445px] z-10 w-[80px] min-w-[80px] max-w-[80px] ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>{formatNum(c.qtd_planejada)}</td>
                             <td className={`px-2.5 py-2 border-b border-slate-200 border-r text-center whitespace-nowrap sticky left-[525px] z-10 w-[85px] min-w-[85px] max-w-[85px] ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>{formatDate(c.data_pcp)}</td>
                             <td className={`px-2.5 py-2 border-b border-slate-200 border-r-2 border-r-slate-300 text-right sticky left-[610px] z-10 w-[80px] min-w-[80px] max-w-[80px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.12)] ${idx % 2 === 0 ? 'bg-slate-50' : 'bg-white'}`}>{c.qtde_pcp != null ? formatNum(c.qtde_pcp) : '-'}</td>
-                            {data.recursos.map(r => {
+                            {recursos.map(r => {
                                 const rawPrev = c[`previsto_${r}`];
                                 const rawApon = c[`apontado_${r}`];
                                 const rawQtdApon = c[`qtd_apontada_${r}`];
@@ -1642,7 +1690,7 @@ const ExecucaoTab = ({ data }) => {
                         <td className="px-2.5 py-2 border-r text-right sticky left-[445px] bottom-0 z-30 bg-slate-100 w-[80px] min-w-[80px]">{formatNum(totals.qtd_planejada)}</td>
                         <td className="px-2.5 py-2 border-r text-center sticky left-[525px] bottom-0 z-30 bg-slate-100 w-[85px] min-w-[85px]">-</td>
                         <td className="px-2.5 py-2 border-r-2 border-r-slate-300 text-right sticky left-[610px] bottom-0 z-30 bg-slate-100 w-[80px] min-w-[80px] shadow-[4px_0_8px_-2px_rgba(0,0,0,0.15)]">-</td>
-                        {data.recursos.map(r => {
+                        {recursos.map(r => {
                             const totPrev = totals[`previsto_${r}`] || 0;
                             const totApon = totals[`apontado_${r}`] || 0;
                             const totQtd = totals[`qtd_apontada_${r}`] || 0;
@@ -2059,6 +2107,7 @@ const ConsolidadoChart = ({ recursosVisiveis, buckets, matrix, nomeMap, capacida
 // ── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 
 const AnaliseTab = ({ data }) => {
+    if (!data) return null;
     const execucao = data.execucao_op || [];
     const recursos = data.recursos || [];
     const nomeMap = data.recursoNomeMap || {};

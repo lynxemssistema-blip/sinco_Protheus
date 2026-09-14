@@ -74,7 +74,7 @@ function SetorCard({ setor }) {
 
                 {/* Mini barra de progresso + seta */}
                 <div className="flex items-center gap-4 shrink-0">
-                    <div className="hidden sm:block w-28 h-2 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                    <div className="hidden sm:block w-32 sm:w-48 md:w-64 lg:w-80 h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
                         <div className="h-full rounded-full transition-all duration-700"
                             style={{ width: `${Math.min(setor.score, 100)}%`, backgroundColor: setor.cor }} />
                     </div>
@@ -385,8 +385,8 @@ export default function MeuCanal() {
     return (
         <div className="min-h-screen bg-slate-50 font-sans">
             {/* ═══ HERO HEADER ══════════════════════════════════════════════════════ */}
-            <div className="bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 text-white">
-                <div className="max-w-7xl mx-auto px-6 py-8">
+            <div className="bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 text-white shadow-md">
+                <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
                         {/* Perfil */}
                         <div className="flex items-center gap-5">
@@ -430,7 +430,7 @@ export default function MeuCanal() {
             </div>
 
             {/* ═══ CONTEÚDO ════════════════════════════════════════════════════════ */}
-            <div className="max-w-7xl mx-auto px-6 py-8 space-y-8">
+            <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
                 {/* ── PERFORMANCE INDIVIDUAL ─────────────────────────────────────── */}
                 <section>

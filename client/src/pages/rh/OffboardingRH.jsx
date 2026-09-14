@@ -44,7 +44,7 @@ export default function OffboardingRH() {
     );
 
     return (
-        <div className="p-6 max-w-7xl mx-auto h-[calc(100vh-100px)] flex flex-col">
+        <div className="p-4 md:p-6 w-full max-w-[1920px] mx-auto h-[calc(100vh-100px)] flex flex-col">
             <div className="flex items-center gap-3 mb-6 flex-shrink-0">
                 <div className="bg-red-100 p-3 rounded-lg">
                     <UserMinus className="w-6 h-6 text-red-700" />

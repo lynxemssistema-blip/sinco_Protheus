@@ -4,6 +4,73 @@
 // ─────────────────────────────────────────────────────────────────────────────
 export const HELP_CONTENT = {
 
+  '/novas-funcionalidades': {
+    category: 'Sistema',
+    categoryColor: '#1F365C',
+    title: 'Novas Funcionalidades (A partir de 09/09/2026)',
+    icon: 'Sparkles',
+    description: 'Linha do tempo oficial e registro detalhado de todas as novas ferramentas, correções e melhorias entregues após o marco de entrega do sistema.',
+    tabs: [
+      {
+        id: 'visao_geral',
+        label: 'Visão Geral & Filtros',
+        description: 'Como explorar as entregas e novidades do sistema.',
+        steps: [
+          'Marco Inicial: Todas as implementações cadastradas nesta tela foram entregues a partir de 09/09/2026.',
+          'Filtros por Módulo: Utilize os botões superiores para filtrar entregas por área (Sistema, WabTec, PCP, SGQ, etc.).',
+          'Busca Textual: Digite termos no campo de pesquisa para encontrar recursos específicos ou palavras-chave.',
+          'Acesso Rápido: Cada card conta com atalho direto ("Acessar no Sistema") para levar você até a tela implementada.'
+        ]
+      }
+    ],
+    tips: [
+      'Esta tela é mantida continuamente para auditoria e acompanhamento das evoluções do Portal MetalFisa.',
+      'Novas funcionalidades são marcadas com tags visuais destacando o tipo de entrega (Nova Funcionalidade, Resiliência, Melhoria).'
+    ],
+    links: [
+      { path: '/dashboard', label: 'Dashboard Principal' },
+      { path: '/ajuda', label: 'Central de Ajuda' }
+    ]
+  },
+
+  '/login': {
+    category: 'Segurança e Acesso',
+    categoryColor: '#1F365C',
+    title: 'Portal de Acesso e Auto-Recuperação',
+    icon: 'Lock',
+    description: 'Guia de autenticação no sistema, recuperação de acesso e utilização do recurso inteligente de auto-recuperação do servidor.',
+    tabs: [
+      {
+        id: 'autenticacao',
+        label: 'Acesso e Login',
+        description: 'Como entrar no sistema e o que fazer em caso de problemas de senha.',
+        steps: [
+          'Credenciais: Digite seu usuário/login e senha corporativa cadastrada para acessar o sistema.',
+          'Esqueceu a Senha?: Caso não lembre ou sua senha tenha sido redefinida pelo administrador, clique no link "Esqueceu a senha?" para receber um novo acesso provisório via WhatsApp ou E-mail.',
+          'Criar Conta: Novos colaboradores podem solicitar cadastro inicial clicando no botão "Criar Conta".'
+        ]
+      },
+      {
+        id: 'acordar_servidor',
+        label: '⚡ Acordar o Servidor',
+        description: 'Como resolver lentidões ou indisponibilidade sem depender de suporte técnico.',
+        steps: [
+          'Exibição Inteligente: Em condições normais, o botão fica invisível. Ele surge automaticamente em um card amarelo caso a tentativa de login demore mais de 3,5 segundos ou retorne erro de rede/servidor.',
+          'Como Acionar: Basta clicar no botão "⚡ Acordar o Servidor". O comando é enviado diretamente ao serviço Watchdog de segurança, que reinicia a aplicação de forma limpa e automática.',
+          'Contagem Regressiva (15s): Uma barra de progresso de 15 segundos será exibida enquanto o sistema testa a volta do servidor. Assim que restabelecido, o aviso verde libera você para entrar.',
+          'Intervalo de Segurança (30 minutos): Para proteger a integridade dos dados e evitar abusos, essa função possui um cooldown de 30 minutos. Se já tiver sido acionada recentemente, a tela mostrará os minutos restantes.'
+        ]
+      }
+    ],
+    tips: [
+      'Se o botão "Acordar o Servidor" aparecer na tela, você pode clicar com segurança. Ele resolve travamentos de processos e libera o sistema para todos os usuários.',
+      'Após o reinício do servidor, seus dados não são perdidos e a tela liberará você para digitar sua senha e entrar imediatamente.'
+    ],
+    links: [
+      { path: '/ajuda', label: 'Central de Ajuda' }
+    ]
+  },
+
   '/wabtec/datas-solicitacao': {
     category: 'Gestão de Clientes / WabTec',
     categoryColor: '#4f46e5',

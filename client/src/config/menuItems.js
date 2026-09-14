@@ -4,7 +4,7 @@ import {
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
-    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck, Award, Smartphone, AlertOctagon
+    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck, Award, Smartphone, AlertOctagon, Sparkles
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -44,6 +44,7 @@ export const MENU_GROUPS = [
         items: [
             { id: 'eng_pedidos', label: 'Painel de Itens (Engenharia)', path: '/engenharia/pedidos', icon: Layers },
             { id: 'produtos', label: 'Catálogo de Produtos', path: '/produtos', icon: Package },
+            { id: 'produtos_msmetal', label: 'Catálogo MS Metal', path: '/engenharia/msmetal/produtos', icon: Database },
             { id: 'bom', label: 'Gerador de BOM', path: '/bom-generator', icon: Database },
             { id: 'sinco_estrutura', label: 'Verificar Estrutura SINCO', path: '/engenharia/sinco/estrutura', icon: Network },
             { id: 'sinco_formulario', label: 'SolidEdeg', path: '/engenharia/sinco/formulario', icon: Box },
@@ -243,6 +244,7 @@ export const MENU_GROUPS = [
         label: 'Sistema',
         items: [
             { id: 'avisos', label: 'Avisos e Mensagens', path: '/avisos', icon: MessageSquare },
+            { id: 'novas_funcionalidades', label: 'Novas Funcionalidades ✨', path: '/novas-funcionalidades', icon: Sparkles },
             { id: 'config', label: 'Configurações', path: '/configuracoes', icon: SettingsIcon },
             { id: 'config_etiquetas', label: 'Configurações: Aba Etiquetas', path: '#', icon: Printer, hidden: true },
             { id: 'protheus-estudo', label: 'Estudo SQL Protheus', path: '/admin/protheus-estudo', icon: Database },

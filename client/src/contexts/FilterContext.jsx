@@ -6,10 +6,10 @@ export const FilterProvider = ({ children }) => {
     // Função auxiliar para inicializar com segurança do sessionStorage
     const initFilterState = (key, defaultState) => {
         try {
-            const saved = sessionStorage.getItem(key);
+            const saved = sessionStorage.getItem(key) || localStorage.getItem(key);
             return saved ? JSON.parse(saved) : defaultState;
         } catch (e) {
-            console.warn(`Erro ao carregar '${key}' do sessionStorage, usando default:`, e);
+            console.warn(`Erro ao carregar '${key}', usando default:`, e);
             return defaultState;
         }
     };
@@ -23,6 +23,19 @@ export const FilterProvider = ({ children }) => {
             client: '',
             client_code: '',
             file_path: '',
+            page: 1
+        })
+    );
+
+    // Estado para filtros de Produtos MS Metal (Firebird)
+    const [msMetalProductFilters, setMSMetalProductFilters] = useState(() =>
+        initFilterState('@metalfisa:msMetalProductFilters', {
+            search: '',
+            code: '',
+            client_code: '',
+            client_name: '',
+            has_bom: '',
+            protheus_status: '',
             page: 1
         })
     );
@@ -56,12 +69,36 @@ export const FilterProvider = ({ children }) => {
     }, [productFilters]);
 
     React.useEffect(() => {
+        sessionStorage.setItem('@metalfisa:msMetalProductFilters', JSON.stringify(msMetalProductFilters));
+        localStorage.setItem('@metalfisa:msMetalProductFilters', JSON.stringify(msMetalProductFilters));
+    }, [msMetalProductFilters]);
+
+    React.useEffect(() => {
         sessionStorage.setItem('@metalfisa:orderFilters', JSON.stringify(orderFilters));
     }, [orderFilters]);
 
     // Métodos auxiliares para atualizar parcialmente
     const updateProductFilters = (newFilters) => {
         setProductFilters(prev => ({ ...prev, ...newFilters }));
+    };
+
+    const updateMSMetalProductFilters = (newFilters) => {
+        setMSMetalProductFilters(prev => ({ ...prev, ...newFilters }));
+    };
+
+    const resetMSMetalProductFilters = () => {
+        const defaultState = {
+            search: '',
+            code: '',
+            client_code: '',
+            client_name: '',
+            has_bom: '',
+            protheus_status: '',
+            page: 1
+        };
+        setMSMetalProductFilters(defaultState);
+        sessionStorage.setItem('@metalfisa:msMetalProductFilters', JSON.stringify(defaultState));
+        localStorage.setItem('@metalfisa:msMetalProductFilters', JSON.stringify(defaultState));
     };
 
     const updateOrderFilters = (newFilters) => {
@@ -72,6 +109,9 @@ export const FilterProvider = ({ children }) => {
         <FilterContext.Provider value={{
             productFilters,
             updateProductFilters,
+            msMetalProductFilters,
+            updateMSMetalProductFilters,
+            resetMSMetalProductFilters,
             orderFilters,
             updateOrderFilters
         }}>

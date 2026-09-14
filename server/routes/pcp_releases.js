@@ -67,29 +67,42 @@ const OS_BASE_PATH = process.platform === 'win32'
 /**
  * Generate unique liberation code using an atomic sequence table.
  * Prevents duplicate codes under concurrent requests (race condition fix).
- * Uses SELECT MAX(seq)+1 inside a serialized transaction.
+/**
+ * Generate unique liberation code: LPF-AAAA-NNNNN
+ * Strictly sequential auto-increment (e.g. LPF-2026-00001, LPF-2026-00002).
+ * Uses GREATEST across releases, forecasts, and item notes with parseInt to avoid JS string concatenation.
  */
 const generateCodigoLiberacao = async (conn) => {
     const year = new Date().getFullYear();
     const prefix = `LPF-${year}-`;
 
-    // Atomic: lock the table for this year's latest seq and increment
-    await conn.query('LOCK TABLES app_pcp_releases WRITE');
-    try {
-        const [[{ maxSeq }]] = await conn.query(
-            `SELECT COALESCE(MAX(
-                CAST(SUBSTRING(codigo_liberacao, LENGTH(?) + 1) AS UNSIGNED)
-            ), 0) AS maxSeq
-            FROM app_pcp_releases
-            WHERE codigo_liberacao LIKE ?`,
-            [prefix, `${prefix}%`]
-        );
-        const seq = String(maxSeq + 1).padStart(5, '0');
-        return `${prefix}${seq}`;
-    } finally {
-        await conn.query('UNLOCK TABLES');
-    }
+    const [[{ maxSeq }]] = await conn.query(
+        `SELECT GREATEST(
+            COALESCE((
+                SELECT MAX(CAST(SUBSTRING(codigo_liberacao, LENGTH(?) + 1) AS UNSIGNED))
+                FROM app_pcp_releases
+                WHERE codigo_liberacao LIKE ?
+            ), 0),
+            COALESCE((
+                SELECT MAX(CAST(SUBSTRING(lpf_codigo, LENGTH(?) + 1) AS UNSIGNED))
+                FROM app_pcp_delivery_forecasts
+                WHERE lpf_codigo LIKE ?
+            ), 0),
+            COALESCE((
+                SELECT MAX(CAST(SUBSTRING(lpf_codigo, LENGTH(?) + 1) AS UNSIGNED))
+                FROM app_sales_order_item_notes
+                WHERE lpf_codigo LIKE ?
+            ), 0)
+        ) AS maxSeq`,
+        [prefix, `${prefix}%`, prefix, `${prefix}%`, prefix, `${prefix}%`]
+    );
+
+    const currentMax = parseInt(maxSeq, 10) || 0;
+    const nextSeq = currentMax + 1;
+    const seq = String(nextSeq).padStart(5, '0');
+    return `${prefix}${seq}`;
 };
+
 
 // POST /api/pcp-releases/log — Register a batch liberation
 router.post('/log', validate(rules.pcpReleaseLog), async (req, res) => {
@@ -455,6 +468,49 @@ router.post('/create-or-assign-lot', async (req, res) => {
             finalCodigo = await generateCodigoLiberacao(connection);
         }
 
+        // Validação de integridade: nenhum item pode já pertencer a OUTRO lote diferente
+        for (const item of items) {
+            const pedClean = String(item.pedido || '').trim();
+            const itemClean = String(item.item || '').trim();
+
+            let existingLpf = null;
+            if (item.is_fraction && item.fraction_id) {
+                if (typeof item.fraction_id === 'number' || /^\d+$/.test(String(item.fraction_id))) {
+                    const [fRows] = await connection.query(
+                        'SELECT lpf_codigo FROM app_pcp_delivery_forecasts WHERE id = ?',
+                        [item.fraction_id]
+                    );
+                    existingLpf = fRows[0]?.lpf_codigo;
+                } else {
+                    const [fRows] = await connection.query(
+                        'SELECT lpf_codigo FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND (numero_lote = ? OR op_protheus LIKE ?)',
+                        [pedClean, itemClean, item.fraction_letter || '', `%${item.fraction_letter || ''}`]
+                    );
+                    existingLpf = fRows[0]?.lpf_codigo;
+                }
+            } else if (pedClean && itemClean) {
+                const [nRows] = await connection.query(
+                    'SELECT lpf_codigo FROM app_sales_order_item_notes WHERE TRIM(pedido) = ? AND TRIM(item) = ?',
+                    [pedClean, itemClean]
+                );
+                existingLpf = nRows[0]?.lpf_codigo;
+                if (!existingLpf) {
+                    const [fRows] = await connection.query(
+                        'SELECT lpf_codigo FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? LIMIT 1',
+                        [pedClean, itemClean]
+                    );
+                    existingLpf = fRows[0]?.lpf_codigo;
+                }
+            }
+
+            if (existingLpf && String(existingLpf).trim().toUpperCase() !== String(finalCodigo).trim().toUpperCase()) {
+                await connection.rollback();
+                return res.status(400).json({
+                    error: `Bloqueio: O item Pedido ${pedClean} / Item ${itemClean} já está inserido no lote ${existingLpf} e não pode ser repetido em outro lote. Remova-o do lote atual primeiro caso deseje transferi-lo.`
+                });
+            }
+        }
+
         for (const item of items) {
             const pedClean = String(item.pedido || '').trim();
             const itemClean = String(item.item || '').trim();
@@ -573,23 +629,36 @@ router.post('/remove-item-from-lot', async (req, res) => {
     await connection.beginTransaction();
 
     try {
-        const { pedido, item, fraction_id, is_fraction, fraction_letter } = req.body;
+        const { pedido, item, fraction_id, is_fraction, fraction_letter, codigo_lote } = req.body;
         const pedClean = String(pedido || '').trim();
         const itemClean = String(item || '').trim();
+        let targetLpf = codigo_lote ? String(codigo_lote).trim().toUpperCase() : null;
 
         if (is_fraction && fraction_id) {
             if (typeof fraction_id === 'number' || /^\d+$/.test(String(fraction_id))) {
+                if (!targetLpf) {
+                    const [fRows] = await connection.query('SELECT lpf_codigo FROM app_pcp_delivery_forecasts WHERE id = ?', [fraction_id]);
+                    targetLpf = fRows[0]?.lpf_codigo;
+                }
                 await connection.query(
                     'UPDATE app_pcp_delivery_forecasts SET lpf_codigo = NULL WHERE id = ?',
                     [fraction_id]
                 );
             } else {
+                if (!targetLpf) {
+                    const [fRows] = await connection.query('SELECT lpf_codigo FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND (numero_lote = ? OR op_protheus LIKE ?)', [pedClean, itemClean, fraction_letter || '', `%${fraction_letter || ''}`]);
+                    targetLpf = fRows[0]?.lpf_codigo;
+                }
                 await connection.query(
                     'UPDATE app_pcp_delivery_forecasts SET lpf_codigo = NULL WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND (numero_lote = ? OR op_protheus LIKE ?)',
                     [pedClean, itemClean, fraction_letter || '', `%${fraction_letter || ''}`]
                 );
             }
         } else if (pedClean && itemClean) {
+            if (!targetLpf) {
+                const [nRows] = await connection.query('SELECT lpf_codigo FROM app_sales_order_item_notes WHERE TRIM(pedido) = ? AND TRIM(item) = ?', [pedClean, itemClean]);
+                targetLpf = nRows[0]?.lpf_codigo;
+            }
             await connection.query(
                 'UPDATE app_sales_order_item_notes SET lpf_codigo = NULL WHERE TRIM(pedido) = ? AND TRIM(item) = ?',
                 [pedClean, itemClean]
@@ -600,8 +669,42 @@ router.post('/remove-item-from-lot', async (req, res) => {
             );
         }
 
+        // Sincroniza app_pcp_releases (remove item do ops_json e atualiza qtd_ops)
+        if (targetLpf) {
+            const [relRows] = await connection.query(
+                'SELECT id, ops_json, status FROM app_pcp_releases WHERE codigo_liberacao = ? OR lote_info = ?',
+                [targetLpf, targetLpf]
+            );
+            if (relRows.length > 0) {
+                const rel = relRows[0];
+                try {
+                    const prevOps = JSON.parse(rel.ops_json || '[]');
+                    const filteredOps = prevOps.filter(op => {
+                        const isMatch = String(op.pedido || '').trim() === pedClean && String(op.item || '').trim() === itemClean;
+                        if (!isMatch) return true;
+                        if (is_fraction && fraction_id) {
+                            if (op.fraction_id && String(op.fraction_id) === String(fraction_id)) return false;
+                            if (op.fraction_letter && String(op.fraction_letter) === String(fraction_letter)) return false;
+                        }
+                        return false;
+                    });
+
+                    if (filteredOps.length === 0 && rel.status !== 'LIBERADO') {
+                        await connection.query('DELETE FROM app_pcp_releases WHERE id = ?', [rel.id]);
+                    } else {
+                        await connection.query(
+                            'UPDATE app_pcp_releases SET ops_json = ?, qtd_ops = ? WHERE id = ?',
+                            [JSON.stringify(filteredOps), filteredOps.length, rel.id]
+                        );
+                    }
+                } catch (parseErr) {
+                    console.warn('⚠️ Erro ao atualizar ops_json em remove-item-from-lot:', parseErr.message);
+                }
+            }
+        }
+
         await connection.commit();
-        res.json({ success: true });
+        res.json({ success: true, message: 'Item removido do lote com sucesso.' });
     } catch (err) {
         await connection.rollback();
         console.error('❌ [REMOVE ITEM FROM LOT ERROR]', err);
@@ -811,12 +914,15 @@ router.get('/active-lots', async (req, res) => {
         `);
 
         const [releases] = await mysqlPool.query(`
-            SELECT codigo_liberacao, usuario, data_hora, caminho_arquivo
+            SELECT codigo_liberacao, lote_info, usuario, data_hora, caminho_arquivo, status
             FROM app_pcp_releases
         `);
 
         const releasesMap = new Map();
-        releases.forEach(r => releasesMap.set(r.codigo_liberacao, r));
+        releases.forEach(r => {
+            if (r.codigo_liberacao) releasesMap.set(r.codigo_liberacao, r);
+            if (r.lote_info) releasesMap.set(r.lote_info, r);
+        });
 
         const lotMap = new Map();
         rowsForecast.forEach(rf => {
@@ -846,7 +952,13 @@ router.get('/active-lots', async (req, res) => {
             }
         });
 
-        res.json(Array.from(lotMap.values()));
+        // Retornar SOMENTE Lotes que ainda NÃO foram liberados para fabricação (status !== 'LIBERADO')
+        const unreleasedLots = Array.from(lotMap.values()).filter(lot => {
+            const rel = releasesMap.get(lot.codigo);
+            return !rel || rel.status !== 'LIBERADO';
+        });
+
+        res.json(unreleasedLots);
     } catch (err) {
         console.error('❌ [ACTIVE LOTS ERROR]', err);
         res.status(500).json({ error: err.message });

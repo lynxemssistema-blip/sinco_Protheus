@@ -39,7 +39,7 @@ export default function InternalRequestsPage() {
     };
 
     return (
-        <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
+        <div className="p-4 md:p-6 w-full max-w-[1920px] mx-auto">
             {/* Header / Filters - Hidden on Print */}
             <div className="print:hidden mb-6 space-y-4">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

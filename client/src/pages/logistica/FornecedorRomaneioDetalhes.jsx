@@ -129,7 +129,7 @@ export default function FornecedorRomaneioDetalhes() {
 
     if (error || !romaneio) {
         return (
-            <div className="p-8 max-w-7xl mx-auto text-center">
+            <div className="p-4 md:p-8 w-full max-w-[1920px] mx-auto text-center">
                 <div className="bg-red-50 text-red-700 p-4 rounded-xl inline-flex items-center gap-2">
                     <AlertTriangle className="h-5 w-5" />
                     <span>{error || 'Romaneio não encontrado'}</span>
@@ -144,7 +144,7 @@ export default function FornecedorRomaneioDetalhes() {
     }
 
     return (
-        <div className="p-8 max-w-7xl mx-auto min-h-screen">
+        <div className="p-4 md:p-8 w-full max-w-[1920px] mx-auto min-h-screen">
             {/* Header */}
             <div className="flex items-center gap-4 mb-8">
                 <button 

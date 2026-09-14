@@ -24,7 +24,7 @@ router.post('/login', async (req, res) => {
 
     try {
         const [rows] = await db.execute(
-            'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, fotoUsuario, email, aprovado, Senha, idFornecedor, lojaFornecedor, idCliente, lojaCliente, tipoExterno, pedidos_autorizados FROM usuario WHERE Login = ?',
+            'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, fotoUsuario, email, aprovado, status, Senha, idFornecedor, lojaFornecedor, idCliente, lojaCliente, tipoExterno, pedidos_autorizados FROM usuario WHERE Login = ?',
             [login]
         );
 
@@ -57,9 +57,9 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ error: 'Credenciais inválidas' });
         }
 
-        // Bloqueio de self-registration pending
-        if (user.aprovado === 0) {
-            return res.status(401).json({ error: 'Sua conta está em Análise. Aguarde a aprovação do Administrador para acessar o sistema.' });
+        // Bloqueio de conta pendente ou desativada
+        if (user.aprovado === 0 || user.status === '0') {
+            return res.status(401).json({ error: 'Sua conta está inativa ou aguardando aprovação do Administrador.' });
         }
 
         // Generate Token
@@ -179,11 +179,12 @@ router.post('/recuperar-senha', async (req, res) => {
 
 // Middleware for protected routes (exporting for use in other files if needed)
 const authenticateToken = (req, res, next) => {
-    // Bypass auth for document visualization, VMI model download, and webhooks
+    // Bypass auth for document visualization, VMI model download, WabTec Excel export, and webhooks
     if (
         req.originalUrl.startsWith('/api/docs/view') || 
         req.path === '/docs/view' ||
         req.originalUrl.startsWith('/api/vmi/modelo') ||
+        req.originalUrl.startsWith('/api/wabtec/exportar-excel') ||
         req.originalUrl.startsWith('/api/webhook')
     ) {
         return next();

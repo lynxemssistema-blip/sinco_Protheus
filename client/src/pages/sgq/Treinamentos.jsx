@@ -63,7 +63,7 @@ const SGQTraining = () => {
         <div className="min-h-screen bg-gray-50">
             {/* Header */}
             <div className="bg-white border-b border-gray-200">
-                <div className="max-w-7xl mx-auto px-6 py-6">
+                <div className="w-full max-w-[1920px] mx-auto px-4 md:px-8 py-6">
                     <button
                         onClick={() => navigate('/sgq')}
                         className="flex items-center text-gray-500 hover:text-blue-600 mb-4 transition-colors"
@@ -111,7 +111,7 @@ const SGQTraining = () => {
             </div>
 
             {/* Menu Tabs */}
-            <div className="max-w-7xl mx-auto px-6 py-8">
+            <div className="w-full max-w-[1920px] mx-auto px-4 md:px-8 py-8">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                     <div
                         onClick={() => setView('list')}

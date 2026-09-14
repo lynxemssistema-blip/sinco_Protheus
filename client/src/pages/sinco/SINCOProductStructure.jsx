@@ -318,8 +318,8 @@ const SINCOProductStructure = () => {
         <div className="flex flex-col h-full bg-slate-50">
 
             {/* Header & Search */}
-            <div className="bg-white border-b p-4 md:p-6 shadow-sm">
-                <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="bg-white border-b p-3 md:p-4 shadow-2xs">
+                <div className="w-full flex flex-col md:flex-row justify-between items-center gap-3">
                     <div className="flex items-center gap-3">
                         <div className="bg-blue-100 p-2 rounded-lg">
                             <Network className="h-6 w-6 text-blue-600" />
@@ -374,7 +374,7 @@ const SINCOProductStructure = () => {
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 overflow-auto p-4 md:p-6 max-w-7xl mx-auto w-full">
+            <div className="flex-1 overflow-auto p-2 sm:p-4 w-full">
 
                 {error && (
                     <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-4 flex items-center gap-2">

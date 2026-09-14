@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus, HelpCircle, Smartphone } from 'lucide-react';
+import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus, HelpCircle, Smartphone, Zap, RefreshCw, Clock } from 'lucide-react';
 import { api } from '../services/api';
 import { useHelp } from '../contexts/HelpContext';
 import HelpDrawer from '../components/HelpDrawer';
@@ -25,11 +25,56 @@ const Login = () => {
     const [loading, setLoading] = useState(false);
     const [showRecoveryHint, setShowRecoveryHint] = useState(false);
     
+    // Watchdog / Slowness / Wake-up states (Exibição condicional sob lentidão/queda)
+    const [isServerSlow, setIsServerSlow] = useState(false);
+    const [wakeUpLoading, setWakeUpLoading] = useState(false);
+    const [wakeUpCountdown, setWakeUpCountdown] = useState(15);
+    const [wakeUpCooldown, setWakeUpCooldown] = useState(0); // em minutos
+    const [wakeUpMessage, setWakeUpMessage] = useState('');
+    
     const [view, setView] = useState('login'); // 'login', 'recover', 'register'
 
     const { login, signed } = useAuth();
     const { toggleHelp } = useHelp();
     const navigate = useNavigate();
+
+    // Checa cooldown persistido e saúde do servidor
+    const checkCooldownAndHealth = React.useCallback(async () => {
+        const storedTime = localStorage.getItem('@MetalFisa:last_wake_up');
+        if (storedTime) {
+            const diff = Date.now() - parseInt(storedTime, 10);
+            const thirtyMin = 30 * 60 * 1000;
+            if (diff < thirtyMin) {
+                setWakeUpCooldown(Math.ceil((thirtyMin - diff) / 60000));
+            } else {
+                setWakeUpCooldown(0);
+            }
+        }
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3500);
+            const res = await fetch('/api/system/status', { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.slow || !data.online) {
+                    setIsServerSlow(true);
+                }
+                if (data.cooldownRemainingMs > 0) {
+                    setWakeUpCooldown(data.remainingMinutes);
+                }
+            } else {
+                setIsServerSlow(true);
+            }
+        } catch (e) {
+            setIsServerSlow(true);
+        }
+    }, []);
+
+    React.useEffect(() => {
+        checkCooldownAndHealth();
+    }, [checkCooldownAndHealth]);
 
     // If user is already logged in, redirect to dashboard automatically
     React.useEffect(() => {
@@ -38,19 +83,87 @@ const Login = () => {
         }
     }, [signed, navigate]);
 
+    const handleWakeUpServer = async () => {
+        setError('');
+        setWakeUpLoading(true);
+        setWakeUpCountdown(15);
+        setWakeUpMessage('Enviando sinal de reinício para o servidor...');
+
+        try {
+            const res = await fetch('/api/system/wake-up', { method: 'POST' });
+            const data = await res.json();
+
+            if (res.status === 429) {
+                setWakeUpLoading(false);
+                setWakeUpCooldown(data.remainingMinutes || 30);
+                setWakeUpMessage(data.message);
+                return;
+            }
+
+            localStorage.setItem('@MetalFisa:last_wake_up', Date.now().toString());
+            setWakeUpCooldown(30);
+
+            let count = 15;
+            const timer = setInterval(async () => {
+                count -= 1;
+                setWakeUpCountdown(count);
+
+                if (count % 3 === 0 || count <= 2) {
+                    try {
+                        const statusRes = await fetch('/api/system/status');
+                        if (statusRes.ok) {
+                            const statusData = await statusRes.json();
+                            if (statusData.online) {
+                                clearInterval(timer);
+                                setWakeUpLoading(false);
+                                setIsServerSlow(false);
+                                setSuccessMsg('Servidor reiniciado com sucesso! Você já pode entrar.');
+                                setWakeUpMessage('');
+                                return;
+                            }
+                        }
+                    } catch (err) {}
+                }
+
+                if (count <= 0) {
+                    clearInterval(timer);
+                    setWakeUpLoading(false);
+                    setWakeUpMessage('O servidor foi reiniciado. Tente efetuar o login novamente.');
+                }
+            }, 1000);
+
+        } catch (err) {
+            setWakeUpLoading(false);
+            setWakeUpMessage('Falha ao comunicar com o Watchdog. Verifique sua conexão.');
+        }
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setSuccessMsg('');
+        setWakeUpMessage('');
         setLoading(true);
 
+        const startTime = Date.now();
+        const slowTimer = setTimeout(() => {
+            setIsServerSlow(true);
+        }, 3500);
+
         const result = await login(loginInput, passwordInput);
+        clearTimeout(slowTimer);
 
         if (result.success) {
             navigate('/ajuda');
         } else {
             setError(result.message);
             setLoading(false);
+
+            const elapsed = Date.now() - startTime;
+            if (elapsed > 3500 || result.status >= 500 || result.isNetworkError) {
+                setIsServerSlow(true);
+            }
+
             if (result.message && result.message.toLowerCase().includes('credenciais')) {
                 setShowRecoveryHint(true);
             }
@@ -319,6 +432,50 @@ const Login = () => {
                                     </>
                                 )}
                             </button>
+
+                            {/* Card Condicional: Acordar o Servidor (Aparece APENAS se houver lentidão ou falha de conexão) */}
+                            {(isServerSlow || wakeUpLoading || wakeUpMessage) && (
+                                <div className="p-4 bg-amber-50/90 border border-amber-200 rounded-xl text-amber-900 text-xs shadow-sm transition-all duration-300">
+                                    <div className="flex items-start gap-2.5">
+                                        <Zap className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0 animate-pulse" />
+                                        <div className="flex-1">
+                                            <p className="font-bold text-amber-900 mb-0.5">
+                                                Lentidão ou Instabilidade Detectada
+                                            </p>
+                                            <p className="text-amber-700 leading-relaxed mb-3 text-[11px]">
+                                                O servidor demorou para responder ou está fora do ar. Você pode requisitar o reinício automático da aplicação.
+                                            </p>
+
+                                            {wakeUpLoading ? (
+                                                <div className="flex items-center gap-2 text-amber-900 font-semibold py-1">
+                                                    <RefreshCw className="w-4 h-4 animate-spin text-amber-600" />
+                                                    <span>Reiniciando aplicação... Aguarde ({wakeUpCountdown}s)</span>
+                                                </div>
+                                            ) : wakeUpCooldown > 0 ? (
+                                                <div className="text-amber-800 bg-amber-100/70 px-2.5 py-1.5 rounded-lg font-medium inline-flex items-center gap-1.5 text-[11px]">
+                                                    <Clock className="w-3.5 h-3.5 text-amber-700" />
+                                                    <span>Reinício permitido a cada 30 minutos. Restam: ~{wakeUpCooldown} min</span>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleWakeUpServer}
+                                                    className="inline-flex items-center gap-1.5 bg-[#FFB536] hover:bg-[#e6a230] text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-all shadow-sm hover:shadow active:scale-95 cursor-pointer"
+                                                >
+                                                    <Zap className="w-3.5 h-3.5" />
+                                                    Acordar o Servidor
+                                                </button>
+                                            )}
+
+                                            {wakeUpMessage && !wakeUpLoading && (
+                                                <p className="mt-2 text-[11px] text-amber-800 font-medium">
+                                                    {wakeUpMessage}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             
                             <div className="mt-4 text-center">
                                 <p className="text-sm text-gray-600">

@@ -1309,7 +1309,8 @@ router.get('/flat', async (req, res) => {
             }
             // --- FIM BUSCA DE PRIORIDADES DE OP ---
 
-            // --- INÍCIO CÁLCULO EVOLUÇÃO OP ---
+            // --- INÍCIO CÁLCULO EVOLUÇÃO OP (Opcional - somente se solicitado expressamente) ---
+            if (req.query.include_evolution === 'true') {
             try {
                 const uniqueOpNumsEvol = [...new Set(result.rows.map(r => r.op_num ? String(r.op_num).trim() : null).filter(Boolean))];
                 if (uniqueOpNumsEvol.length > 0) {
@@ -1385,6 +1386,7 @@ router.get('/flat', async (req, res) => {
                 }
             } catch (evolErr) {
                 console.error('[GET /flat] Erro no cálculo da evolução OP:', evolErr.message);
+            }
             }
             // --- FIM CÁLCULO EVOLUÇÃO OP ---
 

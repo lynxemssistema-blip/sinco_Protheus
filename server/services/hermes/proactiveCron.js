@@ -1,7 +1,6 @@
 const cron = require('node-cron');
 const mysqlService = require('../mysqlService');
 const db = require('../../db'); // PostgreSQL for Protheus
-const ioService = require('../../index'); // We need to export or pass IO
 
 let _io = null;
 
@@ -87,6 +86,10 @@ async function startProactiveMonitor() {
 
             console.log('🤖 [Hermes Proactive] Iniciando varredura bimestral de Gargalos de Planejamento...');
             
+            // Verificar se a tabela existe antes de consultar
+            const [tables] = await mysqlService.query("SHOW TABLES LIKE 'app_pcp_forecasts'");
+            if (tables.length === 0) return;
+
             const [atrasos] = await mysqlService.query(`
                 SELECT 
                     f.pedido_numero, f.op_numero, f.op_item, f.op_sequencia, f.operacao_codigo,
@@ -138,7 +141,7 @@ async function startProactiveMonitor() {
             }
 
         } catch (error) {
-            console.error('[Hermes Proactive] Erro na varredura de gargalos:', error);
+            console.error('[Hermes Proactive] Erro na varredura de gargalos:', error.message);
         }
     });
 

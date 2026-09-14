@@ -587,7 +587,6 @@ router.get('/visao', async (req, res) => {
                 LEFT JOIN sc2010 root_op ON root_op.c2_num = pl.c2_num AND root_op.c2_item = pl.c2_item AND root_op.c2_sequen = '001' AND COALESCE(root_op.d_e_l_e_t_, ' ') = ' '
                 WHERE ${conditions.join(' AND ')}
                 ORDER BY pl.c2_datpri DESC
-                LIMIT 4000
             `;
             const result = await db.query(opsQuery, params);
             opsRows = await populateMetadata(result.rows);

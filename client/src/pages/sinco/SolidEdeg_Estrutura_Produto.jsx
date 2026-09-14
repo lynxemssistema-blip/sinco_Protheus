@@ -303,7 +303,7 @@ export default function SolidEdeg_Estrutura_Produto() {
     const temArquivo = arquivo !== 'Nenhum arquivo carregado';
 
     return (
-        <div className="flex flex-col h-full bg-slate-50 p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">
+        <div className="flex flex-col h-full bg-slate-50 p-3 md:p-6 w-full max-w-[1920px] mx-auto space-y-4">
             
             {/* Header */}
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 flex flex-col md:flex-row justify-between items-center gap-4">
@@ -473,7 +473,7 @@ export default function SolidEdeg_Estrutura_Produto() {
                                                                 <span className="font-mono font-bold text-[11px] text-slate-700">{item.componente || item.codigo || '—'}</span>
                                                             </div>
                                                         </td>
-                                                        <td className="px-3 py-1.5 text-slate-600 text-[11px] leading-tight truncate max-w-[200px]" title={item.descricao}>
+                                                        <td className="px-3 py-1.5 text-slate-600 text-[11px] leading-tight truncate max-w-xs md:max-w-md lg:max-w-xl" title={item.descricao}>
                                                             {item.descricao || '—'}
                                                         </td>
                                                         <td className="px-3 py-1.5 text-right font-mono text-[11px] font-bold text-slate-700">

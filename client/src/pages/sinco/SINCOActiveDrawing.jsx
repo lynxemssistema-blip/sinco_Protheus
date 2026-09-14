@@ -124,7 +124,7 @@ const SINCOActiveDrawing = () => {
     );
 
     return (
-        <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div className="w-full px-2 sm:px-4 py-2 space-y-3">
             {/* Header Area */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 p-6 shadow-xl border-t-4 border-blue-500">
                 <div>

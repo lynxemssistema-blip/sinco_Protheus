@@ -1132,15 +1132,11 @@ router.post('/:codigo/extract-ai-batch', async (req, res) => {
         // 2. Extrair dados via Gemini
         const extractor = new PDFExtractionService(process.env.GEMINI_API_KEY);
         
-        // Função para resolver o caminho (importada de docs.js indiretamente / normalizar)
-        let normalizedPath = doc.url_arquivo.trim();
-        normalizedPath = normalizedPath.replace(/^Q:[\/\\]/i, '\\\\192.168.1.253\\Engenharia\\');
-        if (process.platform !== 'win32') {
-            normalizedPath = normalizedPath.replace(/\\/g, '/');
-            normalizedPath = normalizedPath.replace(/^\/\/192\.168\.1\.253\/Engenharia\//i, '/mnt/engenharia/');
-        }
+        // Função para resolver o caminho de forma case-insensitive no Linux/Windows
+        const { normalizeFilePath, resolveCaseInsensitivePath } = require('../utils/pathResolver');
+        const resolvedPath = resolveCaseInsensitivePath(normalizeFilePath(doc.url_arquivo));
 
-        const metadata = await extractor.extractFromPDF(normalizedPath);
+        const metadata = await extractor.extractFromPDF(resolvedPath);
 
         // 3. Atualizar o banco de dados (se não for apenas preview)
         if (req.query.preview !== 'true') {

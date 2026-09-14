@@ -3,16 +3,7 @@ const mysqlPool = require('./mysqlService');
 const fs = require('fs').promises;
 const path = require('path');
 
-function normalizeFilePath(filePath) {
-    if (!filePath) return filePath;
-    let normalized = filePath.trim();
-    normalized = normalized.replace(/^Q:[\/\\]/i, '\\\\192.168.1.253\\Engenharia\\');
-    if (process.platform !== 'win32') {
-        normalized = normalized.replace(/\\/g, '/');
-        normalized = normalized.replace(/^\/\/192\.168\.1\.253\/Engenharia\//i, '/mnt/engenharia/');
-    }
-    return normalized;
-}
+const { normalizeFilePath, resolveCaseInsensitivePath } = require('../utils/pathResolver');
 
 const generateRomaneioBundle = async (romaneioId, { usuarioGerador } = {}) => {
     // 1. Fetch Romaneio Header
@@ -148,7 +139,8 @@ const generateRomaneioBundle = async (romaneioId, { usuarioGerador } = {}) => {
             }
             const urlArq = (docs[0].url_arquivo || '').toLowerCase();
             if (urlArq.includes('.pdf')) {
-                item.docPath = normalizeFilePath(docs[0].url_arquivo);
+                const normalized = normalizeFilePath(docs[0].url_arquivo);
+                item.docPath = resolveCaseInsensitivePath(normalized);
                 item.item_index = i + 1;
                 comPdf.push(item);
             } else {

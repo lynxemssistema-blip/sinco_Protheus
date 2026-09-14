@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
 import ProductDocuments from './ProductDocuments';
 
-export default function DocsModal({ isOpen, onClose, productCode, productName, canEdit = true }) {
+export default function DocsModal({ isOpen, onClose, productCode, productName, altCode = null, canEdit = true }) {
     // Fechar ao pressionar ESC
     useEffect(() => {
         const handleEsc = (e) => {
@@ -25,7 +25,7 @@ export default function DocsModal({ isOpen, onClose, productCode, productName, c
                     <div>
                         <h3 className="text-lg font-bold text-gray-900">Documentos do Produto</h3>
                         <p className="text-sm text-gray-500 font-mono mt-0.5">
-                            {productCode} <span className="mx-1">•</span> {productName}
+                            {productCode} {altCode && altCode !== productCode ? `(Ref: ${altCode})` : ''} <span className="mx-1">•</span> {productName}
                         </p>
                     </div>
                     <button
@@ -38,7 +38,7 @@ export default function DocsModal({ isOpen, onClose, productCode, productName, c
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6 bg-gray-50/30">
-                    <ProductDocuments produtoCodigo={productCode} canEdit={canEdit} />
+                    <ProductDocuments produtoCodigo={productCode} altCodigo={altCode} canEdit={canEdit} />
                 </div>
             </div>
         </div>

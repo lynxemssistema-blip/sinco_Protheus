@@ -1,8 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Save, Search, FileText, Download, FileDigit, Settings, RefreshCw, Upload, FileSignature, Plus, X, Pencil, CheckCircle, AlertTriangle, XCircle, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { 
+    Save, Search, FileText, Download, FileDigit, Settings, RefreshCw, Upload, 
+    FileSignature, Plus, X, Pencil, Edit3, CheckCircle, AlertTriangle, XCircle, Trash2, 
+    Sparkles, UploadCloud, FolderInput, Paperclip, Maximize2, Minimize2, Loader2,
+    Network, Layers, Package, ExternalLink, Eye, Filter, Wrench, Building2, 
+    Printer, FileSpreadsheet, CheckCircle2, ChevronRight, ChevronDown, FolderOpen
+} from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import api, { getSincoArvore, getSincoRestricoes, getSincoRestricoesSz0, createSincoRestricaoSz0, getSincoOperacoes, getSincoProduto, updateSincoProduto, updateSincoProductStructure, updateSincoRoteiro, updateSincoProdutoCliente, searchSincoProdutos, getProcessList, getClientes, getProductDocuments } from '../../services/api';
+import * as XLSX from 'xlsx';
+import api, { getSincoArvore, getSincoArvoreCompleta, getSincoRestricoes, getSincoRestricoesSz0, createSincoRestricaoSz0, getSincoOperacoes, getSincoProduto, updateSincoProduto, updateSincoProductStructure, updateSincoRoteiro, updateSincoProdutoCliente, searchSincoProdutos, getProcessList, getClientes, getProductDocuments } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import CriarProdutoProtheusModal from '../../components/wabtec/CriarProdutoProtheusModal';
+import DocsModal from '../../components/DocsModal';
+import SincoComponenteModal from '../../components/sinco/SincoComponenteModal';
+import SincoNodeManager from '../../components/sinco/SincoNodeManager';
 
 const estadoVazio = {
     arquivo: 'Nenhum arquivo carregado',
@@ -22,7 +33,7 @@ const estadoVazio = {
 };
 
 export default function SINCOFormularioPrincipal() {
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const { user } = useAuth();
 
     const [dados, setDados] = useState({
@@ -105,6 +116,24 @@ export default function SINCOFormularioPrincipal() {
     const [searchingCliente, setSearchingCliente] = useState(false);
     const [activeClienteRowIndex, setActiveClienteRowIndex] = useState(null);
 
+    // Debounce automático para busca de clientes no modal Protheus (SZ1)
+    useEffect(() => {
+        if (!showSearchClienteModal) return;
+        const timer = setTimeout(() => {
+            const q = searchClienteQuery ? searchClienteQuery.trim() : '';
+            setSearchingCliente(true);
+            getClientes(q)
+                .then(res => setSearchClienteResults(Array.isArray(res) ? res : []))
+                .catch(err => {
+                    console.error('Erro ao buscar clientes:', err);
+                    showToast("Erro ao buscar clientes", 'error');
+                })
+                .finally(() => setSearchingCliente(false));
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [searchClienteQuery, showSearchClienteModal]);
+
     useEffect(() => {
         getProcessList().then(res => {
             if (res && res.data) {
@@ -132,11 +161,221 @@ export default function SINCOFormularioPrincipal() {
         setTimeout(() => setToast(null), 3500);
     }, []);
 
-    // PDF URL from ERP
+    // PDF URL from ERP e Lista de Documentos
     const [pdfDocUrl, setPdfDocUrl] = useState(null);
+    const [productDocs, setProductDocs] = useState([]);
+    const [showDocsModal, setShowDocsModal] = useState(false);
+    const [openMenuDocs, setOpenMenuDocs] = useState(false);
+    const [maximizedPanel, setMaximizedPanel] = useState(null); // 'arvore' | 'restricoes' | 'operacoes' | 'sz0' | null
 
+    // Modal de Cadastro de Produto no Protheus (TOTVS)
+    const [modalCriarProdutoOpen, setModalCriarProdutoOpen] = useState(false);
+    const [itemParaCriarProduto, setItemParaCriarProduto] = useState(null);
 
-    // Automatic Calculation of Peso and Area Pintura
+    // Aba Principal (Opção A: Página Inteira): 'formulario' | 'arvore'
+    const [activeMainTab, setActiveMainTab] = useState('formulario');
+
+    // Estados da Aba Estrutura em Árvore Completa (Multinível Recursiva)
+    const [arvoreCompleta, setArvoreCompleta] = useState([]);
+    const [loadingArvoreCompleta, setLoadingArvoreCompleta] = useState(false);
+    const [treeFilterText, setTreeFilterText] = useState('');
+    const [treeValidationStatus, setTreeValidationStatus] = useState({});
+    const [loadingTreeValidation, setLoadingTreeValidation] = useState(false);
+    const [selectedComponenteModal, setSelectedComponenteModal] = useState(null);
+
+    // 3 Modos de Visualização: 'accordion' | 'drawer' | 'modal'
+    const [treeViewMode, setTreeViewMode] = useState(() => {
+        return localStorage.getItem('sinco_arvore_view_mode') || 'accordion';
+    });
+    const handleSetTreeViewMode = (mode) => {
+        setTreeViewMode(mode);
+        localStorage.setItem('sinco_arvore_view_mode', mode);
+    };
+    const [expandedNodeAccordion, setExpandedNodeAccordion] = useState(null);
+    const [activeDrawerNode, setActiveDrawerNode] = useState(null);
+    const [activeModalNode, setActiveModalNode] = useState(null);
+
+    const codigoAtual = (dados.arquivo !== estadoVazio.arquivo && dados.arquivo
+        ? dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase() 
+        : (busca ? busca.replace(/\.[^/.]+$/, '').trim().toUpperCase() : ''));
+
+    const handleRefreshDocs = useCallback(async (codParam = null) => {
+        const cod = (codParam || codigoAtual || '').trim().toUpperCase();
+        if (!cod || cod === estadoVazio.arquivo.toUpperCase()) {
+            setProductDocs([]);
+            setPdfDocUrl(null);
+            return;
+        }
+        try {
+            const docs = await getProductDocuments(cod);
+            if (Array.isArray(docs)) {
+                setProductDocs(docs);
+                const desenho = docs.find(d => d.tipo === 'Desenho') || docs[0];
+                if (desenho?.url_arquivo) {
+                    setPdfDocUrl(desenho.url_arquivo);
+                } else {
+                    setPdfDocUrl(null);
+                }
+            } else {
+                setProductDocs([]);
+                setPdfDocUrl(null);
+            }
+        } catch (e) {
+            console.warn('[SINCO] Erro ao sincronizar documentos:', e);
+            setProductDocs([]);
+        }
+    }, [codigoAtual]);
+
+    const handleAbrirCadastroNovo = (customItemParam = null) => {
+        // Se foi disparado diretamente pelo evento onClick do React, descarta o SyntheticEvent
+        const isCustomValid = customItemParam && typeof customItemParam.preventDefault !== 'function' && !customItemParam.nativeEvent && !customItemParam._reactName;
+        const customItem = isCustomValid ? customItemParam : null;
+
+        if (!customItem) {
+            // Abertura LIMPA/NOVA (botão superior "Cadastrar no Protheus"):
+            // Nenhum dado do produto atualmente visualizado na tela deve sujar o novo cadastro.
+            setItemParaCriarProduto({
+                is_clean: true,
+                desenho_cliente: '',
+                b1_xcode: '',
+                b1_xcoddes: '',
+                rev_convertida: '00',
+                rev_cliente_raw: '00',
+                revisao: '00',
+                nivel: 'PA',
+                titulo: '',
+                uom: 'PC',
+                peso: '',
+                comprimento: '',
+                largura: '',
+                espessura: '',
+                volume: '',
+                cliente_codigo: '',
+                cliente_loja: '0001',
+                cliente_nome: '',
+                badge: 'CADASTRO SOLID EDGE',
+                is_sinco: true
+            });
+            setModalCriarProdutoOpen(true);
+            return;
+        }
+
+        // Se veio de um item customizado (ex: linha da árvore BOM não mapeada)
+        setItemParaCriarProduto({
+            ...customItem,
+            desenho_cliente: customItem.desenho_cliente || '',
+            b1_xcode: customItem.b1_xcode || customItem.desenho_cliente || 'Novo Cadastro Pelo SINCO',
+            b1_xcoddes: customItem.b1_xcoddes || customItem.desenho_cliente || 'Novo Cadastro Pelo SINCO',
+            rev_convertida: customItem.rev_convertida || '00',
+            rev_cliente_raw: customItem.rev_cliente_raw || '00',
+            revisao: customItem.revisao || '00',
+            nivel: customItem.nivel || 'N1',
+            titulo: customItem.titulo || '',
+            uom: customItem.uom || 'PC',
+            peso: customItem.peso || '',
+            comprimento: customItem.comprimento || '',
+            largura: customItem.largura || '',
+            espessura: customItem.espessura || '',
+            volume: customItem.volume || '',
+            cliente_codigo: customItem.cliente_codigo || '',
+            cliente_loja: customItem.cliente_loja || '0001',
+            cliente_nome: customItem.cliente_nome || '',
+            badge: 'CADASTRO SOLID EDGE',
+            is_sinco: true
+        });
+        setModalCriarProdutoOpen(true);
+    };
+
+    const handleProdutoCriadoComSucesso = async (resData) => {
+        const novoCodigo = resData?.codigo;
+        if (novoCodigo) {
+            showToast(`🎉 Produto ${novoCodigo} gerado e cadastrado no Protheus com sucesso!`, 'success');
+            
+            // Se foi aberto a partir de uma linha da árvore (BOM)
+            if (itemParaCriarProduto?._targetRowIndex !== undefined && itemParaCriarProduto?._targetRowIndex !== null) {
+                const rowIdx = itemParaCriarProduto._targetRowIndex;
+                const newArr = [...editedArvore];
+                if (newArr[rowIdx]) {
+                    newArr[rowIdx].componente = novoCodigo;
+                    newArr[rowIdx].descricao = resData.descricao || itemParaCriarProduto.titulo || '';
+                    newArr[rowIdx].unidade = resData.uom || 'PC';
+                    setEditedArvore(newArr);
+                }
+                return;
+            }
+
+            // Se foi o produto principal: preenche imediatamente todos os dados do formulário
+            setBusca(novoCodigo);
+            setProdutoNaoNoMirror(false);
+            setErroProtheus(null);
+
+            setDados(prev => ({
+                ...prev,
+                arquivo: novoCodigo,
+                caminho: `Cadastrado no Protheus (${resData.desenho_cliente || resData.b1_xcoddes || 'Novo Cadastro Pelo SINCO'})`,
+                titulo: resData.descricao || itemParaCriarProduto?.titulo || prev.titulo,
+                tipo: resData.protheus_tipo || resData.tipo || itemParaCriarProduto?.tipo || prev.tipo,
+                unidade: resData.uom || resData.um || itemParaCriarProduto?.um || prev.unidade,
+                grupo: resData.grupo || (itemParaCriarProduto?.grupo ? String(itemParaCriarProduto.grupo).split(/[\-\s]/)[0] : '') || prev.grupo,
+                rev: resData.revisao || itemParaCriarProduto?.revisao_cliente || '00',
+                peso: resData.peso !== undefined && resData.peso !== '' ? String(resData.peso) : (itemParaCriarProduto?.peso || prev.peso),
+                comprimento: resData.comprimento !== undefined && resData.comprimento !== '' ? String(resData.comprimento) : (itemParaCriarProduto?.comprimento || prev.comprimento),
+                largura: resData.largura !== undefined && resData.largura !== '' ? String(resData.largura) : (itemParaCriarProduto?.largura || prev.largura),
+                espessura: resData.espessura !== undefined && resData.espessura !== '' ? String(resData.espessura) : (itemParaCriarProduto?.espessura || prev.espessura),
+                area: resData.volume !== undefined && resData.volume !== '' ? String(resData.volume) : (itemParaCriarProduto?.volume || prev.area)
+            }));
+
+            // Atualiza e recarrega toda a tela do Solid Edge (Árvore, Restrições SZ1, Operações/Roteiro, SZ0 e Documentos)
+            await carregarProtheus(novoCodigo);
+            handleRefreshDocs(novoCodigo);
+
+            // Garante exibição imediata do vínculo SZ1 na tabela da tela sem depender de latência de replicação
+            if (resData.cliente_codigo) {
+                setRestricoes(prev => {
+                    const filtrado = (prev || []).filter(r => !(
+                        r.cliente === resData.cliente_codigo && 
+                        (r.cod_cliente === resData.desenho_cliente || !r.cod_cliente)
+                    ));
+                    return [
+                        ...filtrado,
+                        {
+                            cliente: resData.cliente_codigo,
+                            loja: resData.cliente_loja || '0001',
+                            nome_cliente: resData.cliente_nome || '',
+                            desc_cliente: resData.cliente_nome || '',
+                            cod_cliente: resData.desenho_cliente || '',
+                            revisao: resData.revisao || '00'
+                        }
+                    ];
+                });
+            }
+
+            // Atualiza URL para refletir o novo produto no SINCO
+            try {
+                setSearchParams({ arquivo: novoCodigo }, { replace: true });
+            } catch (urlErr) {
+                console.warn('Erro ao atualizar searchParams:', urlErr);
+            }
+
+            // Consulta no banco Protheus para certificar dados gerais
+            try {
+                const prodDetalhe = await getSincoProduto(novoCodigo);
+                if (prodDetalhe) {
+                    setDados(prev => ({
+                        ...prev,
+                        titulo: prodDetalhe.titulo || prev.titulo,
+                        tipo: prodDetalhe.tipo || prev.tipo,
+                        unidade: prodDetalhe.unidade || prev.unidade,
+                        grupo: prodDetalhe.grupo || prev.grupo,
+                        peso: prodDetalhe.peso || prev.peso,
+                        rev: prodDetalhe.xrevm || prev.rev
+                    }));
+                }
+            } catch (e) {
+                // Silencioso se o espelho local do Protheus ainda sincronizará
+            }
+        }
+    };
     useEffect(() => {
         const e = parseFloat(String(dados.espessura).replace(',', '.')) || 0;
         const l = parseFloat(String(dados.largura).replace(',', '.')) || 0;
@@ -177,13 +416,15 @@ export default function SINCOFormularioPrincipal() {
         setLoadingRest(true);
         setLoadingOpe(true);
         setLoadingSz0(true);
+        setLoadingArvoreCompleta(true);
         try {
-            const [rA, rR, rO, rSz0, rDocs] = await Promise.all([
+            const [rA, rR, rO, rSz0, rDocs, rACompleta] = await Promise.all([
                 getSincoArvore(codigoSemExtensao),
                 getSincoRestricoes(codigoSemExtensao),
                 getSincoOperacoes(codigoSemExtensao),
                 getSincoRestricoesSz0(codigoSemExtensao),
-                getProductDocuments(codigoSemExtensao).catch(() => []) // Fallback in case it fails
+                getProductDocuments(codigoSemExtensao).catch(() => []),
+                getSincoArvoreCompleta(codigoSemExtensao).catch(() => [])
             ]);
             setArvore(Array.isArray(rA) ? rA : []);
             setEditedArvore(Array.isArray(rA) ? JSON.parse(JSON.stringify(rA)) : []);
@@ -192,13 +433,16 @@ export default function SINCOFormularioPrincipal() {
             const rOMapped = Array.isArray(rO) ? rO.map(o => ({...o, _original_operacao: o.operacao})) : [];
             setOperacoes(rOMapped);
             setRestricoesSz0(Array.isArray(rSz0) ? rSz0 : []);
+            setArvoreCompleta(Array.isArray(rACompleta) ? rACompleta : []);
             
             // Verifica se tem PDF de desenho
             if (Array.isArray(rDocs) && rDocs.length > 0) {
+                setProductDocs(rDocs);
                 // Tenta achar o primeiro arquivo do tipo Desenho
                 const desenho = rDocs.find(d => d.tipo === 'Desenho') || rDocs[0];
                 setPdfDocUrl(desenho.url_arquivo);
             } else {
+                setProductDocs([]);
                 setPdfDocUrl(null);
             }
         } catch (error) {
@@ -208,11 +452,15 @@ export default function SINCOFormularioPrincipal() {
             setRestricoes([]);
             setOperacoes([]);
             setRestricoesSz0([]);
+            setArvoreCompleta([]);
+            setProductDocs([]);
+            setPdfDocUrl(null);
         } finally {
             setLoadingArvore(false);
             setLoadingRest(false);
             setLoadingOpe(false);
             setLoadingSz0(false);
+            setLoadingArvoreCompleta(false);
         }
     }, []);
 
@@ -239,7 +487,7 @@ export default function SINCOFormularioPrincipal() {
         let socket = null;
         import('socket.io-client').then(({ io }) => {
             const socketUrl = api.defaults.baseURL.replace(/\/api\/?$/, '');
-            socket = io(socketUrl, { transports: ['websocket', 'polling'] });
+            socket = io(socketUrl, { transports: ['polling', 'websocket'] });
             socket.on('connect', () => { socket.emit('join_sinco_formulario'); });
             socket.on('sinco:desenho_atualizado', (novos) => {
                 setDados(prev => {
@@ -355,9 +603,11 @@ export default function SINCOFormularioPrincipal() {
             showToast('Dados do produto atualizados no Protheus com sucesso!', 'success');
             setIsEditingDadosGerais(false);
         } catch (error) {
-            console.error('Erro ao salvar dados do produto:', error);
-            setErroProtheus(error.response?.data?.details || error.message);
-            showToast('Erro ao atualizar produto.', 'error');
+            console.error('Erro ao salvar dados do produto:', error.response?.data || error);
+            const msg = error.response?.data?.details?.message || error.response?.data?.details || error.response?.data?.error || error.message;
+            const strMsg = typeof msg === 'object' ? JSON.stringify(msg) : msg;
+            setErroProtheus(strMsg);
+            showToast('Erro ao atualizar produto: ' + strMsg, 'error');
         } finally {
             setLoadingData(false);
         }
@@ -422,8 +672,12 @@ export default function SINCOFormularioPrincipal() {
             setNovaRestricao({ resumo: '', restricao: '', responsavel: '', revMetalfisa: '', status: 'P' });
             const rSz0 = await getSincoRestricoesSz0(produto);
             setRestricoesSz0(Array.isArray(rSz0) ? rSz0 : []);
+            showToast('Restrição SZ0 salva com sucesso!', 'success');
         } catch (err) {
-            showToast('Erro ao salvar restrição: ' + (err.response?.data?.error || err.response?.data?.message || err.message), 'error');
+            console.error('Erro ao salvar restrição SZ0:', err.response?.data || err);
+            const msg = err.response?.data?.details?.message || err.response?.data?.details || err.response?.data?.error || err.response?.data?.message || err.message;
+            const strMsg = typeof msg === 'object' ? JSON.stringify(msg) : msg;
+            showToast('Erro ao salvar restrição: ' + strMsg, 'error');
         } finally {
             setSavingSz0(false);
         }
@@ -459,7 +713,10 @@ export default function SINCOFormularioPrincipal() {
             const rSz0 = await getSincoRestricoesSz0(produto);
             setRestricoesSz0(Array.isArray(rSz0) ? rSz0 : []);
         } catch (err) {
-            showToast('Erro do Protheus ao excluir (Provável Erro 500 na API): ' + (err.response?.data?.error || err.response?.data?.message || err.message), 'error');
+            console.error('Erro ao excluir restrição SZ0:', err.response?.data || err);
+            const msg = err.response?.data?.details?.message || err.response?.data?.details || err.response?.data?.error || err.response?.data?.message || err.message;
+            const strMsg = typeof msg === 'object' ? JSON.stringify(msg) : msg;
+            showToast('Erro do Protheus ao excluir: ' + strMsg, 'error');
         } finally {
             setLoadingSz0(false);
         }
@@ -608,7 +865,10 @@ export default function SINCOFormularioPrincipal() {
             // Recarrega os dados do ERP
             await carregarProtheus(produtoPai);
         } catch (err) {
-            showToast('Erro ao salvar estrutura: ' + (err.response?.data?.error || err.response?.data?.details || err.message), 'error');
+            console.error('Erro ao salvar estrutura (BOM):', err.response?.data || err);
+            const msg = err.response?.data?.details?.message || err.response?.data?.details || err.response?.data?.error || err.message;
+            const strMsg = typeof msg === 'object' ? JSON.stringify(msg) : msg;
+            showToast('Erro ao salvar estrutura: ' + strMsg, 'error');
         } finally {
             setSavingArvore(false);
         }
@@ -759,8 +1019,10 @@ export default function SINCOFormularioPrincipal() {
             showToast('Roteiro atualizado com sucesso no Protheus!', 'success');
             await carregarProtheus(produtoPai);
         } catch (err) {
-            console.error('❌ Falha ao salvar Roteiro:', err);
-            showToast('Erro ao salvar roteiro: ' + (err.response?.data?.error || err.response?.data?.details || err.message), 'error');
+            console.error('❌ Falha ao salvar Roteiro:', err.response?.data || err);
+            const msg = err.response?.data?.details?.message || err.response?.data?.details || err.response?.data?.error || err.message;
+            const strMsg = typeof msg === 'object' ? JSON.stringify(msg) : msg;
+            showToast('Erro ao salvar roteiro: ' + strMsg, 'error');
         } finally {
             setSavingOperacoes(false);
         }
@@ -858,7 +1120,10 @@ export default function SINCOFormularioPrincipal() {
             setRestricoes(Array.isArray(res) ? res : []);
             setIsEditingRestricoes(false);
         } catch (err) {
-            showToast('Erro ao salvar Produtos x Cliente: ' + (err.response?.data?.error || err.response?.data?.details || err.message), 'error');
+            console.error('Erro ao salvar Produtos x Cliente SZ1:', err.response?.data || err);
+            const msg = err.response?.data?.details?.message || err.response?.data?.details || err.response?.data?.error || err.message;
+            const strMsg = typeof msg === 'object' ? JSON.stringify(msg) : msg;
+            showToast('Erro ao salvar Produtos x Cliente: ' + strMsg, 'error');
         } finally {
             setSavingRestricoes(false);
         }
@@ -868,116 +1133,389 @@ export default function SINCOFormularioPrincipal() {
     const listOperacoes = isEditingOperacoes ? editedOperacoes : operacoes;
     const listRestricoes = isEditingRestricoes ? editedRestricoes : restricoes;
 
-    const inputCls = "w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 placeholder-slate-400";
-    const readCls = "w-full px-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-md text-sm font-mono text-slate-600";
-    const lblCls = "block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1";
-    const boxTitleCls = "text-xs font-semibold uppercase tracking-wider px-3 py-2 border-b";
-    const thCls = "px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider bg-white sticky top-0 border-b border-slate-100";
+    // Revalidação sob demanda da árvore completa
+    const handleRevalidarArvore = useCallback(async () => {
+        if (!temArquivo) return;
+        const codLimpo = dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
+        try {
+            setLoadingArvoreCompleta(true);
+            const comp = await getSincoArvoreCompleta(codLimpo);
+            if (Array.isArray(comp)) setArvoreCompleta(comp);
+        } catch (e) {
+            console.error("Erro ao revalidar arvore completa:", e);
+        } finally {
+            setLoadingArvoreCompleta(false);
+        }
+    }, [temArquivo, dados.arquivo]);
+
+    // Mapeamento normalizado dos itens da árvore hierárquica (Multinível Completa)
+    const rowsArvore = useMemo(() => {
+        const rawList = arvoreCompleta && arvoreCompleta.length > 0 ? arvoreCompleta : arvore;
+        const list = [];
+
+        // 1. Nó Raiz (Nível 0 - O Produto Pai)
+        if (temArquivo) {
+            const codPai = dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
+            list.push({
+                index: 0,
+                isRoot: true,
+                codigoOriginal: codPai,
+                codigoLimpo: codPai,
+                descricao: dados.titulo || dados.descricao || 'PRODUTO PRINCIPAL (RAIZ)',
+                nivel: 0,
+                quantidade: 1,
+                unidade: dados.unidade || 'UN',
+                tipo: dados.tipo || 'PA',
+                pai: null,
+                caminho_hierarquico: codPai
+            });
+        }
+
+        // 2. Nós Filhos (N1, N2, N3, N4...)
+        if (Array.isArray(rawList) && rawList.length > 0) {
+            rawList.forEach((item, index) => {
+                let componenteBruto = item.componente || item.B1_COD || item.Arquivo || item.CaminhoCompleto || item.codigo || '';
+                let componenteLimpo = componenteBruto;
+                if (componenteLimpo) {
+                    componenteLimpo = String(componenteLimpo).trim();
+                    const lastDot = componenteLimpo.lastIndexOf('.');
+                    if (lastDot > 0 && !componenteLimpo.includes('/') && !componenteLimpo.includes('\\')) {
+                        const ext = componenteLimpo.substring(lastDot + 1).toLowerCase();
+                        if (['asm', 'par', 'psm', 'dft', 'pwd'].includes(ext)) {
+                            componenteLimpo = componenteLimpo.substring(0, lastDot);
+                        }
+                    }
+                    componenteLimpo = componenteLimpo.toUpperCase();
+                }
+
+                const nivelNum = item.nivel !== undefined ? Number(item.nivel) : (item.Nivel !== undefined ? Number(item.Nivel) : 1);
+                const qtdNum = item.quantidade !== undefined ? Number(item.quantidade) : (item.QUANTIDADE !== undefined ? Number(item.QUANTIDADE) : (item.QtdeTotal !== undefined ? Number(item.QtdeTotal) : 1));
+                const descStr = item.descricao || item.B1_DESC || item.Título || item.DescDetal || item.Assunto || '';
+                const umStr = item.unidade || item.B1_UM || item.Unidade || item.um || 'UN';
+                const tipoStr = item.tipo || item.B1_TIPO || item.TipoArquivo || '';
+
+                list.push({
+                    index: index + 1,
+                    isRoot: false,
+                    codigoOriginal: componenteBruto,
+                    codigoLimpo: componenteLimpo || componenteBruto,
+                    descricao: descStr,
+                    nivel: isNaN(nivelNum) ? 1 : nivelNum,
+                    quantidade: isNaN(qtdNum) ? 1 : qtdNum,
+                    unidade: umStr,
+                    tipo: tipoStr,
+                    pai: item.pai || null,
+                    caminho_hierarquico: item.caminho_hierarquico || null,
+                    trt: item.trt || null
+                });
+            });
+        }
+
+        return list;
+    }, [temArquivo, dados, arvore, arvoreCompleta]);
+
+    // Validação automática de todos os níveis da árvore no Protheus
+    useEffect(() => {
+        if (!rowsArvore || rowsArvore.length === 0) {
+            setTreeValidationStatus({});
+            return;
+        }
+
+        const fetchValidation = async () => {
+            setLoadingTreeValidation(true);
+            try {
+                const components = [...new Set(rowsArvore.map(r => r.codigoLimpo).filter(Boolean))];
+                if (components.length > 0) {
+                    const res = await api.post('/sinco/validar-estruturas', { components });
+                    setTreeValidationStatus(res.data || {});
+                }
+            } catch (err) {
+                console.error("Erro ao validar estruturas da árvore:", err);
+            } finally {
+                setLoadingTreeValidation(false);
+            }
+        };
+
+        fetchValidation();
+    }, [rowsArvore]);
+
+    const handleOpenNode = (node) => {
+        if (treeViewMode === 'accordion') {
+            setExpandedNodeAccordion(prev => prev === node.codigoLimpo ? null : node.codigoLimpo);
+        } else if (treeViewMode === 'drawer') {
+            setActiveDrawerNode(node);
+        } else {
+            setActiveModalNode(node);
+        }
+    };
+
+    // Filtragem em tempo real na árvore
+    const filteredRowsArvore = useMemo(() => {
+        if (!treeFilterText) return rowsArvore;
+        const term = treeFilterText.toLowerCase().trim();
+        return rowsArvore.filter(r => 
+            r.codigoLimpo.toLowerCase().includes(term) ||
+            r.codigoOriginal.toLowerCase().includes(term) ||
+            r.descricao.toLowerCase().includes(term) ||
+            String(r.nivel).includes(term)
+        );
+    }, [rowsArvore, treeFilterText]);
+
+    // Exportação da árvore para Excel (.xlsx)
+    const handleExportArvoreExcel = () => {
+        if (!rowsArvore || rowsArvore.length === 0) {
+            showToast('Nenhum dado na árvore para exportar', 'error');
+            return;
+        }
+
+        const exportData = rowsArvore.map(r => {
+            const vStatus = treeValidationStatus[r.codigoLimpo] || {};
+            return {
+                'Nível': r.nivel,
+                'Código': r.codigoLimpo,
+                'Descrição': r.descricao,
+                'Quantidade': r.quantidade,
+                'Unidade': r.unidade,
+                'BOM (SG1)': vStatus.materiais ? 'Sim' : 'Não',
+                'Cliente (SZ1)': vStatus.sz1 ? 'Sim' : 'Não',
+                'Roteiro (SG2)': vStatus.roteiro ? 'Sim' : 'Não',
+                'Restrições (SZ0)': vStatus.sz0 ? 'Sim' : 'Não'
+            };
+        });
+
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        ws['!cols'] = [
+            { wch: 8 },
+            { wch: 24 },
+            { wch: 48 },
+            { wch: 12 },
+            { wch: 8 },
+            { wch: 14 },
+            { wch: 14 },
+            { wch: 14 },
+            { wch: 16 }
+        ];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Estrutura_Arvore");
+        const codRoot = dados.arquivo.replace(/\.[^/.]+$/, '').trim() || 'Produto';
+        XLSX.writeFile(wb, `Estrutura_Arvore_${codRoot}_${new Date().toISOString().split('T')[0]}.xlsx`);
+        showToast('Planilha Excel gerada com sucesso!', 'success');
+    };
+
+    // Ação: Abrir PDF de um componente específico da árvore
+    const handleAbrirPdfComponente = async (codigoComp) => {
+        const codLimpo = String(codigoComp).replace(/\.[^/.]+$/, '').trim().toUpperCase();
+        try {
+            const docsComp = await getProductDocuments(codLimpo);
+            if (Array.isArray(docsComp) && docsComp.length > 0) {
+                const pdfDoc = docsComp.find(d => (d.caminho_relativo || d.nome_arquivo || '').toLowerCase().endsWith('.pdf')) || docsComp[0];
+                const pdfPath = pdfDoc.caminho_relativo || pdfDoc.url_arquivo;
+                if (pdfPath) {
+                    window.open(`/api/docs/view?path=${encodeURIComponent(pdfPath)}`, '_blank', 'noopener,noreferrer');
+                    return;
+                }
+            }
+            showToast(`Nenhum documento PDF cadastrado para o componente ${codLimpo}`, 'info');
+        } catch (e) {
+            showToast(`Erro ao buscar documento do componente ${codLimpo}`, 'error');
+        }
+    };
+
+    // Ação: Carregar qualquer nó da árvore como o produto ativo no formulário
+    const handleCarregarNoFormulario = (codigoComp) => {
+        const codLimpo = String(codigoComp).replace(/\.[^/.]+$/, '').trim().toUpperCase();
+        setBusca(codLimpo);
+        buscarProdutoManual(codLimpo);
+        setActiveMainTab('formulario');
+        showToast(`Componente ${codLimpo} carregado no Formulário Solid Edge!`, 'success');
+    };
+
+    const inputCls = "w-full px-2 py-0.5 bg-white border border-amber-300 rounded text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 h-7";
+    const readCls = "w-full px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-xs font-mono text-slate-600 h-7";
+    const lblCls = "block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5 truncate";
+    const boxTitleCls = "text-xs font-bold uppercase tracking-wider px-2.5 py-1 border-b";
+    const thCls = "px-2 py-1 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 sticky top-0 border-b border-slate-200 z-10 whitespace-nowrap";
 
     return (
-        <div className="flex flex-col h-screen space-y-4 max-w-[1800px] mx-auto p-4 overflow-hidden">
-            {/* Cabeçalho */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-xl font-bold tracking-tight text-slate-900">SINCO - Solid Edge - Lynx</h1>
-                    <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
-                            Web Version (MetalFisa 5 UI)
-                        </span>
-                        <span className="text-slate-400 text-xs">|</span>
-                        <span className="text-xs text-slate-500 flex items-center gap-1.5">
-                            Arquivo Corrente:
-                            {temArquivo && dados.caminho && dados.caminho !== estadoVazio.caminho ? (
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        title="Abrir no Solid Edge"
-                                        onClick={() => {
-                                            fetch('http://localhost:8080/api/solidedge/open-file', {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ caminho: dados.caminho })
-                                            }).catch(() => showToast('Agente Solid Edge não encontrado.\nInicie o INICIAR_AGENT.bat na sua máquina.', 'error'));
-                                        }}
-                                        className="font-mono text-blue-600 hover:text-blue-800 hover:underline cursor-pointer bg-transparent border-none p-0 text-xs">
-                                        {dados.caminho}
-                                    </button>
-                                    <button
-                                        title={pdfDocUrl ? "Abrir PDF do Desenho (via Servidor)" : (dados.caminho !== 'Busca via ERP' ? "Abrir PDF do Desenho (Local)" : "PDF não encontrado")}
-                                        disabled={!pdfDocUrl && dados.caminho === 'Busca via ERP'}
-                                        onClick={() => {
-                                            if (pdfDocUrl) {
-                                                window.open(`/api/docs/view?path=${encodeURIComponent(pdfDocUrl)}`, '_blank', 'noopener,noreferrer');
-                                                return;
+        <div className="w-full flex flex-col space-y-2 p-1.5 sm:p-2 bg-slate-50/50">
+            {/* Cabeçalho Compacto e Responsivo */}
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
+                <div className="flex items-center gap-2 flex-wrap">
+                    <h1 className="text-sm font-bold tracking-tight text-slate-900 whitespace-nowrap">SINCO - Solid Edge</h1>
+                    <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 whitespace-nowrap">
+                        v5 UI
+                    </span>
+                    <span className="text-slate-300 text-xs hidden sm:inline">|</span>
+                    <div className="text-xs text-slate-600 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-slate-400 font-medium">Arquivo Corrente:</span>
+                        {temArquivo && dados.caminho && dados.caminho !== estadoVazio.caminho ? (
+                            <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                                <button
+                                    title="Abrir no Solid Edge"
+                                    onClick={() => {
+                                        fetch('http://localhost:8080/api/solidedge/open-file', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ caminho: dados.caminho })
+                                        }).catch(() => showToast('Agente Solid Edge não encontrado.\nInicie o INICIAR_AGENT.bat na sua máquina.', 'error'));
+                                    }}
+                                    className="font-mono text-blue-600 hover:text-blue-800 hover:underline cursor-pointer bg-transparent border-none p-0 text-xs font-semibold max-w-[280px] truncate"
+                                >
+                                    {dados.caminho}
+                                </button>
+                                <button
+                                    title={pdfDocUrl ? "Abrir PDF do Desenho (via Servidor)" : (dados.caminho !== 'Busca via ERP' ? "Abrir PDF do Desenho (Local)" : "PDF não encontrado")}
+                                    disabled={!pdfDocUrl && dados.caminho === 'Busca via ERP'}
+                                    onClick={() => {
+                                        if (pdfDocUrl) {
+                                            window.open(`/api/docs/view?path=${encodeURIComponent(pdfDocUrl)}`, '_blank', 'noopener,noreferrer');
+                                            return;
+                                        }
+                                        
+                                        // Fallback to local conversion if we have a real local path
+                                        if (dados.caminho !== 'Busca via ERP') {
+                                            const filePath = dados.caminho;
+                                            let pdfPath = filePath;
+                                            const lastDotIndex = filePath.lastIndexOf('.');
+                                            if (lastDotIndex > 0) {
+                                                pdfPath = filePath.substring(0, lastDotIndex) + '.pdf';
+                                            } else {
+                                                pdfPath = filePath + '.pdf';
                                             }
-                                            
-                                            // Fallback to local conversion if we have a real local path
-                                            if (dados.caminho !== 'Busca via ERP') {
-                                                const filePath = dados.caminho;
-                                                let pdfPath = filePath;
-                                                const lastDotIndex = filePath.lastIndexOf('.');
-                                                if (lastDotIndex > 0) {
-                                                    pdfPath = filePath.substring(0, lastDotIndex) + '.pdf';
-                                                } else {
-                                                    pdfPath = filePath + '.pdf';
-                                                }
-                                                window.open(`/api/docs/view?path=${encodeURIComponent(pdfPath)}`, '_blank', 'noopener,noreferrer');
-                                            }
-                                        }}
-                                        className={`p-1 rounded transition-colors flex items-center justify-center ${
-                                            pdfDocUrl || dados.caminho !== 'Busca via ERP' 
-                                            ? 'text-red-600 hover:bg-red-50 hover:text-red-700' 
-                                            : 'text-gray-300 cursor-not-allowed'
-                                        }`}
-                                    >
-                                        <FileText className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            ) : (
-                                <strong className="text-slate-400 font-mono">{dados.caminho}</strong>
-                            )}
-                        </span>
+                                            window.open(`/api/docs/view?path=${encodeURIComponent(pdfPath)}`, '_blank', 'noopener,noreferrer');
+                                        }
+                                    }}
+                                    className={`p-0.5 rounded transition-colors flex items-center justify-center ${
+                                        pdfDocUrl || dados.caminho !== 'Busca via ERP' 
+                                        ? 'text-red-600 hover:bg-red-50 hover:text-red-700' 
+                                        : 'text-gray-300 cursor-not-allowed'
+                                    }`}
+                                >
+                                    <FileText className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        ) : (
+                            <strong className="text-slate-400 font-mono text-xs">{dados.caminho}</strong>
+                        )}
                     </div>
                 </div>
 
-                {/* Filtro de Busca Manual e Botão de Atualizar Formulário */}
-                <div className="flex items-center gap-2">
+                {/* Filtro de Busca Manual e Botões de Ação */}
+                <div className="flex flex-wrap items-center gap-1.5">
                     <button
                         onClick={handleAtualizarDados}
                         title="Emular recarregamento da página (atualiza dados do cabeçalho Protheus e as tabelas sem perder o último ERP e caminho)"
-                        className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors"
+                        className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors cursor-pointer"
                     >
-                        <RefreshCw className="h-4 w-4" />
+                        <RefreshCw className="h-3.5 w-3.5" />
                     </button>
                     <div className="relative">
-                        <Search className="h-4 w-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
                         <input
                             type="text"
                             value={busca}
                             onChange={(e) => setBusca(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && buscarProdutoManual(busca)}
                             placeholder="Consultar Produto..."
-                            className="w-56 pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                            className="w-40 sm:w-48 pl-7 pr-2.5 py-1 bg-white border border-slate-300 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                         />
                     </div>
                     <button
                         onClick={() => buscarProdutoManual(busca)}
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-sm border border-blue-700 text-xs font-medium rounded-md transition-colors whitespace-nowrap"
+                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white shadow-xs border border-blue-700 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer"
                     >
                         Buscar ERP
                     </button>
-                </div>
-            </div>
 
-            {/* Barra de Ferramentas */}
-            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-1.5 flex flex-wrap gap-1.5 items-center">
-                <span className="text-xs font-medium text-slate-400 px-2 flex items-center gap-1.5">
-                    Modo Solid Edge / Formulário
-                </span>
+                    {/* Botão de Documentos / Anexar PDF (Exatamente Idêntico ao Catálogo de Produtos) */}
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (productDocs.length === 0 && !pdfDocUrl) {
+                                    setShowDocsModal(true);
+                                } else {
+                                    setOpenMenuDocs(prev => !prev);
+                                }
+                            }}
+                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all shadow-xs border flex items-center gap-1.5 relative whitespace-nowrap cursor-pointer ${
+                                productDocs.length > 0 || pdfDocUrl
+                                    ? 'bg-red-50 text-red-700 hover:bg-red-100 border-red-200 ring-1 ring-red-200'
+                                    : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-300 hover:border-slate-400'
+                            }`}
+                            title={productDocs.length > 0 || pdfDocUrl ? "Opções de Documento / PDF" : "Anexar Arquivo PDF"}
+                        >
+                            <FileText className={`h-3.5 w-3.5 ${productDocs.length > 0 || pdfDocUrl ? 'text-red-600' : 'text-slate-500'}`} />
+                            <span>{productDocs.length > 0 ? `PDF (${productDocs.length})` : 'Anexar PDF'}</span>
+                            {(productDocs.length > 0 || pdfDocUrl) && (
+                                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                                </span>
+                            )}
+                        </button>
+
+                        {/* Dropdown Menu Idêntico ao Catálogo de Produtos */}
+                        {openMenuDocs && (
+                            <div className="absolute right-0 mt-1.5 w-48 bg-white rounded-md shadow-xl z-50 border border-slate-200 animate-fadeIn py-1">
+                                {pdfDocUrl && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            window.open(`/api/docs/view?path=${encodeURIComponent(pdfDocUrl)}`, '_blank', 'noopener,noreferrer');
+                                            setOpenMenuDocs(false);
+                                        }}
+                                        className="flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-100 w-full text-left cursor-pointer"
+                                    >
+                                        <FileText className="h-4 w-4 text-red-600" />
+                                        <span>Abrir Desenho</span>
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowDocsModal(true);
+                                        setOpenMenuDocs(false);
+                                    }}
+                                    className="flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-100 w-full text-left cursor-pointer"
+                                >
+                                    <FolderInput className="h-4 w-4 text-blue-600" />
+                                    <span>Gerenciar Docs</span>
+                                </button>
+                                <div
+                                    className="fixed inset-0 z-[-1]"
+                                    onClick={() => setOpenMenuDocs(false)}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    <button
+                        onClick={() => handleAbrirCadastroNovo()}
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs border border-emerald-700 text-xs font-medium rounded-md transition-colors whitespace-nowrap flex items-center gap-1 cursor-pointer"
+                        title="Cadastrar Novo Produto no Protheus (SB1010/SB5010/SZ1010)"
+                    >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>Cadastrar no Protheus</span>
+                    </button>
+
+                    {maximizedPanel && (
+                        <button
+                            onClick={() => setMaximizedPanel(null)}
+                            className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white shadow-xs text-xs font-semibold rounded-md transition-colors whitespace-nowrap flex items-center gap-1 cursor-pointer"
+                            title="Restaurar layout normal com todos os painéis"
+                        >
+                            <Minimize2 className="h-3.5 w-3.5" />
+                            <span>Restaurar Painéis</span>
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Erro de comunicação com Protheus */}
             {erroProtheus && (
-                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-start gap-2">
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-sm text-red-700 flex items-start gap-2">
                     <span className="font-semibold whitespace-nowrap">Erro Protheus:</span>
                     <span className="font-mono break-all">{erroProtheus}</span>
                 </div>
@@ -985,28 +1523,94 @@ export default function SINCOFormularioPrincipal() {
 
             {/* Banner: produto existe no ERP mas não está no espelho PostgreSQL */}
             {produtoNaoNoMirror && !erroProtheus && (
-                <div className="bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 text-sm text-amber-800 flex items-start gap-3">
-                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
-                    <div>
-                        <span className="font-semibold">Produto não encontrado no espelho de dados (PostgreSQL).</span>
-                        <span className="ml-1 text-amber-700">
-                            O produto <strong>{dados.arquivo}</strong> pode existir no ERP Protheus mas ainda não foi sincronizado com o mirror local.
-                            Preencha os campos manualmente e clique em <strong>Salvar</strong> para registrar os dados no Protheus.
-                        </span>
+                <div className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 text-xs text-amber-800 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+                        <div>
+                            <span className="font-semibold">Produto não encontrado no espelho local (PostgreSQL).</span>
+                            <span className="ml-1 text-amber-700">
+                                O produto <strong>{dados.arquivo}</strong> pode existir no Protheus mas não foi sincronizado com o mirror.
+                            </span>
+                        </div>
                     </div>
+                    <button
+                        onClick={() => handleAbrirCadastroNovo()}
+                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95"
+                    >
+                        <Sparkles className="w-3.5 h-3.5 text-blue-200" />
+                        <span>Cadastrar no Protheus (TOTVS)</span>
+                    </button>
                 </div>
             )}
 
+            {/* Seletor de Abas Principais (Opção A: Página Inteira) */}
+            <div className="flex items-center justify-between gap-3 bg-white p-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="flex items-center gap-1.5">
+                    <button
+                        type="button"
+                        onClick={() => setActiveMainTab('formulario')}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                            activeMainTab === 'formulario'
+                                ? 'bg-blue-600 text-white shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                        }`}
+                    >
+                        <FileText size={14} />
+                        <span>Formulário Solid Edge</span>
+                    </button>
 
-            {/* Layout do Formulário Principal - Limpo e Compacto */}
-            <div className={`bg-white rounded-lg border flex flex-col shadow-sm overflow-hidden ${isEditingDadosGerais ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200'}`}>
-                <div className={`${boxTitleCls} ${isEditingDadosGerais ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-50 text-slate-700 border-slate-200'} flex justify-between items-center`}>
-                    <span>Dados Gerais do Produto</span>
+                    <button
+                        type="button"
+                        onClick={() => setActiveMainTab('arvore')}
+                        className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                            activeMainTab === 'arvore'
+                                ? 'bg-blue-600 text-white shadow-xs'
+                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                        }`}
+                    >
+                        <Network size={14} />
+                        <span>Estrutura em Árvore Completa</span>
+                        {rowsArvore.length > 0 && (
+                            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full border ${
+                                activeMainTab === 'arvore'
+                                    ? 'bg-white/20 text-white border-white/30'
+                                    : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                            }`}>
+                                {rowsArvore.length}
+                            </span>
+                        )}
+                    </button>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <span className="hidden md:inline font-medium text-[11px]">
+                        {activeMainTab === 'formulario' 
+                            ? 'Visão clássica de cadastro e sub-tabelas' 
+                            : 'Navegação hierárquica multinível com ações em qualquer nó'}
+                    </span>
+                    <span className="font-mono text-[11px] bg-slate-100 px-2 py-0.5 rounded border border-slate-200 font-bold text-slate-700">
+                        {dados.arquivo.replace(/\.[^/.]+$/, '')}
+                    </span>
+                </div>
+            </div>
+
+            {/* ABA 1: FORMULÁRIO SOLID EDGE */}
+            {activeMainTab === 'formulario' && (
+                <>
+            {/* Layout do Formulário Principal - Limpo, Ultra-Compacto e Responsivo */}
+            <div className={`bg-white rounded-lg border flex flex-col shadow-xs overflow-hidden ${isEditingDadosGerais ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200'}`}>
+                <div className={`${boxTitleCls} ${isEditingDadosGerais ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-50 text-slate-700 border-slate-200'} flex justify-between items-center py-1 px-3`}>
+                    <div className="flex items-center gap-2">
+                        <span>Dados Gerais do Produto</span>
+                        <span className="text-[10px] font-normal text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
+                            Modo Solid Edge / Formulário
+                        </span>
+                    </div>
                     <div className="flex items-center gap-2">
                         {temArquivo && !isEditingDadosGerais && (
                             <button
                                 onClick={() => setIsEditingDadosGerais(true)}
-                                className="flex items-center gap-1 px-2 py-1 text-slate-600 hover:text-amber-700 hover:bg-amber-100 rounded text-[10px] uppercase font-bold tracking-wide transition-colors"
+                                className="flex items-center gap-1 px-2 py-0.5 text-slate-600 hover:text-amber-700 hover:bg-amber-100 rounded text-[10px] uppercase font-bold tracking-wide transition-colors"
                             >
                                 <Pencil className="h-3 w-3" /> Editar
                             </button>
@@ -1016,14 +1620,14 @@ export default function SINCOFormularioPrincipal() {
                                 <button
                                     onClick={() => setIsEditingDadosGerais(false)}
                                     disabled={loadingData}
-                                    className="flex items-center gap-1 px-2 py-1 text-slate-500 hover:text-slate-700 hover:bg-slate-200 rounded text-[10px] uppercase font-bold tracking-wide transition-colors disabled:opacity-50"
+                                    className="flex items-center gap-1 px-2 py-0.5 text-slate-500 hover:text-slate-700 hover:bg-slate-200 rounded text-[10px] uppercase font-bold tracking-wide transition-colors disabled:opacity-50"
                                 >
                                     <X className="h-3 w-3" /> Cancelar
                                 </button>
                                 <button
                                     onClick={handleSalvarProduto}
                                     disabled={loadingData}
-                                    className="flex items-center gap-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[10px] uppercase font-bold tracking-wide transition-colors shadow-sm disabled:bg-slate-300 disabled:text-slate-500"
+                                    className="flex items-center gap-1 px-3 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-[10px] uppercase font-bold tracking-wide transition-colors shadow-xs disabled:bg-slate-300 disabled:text-slate-500"
                                 >
                                     <Save className="h-3 w-3" /> {loadingData ? 'Salvando...' : 'Salvar'}
                                 </button>
@@ -1032,36 +1636,36 @@ export default function SINCOFormularioPrincipal() {
                     </div>
                 </div>
 
-                <div className="p-4">
-                    <div className="grid grid-cols-12 gap-x-4 gap-y-3">
-                        {/* Linha 1 */}
-                        <div className="col-span-2">
+                <div className="p-2">
+                    <div className="grid grid-cols-12 gap-x-2 gap-y-1 text-xs">
+                        {/* Linha 1: 12 colunas */}
+                        <div className="col-span-2 sm:col-span-1">
                             <label className={lblCls}>Tipo</label>
                             <input type="text" value={dados.tipo} onChange={e => setDados(p => ({ ...p, tipo: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
-                        <div className="col-span-2">
+                        <div className="col-span-2 sm:col-span-1">
                             <label className={lblCls}>Unidade</label>
                             <input type="text" value={dados.unidade} onChange={e => setDados(p => ({ ...p, unidade: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
-                        <div className="col-span-3">
+                        <div className="col-span-3 sm:col-span-2">
                             <label className={lblCls}>Grupo</label>
                             <input type="text" value={dados.grupo} onChange={e => setDados(p => ({ ...p, grupo: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
-                        <div className="col-span-5">
+                        <div className="col-span-4 sm:col-span-2">
+                            <label className={lblCls}>Num. Documento</label>
+                            <input type="text" value={dados.arquivo} readOnly className={readCls} />
+                        </div>
+                        <div className="col-span-1 sm:col-span-1">
+                            <label className={lblCls} title="Rev. Metalfisa">Rev</label>
+                            <input type="text" value={dados.rev} onChange={e => setDados(p => ({ ...p, rev: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
+                        <div className="col-span-12 sm:col-span-5">
                             <label className={lblCls}>Título</label>
                             <input type="text" value={dados.titulo} onChange={e => setDados(p => ({ ...p, titulo: e.target.value }))} placeholder="Ex: PORCA SEXT A6 INOX" readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
 
-                        {/* Linha 2 */}
-                        <div className="col-span-3">
-                            <label className={lblCls}>Num. Documento</label>
-                            <input type="text" value={dados.arquivo} readOnly className={readCls} />
-                        </div>
-                        <div className="col-span-1">
-                            <label className={lblCls}>Rev. Metalfisa</label>
-                            <input type="text" value={dados.rev} onChange={e => setDados(p => ({ ...p, rev: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
-                        </div>
-                        <div className="col-span-2">
+                        {/* Linha 2: 12 colunas */}
+                        <div className="col-span-6 sm:col-span-2">
                             <label className={lblCls} title="Densidade / Material">Densid. / Material</label>
                             {isEditingDadosGerais ? (
                                 <select 
@@ -1085,7 +1689,6 @@ export default function SINCOFormularioPrincipal() {
                                                 alert('Erro ao salvar no banco. Verifique sua conexão.');
                                             }
                                         } else if (e.target.value === 'EDIT_MAT') {
-                                            // Lista materiais para escolher qual editar
                                             const lista = materiaisSalvos.map((m, i) => `${i + 1}. ${m.nome} (${m.densidade})`).join('\n');
                                             const idx = window.prompt(`Qual material deseja editar?\n\n${lista}\n\nDigite o número:`);
                                             if (!idx) return;
@@ -1142,7 +1745,6 @@ export default function SINCOFormularioPrincipal() {
                                     }}
                                 >
                                     <option value="">-- Selecionar --</option>
-                                    {/* Mostrar valor atual caso seja digitado manualmente e não esteja na lista */}
                                     {dados.densidade && !materiaisSalvos.some(m => Number(m.densidade) === Number(dados.densidade)) && (
                                         <option value={dados.densidade}>{dados.densidade} (Manual)</option>
                                     )}
@@ -1159,29 +1761,27 @@ export default function SINCOFormularioPrincipal() {
                                 <input type="text" value={dados.densidade} readOnly className={readCls} />
                             )}
                         </div>
-                        <div className="col-span-2">
-                            <label className={lblCls}>Peso (kg)</label>
-                            <input type="text" value={dados.peso || '0'} onChange={e => setDados(p => ({ ...p, peso: e.target.value.replace(',', '.') }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
-                        </div>
-                        <div className="col-span-1">
-                            <label className={lblCls}>Área (m²)</label>
-                            <input type="text" value={dados.area || '0'} onChange={e => setDados(p => ({ ...p, area: e.target.value.replace(',', '.') }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
-                        </div>
-                        <div className="col-span-1">
+                        <div className="col-span-3 sm:col-span-1">
                             <label className={lblCls}>Espess. (mm)</label>
                             <input type="text" value={dados.espessura || '0'} onChange={e => setDados(p => ({ ...p, espessura: e.target.value.replace(',', '.') }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
-                        <div className="col-span-1">
+                        <div className="col-span-3 sm:col-span-1">
                             <label className={lblCls}>Larg. (mm)</label>
                             <input type="text" value={dados.largura || '0'} onChange={e => setDados(p => ({ ...p, largura: e.target.value.replace(',', '.') }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
-                        <div className="col-span-1">
+                        <div className="col-span-3 sm:col-span-1">
                             <label className={lblCls}>Compr. (mm)</label>
                             <input type="text" value={dados.comprimento || '0'} onChange={e => setDados(p => ({ ...p, comprimento: e.target.value.replace(',', '.') }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
-
-                        {/* Linha 3 */}
-                        <div className="col-span-12">
+                        <div className="col-span-3 sm:col-span-1">
+                            <label className={lblCls}>Área (m²)</label>
+                            <input type="text" value={dados.area || '0'} onChange={e => setDados(p => ({ ...p, area: e.target.value.replace(',', '.') }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
+                        <div className="col-span-6 sm:col-span-1">
+                            <label className={lblCls}>Peso (kg)</label>
+                            <input type="text" value={dados.peso || '0'} onChange={e => setDados(p => ({ ...p, peso: e.target.value.replace(',', '.') }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
+                        </div>
+                        <div className="col-span-12 sm:col-span-5">
                             <label className={lblCls}>Comentários - Acabamento</label>
                             <input type="text" value={dados.acabamento} onChange={e => setDados(p => ({ ...p, acabamento: e.target.value }))} placeholder="Ex: CINZA N6,5 TEXTURIZADO - 80 MICRAS" readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
@@ -1189,47 +1789,86 @@ export default function SINCOFormularioPrincipal() {
                 </div>
             </div>
 
-            {/* Sub-tabelas: Árvore do Produto + Operações + Restrições SZ1 */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0 pb-2">
-                {/* 1. Árvore */}
-                <div className={`bg-white rounded-lg border flex flex-col shadow-sm overflow-hidden h-full ${isEditingArvore ? 'border-indigo-400 ring-1 ring-indigo-400' : 'border-slate-200'}`}>
-                    <div className={`${boxTitleCls} ${isEditingArvore ? 'bg-indigo-50 text-indigo-800 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-100'} flex justify-between items-center`}>
-                        <span>Árvore do Produto (Materiais)</span>
-                        <div className="flex items-center gap-2">
-                            {temArquivo && !isEditingArvore && (
-                                <button
-                                    onClick={() => {
-                                        setEditedArvore(JSON.parse(JSON.stringify(arvore)));
-                                        setIsEditingArvore(true);
-                                    }}
-                                    className="flex items-center gap-1 px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-medium rounded transition-colors shadow-sm"
-                                >
-                                    <Pencil className="h-3 w-3" /> Editar
-                                </button>
-                            )}
-                            {isEditingArvore && (
-                                <>
+            {/* Sub-tabelas: Árvore do Produto + Restrições SZ1 + Operações */}
+            {maximizedPanel !== 'sz0' && (
+                <div className={`grid gap-2 flex-1 pb-1 ${
+                    maximizedPanel 
+                        ? 'grid-cols-1' 
+                        : 'grid-cols-1 lg:grid-cols-3'
+                }`}>
+                    {/* 1. Árvore */}
+                    {(!maximizedPanel || maximizedPanel === 'arvore') && (
+                        <div className={`bg-white rounded-lg border flex flex-col shadow-2xs overflow-hidden ${
+                            maximizedPanel === 'arvore' ? 'h-[calc(100vh-210px)] min-h-[460px]' : 'h-[255px] sm:h-[280px] xl:h-[310px] 2xl:h-[360px]'
+                        } ${isEditingArvore ? 'border-indigo-400 ring-1 ring-indigo-400' : 'border-slate-200'}`}>
+                            <div className={`${boxTitleCls} ${isEditingArvore ? 'bg-indigo-50 text-indigo-800 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-100'} flex justify-between items-center`}>
+                                <div className="flex items-center gap-1.5">
+                                    <span>Árvore do Produto (Materiais)</span>
+                                    {materiais.length > 0 && <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full font-bold">{materiais.length}</span>}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    {temArquivo && !isEditingArvore && (
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => {
+                                                    setEditedArvore(JSON.parse(JSON.stringify(arvore)));
+                                                    setIsEditingArvore(true);
+                                                }}
+                                                className="flex items-center gap-1 px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-medium rounded transition-colors shadow-2xs cursor-pointer"
+                                                title="Editar componentes existentes"
+                                            >
+                                                <Pencil className="h-3 w-3" /> Editar
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setEditedArvore([...JSON.parse(JSON.stringify(arvore)), {
+                                                        nivel: 'NOVO',
+                                                        componente: '',
+                                                        descricao: '',
+                                                        quantidade: 1,
+                                                        unidade: 'UN',
+                                                        isNew: true,
+                                                        deleted: false
+                                                    }]);
+                                                    setIsEditingArvore(true);
+                                                }}
+                                                className="flex items-center gap-1 px-2 py-0.5 bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-medium rounded transition-colors shadow-2xs cursor-pointer"
+                                                title="Inserir novo componente na estrutura"
+                                            >
+                                                <Plus className="h-3 w-3" /> Inserir Novo
+                                            </button>
+                                        </div>
+                                    )}
+                                    {isEditingArvore && (
+                                        <>
+                                            <button
+                                                onClick={() => {
+                                                    setEditedArvore(JSON.parse(JSON.stringify(arvore)));
+                                                    setIsEditingArvore(false);
+                                                }}
+                                                className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-medium rounded transition-colors"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                onClick={handleSalvarArvore}
+                                                disabled={savingArvore}
+                                                className="flex items-center gap-1 px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white text-[10px] font-medium rounded transition-colors shadow-2xs"
+                                            >
+                                                <Save className="h-3 w-3" /> {savingArvore ? 'Salvando...' : 'Salvar'}
+                                            </button>
+                                        </>
+                                    )}
+                                    <span className={`text-[10px] bg-white px-2 py-0.5 rounded border ${isEditingArvore ? 'border-indigo-200 text-indigo-600' : 'border-emerald-200 text-emerald-600'} font-mono`}>{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
                                     <button
-                                        onClick={() => {
-                                            setEditedArvore(JSON.parse(JSON.stringify(arvore)));
-                                            setIsEditingArvore(false);
-                                        }}
-                                        className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-medium rounded transition-colors"
+                                        onClick={() => setMaximizedPanel(maximizedPanel === 'arvore' ? null : 'arvore')}
+                                        className="p-1 text-slate-400 hover:text-slate-700 hover:bg-white/80 rounded transition-colors cursor-pointer"
+                                        title={maximizedPanel === 'arvore' ? "Restaurar layout padrão" : "Maximizar Árvore"}
                                     >
-                                        Cancelar
+                                        {maximizedPanel === 'arvore' ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
                                     </button>
-                                    <button
-                                        onClick={handleSalvarArvore}
-                                        disabled={savingArvore}
-                                        className="flex items-center gap-1 px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white text-[10px] font-medium rounded transition-colors shadow-sm"
-                                    >
-                                        <Save className="h-3 w-3" /> {savingArvore ? 'Salvando...' : 'Salvar'}
-                                    </button>
-                                </>
-                            )}
-                            <span className={`text-[10px] bg-white px-2 py-0.5 rounded border ${isEditingArvore ? 'border-indigo-200 text-indigo-600' : 'border-emerald-200 text-emerald-600'} font-mono`}>{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
-                        </div>
-                    </div>
+                                </div>
+                            </div>
                     <div className="flex-1 overflow-auto bg-slate-50/50">
                         {loadingArvore ? (
                             <div className="flex items-center justify-center py-12 text-slate-400 text-sm">Carregando componentes...</div>
@@ -1249,14 +1888,34 @@ export default function SINCOFormularioPrincipal() {
                                     <tbody className="divide-y divide-slate-100">
                                         {materiais.length === 0 ? (
                                             <tr>
-                                                <td colSpan={isEditingArvore ? 6 : 5} className="text-center py-12 text-slate-400 italic">
-                                                    Nenhum material carregado para a estrutura
+                                                <td colSpan={isEditingArvore ? 6 : 5} className="text-center py-8 text-slate-400">
+                                                    <p className="italic text-xs mb-3 text-slate-500 font-medium">Nenhum material carregado para a estrutura</p>
+                                                    {temArquivo && !isEditingArvore && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setEditedArvore([...JSON.parse(JSON.stringify(arvore)), {
+                                                                    nivel: 'NOVO',
+                                                                    componente: '',
+                                                                    descricao: '',
+                                                                    quantidade: 1,
+                                                                    unidade: 'UN',
+                                                                    isNew: true,
+                                                                    deleted: false
+                                                                }]);
+                                                                setIsEditingArvore(true);
+                                                            }}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-md text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+                                                        >
+                                                            <Plus className="w-3.5 h-3.5" /> Inserir Novo Componente
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ) : materiais.map((r, i) => (
                                             <tr key={i} className={`transition-colors ${r.deleted ? 'bg-red-50/50 opacity-50' : 'hover:bg-emerald-50/30'}`}>
-                                                <td className="px-3 py-2 text-slate-400 font-medium">{r.nivel || (r.isNew ? 'NOVO' : '—')}</td>
-                                                <td className="px-3 py-2 font-mono font-medium text-slate-700">
+                                                <td className="px-2 py-1 text-slate-400 font-medium">{r.nivel || (r.isNew ? 'NOVO' : '—')}</td>
+                                                <td className="px-2 py-1 font-mono font-medium text-slate-700">
                                                     {r.isNew ? (
                                                         <div className="flex items-center gap-1">
                                                             <input 
@@ -1312,10 +1971,10 @@ export default function SINCOFormularioPrincipal() {
                                                         <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.componente}</span>
                                                     )}
                                                 </td>
-                                                <td className="px-3 py-2 text-slate-600 max-w-[200px] truncate" title={r.descricao}>
+                                                <td className="px-2 py-1 text-slate-600 max-w-[200px] truncate" title={r.descricao}>
                                                     {r.isNew ? <span className="text-indigo-600 font-medium italic">{r.descricao || 'Produto a ser validado pelo Protheus'}</span> : <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.descricao || '—'}</span>}
                                                 </td>
-                                                <td className="px-3 py-2 text-right">
+                                                <td className="px-2 py-1 text-right">
                                                     {isEditingArvore ? (
                                                         <input 
                                                             type="number" 
@@ -1334,9 +1993,9 @@ export default function SINCOFormularioPrincipal() {
                                                         <span className="text-slate-700 font-mono tabular-nums">{Number(r.quantidade).toFixed(4)}</span>
                                                     )}
                                                 </td>
-                                                <td className="px-3 py-2 text-slate-500">{r.unidade || '—'}</td>
+                                                <td className="px-2 py-1 text-slate-500">{r.unidade || '—'}</td>
                                                 {isEditingArvore && (
-                                                    <td className="px-3 py-2 text-right">
+                                                    <td className="px-2 py-1 text-right">
                                                         <button
                                                             onClick={() => {
                                                                 const newArr = [...editedArvore];
@@ -1382,22 +2041,51 @@ export default function SINCOFormularioPrincipal() {
                         )}
                     </div>
                 </div>
+            )}
 
-                {/* 2. Restrições */}
-                <div className={`bg-white rounded-lg border flex flex-col shadow-sm overflow-hidden h-full ${isEditingRestricoes ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200'}`}>
+            {/* 2. Restrições */}
+            {(!maximizedPanel || maximizedPanel === 'restricoes') && (
+                <div className={`bg-white rounded-lg border flex flex-col shadow-2xs overflow-hidden ${
+                    maximizedPanel === 'restricoes' ? 'h-[calc(100vh-210px)] min-h-[460px]' : 'h-[255px] sm:h-[280px] xl:h-[310px] 2xl:h-[360px]'
+                } ${isEditingRestricoes ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200'}`}>
                     <div className={`${boxTitleCls} ${isEditingRestricoes ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-amber-50 text-amber-700 border-amber-100'} flex justify-between items-center`}>
-                        <span>Produto Metalfisa/Cliente (SZ1)</span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
+                            <span>Produto Metalfisa/Cliente (SZ1)</span>
+                            {listRestricoes.length > 0 && <span className="text-[10px] bg-amber-200/80 text-amber-900 px-1.5 py-0.2 rounded-full font-bold">{listRestricoes.length}</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5">
                             {temArquivo && !isEditingRestricoes && (
-                                <button
-                                    onClick={() => {
-                                        setEditedRestricoes(JSON.parse(JSON.stringify(restricoes)));
-                                        setIsEditingRestricoes(true);
-                                    }}
-                                    className="flex items-center gap-1 px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-medium rounded transition-colors shadow-sm"
-                                >
-                                    <Pencil className="h-3 w-3" /> Editar
-                                </button>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={() => {
+                                            setEditedRestricoes(JSON.parse(JSON.stringify(restricoes)));
+                                            setIsEditingRestricoes(true);
+                                        }}
+                                        className="flex items-center gap-1 px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-medium rounded transition-colors shadow-2xs cursor-pointer"
+                                        title="Editar amarrações existentes"
+                                    >
+                                        <Pencil className="h-3 w-3" /> Editar
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setEditedRestricoes([...JSON.parse(JSON.stringify(restricoes)), {
+                                                cliente: '',
+                                                loja: '0001',
+                                                nome_cliente: '',
+                                                desc_cliente: '',
+                                                cod_cliente: '',
+                                                revisao: '00',
+                                                isNew: true,
+                                                deleted: false
+                                            }]);
+                                            setIsEditingRestricoes(true);
+                                        }}
+                                        className="flex items-center gap-1 px-2 py-0.5 bg-amber-700 hover:bg-amber-800 text-white text-[10px] font-medium rounded transition-colors shadow-2xs cursor-pointer"
+                                        title="Inserir novo cliente/amarração SZ1"
+                                    >
+                                        <Plus className="h-3 w-3" /> Inserir Novo
+                                    </button>
+                                </div>
                             )}
                             {isEditingRestricoes && (
                                 <>
@@ -1413,13 +2101,20 @@ export default function SINCOFormularioPrincipal() {
                                     <button
                                         onClick={handleSalvarRestricoesSz1}
                                         disabled={savingRestricoes}
-                                        className="flex items-center gap-1 px-2 py-0.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 text-white text-[10px] font-medium rounded transition-colors shadow-sm"
+                                        className="flex items-center gap-1 px-2 py-0.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 text-white text-[10px] font-medium rounded transition-colors shadow-2xs"
                                     >
                                         <Save className="h-3 w-3" /> {savingRestricoes ? 'Salvando...' : 'Salvar'}
                                     </button>
                                 </>
                             )}
                             <span className={`text-[10px] bg-white px-2 py-0.5 rounded border ${isEditingRestricoes ? 'border-amber-300 text-amber-700' : 'border-amber-200 text-amber-600'} font-mono`}>{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
+                            <button
+                                onClick={() => setMaximizedPanel(maximizedPanel === 'restricoes' ? null : 'restricoes')}
+                                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-white/80 rounded transition-colors cursor-pointer"
+                                title={maximizedPanel === 'restricoes' ? "Restaurar layout padrão" : "Maximizar SZ1"}
+                            >
+                                {maximizedPanel === 'restricoes' ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                            </button>
                         </div>
                     </div>
                     <div className="flex-1 overflow-auto bg-slate-50/50">
@@ -1439,13 +2134,34 @@ export default function SINCOFormularioPrincipal() {
                                 <tbody className="divide-y divide-slate-100">
                                     {listRestricoes.length === 0 ? (
                                         <tr>
-                                            <td colSpan={isEditingRestricoes ? 5 : 4} className="text-center py-12 text-slate-400 italic">
-                                                Nenhuma restrição encontrada no Protheus
+                                            <td colSpan={isEditingRestricoes ? 5 : 4} className="text-center py-8 text-slate-400">
+                                                <p className="italic text-xs mb-3 text-slate-500 font-medium">Nenhuma restrição encontrada no Protheus</p>
+                                                {temArquivo && !isEditingRestricoes && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setEditedRestricoes([...JSON.parse(JSON.stringify(restricoes)), {
+                                                                cliente: '',
+                                                                loja: '0001',
+                                                                nome_cliente: '',
+                                                                desc_cliente: '',
+                                                                cod_cliente: '',
+                                                                revisao: '00',
+                                                                isNew: true,
+                                                                deleted: false
+                                                            }]);
+                                                            setIsEditingRestricoes(true);
+                                                        }}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-md text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+                                                    >
+                                                        <Plus className="w-3.5 h-3.5" /> Inserir Novo Vínculo de Cliente
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     ) : listRestricoes.map((r, i) => (
                                         <tr key={i} className={`transition-colors ${r.deleted ? 'bg-red-50/50 opacity-50' : 'hover:bg-amber-50/30'}`}>
-                                            <td className="px-3 py-2 font-mono font-medium text-slate-700 w-24">
+                                            <td className="px-2 py-1 font-mono font-medium text-slate-700 w-24">
                                                 {isEditingRestricoes ? (
                                                     <div className="flex items-center gap-1">
                                                         <input 
@@ -1486,7 +2202,7 @@ export default function SINCOFormularioPrincipal() {
                                                     <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.cliente}</span>
                                                 )}
                                             </td>
-                                            <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate" title={r.desc_cliente || r.nome_cliente}>
+                                            <td className="px-2 py-1 text-slate-600 max-w-[150px] truncate" title={r.desc_cliente || r.nome_cliente}>
                                                 {isEditingRestricoes ? (
                                                     <input 
                                                         type="text" 
@@ -1504,7 +2220,7 @@ export default function SINCOFormularioPrincipal() {
                                                     <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.desc_cliente || r.nome_cliente}</span>
                                                 )}
                                             </td>
-                                            <td className="px-3 py-2 font-mono text-slate-500">
+                                            <td className="px-2 py-1 font-mono text-slate-500">
                                                 {isEditingRestricoes ? (
                                                     <input 
                                                         type="text" 
@@ -1522,7 +2238,7 @@ export default function SINCOFormularioPrincipal() {
                                                     <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.cod_cliente || '—'}</span>
                                                 )}
                                             </td>
-                                            <td className="px-3 py-2 font-semibold text-amber-700 bg-amber-50/50 text-center w-16">
+                                            <td className="px-2 py-1 font-semibold text-amber-700 bg-amber-50/50 text-center w-16">
                                                 {isEditingRestricoes ? (
                                                     <input 
                                                         type="text" 
@@ -1542,7 +2258,7 @@ export default function SINCOFormularioPrincipal() {
                                                 )}
                                             </td>
                                             {isEditingRestricoes && (
-                                                <td className="px-3 py-2 text-right">
+                                                <td className="px-2 py-1 text-right">
                                                     <button
                                                         onClick={() => {
                                                             let newArr = [...editedRestricoes];
@@ -1590,22 +2306,52 @@ export default function SINCOFormularioPrincipal() {
                         )}
                     </div>
                 </div>
+            )}
 
-                {/* 3. Operações */}
-                <div className={`bg-white rounded-lg border flex flex-col shadow-sm overflow-hidden h-full ${isEditingOperacoes ? 'border-blue-400 ring-1 ring-blue-400' : 'border-slate-200'}`}>
+            {/* 3. Operações */}
+            {(!maximizedPanel || maximizedPanel === 'operacoes') && (
+                <div className={`bg-white rounded-lg border flex flex-col shadow-2xs overflow-hidden ${
+                    maximizedPanel === 'operacoes' ? 'h-[calc(100vh-210px)] min-h-[460px]' : 'h-[255px] sm:h-[280px] xl:h-[310px] 2xl:h-[360px]'
+                } ${isEditingOperacoes ? 'border-blue-400 ring-1 ring-blue-400' : 'border-slate-200'}`}>
                     <div className={`${boxTitleCls} ${isEditingOperacoes ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-blue-50 text-blue-700 border-blue-100'} flex justify-between items-center`}>
-                        <span>Operações (Roteiro)</span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
+                            <span>Operações (Roteiro)</span>
+                            {listOperacoes.length > 0 && <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded-full font-bold">{listOperacoes.length}</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5">
                             {temArquivo && !isEditingOperacoes && (
-                                <button
-                                    onClick={() => {
-                                        setEditedOperacoes(JSON.parse(JSON.stringify(operacoes)));
-                                        setIsEditingOperacoes(true);
-                                    }}
-                                    className="flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-medium rounded transition-colors shadow-sm"
-                                >
-                                    <Pencil className="h-3 w-3" /> Editar
-                                </button>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={() => {
+                                            setEditedOperacoes(JSON.parse(JSON.stringify(operacoes)));
+                                            setIsEditingOperacoes(true);
+                                        }}
+                                        className="flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-medium rounded transition-colors shadow-2xs cursor-pointer"
+                                        title="Editar operações existentes"
+                                    >
+                                        <Pencil className="h-3 w-3" /> Editar
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            const nextOpNum = operacoes.length > 0 ? (operacoes.length + 1) * 10 : 10;
+                                            setEditedOperacoes([...JSON.parse(JSON.stringify(operacoes)), {
+                                                operacao: String(nextOpNum),
+                                                descricao: '',
+                                                recurso: '',
+                                                recurso_descricao: '',
+                                                setup: 0,
+                                                tempo: 1,
+                                                isNew: true,
+                                                deleted: false
+                                            }]);
+                                            setIsEditingOperacoes(true);
+                                        }}
+                                        className="flex items-center gap-1 px-2 py-0.5 bg-blue-700 hover:bg-blue-800 text-white text-[10px] font-medium rounded transition-colors shadow-2xs cursor-pointer"
+                                        title="Inserir nova operação no roteiro"
+                                    >
+                                        <Plus className="h-3 w-3" /> Inserir Novo
+                                    </button>
+                                </div>
                             )}
                             {isEditingOperacoes && (
                                 <>
@@ -1621,13 +2367,20 @@ export default function SINCOFormularioPrincipal() {
                                     <button
                                         onClick={handleSalvarOperacoes}
                                         disabled={savingOperacoes}
-                                        className="flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white text-[10px] font-medium rounded transition-colors shadow-sm"
+                                        className="flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white text-[10px] font-medium rounded transition-colors shadow-2xs"
                                     >
                                         <Save className="h-3 w-3" /> {savingOperacoes ? 'Salvando...' : 'Salvar'}
                                     </button>
                                 </>
                             )}
                             <span className={`text-[10px] bg-white px-2 py-0.5 rounded border ${isEditingOperacoes ? 'border-blue-300 text-blue-700' : 'border-blue-200 text-blue-600'} font-mono`}>{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
+                            <button
+                                onClick={() => setMaximizedPanel(maximizedPanel === 'operacoes' ? null : 'operacoes')}
+                                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-white/80 rounded transition-colors cursor-pointer"
+                                title={maximizedPanel === 'operacoes' ? "Restaurar layout padrão" : "Maximizar Operações"}
+                            >
+                                {maximizedPanel === 'operacoes' ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                            </button>
                         </div>
                     </div>
                     <div className="flex-1 overflow-auto bg-slate-50/50">
@@ -1649,13 +2402,34 @@ export default function SINCOFormularioPrincipal() {
                                     <tbody className="divide-y divide-slate-100">
                                         {listOperacoes.length === 0 ? (
                                             <tr>
-                                                <td colSpan={isEditingOperacoes ? 5 : 4} className="text-center py-12 text-slate-400 italic">
-                                                    Nenhuma operação encontrada no Protheus
+                                                <td colSpan={isEditingOperacoes ? 6 : 5} className="text-center py-8 text-slate-400">
+                                                    <p className="italic text-xs mb-3 text-slate-500 font-medium">Nenhuma operação encontrada no Protheus</p>
+                                                    {temArquivo && !isEditingOperacoes && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setEditedOperacoes([...JSON.parse(JSON.stringify(operacoes)), {
+                                                                    operacao: '10',
+                                                                    descricao: '',
+                                                                    recurso: '',
+                                                                    recurso_descricao: '',
+                                                                    setup: 0,
+                                                                    tempo: 1,
+                                                                    isNew: true,
+                                                                    deleted: false
+                                                                }]);
+                                                                setIsEditingOperacoes(true);
+                                                            }}
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-md text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+                                                        >
+                                                            <Plus className="w-3.5 h-3.5" /> Inserir Nova Operação
+                                                        </button>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ) : listOperacoes.map((r, i) => (
                                             <tr key={i} className={`transition-colors ${r.deleted ? 'bg-red-50/50 opacity-50' : 'hover:bg-blue-50/30'}`}>
-                                                <td className="px-3 py-2 font-mono font-medium text-slate-700 w-16">
+                                                <td className="px-2 py-1 font-mono font-medium text-slate-700 w-16">
                                                     {isEditingOperacoes ? (
                                                         <input 
                                                             type="text" 
@@ -1676,7 +2450,7 @@ export default function SINCOFormularioPrincipal() {
                                                         <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.operacao}</span>
                                                     )}
                                                 </td>
-                                                <td className="px-3 py-2 text-slate-600 max-w-[150px] truncate" title={r.descricao || r.recurso_descricao}>
+                                                <td className="px-2 py-1 text-slate-600 max-w-[150px] truncate" title={r.descricao || r.recurso_descricao}>
                                                     {isEditingOperacoes ? (
                                                         <input 
                                                             type="text" 
@@ -1695,7 +2469,7 @@ export default function SINCOFormularioPrincipal() {
                                                         <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.descricao || r.recurso_descricao || r.recurso}</span>
                                                     )}
                                                 </td>
-                                                <td className="px-3 py-2 font-mono text-slate-500">
+                                                <td className="px-2 py-1 font-mono text-slate-500">
                                                     {isEditingOperacoes ? (
                                                         <div className="flex items-center gap-1">
                                                             <input 
@@ -1732,15 +2506,15 @@ export default function SINCOFormularioPrincipal() {
                                                             </button>
                                                         </div>
                                                     ) : (
-                                                        <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.recurso_descricao ? `${r.recurso} - ${r.recurso_descricao}` : (r.recurso || '—')}</span>
+                                                        <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.recurso || '—'}</span>
                                                     )}
                                                 </td>
-                                                <td className="px-3 py-2 text-right w-28">
+                                                <td className="px-2 py-1 text-right w-24">
                                                     {isEditingOperacoes ? (
                                                         <input 
                                                             type="number" 
                                                             min="0" 
-                                                            step="0.01"
+                                                            step="0.01" 
                                                             value={r.setup !== undefined ? r.setup : ''} 
                                                             onChange={(e) => {
                                                                 const newArr = [...editedOperacoes];
@@ -1754,12 +2528,12 @@ export default function SINCOFormularioPrincipal() {
                                                         <span className={`font-mono font-medium ${r.deleted ? 'line-through text-red-500' : 'text-amber-700 bg-amber-50/50 px-1 py-0.5 rounded'}`}>{Number(r.setup || 0).toFixed(2)} min</span>
                                                     )}
                                                 </td>
-                                                <td className="px-3 py-2 text-right w-28">
+                                                <td className="px-2 py-1 text-right w-24">
                                                     {isEditingOperacoes ? (
                                                         <input 
                                                             type="number" 
                                                             min="0" 
-                                                            step="0.001"
+                                                            step="0.001" 
                                                             value={r.tempo !== undefined ? r.tempo : ''} 
                                                             onChange={(e) => {
                                                                 const newArr = [...editedOperacoes];
@@ -1774,7 +2548,7 @@ export default function SINCOFormularioPrincipal() {
                                                     )}
                                                 </td>
                                                 {isEditingOperacoes && (
-                                                    <td className="px-3 py-2 text-right">
+                                                    <td className="px-2 py-1 text-right">
                                                         <button
                                                             onClick={() => {
                                                                 let newArr = [...editedOperacoes];
@@ -1835,28 +2609,43 @@ export default function SINCOFormularioPrincipal() {
                         )}
                     </div>
                 </div>
-            </div>
+            )}
+        </div>
+    )}
 
-            {/* 4. Restrições de Engenharia SZ0 */}
-            <div className="bg-white rounded-lg border border-slate-200 flex flex-col shadow-sm overflow-hidden">
-                <div className={`${boxTitleCls} bg-red-50 text-red-700 border-red-100 flex justify-between items-center`}>
-                    <span>Restrições de Engenharia (SZ0){restricoesSz0.length > 0 && <span className="ml-2 text-[10px] bg-red-100 px-1.5 py-0.5 rounded-full font-bold">{restricoesSz0.length}</span>}</span>
-                    <div className="flex items-center gap-2">
-                        {temArquivo && (
-                            <button
-                                onClick={() => {
-                                    setNovaRestricao({ resumo: '', restricao: '', responsavel: (user?.nome || user?.login || '').toUpperCase(), revMetalfisa: '' });
-                                    setShowModalSz0(true);
-                                }}
-                                className="flex items-center gap-1 px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium rounded transition-colors shadow-sm"
-                            >
-                                <Plus className="h-3 w-3" /> Nova
-                            </button>
-                        )}
-                        <span className="text-[10px] bg-white px-2 py-0.5 rounded border border-red-200 text-red-600 font-mono">{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
-                    </div>
+    {/* 4. Restrições de Engenharia SZ0 */}
+    {(!maximizedPanel || maximizedPanel === 'sz0') && (
+        <div className={`bg-white rounded-lg border border-slate-200 flex flex-col shadow-2xs overflow-hidden ${
+            maximizedPanel === 'sz0' ? 'h-[calc(100vh-210px)] min-h-[460px]' : 'h-[185px] sm:h-[205px] xl:h-[230px] 2xl:h-[280px]'
+        }`}>
+            <div className={`${boxTitleCls} bg-red-50 text-red-700 border-red-100 flex justify-between items-center`}>
+                <div className="flex items-center gap-1.5">
+                    <span>Restrições de Engenharia (SZ0)</span>
+                    {restricoesSz0.length > 0 && <span className="ml-1 text-[10px] bg-red-100 text-red-800 px-1.5 py-0.2 rounded-full font-bold">{restricoesSz0.length}</span>}
                 </div>
-                <div className="overflow-auto bg-slate-50/50" style={{ maxHeight: '220px' }}>
+                <div className="flex items-center gap-1.5">
+                    {temArquivo && (
+                        <button
+                            onClick={() => {
+                                setNovaRestricao({ resumo: '', restricao: '', responsavel: (user?.nome || user?.login || '').toUpperCase(), revMetalfisa: '' });
+                                setShowModalSz0(true);
+                            }}
+                            className="flex items-center gap-1 px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium rounded transition-colors shadow-2xs cursor-pointer"
+                        >
+                            <Plus className="h-3 w-3" /> Nova
+                        </button>
+                    )}
+                    <span className="text-[10px] bg-white px-2 py-0.5 rounded border border-red-200 text-red-600 font-mono">{temArquivo ? dados.arquivo.replace(/\.[^/.]+$/, '') : '—'}</span>
+                    <button
+                        onClick={() => setMaximizedPanel(maximizedPanel === 'sz0' ? null : 'sz0')}
+                        className="p-1 text-slate-400 hover:text-slate-700 hover:bg-white/80 rounded transition-colors cursor-pointer"
+                        title={maximizedPanel === 'sz0' ? "Restaurar layout padrão" : "Maximizar SZ0"}
+                    >
+                        {maximizedPanel === 'sz0' ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                    </button>
+                </div>
+            </div>
+                <div className="flex-1 overflow-auto bg-slate-50/50">
                     {loadingSz0 ? (
                         <div className="flex items-center justify-center py-8 text-slate-400 text-sm">Carregando restrições SZ0...</div>
                     ) : (
@@ -1886,16 +2675,16 @@ export default function SINCOFormularioPrincipal() {
                                     const dtFormatted = r.dt_ultima_alt ? r.dt_ultima_alt.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1') : '—';
                                     return (
                                         <tr key={i} className="hover:bg-red-50/30 transition-colors" title={r.restricao || ''}>
-                                            <td className="px-3 py-2 font-mono font-medium text-slate-700">{r.item}</td>
-                                            <td className="px-3 py-2">
+                                            <td className="px-2 py-1 font-mono font-medium text-slate-700">{r.item}</td>
+                                            <td className="px-2 py-1">
                                                 <span className={`px-2 py-0.5 text-[10px] font-bold rounded border ${statusCls}`}>{statusLabel}</span>
                                             </td>
-                                            <td className="px-3 py-2 text-slate-600 max-w-[200px] truncate" title={r.resumo}>{r.resumo || '—'}</td>
-                                            <td className="px-3 py-2 text-slate-600 max-w-[300px] truncate" title={r.restricao}>{r.restricao || '—'}</td>
-                                            <td className="px-3 py-2 font-mono text-slate-500 font-bold">{r.revisao || '—'}</td>
-                                            <td className="px-3 py-2 font-mono text-slate-500">{r.responsavel || '—'}</td>
-                                            <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{dtFormatted} {r.hr_ultima_alt || ''}</td>
-                                            <td className="px-3 py-2 text-right">
+                                            <td className="px-2 py-1 text-slate-600 max-w-[200px] truncate" title={r.resumo}>{r.resumo || '—'}</td>
+                                            <td className="px-2 py-1 text-slate-600 max-w-[300px] truncate" title={r.restricao}>{r.restricao || '—'}</td>
+                                            <td className="px-2 py-1 font-mono text-slate-500 font-bold">{r.revisao || '—'}</td>
+                                            <td className="px-2 py-1 font-mono text-slate-500">{r.responsavel || '—'}</td>
+                                            <td className="px-2 py-1 text-slate-500 whitespace-nowrap">{dtFormatted} {r.hr_ultima_alt || ''}</td>
+                                            <td className="px-2 py-1 text-right">
                                                 {temArquivo && (
                                                     <div className="flex items-center justify-end gap-2">
                                                         <button
@@ -1933,6 +2722,395 @@ export default function SINCOFormularioPrincipal() {
                     )}
                 </div>
             </div>
+            )}
+            </>
+            )}
+
+            {/* ABA 2: ESTRUTURA EM ÁRVORE COMPLETA (OPÇÃO A: PÁGINA INTEIRA) */}
+            {/* ABA 2: ESTRUTURA EM ÁRVORE COMPLETA (MULTINÍVEL RECURSIVA COM 3 MODOS VISUAIS) */}
+            {activeMainTab === 'arvore' && (
+                <div className="flex flex-col space-y-3 w-full animate-fadeIn relative">
+                    
+                    {/* Barra de Ferramentas e Seletor dos 3 Modos Visuais */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col xl:flex-row items-start xl:items-center justify-between gap-3">
+                        
+                        {/* Lado Esquerdo: Identificação e Métricas */}
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <div className="p-2 bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-200 flex items-center gap-1.5">
+                                <Network size={16} />
+                                <span className="text-xs font-black">Árvore Multinível Completa</span>
+                            </div>
+                            
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="bg-slate-100 text-slate-700 text-xs px-2.5 py-1 rounded-lg border border-slate-200 font-medium">
+                                    Total: <strong className="text-slate-900">{rowsArvore.length}</strong> itens
+                                    {rowsArvore.length > 0 && (
+                                        <span className="ml-1 text-[10px] text-slate-500 font-bold">
+                                            ({Math.max(...rowsArvore.map(r => r.nivel))} níveis)
+                                        </span>
+                                    )}
+                                </span>
+                                {loadingTreeValidation && (
+                                    <span className="text-[11px] text-blue-600 flex items-center gap-1 animate-pulse font-medium">
+                                        <Loader2 size={12} className="animate-spin" />
+                                        Validando Protheus...
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Centro: SELETOR DAS 3 OPÇÕES VISUAIS DE EDIÇÃO */}
+                        <div className="flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200 self-stretch sm:self-auto">
+                            <span className="text-[10px] font-black uppercase text-slate-500 px-2 select-none">Modo:</span>
+                            
+                            {/* Opção 1: Linha Expansível (Accordion) */}
+                            <button
+                                type="button"
+                                onClick={() => handleSetTreeViewMode('accordion')}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                                    treeViewMode === 'accordion' 
+                                        ? 'bg-white text-indigo-700 shadow-2xs border border-indigo-200' 
+                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                                }`}
+                                title="Opção 1: Expandir as 4 áreas de engenharia na própria linha da árvore (Accordion)"
+                            >
+                                <span>🪗 Linha Expansível</span>
+                            </button>
+
+                            {/* Opção 2: Painel Lateral (Drawer) */}
+                            <button
+                                type="button"
+                                onClick={() => handleSetTreeViewMode('drawer')}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                                    treeViewMode === 'drawer' 
+                                        ? 'bg-white text-blue-700 shadow-2xs border border-blue-200' 
+                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                                }`}
+                                title="Opção 2: Abrir gaveta lateral à direita com as 4 áreas sem cobrir a árvore (Drawer)"
+                            >
+                                <span>📑 Painel Lateral</span>
+                            </button>
+
+                            {/* Opção 3: Janela Modal (Modal 360°) */}
+                            <button
+                                type="button"
+                                onClick={() => handleSetTreeViewMode('modal')}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                                    treeViewMode === 'modal' 
+                                        ? 'bg-white text-emerald-700 shadow-2xs border border-emerald-200' 
+                                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                                }`}
+                                title="Opção 3: Abrir janela modal centralizada ampla em tela inteira"
+                            >
+                                <span>🪟 Janela Modal</span>
+                            </button>
+                        </div>
+
+                        {/* Lado Direito: Busca, Atualizar, Excel */}
+                        <div className="flex items-center gap-2 w-full xl:w-auto justify-end flex-wrap">
+                            <div className="relative flex-1 sm:w-56">
+                                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                                <input
+                                    type="text"
+                                    placeholder="Filtrar na estrutura..."
+                                    value={treeFilterText}
+                                    onChange={(e) => setTreeFilterText(e.target.value)}
+                                    className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                />
+                                {treeFilterText && (
+                                    <button
+                                        onClick={() => setTreeFilterText('')}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                                        title="Limpar filtro"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={handleRevalidarArvore}
+                                disabled={loadingArvore || loadingArvoreCompleta}
+                                title="Recarregar Estrutura Completa Recursiva"
+                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold border border-slate-200 flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                            >
+                                <RefreshCw size={13} className={loadingArvore || loadingArvoreCompleta ? 'animate-spin' : ''} />
+                                <span className="hidden sm:inline">Atualizar</span>
+                            </button>
+
+                            <button
+                                onClick={handleExportArvoreExcel}
+                                disabled={rowsArvore.length === 0}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                                title="Exportar Estrutura Hierárquica em Excel"
+                            >
+                                <FileSpreadsheet size={14} />
+                                <span>Exportar XLSX</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Tabela da Árvore Widescreen com Suporte a Todos os Níveis */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden w-full">
+                        <div className="overflow-x-auto min-h-[460px] max-h-[calc(100vh-220px)]">
+                            <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr className="bg-slate-100 text-slate-600 text-[10px] uppercase font-bold tracking-wider border-b border-slate-200 sticky top-0 z-20 backdrop-blur-xs">
+                                        <th className="px-3 py-2.5 w-14 text-center">Nív.</th>
+                                        <th className="px-3 py-2.5 min-w-[240px]">Código do Componente</th>
+                                        <th className="px-3 py-2.5 min-w-[280px]">Descrição Técnica</th>
+                                        <th className="px-3 py-2.5 w-24 text-right">Qtde / UN</th>
+                                        <th className="px-2 py-2.5 w-20 text-center" title="Estrutura de Materiais cadastrada no Protheus (SG1)">BOM (SG1)</th>
+                                        <th className="px-2 py-2.5 w-20 text-center" title="Vínculo de Produto x Cliente cadastrado (SZ1)">Cliente (SZ1)</th>
+                                        <th className="px-2 py-2.5 w-20 text-center" title="Roteiro de Operações cadastrado (SG2)">Roteiro (SG2)</th>
+                                        <th className="px-2 py-2.5 w-20 text-center" title="Restrições de Processo/Qualidade (SZ0)">Restrições (SZ0)</th>
+                                        <th className="px-3 py-2.5 min-w-[270px] text-center">Ações em Qualquer Nível</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white">
+                                    {loadingArvore || loadingArvoreCompleta ? (
+                                        <tr>
+                                            <td colSpan={9} className="py-20 text-center text-slate-400">
+                                                <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-2" />
+                                                <span className="text-xs font-semibold">Carregando todos os níveis da estrutura hierárquica...</span>
+                                            </td>
+                                        </tr>
+                                    ) : filteredRowsArvore.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={9} className="py-16 text-center text-slate-400">
+                                                <Package className="w-10 h-10 mx-auto text-slate-300 mb-2 opacity-50" />
+                                                <p className="font-semibold text-slate-600">Nenhum componente encontrado na estrutura.</p>
+                                                {treeFilterText && (
+                                                    <p className="text-[11px] text-slate-400 mt-1">
+                                                        Nenhum resultado corresponde ao filtro "{treeFilterText}".
+                                                    </p>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        filteredRowsArvore.map((r, rIdx) => {
+                                            const vStatus = treeValidationStatus[r.codigoLimpo];
+                                            const indentPx = Math.min(r.nivel, 8) * 18;
+                                            const isExpanded = treeViewMode === 'accordion' && expandedNodeAccordion === r.codigoLimpo;
+                                            
+                                            // Badges de nível diferenciados por profundidade
+                                            let nivelBadgeCls = 'bg-slate-100 text-slate-700 border-slate-200 font-bold';
+                                            if (r.nivel === 0) nivelBadgeCls = 'bg-blue-600 text-white border-blue-700 font-black shadow-2xs';
+                                            else if (r.nivel === 1) nivelBadgeCls = 'bg-indigo-100 text-indigo-800 border-indigo-300 font-bold';
+                                            else if (r.nivel === 2) nivelBadgeCls = 'bg-purple-100 text-purple-800 border-purple-300 font-bold';
+                                            else if (r.nivel === 3) nivelBadgeCls = 'bg-amber-100 text-amber-800 border-amber-300 font-bold';
+                                            else if (r.nivel >= 4) nivelBadgeCls = 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold';
+
+                                            const renderValIcon = (statusKey) => {
+                                                if (loadingTreeValidation) return <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-300 mx-auto" />;
+                                                if (!vStatus) return <span className="text-slate-300 font-mono">—</span>;
+                                                return vStatus[statusKey]
+                                                    ? <CheckCircle2 className="w-4 h-4 text-emerald-600 mx-auto" title="Cadastrado / Válido no Protheus" />
+                                                    : <XCircle className="w-4 h-4 text-slate-300 hover:text-red-500 mx-auto transition-colors" title="Não cadastrado ou sem registro" />;
+                                            };
+
+                                            return (
+                                                <React.Fragment key={rIdx}>
+                                                    <tr className={`transition-colors group ${
+                                                        isExpanded ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-blue-50/40'
+                                                    }`}>
+                                                        
+                                                        {/* NÍVEL */}
+                                                        <td className="px-3 py-2 text-center">
+                                                            <span className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] border ${nivelBadgeCls}`}>
+                                                                {r.nivel === 0 ? 'PA' : `N${r.nivel}`}
+                                                            </span>
+                                                        </td>
+
+                                                        {/* CÓDIGO DO COMPONENTE COM INDENTAÇÃO VISUAL */}
+                                                        <td className="px-3 py-2">
+                                                            <div className="flex items-center gap-1.5" style={{ paddingLeft: `${indentPx}px` }}>
+                                                                {r.nivel > 0 && (
+                                                                    <span className="text-slate-300 font-mono text-[11px] select-none shrink-0">
+                                                                        └─
+                                                                    </span>
+                                                                )}
+                                                                {r.nivel === 0 ? (
+                                                                    <Network className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                                                ) : (vStatus?.materiais) ? (
+                                                                    <Layers className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                                                ) : (
+                                                                    <Package className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                                                )}
+                                                                <span className="font-mono font-bold text-slate-800 group-hover:text-blue-700 transition-colors">
+                                                                    {r.codigoLimpo}
+                                                                </span>
+                                                                {r.tipo && (
+                                                                    <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-slate-100 text-slate-500 border border-slate-200">
+                                                                        {r.tipo}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+
+                                                        {/* DESCRIÇÃO */}
+                                                        <td className="px-3 py-2 text-slate-700 font-medium leading-tight max-w-xs md:max-w-md truncate" title={r.descricao}>
+                                                            {r.descricao || '—'}
+                                                        </td>
+
+                                                        {/* QUANTIDADE / UN */}
+                                                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                                                            <span className="font-mono font-bold text-slate-900">
+                                                                {r.quantidade.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
+                                                            </span>
+                                                            <span className="ml-1 text-[10px] text-slate-500 font-bold">
+                                                                {r.unidade}
+                                                            </span>
+                                                        </td>
+
+                                                        {/* VALIDAÇÕES */}
+                                                        <td className="px-2 py-2 text-center">{renderValIcon('materiais')}</td>
+                                                        <td className="px-2 py-2 text-center">{renderValIcon('sz1')}</td>
+                                                        <td className="px-2 py-2 text-center">{renderValIcon('roteiro')}</td>
+                                                        <td className="px-2 py-2 text-center">{renderValIcon('sz0')}</td>
+
+                                                        {/* AÇÕES EM QUALQUER NÍVEL */}
+                                                        <td className="px-3 py-2 text-center">
+                                                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                                                
+                                                                {/* 1. PDF Desenho */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleAbrirPdfComponente(r.codigoLimpo)}
+                                                                    className="p-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                                                                    title={`Consultar/Abrir Desenho PDF de ${r.codigoLimpo}`}
+                                                                >
+                                                                    <FileText size={15} />
+                                                                </button>
+
+                                                                {/* 2. Disparador dos 3 Modos (Accordion / Drawer / Modal) com 4 áreas completas */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleOpenNode(r)}
+                                                                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all shadow-2xs flex items-center gap-1 cursor-pointer ${
+                                                                        isExpanded 
+                                                                            ? 'bg-indigo-600 text-white border border-indigo-700' 
+                                                                            : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
+                                                                    }`}
+                                                                    title={`Gerenciar Materiais, SZ1, Roteiro e SZ0 de ${r.codigoLimpo} (${treeViewMode})`}
+                                                                >
+                                                                    {treeViewMode === 'accordion' ? (
+                                                                        isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />
+                                                                    ) : (
+                                                                        <Eye size={12} />
+                                                                    )}
+                                                                    <span>
+                                                                        {treeViewMode === 'accordion' 
+                                                                            ? (isExpanded ? 'Recolher' : 'Gerenciar')
+                                                                            : 'Gerenciar'}
+                                                                    </span>
+                                                                </button>
+
+                                                                {/* 3. Carregar no Formulário Principal */}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleCarregarNoFormulario(r.codigoLimpo)}
+                                                                    className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer"
+                                                                    title={`Carregar ${r.codigoLimpo} como produto ativo no Formulário`}
+                                                                >
+                                                                    <Edit3 size={11} />
+                                                                    <span className="hidden sm:inline">Formulário</span>
+                                                                </button>
+
+                                                                {/* 4. Cadastrar no Protheus se não cadastrado */}
+                                                                {(!vStatus || !vStatus.materiais) && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setItemParaCriarProduto({
+                                                                                b1_xcode: r.codigoLimpo,
+                                                                                b1_xcoddes: r.codigoLimpo,
+                                                                                titulo: r.descricao || '',
+                                                                                uom: r.unidade || 'PC',
+                                                                                tipo: r.tipo || 'PI',
+                                                                                peso: ''
+                                                                            });
+                                                                            setModalCriarProdutoOpen(true);
+                                                                        }}
+                                                                        className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded transition-colors cursor-pointer"
+                                                                        title={`Cadastrar ${r.codigoLimpo} no Protheus`}
+                                                                    >
+                                                                        <Sparkles size={14} />
+                                                                    </button>
+                                                                )}
+
+                                                            </div>
+                                                        </td>
+
+                                                    </tr>
+
+                                                    {/* OPÇÃO 1: LINHA EXPANSÍVEL (ACCORDION INLINE) */}
+                                                    {isExpanded && (
+                                                        <tr>
+                                                            <td colSpan={9} className="p-0 border-b-2 border-indigo-300">
+                                                                <SincoNodeManager
+                                                                    codigo={r.codigoLimpo}
+                                                                    descricao={r.descricao}
+                                                                    nivel={r.nivel}
+                                                                    quantidade={r.quantidade}
+                                                                    unidade={r.unidade}
+                                                                    displayMode="accordion"
+                                                                    onClose={() => setExpandedNodeAccordion(null)}
+                                                                    onSuccessRefresh={handleRevalidarArvore}
+                                                                    onCarregarNoFormulario={handleCarregarNoFormulario}
+                                                                    onCadastrarProtheus={(p) => { setItemParaCriarProduto(p); setModalCriarProdutoOpen(true); }}
+                                                                />
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </React.Fragment>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* OPÇÃO 2: PAINEL LATERAL (DRAWER DESLIZANTE) */}
+                    {treeViewMode === 'drawer' && activeDrawerNode && (
+                        <div className="fixed inset-0 z-50 pointer-events-none">
+                            <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-2xs pointer-events-auto" onClick={() => setActiveDrawerNode(null)} />
+                            <div className="pointer-events-auto">
+                                <SincoNodeManager
+                                    codigo={activeDrawerNode.codigoLimpo}
+                                    descricao={activeDrawerNode.descricao}
+                                    nivel={activeDrawerNode.nivel}
+                                    quantidade={activeDrawerNode.quantidade}
+                                    unidade={activeDrawerNode.unidade}
+                                    displayMode="drawer"
+                                    onClose={() => setActiveDrawerNode(null)}
+                                    onSuccessRefresh={handleRevalidarArvore}
+                                    onCarregarNoFormulario={handleCarregarNoFormulario}
+                                    onCadastrarProtheus={(p) => { setItemParaCriarProduto(p); setModalCriarProdutoOpen(true); }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* OPÇÃO 3: JANELA MODAL (MODAL CENTRALIZADO) */}
+                    {activeModalNode && (
+                        <SincoNodeManager
+                            codigo={activeModalNode.codigoLimpo}
+                            descricao={activeModalNode.descricao}
+                            nivel={activeModalNode.nivel}
+                            quantidade={activeModalNode.quantidade}
+                            unidade={activeModalNode.unidade}
+                            displayMode="modal"
+                            onClose={() => setActiveModalNode(null)}
+                            onSuccessRefresh={handleRevalidarArvore}
+                            onCarregarNoFormulario={handleCarregarNoFormulario}
+                            onCadastrarProtheus={(p) => { setItemParaCriarProduto(p); setModalCriarProdutoOpen(true); }}
+                        />
+                    )}
+
+                </div>
+            )}
 
             {/* Modal Nova/Editar Restrição SZ0 */}
             {showModalSz0 && (
@@ -2211,33 +3389,66 @@ export default function SINCOFormularioPrincipal() {
                             </button>
                         </div>
                         <div className="p-4 border-b border-slate-100 bg-slate-50">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                <input
-                                    type="text"
-                                    value={searchClienteQuery}
-                                    onChange={(e) => setSearchClienteQuery(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && searchClienteQuery.length >= 3) {
-                                            setSearchingCliente(true);
-                                            getClientes(searchClienteQuery)
-                                                .then(res => setSearchClienteResults(res || []))
-                                                .catch(err => showToast("Erro ao buscar clientes", 'error'))
-                                                .finally(() => setSearchingCliente(false));
-                                        }
+                            <div className="relative flex items-center gap-2">
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        value={searchClienteQuery}
+                                        onChange={(e) => setSearchClienteQuery(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const q = searchClienteQuery ? searchClienteQuery.trim() : '';
+                                                setSearchingCliente(true);
+                                                getClientes(q)
+                                                    .then(res => setSearchClienteResults(Array.isArray(res) ? res : []))
+                                                    .catch(err => showToast("Erro ao buscar clientes", 'error'))
+                                                    .finally(() => setSearchingCliente(false));
+                                            }
+                                        }}
+                                        placeholder="Digite código ou nome do cliente (ex: ATILLA)..."
+                                        className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-md shadow-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-shadow"
+                                        autoFocus
+                                    />
+                                    {searchClienteQuery && (
+                                        <button 
+                                            type="button"
+                                            onClick={() => setSearchClienteQuery('')}
+                                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
+                                            title="Limpar busca"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    disabled={searchingCliente}
+                                    onClick={() => {
+                                        const q = searchClienteQuery ? searchClienteQuery.trim() : '';
+                                        setSearchingCliente(true);
+                                        getClientes(q)
+                                            .then(res => setSearchClienteResults(Array.isArray(res) ? res : []))
+                                            .catch(err => showToast("Erro ao buscar clientes", 'error'))
+                                            .finally(() => setSearchingCliente(false));
                                     }}
-                                    placeholder="Digite ao menos 3 letras e pressione Enter..."
-                                    className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-md shadow-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-shadow"
-                                    autoFocus
-                                />
+                                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white text-xs font-semibold rounded-md shadow-sm transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                                >
+                                    {searchingCliente ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                                    <span>Buscar</span>
+                                </button>
                             </div>
                         </div>
                         <div className="flex-1 overflow-auto p-0">
                             {searchingCliente ? (
-                                <div className="flex justify-center items-center h-full text-sm text-slate-400">Buscando no Protheus...</div>
+                                <div className="flex flex-col justify-center items-center h-full text-sm text-slate-400 gap-2">
+                                    <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
+                                    <span>Buscando no Protheus...</span>
+                                </div>
                             ) : searchClienteResults.length === 0 ? (
-                                <div className="flex justify-center items-center h-full text-sm text-slate-400 italic">
-                                    {searchClienteQuery.length >= 3 ? "Nenhum cliente/fornecedor encontrado." : "Aguardando busca."}
+                                <div className="flex flex-col justify-center items-center h-full text-sm text-slate-400 italic p-6 text-center">
+                                    <p>Nenhum cliente/fornecedor encontrado para "{searchClienteQuery}".</p>
+                                    <p className="text-xs text-slate-400 not-italic mt-1">Dica: Verifique a grafia ou tente buscar por código/parte do nome.</p>
                                 </div>
                             ) : (
                                 <table className="w-full text-left text-[11px]">
@@ -2284,6 +3495,43 @@ export default function SINCOFormularioPrincipal() {
                     </div>
                 </div>
             )}
+
+            {/* Modal de Documentos do Produto (Idêntico ao Catálogo de Produtos) */}
+            <DocsModal
+                isOpen={showDocsModal}
+                onClose={() => {
+                    setShowDocsModal(false);
+                    handleRefreshDocs();
+                }}
+                productCode={codigoAtual}
+                productName={dados.titulo || ''}
+                canEdit={true}
+            />
+
+            {/* Modal de Cadastro de Produto no Protheus (TOTVS) */}
+            <CriarProdutoProtheusModal
+                isOpen={modalCriarProdutoOpen}
+                onClose={() => setModalCriarProdutoOpen(false)}
+                item={itemParaCriarProduto ? { ...itemParaCriarProduto, is_sinco: true } : null}
+                onSuccess={handleProdutoCriadoComSucesso}
+                isSinco={true}
+            />
+
+            {/* Modal de Inspeção 360° e Ações de Componente da Árvore */}
+            <SincoComponenteModal
+                isOpen={Boolean(selectedComponenteModal)}
+                onClose={() => setSelectedComponenteModal(null)}
+                codigo={selectedComponenteModal?.codigoLimpo || selectedComponenteModal?.codigo}
+                descricao={selectedComponenteModal?.descricao}
+                nivel={selectedComponenteModal?.nivel}
+                quantidade={selectedComponenteModal?.quantidade}
+                unidade={selectedComponenteModal?.unidade}
+                onCarregarNoFormulario={handleCarregarNoFormulario}
+                onCadastrarProtheus={(item) => {
+                    setItemParaCriarProduto(item);
+                    setModalCriarProdutoOpen(true);
+                }}
+            />
 
         </div>
     );

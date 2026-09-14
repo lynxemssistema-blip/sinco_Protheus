@@ -106,7 +106,7 @@ export default function BOMPrintLandscape({ data, opNum, itemPv, pedido, produto
         const pends = [];
         const seenOpKeys = new Set();
         selectedOps.forEach(item => {
-            (item.recursos || []).forEach(r => {
+            (item?.recursos || []).forEach(r => {
                 if (r.status !== 'done') {
                     const opKey = `${item.op}_${item.item_op}_${item.sequen}_${r.operac}_${r.recurso}`;
                     if (!seenOpKeys.has(opKey)) {
@@ -312,9 +312,9 @@ export default function BOMPrintLandscape({ data, opNum, itemPv, pedido, produto
                                         <div className="bg-white p-2 rounded border border-slate-200">
                                             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 mb-1.5 flex items-center gap-1">
                                                 <Wrench className="w-3 h-3 text-blue-600" />
-                                                Roteiro de Operações ({opItem.recursos?.length || 0})
+                                                Roteiro de Operações ({opItem?.recursos?.length || 0})
                                             </p>
-                                            {opItem.recursos && opItem.recursos.length > 0 ? (
+                                            {opItem?.recursos && opItem.recursos.length > 0 ? (
                                                 <div className="space-y-1">
                                                     {opItem.recursos.map((rec, rIdx) => (
                                                         <div key={rIdx} className="flex items-center justify-between text-[11px] p-1.5 rounded bg-slate-50 border border-slate-200">

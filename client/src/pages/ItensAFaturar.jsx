@@ -959,7 +959,9 @@ const ItensAFaturar = () => {
                                 <div className={`p-4 rounded-xl border text-sm ${
                                     confirmationData.apontamento.sucesso 
                                         ? 'bg-emerald-50/50 border-emerald-200 text-emerald-900' 
-                                        : 'bg-amber-50/50 border-amber-200 text-amber-900'
+                                        : confirmationData.apontamento.ignorado
+                                            ? 'bg-amber-50/50 border-amber-200 text-amber-900'
+                                            : 'bg-rose-50/50 border-rose-200 text-rose-900'
                                 }`}>
                                     <div className="font-bold mb-1 flex items-center gap-1.5">
                                         {confirmationData.apontamento.sucesso ? (
@@ -967,20 +969,47 @@ const ItensAFaturar = () => {
                                                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
                                                 Apontamento no Protheus OK!
                                             </>
-                                        ) : (
+                                        ) : confirmationData.apontamento.ignorado ? (
                                             <>
                                                 <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                                                Apontamento Ignorado (Sem OP Aberta)
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
                                                 Apontamento Pendente (Protheus)
                                             </>
                                         )}
                                     </div>
-                                    <div className="text-xs leading-relaxed mt-2 bg-white/60 p-2.5 rounded-lg border border-black/5 font-mono overflow-x-auto max-h-[150px]">
+                                    <div className="text-xs leading-relaxed mt-2 bg-white/70 p-2.5 rounded-lg border border-black/5 font-mono overflow-x-auto max-h-[160px]">
                                         {confirmationData.apontamento.sucesso ? (
                                             <div>
-                                                O apontamento de produção foi realizado com sucesso para as OPs enviadas.
-                                                <pre className="mt-1 text-[10px] text-gray-500">
-                                                    {JSON.stringify(confirmationData.apontamento.resposta, null, 2)}
-                                                </pre>
+                                                <div className="text-emerald-800 font-semibold mb-1">
+                                                    O apontamento de produção foi realizado com sucesso no Protheus.
+                                                </div>
+                                                {confirmationData.apontamento.itensApontados && (
+                                                    <div className="text-[11px] text-emerald-700">
+                                                        OPs integradas: {confirmationData.apontamento.itensApontados.map(i => `${i.C2_OP} (${i.C2_PRODUTO}: ${i.C2_QUANT} un)`).join(', ')}
+                                                    </div>
+                                                )}
+                                                {confirmationData.apontamento.avisosSemOp && confirmationData.apontamento.avisosSemOp.length > 0 && (
+                                                    <div className="mt-2 pt-2 border-t border-emerald-200 text-[11px] text-amber-700">
+                                                        ⚠️ Itens sem OP aberta: {confirmationData.apontamento.avisosSemOp.map(a => `${a.produto} (Ped. ${a.pedido})`).join(', ')}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : confirmationData.apontamento.ignorado ? (
+                                            <div>
+                                                <div className="font-semibold text-amber-800 mb-1">
+                                                    {confirmationData.apontamento.aviso || 'Nenhuma OP aberta encontrada no Protheus.'}
+                                                </div>
+                                                {confirmationData.apontamento.detalhes && (
+                                                    <ul className="list-disc pl-4 text-[11px] text-amber-900/80 space-y-0.5">
+                                                        {confirmationData.apontamento.detalhes.map((d, idx) => (
+                                                            <li key={idx}><strong>{d.produto}</strong> (Ped. {d.pedido} / Item {d.item}): {d.motivo}</li>
+                                                        ))}
+                                                    </ul>
+                                                )}
                                             </div>
                                         ) : (
                                             <div>

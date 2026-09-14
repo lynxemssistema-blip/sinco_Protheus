@@ -110,56 +110,56 @@ export default function WabtecEstruturaMapeamentoPage({ selectedLote }) {
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-2">
             {/* Header / Buttons */}
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-1">
                 <div className="flex-1"></div>
-                <div className="flex items-center gap-2 flex-wrap">
-                    <button onClick={fetchData} className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-medium transition flex items-center gap-2">
-                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Recarregar
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    <button onClick={fetchData} className="px-2.5 py-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium transition flex items-center gap-1.5">
+                        <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Recarregar
                     </button>
-                    <button onClick={handleExportarBOM} disabled={!selectedLote} className="px-3 py-1.5 bg-green-50 border border-green-200 hover:bg-green-100 text-green-700 rounded-lg text-sm font-medium transition flex items-center gap-2 disabled:opacity-50">
-                        <Download className="w-4 h-4" /> Exportar Excel
+                    <button onClick={handleExportarBOM} disabled={!selectedLote} className="px-2.5 py-1 bg-green-50 border border-green-200 hover:bg-green-100 text-green-700 rounded-md text-xs font-medium transition flex items-center gap-1.5 disabled:opacity-50">
+                        <Download className="w-3.5 h-3.5" /> Exportar Excel
                     </button>
-                    <button onClick={handleSalvarTodos} disabled={data.length === 0} className="px-3 py-1.5 bg-emerald-400 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <Save className="w-4 h-4" /> Salvar Todos ({data.filter(d => d.protheus_cod).length})
+                    <button onClick={handleSalvarTodos} disabled={data.length === 0} className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-medium transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <Save className="w-3.5 h-3.5" /> Salvar Todos ({data.filter(d => d.protheus_cod).length})
                     </button>
-                    <button onClick={handleDesvincularTodos} disabled={data.length === 0} className="px-3 py-1.5 bg-red-50 border border-red-200 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium transition flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <Unlink className="w-4 h-4" /> Desvincular Todos ({data.filter(d => d.protheus_cod).length})
+                    <button onClick={handleDesvincularTodos} disabled={data.length === 0} className="px-2.5 py-1 bg-red-50 border border-red-200 hover:bg-red-100 text-red-600 rounded-md text-xs font-medium transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <Unlink className="w-3.5 h-3.5" /> Desvincular Todos ({data.filter(d => d.protheus_cod).length})
                     </button>
-                    <button onClick={handleSugerirVinculos} disabled={buscando || !selectedLote} className="px-4 py-1.5 bg-[#0e95a9] hover:bg-[#0c8294] text-white rounded-lg text-sm font-medium transition flex items-center gap-2 disabled:opacity-50">
-                        {buscando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                    <button onClick={handleSugerirVinculos} disabled={buscando || !selectedLote} className="px-3 py-1 bg-[#0e95a9] hover:bg-[#0c8294] text-white rounded-md text-xs font-medium transition flex items-center gap-1.5 disabled:opacity-50">
+                        {buscando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
                         Sugerir Vínculos Protheus
                     </button>
                 </div>
             </div>
 
             {!selectedLote ? (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 flex flex-col items-center justify-center text-center min-h-[300px]">
-                    <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-4 border border-slate-200">
-                        <span className="text-slate-400 text-xl font-bold">!</span>
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 flex flex-col items-center justify-center text-center min-h-[300px]">
+                    <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center mb-3 border border-slate-200">
+                        <span className="text-slate-400 text-lg font-bold">!</span>
                     </div>
-                    <p className="text-slate-700 font-bold mb-1">Nenhum lote WabTec ativo encontrado.</p>
-                    <p className="text-slate-500 text-sm">Importe uma planilha em "1. Importação e Base" primeiro.</p>
+                    <p className="text-slate-700 font-bold mb-1 text-xs">Nenhum lote WabTec ativo encontrado.</p>
+                    <p className="text-slate-500 text-xs">Importe uma planilha em "1. Importação e Base" primeiro.</p>
                 </div>
             ) : loading ? (
                 <div className="flex flex-col items-center justify-center py-20 bg-white rounded-xl shadow-sm border border-slate-200">
                     <Loader2 className="w-8 h-8 animate-spin text-[#0e95a9] mb-4" />
-                    <p className="text-slate-500 font-medium">Carregando itens do lote...</p>
+                    <p className="text-slate-500 font-medium text-xs">Carregando itens do lote...</p>
                 </div>
             ) : data.length > 0 ? (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                        <span className="text-sm font-bold text-slate-700">Mapeamento Protheus ({data.length} itens)</span>
+                <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden flex flex-col">
+                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                        <span className="text-xs font-bold text-slate-700">Mapeamento Protheus ({data.length} itens)</span>
                     </div>
-                    <div className="overflow-x-auto max-h-[600px]">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-50 sticky top-0 shadow-sm z-10 text-xs text-slate-500 uppercase border-b border-slate-200">
+                    <div className="overflow-auto max-h-[calc(100vh-210px)] min-h-[440px]">
+                        <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-50 sticky top-0 shadow-xs z-10 text-[11px] text-slate-500 uppercase border-b border-slate-200">
                                 <tr>
-                                    <th className="px-4 py-3 font-semibold w-64">Código Cliente / Descrição</th>
-                                    <th className="px-4 py-3 font-semibold text-center w-32">Revisão Cliente</th>
-                                    <th className="px-4 py-3 font-semibold">Sugestão Protheus</th>
-                                    <th className="px-4 py-3 font-semibold text-center w-32">Ação</th>
+                                    <th className="px-3 py-2 font-semibold w-64">Código Cliente / Descrição</th>
+                                    <th className="px-3 py-2 font-semibold text-center w-32">Revisão Cliente</th>
+                                    <th className="px-3 py-2 font-semibold">Sugestão Protheus</th>
+                                    <th className="px-3 py-2 font-semibold text-center w-32">Ação</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">

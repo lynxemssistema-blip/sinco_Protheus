@@ -112,6 +112,130 @@ router.post('/', requirePermission('config', 'create'), async (req, res) => {
     }
 });
 
+// BULK UPDATE USER PERMISSION GROUP (PUT /bulk-profile)
+router.put('/bulk-profile', requirePermission('config', 'edit'), async (req, res) => {
+    try {
+        const { userIds, tipo, copyPermissions } = req.body;
+        const loggedUserId = req.user ? req.user.id : null;
+
+        if (!Array.isArray(userIds) || userIds.length === 0) {
+            return res.status(400).json({ error: 'Nenhum usuário selecionado.' });
+        }
+
+        if (!tipo) {
+            return res.status(400).json({ error: 'Grupo de permissão (perfil) é obrigatório.' });
+        }
+
+        // Non-SAs cannot promote anyone to SA
+        if (tipo === 'SA' && (!req.user || req.user.tipo !== 'SA')) {
+            return res.status(403).json({ error: 'Apenas SuperAdmins (SA) podem atribuir o perfil SuperAdmin (SA).' });
+        }
+
+        const conn = await mysqlPool.getConnection();
+        try {
+            await conn.beginTransaction();
+
+            const [targetUsers] = await conn.query(
+                'SELECT idUsuario, TipoUsuario, NomeCompleto FROM usuario WHERE idUsuario IN (?)',
+                [userIds]
+            );
+
+            if (targetUsers.length === 0) {
+                await conn.rollback();
+                return res.status(404).json({ error: 'Nenhum dos usuários selecionados foi encontrado.' });
+            }
+
+            if (!req.user || req.user.tipo !== 'SA') {
+                const saTarget = targetUsers.find(u => u.TipoUsuario === 'SA');
+                if (saTarget) {
+                    await conn.rollback();
+                    return res.status(403).json({ error: `O usuário ${saTarget.NomeCompleto} é SuperAdmin (SA) e só pode ser alterado por outro SuperAdmin.` });
+                }
+            }
+
+            const validUserIds = targetUsers.map(u => u.idUsuario);
+
+            // Update TipoUsuario for all selected users
+            await conn.query(
+                'UPDATE usuario SET TipoUsuario = ? WHERE idUsuario IN (?)',
+                [tipo, validUserIds]
+            );
+
+            // Se solicitado clonar permissões padrão do perfil
+            if (copyPermissions && tipo !== 'A' && tipo !== 'SA') {
+                const [templateRows] = await conn.query(
+                    `SELECT page_id, can_view, can_create, can_edit, can_delete 
+                     FROM app_user_permissions 
+                     WHERE user_id IN (SELECT idUsuario FROM usuario WHERE TipoUsuario = ? AND aprovado = 1)
+                     LIMIT 500`,
+                    [tipo]
+                );
+
+                if (templateRows.length > 0) {
+                    const pageMap = new Map();
+                    for (const r of templateRows) {
+                        if (!pageMap.has(r.page_id)) {
+                            pageMap.set(r.page_id, r);
+                        }
+                    }
+                    const uniquePerms = Array.from(pageMap.values());
+
+                    // Limpa permissões antigas dos usuários selecionados
+                    await conn.query('DELETE FROM app_user_permissions WHERE user_id IN (?)', [validUserIds]);
+
+                    // Insere permissões clonadas
+                    const insertValues = [];
+                    for (const uid of validUserIds) {
+                        for (const p of uniquePerms) {
+                            insertValues.push([
+                                uid,
+                                p.page_id,
+                                p.can_view ? 1 : 0,
+                                p.can_create ? 1 : 0,
+                                p.can_edit ? 1 : 0,
+                                p.can_delete ? 1 : 0
+                            ]);
+                        }
+                    }
+
+                    if (insertValues.length > 0) {
+                        await conn.query(
+                            'INSERT INTO app_user_permissions (user_id, page_id, can_view, can_create, can_edit, can_delete) VALUES ?',
+                            [insertValues]
+                        );
+                    }
+                }
+            } else if (tipo === 'A' || tipo === 'SA') {
+                // Administradores e SuperAdmins têm bypass total no RBAC; limpa regras redundantes
+                await conn.query('DELETE FROM app_user_permissions WHERE user_id IN (?)', [validUserIds]);
+            }
+
+            // Log de auditoria
+            if (loggedUserId) {
+                try {
+                    await conn.query(
+                        'INSERT INTO app_audit_logs (user_id, action, details) VALUES (?, ?, ?)',
+                        [loggedUserId, 'BULK_UPDATE_USER_PROFILE', JSON.stringify({ count: validUserIds.length, targetRole: tipo, userIds: validUserIds })]
+                    );
+                } catch (auditErr) {
+                    console.warn('⚠️ Falha ao registrar log de auditoria em lote:', auditErr.message);
+                }
+            }
+
+            await conn.commit();
+            res.json({ message: `Grupo de permissão alterado para ${validUserIds.length} usuário(s) com sucesso!` });
+        } catch (txErr) {
+            await conn.rollback();
+            throw txErr;
+        } finally {
+            conn.release();
+        }
+    } catch (error) {
+        console.error('Erro ao atualizar grupo de permissão em lote:', error);
+        res.status(500).json({ error: 'Erro ao atualizar perfis: ' + error.message });
+    }
+});
+
 // UPDATE USER (PUT /:id)
 router.put('/:id', requirePermission('config', 'edit'), async (req, res) => {
     try {
@@ -189,22 +313,48 @@ router.put('/:id', requirePermission('config', 'edit'), async (req, res) => {
     }
 });
 
-// DELETE USER (DELETE /:id)
+// DEACTIVATE USER (DELETE /:id) — Desativação segura do usuário preservando histórico e integridade
 router.delete('/:id', requirePermission('config', 'delete'), async (req, res) => {
     try {
         const { id } = req.params;
+        const loggedUserId = req.user ? req.user.id : null;
 
-        // Check user's role before deletion
-        const [targetUserRows] = await mysqlPool.query('SELECT TipoUsuario FROM usuario WHERE idUsuario = ?', [id]);
-        if (targetUserRows.length > 0 && targetUserRows[0].TipoUsuario === 'SA' && (!req.user || req.user.tipo !== 'SA')) {
-            return res.status(403).json({ error: 'Apenas SuperAdmins (SA) podem remover usuários com o perfil SuperAdmin (SA).' });
+        // Impedir desativação da própria conta
+        if (loggedUserId && String(loggedUserId) === String(id)) {
+            return res.status(400).json({ error: 'Você não pode desativar seu próprio usuário.' });
         }
 
-        await mysqlPool.query('DELETE FROM usuario WHERE idUsuario = ?', [id]);
-        res.json({ message: 'Usuário removido com sucesso' });
+        // Check user's role before deactivation
+        const [targetUserRows] = await mysqlPool.query('SELECT TipoUsuario, NomeCompleto FROM usuario WHERE idUsuario = ?', [id]);
+        if (targetUserRows.length === 0) {
+            return res.status(404).json({ error: 'Usuário não encontrado.' });
+        }
+
+        if (targetUserRows[0].TipoUsuario === 'SA' && (!req.user || req.user.tipo !== 'SA')) {
+            return res.status(403).json({ error: 'Apenas SuperAdmins (SA) podem desativar usuários com o perfil SuperAdmin (SA).' });
+        }
+
+        // Desativação segura: nenhum registro ou histórico é deletado do banco
+        await mysqlPool.query(
+            'UPDATE usuario SET aprovado = 0, status = "0" WHERE idUsuario = ?',
+            [id]
+        );
+
+        if (loggedUserId) {
+            try {
+                await mysqlPool.query(
+                    'INSERT INTO app_audit_logs (user_id, action, details) VALUES (?, ?, ?)',
+                    [loggedUserId, 'DEACTIVATE_USER', JSON.stringify({ targetUserId: id, nome: targetUserRows[0].NomeCompleto })]
+                );
+            } catch (auditErr) {
+                console.warn('⚠️ Falha ao registrar log de auditoria ao desativar usuário:', auditErr.message);
+            }
+        }
+
+        res.json({ message: 'Usuário desativado com sucesso!' });
     } catch (error) {
-        console.error('Erro ao deletar usuário:', error);
-        res.status(500).json({ error: 'Erro ao deletar usuário' });
+        console.error('Erro ao desativar usuário:', error);
+        res.status(500).json({ error: 'Erro ao desativar usuário: ' + error.message });
     }
 });
 

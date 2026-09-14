@@ -328,15 +328,18 @@ router.get('/estrutura/:codProdutoPai', async (req, res) => {
         // extension in NomeArquivoSemExtensao while produto_estrutura_item may not.
         const stripExt = (s) => String(s || '').toLowerCase().replace(/\.[a-z]+$/i, '');
 
+        const { normalizeFilePath, resolveCaseInsensitivePath } = require('../utils/pathResolver');
+
         const structure = items.map(item => {
             let hasPdfFile = false;
             let finalPdfPath = null;
             if (item.EnderecoArquivo) {
-                const replaced = item.EnderecoArquivo.replace(/\\/g, '/').replace(/\/192\.168\.1\.253\/ENGENHARIA/i, '/mnt/engenharia');
-
                 try {
+                    const normalized = normalizeFilePath(item.EnderecoArquivo);
+                    const resolved = resolveCaseInsensitivePath(normalized);
+
                     // Check if file physically exists on the Linux server path
-                    if (fs.existsSync(replaced)) {
+                    if (fs.existsSync(resolved)) {
                         hasPdfFile = true;
                         // Keep original windows path verbatim for frontend to request correctly
                         finalPdfPath = item.EnderecoArquivo;
@@ -510,7 +513,13 @@ router.get('/materiais-apoio', async (req, res) => {
         res.json(rows);
     } catch (error) {
         console.error('❌ Erro ao buscar materiais de apoio:', error);
-        res.status(500).json({ error: 'Erro interno ao buscar materiais' });
+        res.status(500).json({ 
+            success: false, 
+            error: 'Erro interno ao buscar materiais de apoio', 
+            details: error.message,
+            endpoint: '/api/sinco/materiais-apoio',
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
@@ -519,7 +528,13 @@ router.post('/materiais-apoio', async (req, res) => {
     try {
         const { nome, densidade } = req.body;
         if (!nome || !densidade) {
-            return res.status(400).json({ error: 'Nome e densidade são obrigatórios' });
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Nome e densidade são obrigatórios', 
+                frontendPayload: req.body,
+                endpoint: '/api/sinco/materiais-apoio',
+                timestamp: new Date().toISOString()
+            });
         }
         
         await initMateriaisApoioDB();
@@ -530,10 +545,24 @@ router.post('/materiais-apoio', async (req, res) => {
             ON DUPLICATE KEY UPDATE densidade = VALUES(densidade)
         `, [nome, parseFloat(densidade)]);
         
-        res.status(201).json({ success: true, message: 'Material cadastrado/atualizado com sucesso' });
+        res.status(201).json({ 
+            success: true, 
+            message: 'Material cadastrado/atualizado com sucesso', 
+            data: { nome, densidade: parseFloat(densidade) },
+            frontendPayload: req.body,
+            endpoint: '/api/sinco/materiais-apoio',
+            timestamp: new Date().toISOString()
+        });
     } catch (error) {
         console.error('❌ Erro ao adicionar material:', error);
-        res.status(500).json({ error: 'Erro interno ao adicionar material' });
+        res.status(500).json({ 
+            success: false, 
+            error: 'Erro interno ao adicionar material', 
+            details: error.message,
+            frontendPayload: req.body,
+            endpoint: '/api/sinco/materiais-apoio',
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
@@ -542,7 +571,13 @@ router.put('/materiais-apoio', async (req, res) => {
     try {
         const { nomeOriginal, nome, densidade } = req.body;
         if (!nomeOriginal || !nome || !densidade) {
-            return res.status(400).json({ error: 'nomeOriginal, nome e densidade são obrigatórios' });
+            return res.status(400).json({ 
+                success: false, 
+                error: 'nomeOriginal, nome e densidade são obrigatórios', 
+                frontendPayload: req.body,
+                endpoint: '/api/sinco/materiais-apoio',
+                timestamp: new Date().toISOString()
+            });
         }
         
         await initMateriaisApoioDB();
@@ -558,10 +593,24 @@ router.put('/materiais-apoio', async (req, res) => {
             await pool.query('UPDATE sinco_materiais_densidade SET densidade = ? WHERE nome = ?', [parseFloat(densidade), nome]);
         }
         
-        res.json({ success: true, message: 'Material atualizado com sucesso' });
+        res.json({ 
+            success: true, 
+            message: 'Material atualizado com sucesso', 
+            data: { nomeOriginal, nome, densidade: parseFloat(densidade) },
+            frontendPayload: req.body,
+            endpoint: '/api/sinco/materiais-apoio',
+            timestamp: new Date().toISOString()
+        });
     } catch (error) {
         console.error('❌ Erro ao atualizar material:', error);
-        res.status(500).json({ error: 'Erro interno ao atualizar material' });
+        res.status(500).json({ 
+            success: false, 
+            error: 'Erro interno ao atualizar material', 
+            details: error.message,
+            frontendPayload: req.body,
+            endpoint: '/api/sinco/materiais-apoio',
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
@@ -570,16 +619,36 @@ router.delete('/materiais-apoio', async (req, res) => {
     try {
         const { nome } = req.body;
         if (!nome) {
-            return res.status(400).json({ error: 'Nome é obrigatório' });
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Nome é obrigatório', 
+                frontendPayload: req.body,
+                endpoint: '/api/sinco/materiais-apoio',
+                timestamp: new Date().toISOString()
+            });
         }
         
         await initMateriaisApoioDB();
         await pool.query('DELETE FROM sinco_materiais_densidade WHERE nome = ?', [nome]);
         
-        res.json({ success: true, message: 'Material excluído com sucesso' });
+        res.json({ 
+            success: true, 
+            message: 'Material excluído com sucesso', 
+            data: { nome },
+            frontendPayload: req.body,
+            endpoint: '/api/sinco/materiais-apoio',
+            timestamp: new Date().toISOString()
+        });
     } catch (error) {
         console.error('❌ Erro ao excluir material:', error);
-        res.status(500).json({ error: 'Erro interno ao excluir material' });
+        res.status(500).json({ 
+            success: false, 
+            error: 'Erro interno ao excluir material', 
+            details: error.message,
+            frontendPayload: req.body,
+            endpoint: '/api/sinco/materiais-apoio',
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
@@ -929,7 +998,83 @@ router.get('/arvore/:codigo', async (req, res) => {
         res.json(rows);
     } catch (err) {
         console.error('Erro arvore produto (Protheus):', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ 
+            success: false,
+            error: 'Erro ao buscar árvore de produto (Protheus)', 
+            details: err.message,
+            codigo,
+            endpoint: `/api/sinco/arvore/${codigo}`,
+            timestamp: new Date().toISOString(),
+            stack: err.stack
+        });
+    }
+});
+
+// GET /api/sinco/arvore-completa/:codigo — explosão recursiva de todos os níveis da estrutura (BOM)
+router.get('/arvore-completa/:codigo', async (req, res) => {
+    const codigo = req.params.codigo.trim().toUpperCase();
+    try {
+        const query = `
+            WITH RECURSIVE bom AS (
+                -- Nível 1: Filhos imediatos do produto raiz
+                SELECT 
+                    1 as nivel,
+                    TRIM(g1.g1_cod) as pai,
+                    TRIM(g1.g1_comp) as componente,
+                    g1.g1_quant::numeric as quantidade,
+                    TRIM(g1.g1_trt) as trt,
+                    ARRAY[TRIM(g1.g1_cod), TRIM(g1.g1_comp)] as path,
+                    ARRAY[ROW_NUMBER() OVER (ORDER BY g1.g1_comp)] as sort_path
+                FROM sg1010 g1
+                WHERE TRIM(g1.g1_cod) = $1
+                  AND COALESCE(g1.d_e_l_e_t_, '') NOT IN ('*', '  *')
+                
+                UNION ALL
+                
+                -- Níveis subsequentes recursivos
+                SELECT
+                    b.nivel + 1,
+                    TRIM(g.g1_cod) as pai,
+                    TRIM(g.g1_comp) as componente,
+                    g.g1_quant::numeric as quantidade,
+                    TRIM(g.g1_trt) as trt,
+                    b.path || TRIM(g.g1_comp) as path,
+                    b.sort_path || ROW_NUMBER() OVER (PARTITION BY g.g1_cod ORDER BY g.g1_comp) as sort_path
+                FROM bom b
+                JOIN sg1010 g ON TRIM(g.g1_cod) = b.componente
+                WHERE COALESCE(g.d_e_l_e_t_, '') NOT IN ('*', '  *')
+                  AND b.nivel < 12
+                  AND NOT (TRIM(g.g1_comp) = ANY(b.path))
+            )
+            SELECT 
+                b.nivel,
+                b.pai,
+                b.componente,
+                b.quantidade,
+                b.trt,
+                array_to_string(b.path, ' > ') as caminho_hierarquico,
+                TRIM(sb.b1_desc) as descricao,
+                TRIM(sb.b1_um) as unidade,
+                TRIM(sb.b1_tipo) as tipo,
+                TRIM(sb.b1_grupo) as grupo,
+                sb.b1_peso as peso
+            FROM bom b
+            LEFT JOIN sb1010 sb 
+                ON TRIM(sb.b1_cod) = b.componente 
+                AND COALESCE(sb.d_e_l_e_t_, '') NOT IN ('*', '  *')
+            ORDER BY b.sort_path;
+        `;
+        const rows = await queryProtheus(query, [codigo]);
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro ao buscar árvore completa recursiva (Protheus):', err.message);
+        res.status(500).json({ 
+            success: false,
+            error: 'Erro ao buscar árvore completa de produtos', 
+            details: err.message,
+            codigo,
+            endpoint: `/api/sinco/arvore-completa/${codigo}`
+        });
     }
 });
 
@@ -962,16 +1107,36 @@ router.get('/produto/:codigo', async (req, res) => {
         `, [codigo]);
         
         if (rows.length === 0) {
-            return res.status(404).json({ error: 'Produto não encontrado no Protheus (SB1010).' });
+            return res.status(404).json({ 
+                success: false,
+                error: 'Produto não encontrado no Protheus (SB1010).',
+                codigo,
+                endpoint: `/api/sinco/produto/${codigo}`,
+                timestamp: new Date().toISOString()
+            });
         }
 
         const row = rows[0];
         // Informa o frontend se o produto está excluído no ERP
         const isDeleted = row.status_delete === '*' || row.status_delete === '  *';
-        res.json({ ...row, erp_excluido: isDeleted });
+        res.json({ 
+            success: true, 
+            ...row, 
+            erp_excluido: isDeleted,
+            endpoint: `/api/sinco/produto/${codigo}`,
+            timestamp: new Date().toISOString()
+        });
     } catch (err) {
         console.error('Erro ao buscar produto (Protheus):', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ 
+            success: false,
+            error: 'Erro ao buscar produto (Protheus)', 
+            details: err.message,
+            codigo,
+            endpoint: `/api/sinco/produto/${codigo}`,
+            timestamp: new Date().toISOString(),
+            stack: err.stack
+        });
     }
 });
 
@@ -1000,7 +1165,15 @@ router.get('/produtos/busca', async (req, res) => {
         res.json(rows);
     } catch (err) {
         console.error('Erro ao buscar produtos:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ 
+            success: false,
+            error: 'Erro ao buscar produtos no Protheus', 
+            details: err.message,
+            query: termo,
+            endpoint: '/api/sinco/produtos/busca',
+            timestamp: new Date().toISOString(),
+            stack: err.stack
+        });
     }
 });
 
@@ -1025,7 +1198,15 @@ router.get('/restricoes/:codigo', async (req, res) => {
         res.json(rows);
     } catch (err) {
         console.error('Erro restricoes SZ1:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ 
+            success: false,
+            error: 'Erro ao buscar restrições SZ1 (Protheus)', 
+            details: err.message,
+            codigo,
+            endpoint: `/api/sinco/restricoes/${codigo}`,
+            timestamp: new Date().toISOString(),
+            stack: err.stack
+        });
     }
 });
 
@@ -1061,7 +1242,15 @@ router.get('/operacoes/:codigo', async (req, res) => {
         res.json(rows);
     } catch (err) {
         console.error('Erro operacoes (Protheus):', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ 
+            success: false,
+            error: 'Erro ao buscar operações (Protheus)', 
+            details: err.message,
+            codigo,
+            endpoint: `/api/sinco/operacoes/${codigo}`,
+            timestamp: new Date().toISOString(),
+            stack: err.stack
+        });
     }
 });
 
@@ -1125,7 +1314,15 @@ router.get('/restricoes-sz0/:codigo', async (req, res) => {
         res.json(decoded);
     } catch (err) {
         console.error('Erro restricoes SZ0:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ 
+            success: false,
+            error: 'Erro ao buscar restrições SZ0 (Protheus)', 
+            details: err.message,
+            codigo,
+            endpoint: `/api/sinco/restricoes-sz0/${codigo}`,
+            timestamp: new Date().toISOString(),
+            stack: err.stack
+        });
     }
 });
 
@@ -1183,7 +1380,14 @@ router.get('/restricoes-sz0-todas', async (req, res) => {
         res.json(decoded);
     } catch (err) {
         console.error('Erro todas restricoes SZ0:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ 
+            success: false,
+            error: 'Erro ao buscar todas as restrições SZ0 (Protheus)', 
+            details: err.message,
+            endpoint: '/api/sinco/restricoes-sz0-todas',
+            timestamp: new Date().toISOString(),
+            stack: err.stack
+        });
     }
 });
 
@@ -1251,12 +1455,42 @@ router.post('/restricao/edit', async (req, res) => {
         );
 
         if (editResp.status >= 400) {
-            return res.status(editResp.status).json(editResp.data);
+            return res.status(editResp.status).json({
+                success: false,
+                error: 'Erro retornado pela API Protheus de Restrições (SZ0)',
+                message: editResp.data?.message || 'Falha no processamento da restrição',
+                details: editResp.data,
+                protheusStatus: editResp.status,
+                protheusRawResponse: editResp.data || editResp.raw,
+                protheusPayload: req.body,
+                frontendPayload: req.body,
+                endpoint: '/api/sinco/restricao/edit',
+                timestamp: new Date().toISOString()
+            });
         }
-        res.json(editResp.data);
+        res.json({
+            success: true,
+            message: 'Restrição (SZ0) salva/atualizada com sucesso no Protheus',
+            protheusStatus: editResp.status,
+            protheusRawResponse: editResp.data || editResp.raw,
+            protheusPayload: req.body,
+            frontendPayload: req.body,
+            endpoint: '/api/sinco/restricao/edit',
+            timestamp: new Date().toISOString(),
+            raw: editResp.data
+        });
     } catch (err) {
         console.error('Erro ao enviar restrição para Protheus:', err.message || err);
-        res.status(500).json({ error: 'Falha de comunicação com API Protheus', details: err.message || String(err) });
+        res.status(500).json({ 
+            success: false,
+            error: 'Falha de comunicação com API Protheus', 
+            details: err.message || String(err),
+            protheusPayload: req.body,
+            frontendPayload: req.body,
+            endpoint: '/api/sinco/restricao/edit',
+            timestamp: new Date().toISOString(),
+            stack: err.stack
+        });
     }
 });
 

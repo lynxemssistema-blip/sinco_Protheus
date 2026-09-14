@@ -45,7 +45,7 @@ export default function HermesFeed() {
     useEffect(() => {
         // Inicializa conexão socket
         const socket = io(window.location.origin, {
-            transports: ['websocket', 'polling'],
+            transports: ['polling', 'websocket'],
             reconnectionAttempts: 5,
             reconnectionDelay: 5000,
             timeout: 10000

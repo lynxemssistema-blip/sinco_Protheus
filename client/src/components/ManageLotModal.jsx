@@ -75,12 +75,22 @@ const ManageLotModal = ({ isOpen, onClose, selectedItems = [], preselectedLotCod
         let targetCode = null;
         if (mode === 'new') {
             targetCode = customCode.trim() ? customCode.trim().toUpperCase() : null;
+            const blocked = itemsList.filter(it => it.lpf_codigo);
+            if (blocked.length > 0) {
+                toast.warning(`${blocked.length} item(ns) já pertencem a outro lote (${blocked.map(b => b.lpf_codigo).slice(0, 2).join(', ')}). Remova-os do lote atual antes.`);
+                return;
+            }
         } else {
             if (!selectedExistingLot) {
                 toast.warning('Selecione um lote existente da lista.');
                 return;
             }
             targetCode = selectedExistingLot;
+            const foreign = itemsList.filter(it => it.lpf_codigo && it.lpf_codigo !== targetCode);
+            if (foreign.length > 0) {
+                toast.warning(`${foreign.length} item(ns) já pertencem a outro lote (${foreign[0].lpf_codigo}). Remova-os primeiro.`);
+                return;
+            }
         }
 
         try {
@@ -292,7 +302,7 @@ const ManageLotModal = ({ isOpen, onClose, selectedItems = [], preselectedLotCod
                                                 </div>
 
                                                 <div>
-                                                    {l.release ? (
+                                                    {l.release?.status === 'LIBERADO' ? (
                                                         <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
                                                             Liberado
                                                         </span>

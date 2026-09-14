@@ -233,7 +233,7 @@ export default function ProcessFlowchart({
             const resourcesMap = new Map();
 
             const traverse = (item) => {
-                if (!item.op) return;
+                if (!item || !item.op) return;
                 
                 if (item.recursos && item.recursos.length > 0) {
                     item.recursos.forEach(r => {
@@ -626,7 +626,7 @@ export default function ProcessFlowchart({
                                 <Wrench className="w-3 h-3" /> Todas as Operações da Peça
                             </div>
                             <div className="flex flex-col gap-2">
-                                {selectedNodeDetails.recursos && selectedNodeDetails.recursos.map(r => (
+                                {selectedNodeDetails?.recursos && selectedNodeDetails.recursos.map(r => (
                                     <div key={r.operac} className="border border-slate-100 p-2 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors">
                                         <div className="flex items-center justify-between">
                                             <span className="font-mono text-xs font-bold text-slate-700">Op {r.operac}</span>

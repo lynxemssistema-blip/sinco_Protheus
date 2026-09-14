@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, Search, Loader2, Check, X, MessageCircleQuestion, ChevronDown, AlertTriangle, PackageSearch, Network, ChevronRight, ShoppingCart, Bot } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -32,6 +32,113 @@ function OndeEUsadoSimples({ codigo }) {
             {lista.slice(0, 8).join(', ')}
             {lista.length > 8 && <span className="italic text-slate-500"> (+{lista.length - 8})</span>}
         </span>
+    );
+}
+
+// Painel detalhado de onde o produto é usado em estruturas (usado nos Cards da Fase 2)
+function OndeEUsadoPanel({ codigo }) {
+    const [dados, setDados] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [aberto, setAberto] = useState(false);
+    const panelRef = useRef(null);
+
+    useEffect(() => {
+        let mounted = true;
+        setLoading(true);
+        getOndeEUsado(codigo)
+            .then(res => {
+                if (mounted) setDados(res);
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (mounted) setLoading(false);
+            });
+        return () => { mounted = false; };
+    }, [codigo]);
+
+    useEffect(() => {
+        if (!aberto) return;
+        const handleClickOutside = (e) => {
+            if (panelRef.current && !panelRef.current.contains(e.target)) {
+                setAberto(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [aberto]);
+
+    if (loading) {
+        return (
+            <span className="flex items-center gap-1 text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded px-2 py-0.5">
+                <Loader2 className="w-3 h-3 animate-spin text-slate-400" />
+                <span className="text-[11px]">Estruturas...</span>
+            </span>
+        );
+    }
+
+    if (!dados || dados.total === 0) {
+        return (
+            <span className="flex items-center gap-1 text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded px-2 py-0.5" title="Não consta em nenhuma estrutura de produto (BOM)">
+                <Network className="w-3 h-3 text-slate-400" />
+                Sem uso em estruturas
+            </span>
+        );
+    }
+
+    return (
+        <div className="relative inline-block" ref={panelRef}>
+            <button
+                type="button"
+                onClick={() => setAberto(prev => !prev)}
+                className="flex items-center gap-1 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded px-2 py-0.5 transition-colors cursor-pointer"
+                title="Clique para ver os produtos que utilizam este componente"
+            >
+                <Network className="w-3 h-3 text-blue-600" />
+                <span>Usado em <strong>{dados.total}</strong> estrutura{dados.total > 1 ? 's' : ''}</span>
+                <ChevronDown className={`w-3 h-3 text-blue-500 transition-transform duration-200 ${aberto ? 'rotate-180' : ''}`} />
+            </button>
+
+            {aberto && (
+                <div className="absolute left-0 top-full mt-1.5 z-30 w-80 bg-white border border-slate-200 rounded-lg shadow-xl p-3 space-y-2 text-xs">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5 font-semibold text-slate-700">
+                        <span className="flex items-center gap-1.5">
+                            <Network className="w-3.5 h-3.5 text-blue-600" />
+                            Onde é Usado ({dados.total})
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => setAberto(false)}
+                            className="text-slate-400 hover:text-slate-600 p-0.5 rounded"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+
+                    <div className="max-h-56 overflow-y-auto space-y-2 divide-y divide-slate-100 pr-1">
+                        {dados.por_tipo && Object.entries(dados.por_tipo).map(([tipo, itens]) => (
+                            <div key={tipo} className="pt-1.5 first:pt-0">
+                                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                                    Tipo: {tipo} ({itens.length})
+                                </div>
+                                <ul className="space-y-1.5">
+                                    {itens.map((item, idx) => (
+                                        <li key={idx} className="flex items-start justify-between gap-2 text-slate-600 hover:bg-slate-50 p-1 rounded">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="font-mono font-bold text-slate-800 text-[11px]">{item.cod_pai}</div>
+                                                <div className="text-[11px] text-slate-500 truncate" title={item.desc_pai}>{item.desc_pai}</div>
+                                            </div>
+                                            <div className="text-right shrink-0 text-[10px] text-slate-400 font-mono">
+                                                qtd: {Number(item.quantidade).toLocaleString('pt-BR', { maximumFractionDigits: 4 })}
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }
 

@@ -346,7 +346,7 @@ export default function VMIPedidosMapeamentoPage({ isTab = false }) {
 
     return (
         <>
-            <div className={isTab ? 'space-y-4' : 'p-4 md:p-6 max-w-screen-2xl mx-auto space-y-4'}>
+            <div className={isTab ? 'space-y-3' : 'w-full px-2 sm:px-4 py-2 space-y-3'}>
 
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

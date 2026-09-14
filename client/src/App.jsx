@@ -27,6 +27,8 @@ const ProductStructure = React.lazy(() => import('./pages/ProductStructure'));
 const ProductionOrders = React.lazy(() => import('./pages/ProductionOrders'));
 const ProductionOrdersByOp = React.lazy(() => import('./pages/ProductionOrdersByOp'));
 const ProductCatalog = React.lazy(() => import('./pages/ProductCatalog'));
+const MSMetalProductCatalog = React.lazy(() => import('./pages/msmetal/MSMetalProductCatalog'));
+const MSMetalProductStructure = React.lazy(() => import('./pages/msmetal/MSMetalProductStructure'));
 const Romaneios = React.lazy(() => import('./pages/Romaneios'));
 const RecebimentoRomaneios = React.lazy(() => import('./pages/RecebimentoRomaneios'));
 const FornecedorPortal = React.lazy(() => import('./pages/logistica/FornecedorPortal'));
@@ -62,6 +64,7 @@ const CurriculosAnalyzer = React.lazy(() => import('./pages/rh/CurriculosAnalyze
 const VagasManager = React.lazy(() => import('./pages/rh/VagasManager'));
 const OffboardingRH = React.lazy(() => import('./pages/rh/OffboardingRH'));
 const HelpCenter = React.lazy(() => import('./pages/HelpCenter'));
+const NovasFuncionalidades = React.lazy(() => import('./pages/NovasFuncionalidades'));
 const MaterialManagementPage = React.lazy(() => import('./pages/MaterialManagementPage'));
 const WhereUsedPage = React.lazy(() => import('./pages/WhereUsedPage'));
 const ServiceOrdersPage = React.lazy(() => import('./pages/sinco/ServiceOrdersPage'));
@@ -257,7 +260,7 @@ const Layout = ({ children, fullWidth = true }) => {
 
                 {/* Scrollable Area */}
                 <div className="flex-1 overflow-auto p-1 md:p-2 w-full print:overflow-visible print:h-auto print:p-0">
-                    <div className={`${fullWidth ? 'w-full' : 'max-w-7xl mx-auto'} space-y-4`}>
+                    <div className={`${fullWidth ? 'w-full' : 'max-w-7xl mx-auto'} space-y-2 sm:space-y-3`}>
                         {children}
                     </div>
                 </div>
@@ -345,6 +348,16 @@ function App() {
                                         <Route path="/produtos" element={
                                             <Layout>
                                                 <ProductCatalog />
+                                            </Layout>
+                                        } />
+                                        <Route path="/engenharia/msmetal/produtos" element={
+                                            <Layout fullWidth={true}>
+                                                <MSMetalProductCatalog />
+                                            </Layout>
+                                        } />
+                                        <Route path="/engenharia/msmetal/estrutura/:id" element={
+                                            <Layout fullWidth={true}>
+                                                <MSMetalProductStructure />
                                             </Layout>
                                         } />
                                         <Route path="/producao" element={
@@ -599,6 +612,11 @@ function App() {
                                         <Route path="/ajuda" element={
                                             <Layout>
                                                 <HelpCenter />
+                                            </Layout>
+                                        } />
+                                        <Route path="/novas-funcionalidades" element={
+                                            <Layout>
+                                                <NovasFuncionalidades />
                                             </Layout>
                                         } />
                                         <Route path="/avisos" element={

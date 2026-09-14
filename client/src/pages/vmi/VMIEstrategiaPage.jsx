@@ -108,7 +108,7 @@ export default function VMIEstrategiaPage() {
     );
 
     return (
-        <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+        <div className="w-full px-2 sm:px-4 py-2 space-y-3">
 
             {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-3">

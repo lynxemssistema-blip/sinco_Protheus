@@ -8,7 +8,9 @@ router.get('/search', async (req, res) => {
     try {
         const { q } = req.query;
 
-        if (!q || q.length < 2) {
+        const cleanQ = (q || '').trim();
+
+        if (!cleanQ || cleanQ.length < 2) {
             const queryTop = `
                 WITH TopClientes AS (
                     SELECT TRIM(z1_cliente) AS z1_cliente
@@ -33,7 +35,9 @@ router.get('/search', async (req, res) => {
             return res.json(resultTop.rows);
         }
 
-        const searchTerm = `%${q}%`;
+        const searchTerm = `%${cleanQ}%`;
+        const escaped = cleanQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const flexiblePattern = escaped.replace(/(.)\1*/gi, '$1+');
 
         const query = `
             WITH partners AS (
@@ -56,6 +60,8 @@ router.get('/search', async (req, res) => {
                         a1_cod ILIKE $1 
                         OR a1_nome ILIKE $1 
                         OR a1_nreduz ILIKE $1
+                        OR a1_nome ~* $2
+                        OR a1_nreduz ~* $2
                     )
                 UNION ALL
                 SELECT 
@@ -77,14 +83,23 @@ router.get('/search', async (req, res) => {
                         a2_cod ILIKE $1 
                         OR a2_nome ILIKE $1 
                         OR a2_nreduz ILIKE $1
+                        OR a2_nome ~* $2
+                        OR a2_nreduz ~* $2
                     )
             )
             SELECT * FROM partners
-            ORDER BY nome
+            ORDER BY 
+                CASE 
+                    WHEN codigo = $3 THEN 1
+                    WHEN nome ILIKE $1 THEN 2
+                    WHEN nreduz ILIKE $1 THEN 3
+                    ELSE 4
+                END,
+                nome
             LIMIT 50
         `;
 
-        const result = await db.query(query, [searchTerm]);
+        const result = await db.query(query, [searchTerm, flexiblePattern, cleanQ]);
         res.json(result.rows);
 
     } catch (err) {

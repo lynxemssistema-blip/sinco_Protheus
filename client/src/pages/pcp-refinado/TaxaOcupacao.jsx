@@ -296,7 +296,7 @@ const TaxaOcupacao = () => {
     };
 
     return (
-        <div className="max-w-7xl mx-auto relative h-full flex flex-col">
+        <div className="w-full max-w-[1920px] mx-auto relative h-full flex flex-col">
             {/* HEADER FIXO */}
             <div className="sticky top-0 z-30 bg-slate-50 p-6 pb-4 space-y-4">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-200">

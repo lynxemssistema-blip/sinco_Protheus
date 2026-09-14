@@ -419,7 +419,7 @@ export default function BOMOrganogram({
                             )}
 
                             {/* Recursos / Operações (Círculos) */}
-                            {item.recursos && item.recursos.length > 0 && (
+                            {item?.recursos && item.recursos.length > 0 && (
                                 <div className="border-t border-slate-100 pt-2 flex flex-wrap gap-1.5 justify-center">
                                     {item.recursos.map((r, rIdx) => (
                                         <button
@@ -912,7 +912,7 @@ export default function BOMOrganogram({
                                         <Wrench className="w-3 h-3" /> Roteiro de Operações
                                     </div>
                                     <div className="flex flex-col gap-2">
-                                        {selectedNodeDetails.recursos && selectedNodeDetails.recursos.map((r, rIdx) => (
+                                        {selectedNodeDetails?.recursos && selectedNodeDetails.recursos.map((r, rIdx) => (
                                             <div key={`${r.operac}_${r.recurso}_${rIdx}`} className="border border-slate-100 p-2 rounded-lg bg-slate-50/50 hover:bg-slate-50 transition-colors">
                                                 <div className="flex items-center justify-between">
                                                     <span className="font-mono text-xs font-bold text-slate-700">Op {r.operac}</span>

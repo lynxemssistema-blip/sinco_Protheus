@@ -276,7 +276,7 @@ export default function AuditoriaPC() {
 
     return (
         <div className="flex flex-col h-full bg-slate-50 space-y-4">
-            <div className="max-w-7xl mx-auto w-full space-y-4">
+            <div className="w-full max-w-[1920px] mx-auto space-y-4 px-2 sm:px-4">
 
                 {/* HEADER */}
                 <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">

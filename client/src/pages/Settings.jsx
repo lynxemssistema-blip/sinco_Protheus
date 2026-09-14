@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 import { useAuth } from '../contexts/AuthContext';
 
-import { UserPlus, ShieldAlert, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database, Calendar, Info, Play } from 'lucide-react';
+import { UserPlus, ShieldAlert, UserX, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database, Calendar, Info, Play } from 'lucide-react';
 
-import { createUser, getUsers, deleteUser, updateUser, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus, getProtheusFornecedores, getProtheusClientes, getSincoProcessosList } from '../services/api';
+import { createUser, getUsers, deleteUser, updateUser, bulkUpdateUserProfile, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus, getProtheusFornecedores, getProtheusClientes, getSincoProcessosList } from '../services/api';
 
 import api from '../services/api';
 
@@ -146,6 +146,10 @@ export default function Settings() {
     const [selectedUsers, setSelectedUsers] = useState(new Set());
 
     const [sendingCredentials, setSendingCredentials] = useState(false);
+    const [bulkProfileModalOpen, setBulkProfileModalOpen] = useState(false);
+    const [bulkTargetProfile, setBulkTargetProfile] = useState('U');
+    const [bulkCopyPermissions, setBulkCopyPermissions] = useState(true);
+    const [bulkUpdating, setBulkUpdating] = useState(false);
 
 
 
@@ -1357,14 +1361,38 @@ export default function Settings() {
             alert('Erro ao enviar credenciais: ' + (err.response?.data?.error || err.message));
 
         } finally {
-
             setSendingCredentials(null);
-
         }
-
     };
 
+    const handleBulkProfileChange = async () => {
+        if (selectedUsers.size === 0) return;
+        if (!bulkTargetProfile) {
+            alert('Selecione um grupo de permissão.');
+            return;
+        }
 
+        const targetProfileObj = availableProfiles.find(p => p.code === bulkTargetProfile);
+        const profileName = targetProfileObj?.name || bulkTargetProfile;
+
+        if (!window.confirm(`Tem certeza que deseja alterar o Grupo de Permissão de ${selectedUsers.size} usuário(s) selecionado(s) para "${profileName}"?`)) {
+            return;
+        }
+
+        setBulkUpdating(true);
+        try {
+            const res = await bulkUpdateUserProfile([...selectedUsers], bulkTargetProfile, bulkCopyPermissions);
+            alert(res.message || 'Grupo de permissão atualizado com sucesso!');
+            setBulkProfileModalOpen(false);
+            setSelectedUsers(new Set());
+            loadUsers();
+        } catch (err) {
+            console.error(err);
+            alert('Erro ao alterar perfil em lote: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setBulkUpdating(false);
+        }
+    };
 
     const pendingUsers = usersList.filter(u => u.aprovado === 0);
 
@@ -3663,33 +3691,21 @@ export default function Settings() {
                                                     <div className="flex justify-end gap-2">
 
                                                         <button 
-
                                                             disabled={loading}
-
                                                             onClick={async () => {
-
-                                                                if (window.confirm("Isso excluirá a solicitação. Tem certeza?")) {
-
+                                                                if (window.confirm("Isso rejeitará a solicitação mantendo o usuário inativo. Tem certeza?")) {
                                                                     setLoading(true);
-
                                                                     try {
-
                                                                         await deleteUser(u.idUsuario);
-
                                                                         loadUsers();
-
+                                                                    } catch (e) {
+                                                                        alert('Erro ao rejeitar: ' + (e.response?.data?.error || e.message));
                                                                     } finally { setLoading(false); }
-
                                                                 }
-
                                                             }}
-
                                                             className="text-red-500 hover:text-red-700 p-2 text-xs font-medium border border-transparent hover:border-red-200 rounded-lg bg-red-50"
-
                                                         >
-
-                                                            Rejeitar (Excluir)
-
+                                                            Rejeitar
                                                         </button>
 
                                                         <button 
@@ -4067,7 +4083,7 @@ export default function Settings() {
                 {/* USERS TAB */}
 
                 {activeTab === 'users' && (
-
+                    <>
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                         {/* Form */}
@@ -4641,13 +4657,22 @@ export default function Settings() {
                                                 >
 
                                                     {sendingCredentials === 'whatsapp' ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
-
                                                     {sendingCredentials === 'whatsapp' ? 'Enviando...' : `WhatsApp`}
-
                                                 </button>
 
+                                                <button
+                                                    onClick={() => {
+                                                        setBulkTargetProfile(availableProfiles[0]?.code || 'U');
+                                                        setBulkProfileModalOpen(true);
+                                                    }}
+                                                    disabled={!!sendingCredentials || bulkUpdating}
+                                                    className="bg-indigo-600 text-white pl-3 pr-4 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-60 flex items-center gap-2 transition-all shadow-sm"
+                                                    title={`Trocar Grupo de Permissão de ${selectedUsers.size} usuário(s)`}
+                                                >
+                                                    <Shield className="w-4 h-4" />
+                                                    <span>Grupo de Permissão ({selectedUsers.size})</span>
+                                                </button>
                                             </div>
-
                                         )}
 
                                         <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full">
@@ -4978,38 +5003,34 @@ export default function Settings() {
 
                                                                 if (u.TipoUsuario === 'SA' && user?.tipo !== 'SA') {
 
-                                                                     alert('Acesso Negado: Apenas SuperAdmins podem remover usuários SuperAdmin (SA).');
+                                                                     alert('Acesso Negado: Apenas SuperAdmins podem desativar usuários SuperAdmin (SA).');
 
                                                                      return;
 
-                                                                 }
+                                                                }
 
-                                                                 if (window.confirm(`Tem certeza que deseja remover ${u.NomeCompleto}?`)) {
+                                                                if (window.confirm(`Tem certeza que deseja desativar o usuário ${u.NomeCompleto}?`)) {
 
-                                                                    try {
+                                                                   try {
 
-                                                                        await deleteUser(u.idUsuario);
+                                                                       await deleteUser(u.idUsuario);
 
-                                                                        loadUsers();
+                                                                       loadUsers();
 
-                                                                    } catch (e) {
+                                                                   } catch (e) {
 
-                                                                        alert('Erro ao deletar: ' + e.message);
+                                                                       alert('Erro ao desativar: ' + (e.response?.data?.error || e.message));
 
-                                                                    }
+                                                                   }
 
                                                                 }
 
                                                             }}
 
-                                                            className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-full transition-colors"
-
-                                                            title="Remover usuário"
-
+                                                            className="text-amber-500 hover:text-amber-700 p-2 hover:bg-amber-50 rounded-full transition-colors"
+                                                            title="Desativar usuário"
                                                         >
-
-                                                            <ShieldAlert className="w-4 h-4" />
-
+                                                            <UserX className="w-4 h-4" />
                                                         </button>
 
                                                     </div>
@@ -5044,6 +5065,90 @@ export default function Settings() {
 
                     </div>
 
+                    {/* Modal para Trocar Grupo de Permissão em Lote */}
+                    {bulkProfileModalOpen && (
+                        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-200 animate-fadeIn">
+                                <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
+                                            <Shield className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-slate-800 text-base">Alterar Grupo de Permissão</h3>
+                                            <p className="text-xs text-slate-500 font-medium">
+                                                {selectedUsers.size} usuário(s) selecionado(s)
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setBulkProfileModalOpen(false)}
+                                        className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                <div className="mt-5 space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">
+                                            Novo Grupo / Perfil de Acesso:
+                                        </label>
+                                        <select
+                                            value={bulkTargetProfile}
+                                            onChange={(e) => setBulkTargetProfile(e.target.value)}
+                                            className="w-full border border-slate-300 rounded-xl p-3 text-sm bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all shadow-sm font-medium"
+                                        >
+                                            {availableProfiles.map(p => (
+                                                <option key={p.code} value={p.code}>
+                                                    {p.name} ({p.code})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="bg-indigo-50/70 p-3.5 rounded-xl border border-indigo-100">
+                                        <label className="flex items-start gap-2.5 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={bulkCopyPermissions}
+                                                onChange={(e) => setBulkCopyPermissions(e.target.checked)}
+                                                className="mt-0.5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                                            />
+                                            <div className="text-xs">
+                                                <span className="font-semibold text-indigo-950 block">Sincronizar permissões de telas</span>
+                                                <span className="text-indigo-800/80 leading-relaxed block mt-0.5">
+                                                    Copia a matriz de permissões das telas do grupo selecionado para todos os usuários escolhidos.
+                                                </span>
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                                        <button
+                                            type="button"
+                                            onClick={() => setBulkProfileModalOpen(false)}
+                                            disabled={bulkUpdating}
+                                            className="px-4 py-2 rounded-xl text-sm text-slate-600 hover:bg-slate-100 font-medium transition-colors"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleBulkProfileChange}
+                                            disabled={bulkUpdating}
+                                            className="px-5 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 flex items-center gap-2 shadow-sm disabled:opacity-60 transition-all"
+                                        >
+                                            {bulkUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                            {bulkUpdating ? 'Aplicando...' : 'Aplicar Alterações'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    </>
                 )}
 
 

@@ -1,20 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Link as LinkIcon, Plus, Trash2, ExternalLink } from 'lucide-react';
+import { FileText, Link as LinkIcon, Plus, Trash2, ExternalLink, UploadCloud, Paperclip } from 'lucide-react';
 import api, { getProductDocuments, getFileUrl } from '../services/api';
 
-// Componente deve ser inserido na página de Estrutura ou Detalhe
-const ProductDocuments = ({ produtoCodigo, canEdit = true }) => {
+// Componente para listagem e anexação de documentos
+const ProductDocuments = ({ produtoCodigo, altCodigo = null, canEdit = true }) => {
     const [docs, setDocs] = useState([]);
     const [loading, setLoading] = useState(false);
 
     // Form states
     const [isAdding, setIsAdding] = useState(false);
+    const [addMode, setAddMode] = useState('upload'); // 'upload' | 'link'
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [uploading, setUploading] = useState(false);
     const [newDoc, setNewDoc] = useState({ titulo: 'Desenho', url_arquivo: '', tipo: 'Desenho' });
 
     const fetchDocs = async () => {
         setLoading(true);
         try {
-            const data = await getProductDocuments(produtoCodigo);
+            const data = await getProductDocuments(produtoCodigo, altCodigo);
             setDocs(data);
         } catch (error) {
             console.error("Erro ao carregar documentos:", error);
@@ -24,21 +27,43 @@ const ProductDocuments = ({ produtoCodigo, canEdit = true }) => {
     };
 
     useEffect(() => {
-        if (produtoCodigo) fetchDocs();
-    }, [produtoCodigo]);
+        if (produtoCodigo || altCodigo) fetchDocs();
+    }, [produtoCodigo, altCodigo]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            await api.post('/docs', {
-                produto_codigo: produtoCodigo,
-                ...newDoc
-            });
+            if (addMode === 'upload') {
+                if (!selectedFile) {
+                    alert('Por favor, selecione um arquivo PDF para anexar.');
+                    return;
+                }
+                setUploading(true);
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+                formData.append('produto_codigo', produtoCodigo);
+                formData.append('titulo', newDoc.titulo || selectedFile.name);
+                formData.append('tipo', newDoc.tipo);
+
+                await api.post('/docs/upload', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                setSelectedFile(null);
+            } else {
+                await api.post('/docs', {
+                    produto_codigo: produtoCodigo,
+                    ...newDoc
+                });
+            }
+
             setNewDoc({ titulo: 'Desenho', url_arquivo: '', tipo: 'Desenho' });
             setIsAdding(false);
             fetchDocs();
         } catch (error) {
-            alert('Erro ao salvar documento. Verifique o console.');
+            console.error(error);
+            alert('Erro ao salvar documento. ' + (error.response?.data?.error || error.message));
+        } finally {
+            setUploading(false);
         }
     };
 
@@ -73,6 +98,26 @@ const ProductDocuments = ({ produtoCodigo, canEdit = true }) => {
             {/* Form de Adição */}
             {isAdding && (
                 <form onSubmit={handleSubmit} className="bg-gray-50 p-4 rounded-lg mb-4 border border-blue-100 animate-fadeIn">
+                    {/* Seletor de Modo: Upload direto vs Caminho de Rede */}
+                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200">
+                        <button
+                            type="button"
+                            onClick={() => setAddMode('upload')}
+                            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md transition ${addMode === 'upload' ? 'bg-blue-600 text-white shadow-xs' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}
+                        >
+                            <UploadCloud className="w-3.5 h-3.5" />
+                            Upload de Arquivo (PDF)
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setAddMode('link')}
+                            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md transition ${addMode === 'link' ? 'bg-blue-600 text-white shadow-xs' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}
+                        >
+                            <LinkIcon className="w-3.5 h-3.5" />
+                            Caminho de Rede / UNC
+                        </button>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-3">
                         <div className="md:col-span-3">
                             <label className="block text-xs font-semibold text-gray-500 mb-1">Tipo</label>
@@ -86,7 +131,6 @@ const ProductDocuments = ({ produtoCodigo, canEdit = true }) => {
                                         'Datasheet': 'Datasheet',
                                         'Gabarito': 'Gabarito'
                                     };
-                                    // Se o título estiver vazio, ou se for igual a um dos títulos automáticos antigos, atualiza
                                     let newTitle = newDoc.titulo;
                                     if (!newTitle || Object.values(autoTitles).includes(newTitle)) {
                                         newTitle = autoTitles[tipo] || '';
@@ -106,38 +150,62 @@ const ProductDocuments = ({ produtoCodigo, canEdit = true }) => {
                             <label className="block text-xs font-semibold text-gray-500 mb-1">Título do Documento</label>
                             <input
                                 type="text"
-                                placeholder="Ex: Manual Técnico, Desenho..."
+                                placeholder="Ex: Desenho Técnico..."
                                 value={newDoc.titulo}
                                 onChange={e => setNewDoc({ ...newDoc, titulo: e.target.value })}
-                                className="w-full rounded border-gray-300 p-2 text-sm focus:border-blue-500 outline-none"
+                                className="w-full rounded border-gray-300 p-2 text-sm focus:border-blue-500 outline-none bg-white"
                                 required
                             />
                         </div>
                         <div className="md:col-span-5">
-                            <label className="block text-xs font-semibold text-gray-500 mb-1">Link / Caminho do Arquivo</label>
-                            <input
-                                type="text"
-                                placeholder="C:\Docs\manual.pdf ou https://..."
-                                value={newDoc.url_arquivo}
-                                onChange={e => setNewDoc({ ...newDoc, url_arquivo: e.target.value })}
-                                className="w-full rounded border-gray-300 p-2 text-sm focus:border-blue-500 outline-none"
-                                required
-                            />
+                            {addMode === 'upload' ? (
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-500 mb-1">Selecionar Arquivo PDF</label>
+                                    <input
+                                        type="file"
+                                        accept=".pdf,application/pdf"
+                                        onChange={e => {
+                                            const f = e.target.files?.[0];
+                                            setSelectedFile(f || null);
+                                            if (f && (!newDoc.titulo || newDoc.titulo === 'Desenho')) {
+                                                setNewDoc({ ...newDoc, titulo: f.name.replace(/\.[^/.]+$/, '') });
+                                            }
+                                        }}
+                                        className="w-full text-xs text-gray-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer bg-white border border-gray-300 rounded p-1"
+                                        required
+                                    />
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-500 mb-1">Caminho do Arquivo (UNC ou URL)</label>
+                                    <input
+                                        type="text"
+                                        placeholder="\\\\192.168.1.253\\Engenharia\\desenho.pdf"
+                                        value={newDoc.url_arquivo}
+                                        onChange={e => setNewDoc({ ...newDoc, url_arquivo: e.target.value })}
+                                        className="w-full rounded border-gray-300 p-2 text-sm focus:border-blue-500 outline-none bg-white"
+                                        required
+                                    />
+                                </div>
+                            )}
                         </div>
                     </div>
                     <div className="flex justify-end gap-2">
                         <button
                             type="button"
-                            onClick={() => setIsAdding(false)}
+                            onClick={() => { setIsAdding(false); setSelectedFile(null); }}
                             className="text-gray-500 hover:text-gray-700 text-sm px-3 py-1"
+                            disabled={uploading}
                         >
                             Cancelar
                         </button>
                         <button
                             type="submit"
-                            className="bg-blue-600 text-white text-sm px-4 py-1.5 rounded hover:bg-blue-700 transition-colors"
+                            disabled={uploading}
+                            className="bg-blue-600 text-white text-sm px-4 py-1.5 rounded hover:bg-blue-700 transition-colors flex items-center gap-1.5 disabled:opacity-50"
                         >
-                            Salvar Link
+                            {uploading && <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+                            {uploading ? 'Salvando...' : (addMode === 'upload' ? 'Enviar e Anexar' : 'Salvar Link')}
                         </button>
                     </div>
                 </form>

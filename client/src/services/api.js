@@ -171,6 +171,16 @@ export const getProdutos = async (params) => {
     return response.data;
 };
 
+export const getMSMetalProdutos = async (params) => {
+    const response = await api.get('/msmetal/produtos', { params });
+    return response.data;
+};
+
+export const getMSMetalEstrutura = async (idOuCodigo) => {
+    const response = await api.get(`/msmetal/produtos/${encodeURIComponent(idOuCodigo)}/estrutura`);
+    return response.data;
+};
+
 export const getEstruturaProduto = async (codigo) => {
     const encodedCod = encodeURIComponent(codigo);
     const response = await api.get(`/production/estrutura/${encodedCod}`);
@@ -182,9 +192,10 @@ export const getStockBalancesBatch = async (codigos) => {
     return response.data;
 };
 
-export const getProductDocuments = async (codigo) => {
+export const getProductDocuments = async (codigo, altCodigo = null) => {
     const encodedCod = encodeURIComponent(codigo);
-    const response = await api.get(`/docs/${encodedCod}`);
+    const altParam = altCodigo ? `?alt=${encodeURIComponent(altCodigo)}` : '';
+    const response = await api.get(`/docs/${encodedCod}${altParam}`);
     return response.data;
 };
 
@@ -426,6 +437,7 @@ export const getClientes = async (query) => {
 export const getUsers = (params) => api.get('/users', { params }).then(res => res.data);
 export const createUser = (data) => api.post('/users', data);
 export const updateUser = (id, data) => api.put(`/users/${id}`, data);
+export const bulkUpdateUserProfile = (userIds, tipo, copyPermissions = true) => api.put('/users/bulk-profile', { userIds, tipo, copyPermissions }).then(res => res.data);
 export const deleteUser = (id) => api.delete(`/users/${id}`).then(res => res.data);
 export const getUserPreference = (key) => api.get(`/users/preferences/${encodeURIComponent(key)}`).then(res => res.data?.value);
 export const saveUserPreference = (key, value) => api.put(`/users/preferences/${encodeURIComponent(key)}`, { value }).then(res => res.data);
@@ -587,6 +599,7 @@ export const getSincoProduto = (codigo) => api.get(`/sinco/produto/${encodeURICo
 export const getSincoProductStructure = (codigo) => api.get(`/sinco/estrutura/${encodeURIComponent(codigo)}`).then(res => res.data);
 export const getSincoProdutosRaizes = () => api.get('/sinco/produtos-raizes').then(res => res.data);
 export const getSincoArvore = (codigo) => api.get(`/sinco/arvore/${encodeURIComponent(codigo)}`).then(res => res.data);
+export const getSincoArvoreCompleta = (codigo) => api.get(`/sinco/arvore-completa/${encodeURIComponent(codigo)}`).then(res => res.data);
 export const getSincoRestricoes = (codigo) => api.get(`/sinco/restricoes/${encodeURIComponent(codigo)}`).then(res => res.data);
 export const getSincoRestricoesSz0 = (codigo) => api.get(`/sinco/restricoes-sz0/${encodeURIComponent(codigo)}`).then(res => res.data);
 export const getAllSincoRestricoesSz0 = () => api.get('/sinco/restricoes-sz0-todas').then(res => res.data);

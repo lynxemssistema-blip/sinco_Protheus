@@ -93,7 +93,7 @@ const SGQDashboard = () => {
         <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
             {/* Header */}
             <div className="bg-white border-b border-gray-200 shadow-sm">
-                <div className="max-w-7xl mx-auto px-6 py-8">
+                <div className="w-full max-w-[1920px] mx-auto px-6 py-8">
                     <div className="flex items-center gap-3 mb-2">
                         <Building2 className="h-10 w-10 text-blue-600" />
                         <h1 className="text-3xl font-bold text-gray-900">Sistema de Gestão da Qualidade</h1>
@@ -103,8 +103,8 @@ const SGQDashboard = () => {
             </div>
 
             {/* Main Content */}
-            <div className="max-w-7xl mx-auto px-6 py-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="w-full max-w-[1920px] mx-auto px-6 py-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {modules.map((module) => {
                         const Icon = module.icon;
                         return (

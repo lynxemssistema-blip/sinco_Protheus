@@ -3,7 +3,7 @@ import { Network } from 'lucide-react';
 
 export default function WabtecMapeamentoPage({ isTab = false }) {
     return (
-        <div className={isTab ? "space-y-6" : "p-4 md:p-6 space-y-6 max-w-screen-2xl mx-auto"}>
+        <div className={isTab ? "space-y-3" : "w-full px-2 sm:px-4 py-2 space-y-3"}>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 {!isTab && (
                     <div>

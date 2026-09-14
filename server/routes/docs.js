@@ -2,41 +2,37 @@ const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
+const multer = require('multer');
 const PDFExtractionService = require('../services/pdfExtraction');
 
-/**
- * Normaliza caminhos de arquivo:
- * - Remove espaços no início/final
- * - Converte Q:\ para caminho UNC \\192.168.1.253\Engenharia\
- * @param {string} filePath - Caminho original
- * @returns {string} - Caminho normalizado
- */
-function normalizeFilePath(filePath) {
-    if (!filePath) return filePath;
+const {
+    normalizeFilePath,
+    resolveCaseInsensitivePath,
+    getDiagnosticPathInfo,
+    formatNotFoundHtml
+} = require('../utils/pathResolver');
 
-    // Remove espaços no início e final
-    let normalized = filePath.trim();
-
-    // Converte Q:\ ou Q:/ para caminho UNC padrão em Windows/Linux
-    normalized = normalized.replace(/^Q:[\/\\]/i, '\\\\192.168.1.253\\Engenharia\\');
-
-    // Se estiver rodando no Linux, mapear UNC para o ponto de montagem local
-    if (process.platform !== 'win32') {
-        // Primeiro vira tudo barra normal do Linux
-        normalized = normalized.replace(/\\/g, '/');
-        // Depois mapeia a raiz do UNC pra /mnt/
-        normalized = normalized.replace(/^\/\/192\.168\.1\.253\/Engenharia\//i, '/mnt/engenharia/');
-        normalized = normalized.replace(/^\/\/192\.168\.1\.253\/Estrutura Lynx\//i, '/mnt/lynx/');
-    } else {
-        // Se estiver rodando no Windows (Local), mapeia /mnt/ de volta para UNC
-        normalized = normalized.replace(/^\/mnt\/engenharia\//i, '\\\\192.168.1.253\\Engenharia\\');
-        normalized = normalized.replace(/^\/mnt\/lynx\//i, '\\\\192.168.1.253\\Estrutura Lynx\\');
-        normalized = normalized.replace(/\//g, '\\');
+// Diretório para uploads de documentos
+const uploadDir = path.join(__dirname, '../uploads/docs');
+if (!fsSync.existsSync(uploadDir)) {
+    try {
+        fsSync.mkdirSync(uploadDir, { recursive: true });
+    } catch (e) {
+        console.warn('Aviso ao criar diretório uploads/docs:', e.message);
     }
-
-    return normalized;
 }
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+        const unique = Date.now() + '-' + Math.round(Math.random() * 1e4);
+        const cleanName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+        cb(null, `${unique}-${cleanName}`);
+    }
+});
+const uploadDoc = multer({ storage });
 
 // Inicialização: Criar Tabela se não existir
 const initTable = async () => {
@@ -111,31 +107,60 @@ router.get('/view', (req, res) => {
     }
     
     // Remove aspas soltas que possam sobrar
-    filePath = filePath.replace(/"/g, '').trim();
+    filePath = filePath.replace(/^["']+|["']+$/g, '').trim();
 
     // Normalizar caminho para Linux ou Windows
-    filePath = normalizeFilePath(filePath);
+    const normalizedPath = normalizeFilePath(filePath);
+    const absolutePath = path.resolve(normalizedPath);
 
-    // Express sendFile exige caminhos absolutos - resolve resolve isso para qualquer SO
-    const absolutePath = path.resolve(filePath);
-    console.log(`📄 Abrindo arquivo em: ${absolutePath}`);
+    // Resolver case-insensitivity e variações de maiúsculas/minúsculas no Linux/Windows
+    const resolvedPath = resolveCaseInsensitivePath(absolutePath);
+    console.log(`📄 [DOC VIEW] Original: ${filePath}`);
+    console.log(`📄 [DOC VIEW] Normalizado: ${absolutePath}`);
+    console.log(`📄 [DOC VIEW] Resolvido no disco: ${resolvedPath}`);
 
-    res.sendFile(absolutePath, (err) => {
+    const fsSync = require('fs');
+    if (!fsSync.existsSync(resolvedPath)) {
+        const diag = getDiagnosticPathInfo(absolutePath);
+        console.error('❌ [DOC VIEW] Arquivo não encontrado no disco:', diag);
+        return res.status(404).send(formatNotFoundHtml(filePath, absolutePath, resolvedPath, diag));
+    }
+
+    // Configurar headers para exibição inline correta do PDF no navegador
+    const ext = path.extname(resolvedPath).toLowerCase();
+    if (ext === '.pdf') {
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="' + encodeURIComponent(path.basename(resolvedPath)) + '"');
+    }
+
+    res.sendFile(resolvedPath, (err) => {
         if (err) {
-            console.error('Erro ao servir arquivo:', err.message);
-            res.status(404).send(`Erro ao abrir arquivo. Verifique se o caminho existe no SERVIDOR Linux: ${absolutePath}`);
+            console.error('❌ [DOC VIEW] Erro ao servir arquivo:', err.message);
+            if (!res.headersSent) {
+                const diag = getDiagnosticPathInfo(resolvedPath);
+                res.status(404).send(formatNotFoundHtml(filePath, absolutePath, resolvedPath, diag));
+            }
         }
     });
 });
 
-// GET /api/docs/:produto_codigo - Listar documentos
+// GET /api/docs/:produto_codigo - Listar documentos (suporta ?alt=codigo_alternativo)
 router.get('/:produto_codigo', async (req, res) => {
     try {
         const { produto_codigo } = req.params;
-        const [rows] = await mysqlPool.execute(
-            'SELECT * FROM produtos_docs WHERE TRIM(produto_codigo) = ? ORDER BY created_at DESC',
-            [produto_codigo.trim()]
-        );
+        const { alt } = req.query;
+
+        let query = 'SELECT * FROM produtos_docs WHERE TRIM(produto_codigo) = ?';
+        let params = [produto_codigo.trim()];
+
+        if (alt && alt.trim() && alt.trim() !== produto_codigo.trim()) {
+            query += ' OR TRIM(produto_codigo) = ?';
+            params.push(alt.trim());
+        }
+
+        query += ' ORDER BY created_at DESC';
+
+        const [rows] = await mysqlPool.execute(query, params);
         res.json(rows);
     } catch (err) {
         console.error('Erro ao buscar documentos:', err);
@@ -143,7 +168,43 @@ router.get('/:produto_codigo', async (req, res) => {
     }
 });
 
-// POST /api/docs - Adicionar documento
+// POST /api/docs/upload - Upload direto de arquivo (ex: PDF)
+router.post('/upload', uploadDoc.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+        }
+
+        const { produto_codigo, titulo, tipo = 'Desenho' } = req.body;
+        if (!produto_codigo) {
+            return res.status(400).json({ error: 'Código do produto é obrigatório.' });
+        }
+
+        const filePath = req.file.path;
+        const fileTitle = titulo && titulo.trim() ? titulo.trim() : req.file.originalname;
+
+        const [insertResult] = await mysqlPool.execute(
+            'INSERT INTO produtos_docs (produto_codigo, titulo, url_arquivo, tipo) VALUES (?, ?, ?, ?)',
+            [produto_codigo.trim(), fileTitle, filePath, tipo]
+        );
+
+        console.log(`✅ [DOC UPLOAD] Arquivo salvo para ${produto_codigo}: ${filePath}`);
+
+        res.json({
+            success: true,
+            id: insertResult.insertId,
+            produto_codigo,
+            titulo: fileTitle,
+            url_arquivo: filePath,
+            tipo
+        });
+    } catch (err) {
+        console.error('Erro no upload de documento:', err);
+        res.status(500).json({ error: 'Erro ao fazer upload do documento: ' + err.message });
+    }
+});
+
+// POST /api/docs - Adicionar documento via link ou caminho
 router.post('/', async (req, res) => {
     try {
         let { produto_codigo, titulo, url_arquivo, tipo = 'Desenho' } = req.body;
@@ -171,7 +232,8 @@ router.post('/', async (req, res) => {
             try {
                 const extractor = new PDFExtractionService(geminiKey);
                 console.log(`🤖 Extraindo dados com IA para: ${produto_codigo}...`);
-                const extracted = await extractor.extractFromPDF(url_arquivo);
+                const resolvedPdfPath = resolveCaseInsensitivePath(url_arquivo);
+                const extracted = await extractor.extractFromPDF(resolvedPdfPath);
                 // Mapear chaves corretamente (extractFromPDF retorna 'titulo', não 'titulo_desenho')
                 aiMeta = {
                     titulo_desenho: extracted.titulo ?? null,
@@ -317,7 +379,7 @@ router.post('/test-path', async (req, res) => {
     }
 
     try {
-        const resolvedPath = normalizeFilePath(folderPath);
+        const resolvedPath = resolveCaseInsensitivePath(normalizeFilePath(folderPath));
         
         // Testa a permissão de leitura
         await fs.access(resolvedPath, require('fs').constants.R_OK);
@@ -348,10 +410,10 @@ router.post('/bulk', async (req, res) => {
     }
 
     try {
-        // Normalizar caminho: trim + Q:\ → UNC
-        const resolvedPath = normalizeFilePath(folderPath);
+        // Normalizar caminho: trim + Q:\ → UNC / Linux mount + resolver case
+        const resolvedPath = resolveCaseInsensitivePath(normalizeFilePath(folderPath));
         console.log(`📂 Caminho original: ${folderPath}`);
-        console.log(`📂 Caminho normalizado: ${resolvedPath}`);
+        console.log(`📂 Caminho resolvido: ${resolvedPath}`);
 
         let allFiles;
         try {
@@ -539,8 +601,8 @@ router.post('/extract/:id', async (req, res) => {
         // Extrair dados do PDF usando Gemini
         const extractor = new PDFExtractionService(process.env.GEMINI_API_KEY);
 
-        // Normalizar caminho antes de extrair
-        const normalizedPath = normalizeFilePath(doc.url_arquivo);
+        // Normalizar e resolver caminho antes de extrair
+        const normalizedPath = resolveCaseInsensitivePath(normalizeFilePath(doc.url_arquivo));
         const metadata = await extractor.extractFromPDF(normalizedPath);
 
         // Salvar os metadados diretamente na tabela produtos_docs (UPDATE do registro existente)

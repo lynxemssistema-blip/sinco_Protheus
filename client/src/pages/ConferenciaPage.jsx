@@ -522,7 +522,7 @@ export default function ConferenciaPage() {
     );
 
     return (
-        <div className="p-2 md:p-6 space-y-3 max-w-screen-2xl mx-auto">
+        <div className="p-2 md:p-6 space-y-4 w-full max-w-[1920px] mx-auto">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>

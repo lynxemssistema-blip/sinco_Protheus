@@ -573,7 +573,7 @@ export default function GestaoAtivos() {
     };
 
     return (
-        <div className="p-6 max-w-7xl mx-auto flex flex-col h-[calc(100vh-80px)]">
+        <div className="p-4 md:p-6 w-full max-w-[1920px] mx-auto flex flex-col h-[calc(100vh-80px)]">
             <div className="flex justify-between items-center mb-6 shrink-0">
                 <div className="flex items-center gap-3">
                     <div className="bg-indigo-100 p-3 rounded-lg">

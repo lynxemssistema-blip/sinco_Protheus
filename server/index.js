@@ -1,6 +1,6 @@
-require('dotenv').config();
-const express = require('express');
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+const express = require('express');
 const compression = require('compression');
 const cors = require('cors');
 const pedidosRouter = require('./routes/pedidos');
@@ -126,6 +126,42 @@ app.use(compression());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Health Check para o Watchdog e Monitoramento de Disponibilidade
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+});
+
+// Redirecionamento transparente de /api/system para o Watchdog isolado (porta 3008)
+app.use('/api/system', (req, res) => {
+    const watchdogPort = process.env.WATCHDOG_PORT || 3008;
+    const proxyReq = http.request({
+        hostname: '127.0.0.1',
+        port: watchdogPort,
+        path: req.originalUrl,
+        method: req.method,
+        headers: { ...req.headers, host: `127.0.0.1:${watchdogPort}` }
+    }, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res);
+    });
+    proxyReq.on('error', (err) => {
+        if (req.method === 'GET' && (req.path === '/status' || req.originalUrl.includes('/system/status'))) {
+            return res.json({
+                online: true,
+                latencyMs: 5,
+                slow: false,
+                cooldownRemainingMs: 0,
+                canRestart: false,
+                remainingMinutes: 0,
+                timestamp: new Date().toISOString(),
+                watchdogOnline: false
+            });
+        }
+        res.status(503).json({ error: 'Watchdog offline', detail: err.message });
+    });
+    req.pipe(proxyReq);
+});
+
 
 // --- AI Error Tracker Middleware ---
 const { handleSystemError } = require('./utils/errorHandlerToAgent');
@@ -190,6 +226,7 @@ app.use('/api/corte', corteRouter);
 app.use('/api/pedidos-status', require('./routes/pedidos_status'));
 app.use('/api/clients', require('./routes/clients'));
 app.use('/api/produtos', require('./routes/produtos'));
+app.use('/api/msmetal', require('./routes/msmetal'));
 app.use('/api/docs', require('./routes/docs'));
 app.use('/api/users', require('./routes/users'));
 const sgqRoutes = require('./routes/sgq');

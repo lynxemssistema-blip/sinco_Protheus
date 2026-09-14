@@ -88,7 +88,9 @@ export const AuthProvider = ({ children }) => {
             console.error(error);
             return {
                 success: false,
-                message: error.response?.data?.error || 'Falha no login.'
+                message: error.response?.data?.error || (error.code === 'ERR_NETWORK' ? 'Servidor indisponível ou fora do ar.' : 'Falha no login.'),
+                status: error.response?.status,
+                isNetworkError: !error.response || error.code === 'ERR_NETWORK' || error.message?.includes('Network Error') || error.code === 'ECONNABORTED'
             };
         }
     };

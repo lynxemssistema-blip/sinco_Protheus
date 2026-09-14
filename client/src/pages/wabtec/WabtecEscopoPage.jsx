@@ -103,7 +103,7 @@ export default function WabtecEscopoPage() {
     };
 
     return (
-        <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+        <div className="w-full px-2 sm:px-4 py-2 space-y-3">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                     <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">

@@ -313,7 +313,13 @@ router.post('/produtos/update', async (req, res) => {
         } = req.body;
 
         if (!codigo || !titulo || !grupo || !tipo || !um) {
-            return res.status(400).json({ error: 'Código, Grupo, Tipo, UM e Título são campos obrigatórios.' });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Código, Grupo, Tipo, UM e Título são campos obrigatórios.',
+                frontendPayload: req.body,
+                endpoint: '/api/protheus/produtos/update',
+                timestamp: new Date().toISOString()
+            });
         }
 
         // 1. Requisitar Token (Login)
@@ -417,14 +423,31 @@ router.post('/produtos/update', async (req, res) => {
         console.log(JSON.stringify(responseData, null, 2));
         console.log('======================================================\n');
 
-        res.json({ success: true, message: 'Produto salvo/atualizado no Protheus.', raw: responseData });
+        res.json({ 
+            success: true, 
+            message: 'Produto salvo/atualizado no Protheus.', 
+            endpoint: '/api/protheus/produtos/update',
+            timestamp: new Date().toISOString(),
+            protheusRawResponse: responseData,
+            protheusPayload: payload,
+            frontendPayload: req.body,
+            raw: responseData 
+        });
 
     } catch (error) {
         console.error('Protheus Integrador Erro [Update Produto]:', error.response?.data || error.message);
         console.error('Stack:', error.stack);
-        res.status(500).json({ 
-            error: 'Erro ao Atualizar Produto na API.', 
-            details: error.response?.data || error.message,
+        const errDetails = error.response?.data || error.message;
+        res.status(error.response?.status || 500).json({ 
+            success: false,
+            error: 'Erro ao Atualizar Produto na API Protheus.', 
+            message: error.message,
+            details: errDetails,
+            protheusRawResponse: error.response?.data || null,
+            protheusPayload: typeof payload !== 'undefined' ? payload : null,
+            frontendPayload: req.body,
+            endpoint: '/api/protheus/produtos/update',
+            timestamp: new Date().toISOString(),
             stack: error.stack
         });
     }
@@ -705,7 +728,13 @@ router.post('/estrutura-produtos/editar', async (req, res) => {
         const { noper, empresa, filial, produto, quantidade, estrutura } = req.body;
 
         if (!produto || !estrutura || !Array.isArray(estrutura)) {
-            return res.status(400).json({ error: 'Produto e estrutura são obrigatórios.' });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Produto e estrutura são obrigatórios.',
+                frontendPayload: req.body,
+                endpoint: '/api/protheus/estrutura-produtos/editar',
+                timestamp: new Date().toISOString()
+            });
         }
 
         // 1. Requisitar Token (Login)
@@ -727,7 +756,7 @@ router.post('/estrutura-produtos/editar', async (req, res) => {
             data: {
                 NOPER: noper || 4, // 4 = Alterar (default), 3 = Incluir
                 EMPRESA: empresa || "01",
-                CFILANT: filial || "01",
+                CFILANT: filial || "0101",
                 G1_COD: produto,
                 G1_QUANT: quantidade || 1,
                 AUTOREV: false,
@@ -767,14 +796,45 @@ router.post('/estrutura-produtos/editar', async (req, res) => {
 
         // Se o status da API for OK, mas o conteúdo for um erro
         if (responseData.status === "error") {
-            return res.status(400).json({ error: 'Erro ao processar estrutura no Protheus', details: responseData.message || responseData });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Erro ao processar estrutura no Protheus', 
+                message: responseData.message || 'Erro retornado pela API Protheus',
+                details: responseData.message || responseData,
+                protheusRawResponse: responseData,
+                protheusPayload: payload,
+                frontendPayload: req.body,
+                endpoint: '/api/protheus/estrutura-produtos/editar',
+                timestamp: new Date().toISOString()
+            });
         }
 
-        res.json({ success: true, message: 'Estrutura atualizada com sucesso', raw: responseData });
+        res.json({ 
+            success: true, 
+            message: 'Estrutura atualizada com sucesso', 
+            endpoint: '/api/protheus/estrutura-produtos/editar',
+            timestamp: new Date().toISOString(),
+            protheusRawResponse: responseData,
+            protheusPayload: payload,
+            frontendPayload: req.body,
+            raw: responseData 
+        });
 
     } catch (error) {
         console.error('❌ Protheus Integrador Erro [Estrutura]:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Erro ao Submeter Estrutura à API.', details: error.response?.data || error.message });
+        const errDetails = error.response?.data || error.message;
+        res.status(error.response?.status || 500).json({ 
+            success: false,
+            error: 'Erro ao Submeter Estrutura à API Protheus.', 
+            message: error.message,
+            details: errDetails,
+            protheusRawResponse: error.response?.data || null,
+            protheusPayload: typeof payload !== 'undefined' ? payload : null,
+            frontendPayload: req.body,
+            endpoint: '/api/protheus/estrutura-produtos/editar',
+            timestamp: new Date().toISOString(),
+            stack: error.stack
+        });
     }
 });
 
@@ -786,13 +846,26 @@ router.post('/roteiro-produtivo/editar', async (req, res) => {
         const { data } = req.body;
 
         if (!data || !data.G2_PRODUTO || !data.roteiros || !Array.isArray(data.roteiros)) {
-            return res.status(400).json({ error: 'Produto e roteiros são obrigatórios.' });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Produto e roteiros são obrigatórios.',
+                frontendPayload: req.body,
+                endpoint: '/api/protheus/roteiro-produtivo/editar',
+                timestamp: new Date().toISOString()
+            });
         }
 
         const activeOps = data.roteiros.filter(r => r.OPERACAO !== "EXCLUIR").map(r => String(r.G2_OPERAC).trim());
         const uniqueOps = new Set(activeOps);
         if (uniqueOps.size !== activeOps.length) {
-            return res.status(400).json({ error: 'Existem operações com a mesma sequência. O Protheus rejeita duplicidade. Recarregue a página e tente novamente.' });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Existem operações com a mesma sequência. O Protheus rejeita duplicidade. Recarregue a página e tente novamente.',
+                duplicateOperations: activeOps,
+                frontendPayload: req.body,
+                endpoint: '/api/protheus/roteiro-produtivo/editar',
+                timestamp: new Date().toISOString()
+            });
         }
 
         const sanitizedRoteiros = data.roteiros.map(r => {
@@ -857,16 +930,45 @@ router.post('/roteiro-produtivo/editar', async (req, res) => {
 
         // Se o status da API for OK, mas o conteúdo for um erro
         if (responseData.status === "error") {
-            return res.status(400).json({ error: 'Erro ao processar roteiro no Protheus', details: responseData.message || responseData });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Erro ao processar roteiro no Protheus', 
+                message: responseData.message || 'Erro retornado pela API Protheus',
+                details: responseData.message || responseData,
+                protheusRawResponse: responseData,
+                protheusPayload: normalizedPayload,
+                frontendPayload: req.body,
+                endpoint: '/api/protheus/roteiro-produtivo/editar',
+                timestamp: new Date().toISOString()
+            });
         }
 
-        res.json({ success: true, message: 'Roteiro atualizado com sucesso', raw: responseData });
+        res.json({ 
+            success: true, 
+            message: 'Roteiro atualizado com sucesso', 
+            endpoint: '/api/protheus/roteiro-produtivo/editar',
+            timestamp: new Date().toISOString(),
+            protheusRawResponse: responseData,
+            protheusPayload: normalizedPayload,
+            frontendPayload: req.body,
+            raw: responseData 
+        });
 
     } catch (error) {
         const errDetail = error.response?.data || error.message;
         console.error('❌ Protheus Integrador Erro [Roteiro]:', errDetail);
-        require('fs').writeFileSync('roteiro_error.log', new Date().toISOString() + '\nMESSAGE: ' + error.message + '\nSTATUS: ' + (error.response?.status || 'N/A') + '\nDETAILS: ' + JSON.stringify(errDetail) + '\nSTACK: ' + (error.stack || '') + '\n');
-        res.status(500).json({ error: 'Erro ao Submeter Roteiro à API.', details: errDetail });
+        res.status(error.response?.status || 500).json({ 
+            success: false,
+            error: 'Erro ao Submeter Roteiro à API Protheus.', 
+            message: error.message,
+            details: errDetail,
+            protheusRawResponse: error.response?.data || null,
+            protheusPayload: typeof normalizedPayload !== 'undefined' ? normalizedPayload : null,
+            frontendPayload: req.body,
+            endpoint: '/api/protheus/roteiro-produtivo/editar',
+            timestamp: new Date().toISOString(),
+            stack: error.stack
+        });
     }
 });
 
@@ -894,7 +996,14 @@ router.get('/produto-cliente/:codigo', async (req, res) => {
         res.json(rows);
     } catch (error) {
         console.error('Erro ao buscar SZ1:', error.message);
-        res.status(500).json({ error: 'Falha na busca de Produto x Cliente.' });
+        res.status(500).json({ 
+            success: false,
+            error: 'Falha na busca de Produto x Cliente.', 
+            details: error.message,
+            codigo: req.params.codigo,
+            endpoint: `/api/protheus/produto-cliente/${req.params.codigo}`,
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
@@ -906,7 +1015,13 @@ router.post('/produto-cliente/editar', async (req, res) => {
         const { data } = req.body;
 
         if (!data || !data.produtos_clientes || !Array.isArray(data.produtos_clientes)) {
-            return res.status(400).json({ error: 'Os dados do cliente e produtos_clientes são obrigatórios.' });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Os dados do cliente e produtos_clientes são obrigatórios.',
+                frontendPayload: req.body,
+                endpoint: '/api/protheus/produto-cliente/editar',
+                timestamp: new Date().toISOString()
+            });
         }
 
         // Sanitização e formatação: RECNO como primeiro campo e valor numérico
@@ -954,14 +1069,45 @@ router.post('/produto-cliente/editar', async (req, res) => {
 
         // Se o status da API for OK, mas o conteúdo for um erro ou erro parcial
         if (responseData.status === "error" || responseData.status === "partial") {
-            return res.status(400).json({ error: 'Erro no Protheus', details: responseData.message || responseData });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Erro no Protheus', 
+                message: responseData.message || 'Erro retornado pela API Protheus',
+                details: responseData.message || responseData,
+                protheusRawResponse: responseData,
+                protheusPayload: req.body,
+                frontendPayload: req.body,
+                endpoint: '/api/protheus/produto-cliente/editar',
+                timestamp: new Date().toISOString()
+            });
         }
 
-        res.json({ success: true, message: 'Produto-cliente (SZ1) atualizado com sucesso', raw: responseData });
+        res.json({ 
+            success: true, 
+            message: 'Produto-cliente (SZ1) atualizado com sucesso', 
+            endpoint: '/api/protheus/produto-cliente/editar',
+            timestamp: new Date().toISOString(),
+            protheusRawResponse: responseData,
+            protheusPayload: req.body,
+            frontendPayload: req.body,
+            raw: responseData 
+        });
 
     } catch (error) {
         console.error('❌ Protheus Integrador Erro [Produto-Cliente SZ1]:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Erro ao Submeter Produto-Cliente à API.', details: error.response?.data || error.message });
+        const errDetails = error.response?.data || error.message;
+        res.status(error.response?.status || 500).json({ 
+            success: false,
+            error: 'Erro ao Submeter Produto-Cliente à API Protheus.', 
+            message: error.message,
+            details: errDetails,
+            protheusRawResponse: error.response?.data || null,
+            protheusPayload: req.body,
+            frontendPayload: req.body,
+            endpoint: '/api/protheus/produto-cliente/editar',
+            timestamp: new Date().toISOString(),
+            stack: error.stack
+        });
     }
 });
 

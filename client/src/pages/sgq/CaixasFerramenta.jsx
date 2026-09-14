@@ -323,7 +323,7 @@ export default function CaixasFerramenta() {
     };
 
     return (
-        <div className="p-6 max-w-7xl mx-auto">
+        <div className="p-4 md:p-6 w-full max-w-[1920px] mx-auto">
             <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-3">
                     <div className="bg-indigo-100 p-3 rounded-lg">

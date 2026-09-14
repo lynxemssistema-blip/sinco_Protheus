@@ -354,6 +354,35 @@ const GestaoOPsPage = () => {
         } else if (selectedFractions.size > 0) {
             itemsToAssign = flattenedFractionalOrders.filter(f => selectedFractions.has(f.fraction_id));
         }
+
+        // Se estiver criando novo lote, não permitir itens que já possuem lote!
+        if (!preselectedCode) {
+            const blockedItems = itemsToAssign.filter(f => f.lpf_codigo);
+            const freeItems = itemsToAssign.filter(f => !f.lpf_codigo);
+
+            if (blockedItems.length > 0) {
+                if (freeItems.length === 0) {
+                    toast.warning(`Todos os ${blockedItems.length} item(ns) selecionado(s) já pertencem a um Lote de Fabricação e estão bloqueados. Remova-os do lote atual antes de transferir.`);
+                    return;
+                } else {
+                    toast.info(`${blockedItems.length} item(ns) já pertencentes a outros lotes foram desconsiderados.`);
+                    itemsToAssign = freeItems;
+                }
+            }
+        } else {
+            // Se estiver adicionando ao lote preselectedCode, só permitir itens livres ou do próprio lote
+            const foreignItems = itemsToAssign.filter(f => f.lpf_codigo && f.lpf_codigo !== preselectedCode);
+            if (foreignItems.length > 0) {
+                toast.warning(`${foreignItems.length} item(ns) pertencem a outros lotes e não podem ser incluídos neste.`);
+                itemsToAssign = itemsToAssign.filter(f => !f.lpf_codigo || f.lpf_codigo === preselectedCode);
+            }
+        }
+
+        if (itemsToAssign.length === 0) {
+            toast.warning('Nenhum item disponível para inclusão no lote.');
+            return;
+        }
+
         setManageLotSelectedItems(itemsToAssign);
         setManageLotPreselectedCode(preselectedCode || null);
         setIsManageLotModalOpen(true);
@@ -438,9 +467,10 @@ const GestaoOPsPage = () => {
     const setPage = (val) => updateOrderFilters({ page: val });
 
     const [totalPages, setTotalPages] = useState(1);
+    const [hasNextPage, setHasNextPage] = useState(false);
     const [requiresFilter, setRequiresFilter] = useState(false);
 
-    const colSpanCount = viewMode === 'flat' ? 23 : 7;
+    const colSpanCount = viewMode === 'flat' ? 14 : 7;
 
     // Debug mount
     useEffect(() => {
@@ -472,13 +502,14 @@ const GestaoOPsPage = () => {
         try {
             console.log(`📡 [GestaoOPsPage] Fetching data... View: ${searchViewMode}`);
 
-            const fetchLimit = (searchFilters.pedido || searchFilters.cliente || searchFilters.produto || searchFilters.dataInicial) ? 3000 : 1500;
+            const currentPage = overrides.page !== undefined ? overrides.page : page;
+            const pageSize = overrides.limit !== undefined ? overrides.limit : 100;
 
             let result;
             if (searchViewMode === 'flat') {
-                result = await getPedidosFlat({ ...searchFilters, page: 1, limit: fetchLimit });
+                result = await getPedidosFlat({ ...searchFilters, page: currentPage, limit: pageSize });
             } else {
-                result = await getPedidos({ ...searchFilters, page: 1, limit: fetchLimit });
+                result = await getPedidos({ ...searchFilters, page: currentPage, limit: pageSize });
             }
 
             if (myFetchId !== fetchIdRef.current) return;
@@ -488,7 +519,8 @@ const GestaoOPsPage = () => {
 
             setOrders(list);
             setRequiresFilter(!!meta.requiresFilter);
-            setTotalPages(1);
+            setHasNextPage(!!meta.hasNextPage);
+            setTotalPages(meta.totalPages || (meta.hasNextPage ? currentPage + 1 : currentPage));
             setLoadingProgress('');
         } catch (err) {
             if (myFetchId !== fetchIdRef.current) return;
@@ -1370,6 +1402,19 @@ const GestaoOPsPage = () => {
                     )}
                 </div>
             </td>
+            <td className="px-4 py-2 text-center whitespace-nowrap">
+                {item.lpf_codigo ? (
+                    <span
+                        className="inline-flex items-center gap-1 font-mono font-black text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-md shadow-2xs"
+                        title={`Item inserido e bloqueado no Lote de Fabricação (LPF): ${item.lpf_codigo}`}
+                    >
+                        <Lock className="w-3 h-3 text-emerald-700" />
+                        {item.lpf_codigo}
+                    </span>
+                ) : (
+                    <span className="text-gray-300 text-xs italic font-medium" title="Item disponível (sem lote)">—</span>
+                )}
+            </td>
             <td className="px-4 py-2 text-center text-xs text-gray-600 whitespace-nowrap">
                 <div className="flex items-center justify-center gap-1">
                     <Calendar className="h-3 w-3 text-gray-400" />
@@ -2048,21 +2093,23 @@ const GestaoOPsPage = () => {
                                             <input
                                                 type="checkbox"
                                                 checked={
-                                                    flattenedFractionalOrders.length > 0 &&
-                                                    flattenedFractionalOrders.every(item => selectedFractions.has(item.fraction_id))
+                                                    flattenedFractionalOrders.filter(i => !i.lpf_codigo).length > 0 &&
+                                                    flattenedFractionalOrders.filter(i => !i.lpf_codigo).every(item => selectedFractions.has(item.fraction_id))
                                                 }
                                                 onChange={(e) => {
                                                     if (e.target.checked) {
-                                                        setSelectedFractions(new Set(flattenedFractionalOrders.map(item => item.fraction_id)));
+                                                        const freeIds = flattenedFractionalOrders.filter(item => !item.lpf_codigo).map(item => item.fraction_id);
+                                                        setSelectedFractions(new Set(freeIds));
                                                     } else {
                                                         setSelectedFractions(new Set());
                                                     }
                                                 }}
                                                 className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
-                                                title="Selecionar / Desmarcar Todos"
+                                                title="Selecionar / Desmarcar Todos os Itens Disponíveis (sem lote)"
                                             />
                                         </th>
                                         <th className="px-4 py-3 font-semibold">Pedido</th>
+                                        <th className="px-4 py-3 font-semibold text-center">Lote LPF</th>
                                         <th className="px-4 py-3 font-semibold text-center">Emissão</th>
                                         <th className="px-4 py-3 font-semibold">Ref. Cliente</th>
                                         <th className="px-4 py-3 font-semibold">Cliente</th>
@@ -2716,114 +2763,9 @@ const GestaoOPsPage = () => {
                                         ) : (
                                             // FLAT VIEW IMPLEMENTATION
                                             <>
-                                                {Object.keys(flatGrouped.ObjectGroups).map(lpf_codigo => {
-                                                    const grpItems = flatGrouped.ObjectGroups[lpf_codigo] || [];
-                                                    const totalPecasLote = grpItems.reduce((acc, it) => acc + parseFloat(it.visual_qtd || it.quantidade_pcp || it.qtd_faturar || 0), 0);
-                                                    const dataPcpGeral = grpItems[0]?.data_entrega_pcp || grpItems[0]?.pcp_delivery_forecast_date;
-                                                    const allLotSelected = grpItems.length > 0 && grpItems.every(it => selectedFractions.has(it.fraction_id));
-                                                    const someLotSelected = grpItems.some(it => selectedFractions.has(it.fraction_id));
-                                                    const selectedInThisLot = grpItems.filter(it => selectedFractions.has(it.fraction_id));
+                                                {flattenedFractionalOrders.map((item, idx) => renderFlatRow(item, false, `flat-${item.fraction_id || idx}`))}
 
-                                                    return (
-                                                        <React.Fragment key={`lpf-${lpf_codigo}`}>
-                                                            <tr className="bg-gradient-to-r from-emerald-50 via-teal-50/50 to-emerald-50/20 border-y-2 border-emerald-500 shadow-2xs">
-                                                                <td colSpan={colSpanCount} className="px-4 py-3 border-l-4 border-emerald-600">
-                                                                    <div className="flex items-center justify-between flex-wrap gap-3">
-                                                                        <div className="flex items-center gap-3">
-                                                                            <input
-                                                                                type="checkbox"
-                                                                                checked={allLotSelected}
-                                                                                ref={el => { if (el) el.indeterminate = someLotSelected && !allLotSelected; }}
-                                                                                onChange={() => {
-                                                                                    const newSet = new Set(selectedFractions);
-                                                                                    if (allLotSelected) {
-                                                                                        grpItems.forEach(it => newSet.delete(it.fraction_id));
-                                                                                    } else {
-                                                                                        grpItems.forEach(it => newSet.add(it.fraction_id));
-                                                                                    }
-                                                                                    setSelectedFractions(newSet);
-                                                                                }}
-                                                                                className="w-4 h-4 text-emerald-600 bg-white border-emerald-400 rounded focus:ring-emerald-500 cursor-pointer"
-                                                                                title={allLotSelected ? 'Desmarcar todos do lote' : 'Selecionar todos os itens deste lote'}
-                                                                            />
-                                                                            <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-xs">
-                                                                                <Layers className="w-5 h-5" />
-                                                                            </div>
-                                                                            <div>
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <span className="font-extrabold text-emerald-950 text-base">Lote de Fabricação (LPF)</span>
-                                                                                    <span className="font-mono bg-emerald-200/90 text-emerald-900 border border-emerald-400 px-2.5 py-0.5 rounded-md text-sm font-black tracking-wider shadow-2xs">
-                                                                                        {lpf_codigo}
-                                                                                    </span>
-                                                                                </div>
-                                                                                <div className="text-xs text-emerald-800 flex items-center gap-3 mt-1 font-medium">
-                                                                                    <span><strong>{grpItems.length}</strong> {grpItems.length === 1 ? 'item' : 'itens'}</span>
-                                                                                    <span>•</span>
-                                                                                    <span><strong>{totalPecasLote.toLocaleString('pt-BR')}</strong> peças totais</span>
-                                                                                    {dataPcpGeral && (
-                                                                                        <>
-                                                                                            <span>•</span>
-                                                                                            <span>Data PCP: <strong>{new Date(dataPcpGeral).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</strong></span>
-                                                                                        </>
-                                                                                    )}
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                                            {selectedInThisLot.length > 0 && (
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => handleRemoveSelectedFromLot(selectedInThisLot)}
-                                                                                    className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 px-3 py-1.5 rounded-lg text-xs font-bold shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer animate-fadeIn"
-                                                                                    title={`Remover ${selectedInThisLot.length} item(ns) selecionado(s) deste lote`}
-                                                                                >
-                                                                                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                                                                                    <span>Remover {selectedInThisLot.length} Selecionado(s)</span>
-                                                                                </button>
-                                                                            )}
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => handleBatchPrintOPByOperationAglutinado(grpItems)}
-                                                                                className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
-                                                                                title="Liberar formalmente o lote para a fábrica e gerar documento com código LPF"
-                                                                            >
-                                                                                <Factory className="w-3.5 h-3.5" /> Liberar Produção / Aglutinar
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => handleReprintLPF(lpf_codigo, grpItems)}
-                                                                                className="bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
-                                                                                title="Baixar PDF do lote já liberado anteriormente"
-                                                                            >
-                                                                                <Printer className="w-3.5 h-3.5 text-emerald-600" /> Reimprimir Pacote
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => handleOpenManageLotModal(null, lpf_codigo)}
-                                                                                className="bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
-                                                                                title="Adicionar mais itens a este lote"
-                                                                            >
-                                                                                <Plus className="w-3.5 h-3.5" /> Adicionar Itens
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => handleDissolveLot(lpf_codigo)}
-                                                                                className="bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition-all flex items-center gap-1 cursor-pointer"
-                                                                                title="Desmanchar lote e liberar itens de volta para a lista"
-                                                                            >
-                                                                                <Trash2 className="w-3.5 h-3.5" /> Desmanchar Lote
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                            {grpItems.map((item, idx) => renderFlatRow(item, true, `grp-${lpf_codigo}-${idx}`))}
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                                {flatGrouped.ungrouped.map((item, idx) => renderFlatRow(item, false, `ungrp-${idx}`))}
-
-                                                {Object.keys(flatGrouped.ObjectGroups).length === 0 && flatGrouped.ungrouped.length === 0 && (
+                                                {flattenedFractionalOrders.length === 0 && (
                                                     <tr>
                                                         <td colSpan={colSpanCount} className="py-12 text-center text-gray-500">
                                                             <div className="flex flex-col items-center justify-center gap-2">
@@ -2858,24 +2800,60 @@ const GestaoOPsPage = () => {
                         </table>
                     </div>
 
-                    {/* Footer / Resumo de Itens Carregados */}
-                    {!error && orders.length > 0 && (
-                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between print:hidden">
-                            <div className="flex items-center gap-2">
+                    {/* Footer / Resumo de Itens Carregados e Paginação */}
+                    {!error && (orders.length > 0 || page > 1) && (
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between flex-wrap gap-4 print:hidden">
+                            <div className="flex items-center gap-3">
                                 <span className="text-sm text-gray-700 font-semibold">
-                                    Total de Registros: <span className="font-mono text-blue-700 font-bold">{orders.length}</span>
+                                    Página <span className="font-mono text-blue-700 font-bold">{page}</span>
                                 </span>
-                                <span className="text-xs text-gray-400">
-                                    ({flattenedFractionalOrders.length} linhas calculadas com frações)
+                                <span className="text-xs text-gray-500">
+                                    ({orders.length} pedidos nesta página • {flattenedFractionalOrders.length} linhas calculadas)
                                 </span>
                             </div>
+
+                            {/* Controles de Paginação */}
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (page > 1) {
+                                            const prevP = page - 1;
+                                            setPage(prevP);
+                                            fetchData({ page: prevP });
+                                        }
+                                    }}
+                                    disabled={page <= 1 || loading}
+                                    className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer flex items-center gap-1"
+                                >
+                                    ◀ Anterior
+                                </button>
+                                <span className="px-3 py-1 text-xs font-bold font-mono bg-blue-50 text-blue-700 rounded-md border border-blue-200">
+                                    {page}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (hasNextPage) {
+                                            const nextP = page + 1;
+                                            setPage(nextP);
+                                            fetchData({ page: nextP });
+                                        }
+                                    }}
+                                    disabled={!hasNextPage || loading}
+                                    className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer flex items-center gap-1"
+                                >
+                                    Próxima ▶
+                                </button>
+                            </div>
+
                             <div className="text-xs text-gray-500 font-medium">
                                 {loading ? (
                                     <span className="flex items-center gap-1.5 text-blue-600 font-semibold">
                                         <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-600" /> {loadingProgress}
                                     </span>
                                 ) : (
-                                    <span>✅ Todos os dados carregados</span>
+                                    <span>⚡ Carregamento rápido (100 itens/pág)</span>
                                 )}
                             </div>
                         </div>
@@ -2895,48 +2873,19 @@ const GestaoOPsPage = () => {
                     <div className="flex items-center gap-2 flex-wrap">
                         <button
                             type="button"
-                            onClick={() => handleOpenManageLotModal()}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl text-xs px-3.5 py-2 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
-                            title="Criar novo Lote LPF ou inserir itens em lote existente"
-                        >
-                            <Layers className="h-4 w-4" />
-                            <span>Criar / Inserir no Lote</span>
-                        </button>
-                        {flattenedFractionalOrders.some(f => selectedFractions.has(f.fraction_id) && f.lpf_codigo) && (
-                            <button
-                                type="button"
-                                onClick={() => handleRemoveSelectedFromLot()}
-                                className="bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-xl text-xs px-3.5 py-2 transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
-                                title="Remover itens selecionados dos lotes em que estão agrupados"
-                            >
-                                <Trash2 className="h-4 w-4" />
-                                <span>Remover Selecionados do Lote</span>
-                            </button>
-                        )}
-                        <button
-                            type="button"
-                            onClick={() => handleBatchPrintOPByOperationAglutinado()}
-                            disabled={downloadingPDF}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs px-3.5 py-2 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
-                        >
-                            {downloadingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Factory className="h-4 w-4" />}
-                            <span>Liberar Produção / Aglutinar</span>
-                        </button>
-                        <button
-                            type="button"
                             onClick={() => handleBatchPrintOPByOperationWithDrawings()}
                             disabled={downloadingPDF}
                             className="bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl text-xs px-3.5 py-2 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
                         >
                             {downloadingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-                            <span>OP + Desenhos</span>
+                            <span>Imprimir OPs + Desenhos</span>
                         </button>
                         <button
                             type="button"
                             onClick={() => setSelectedFractions(new Set())}
                             className="text-slate-400 hover:text-white px-3 py-2 text-xs transition-colors cursor-pointer"
                         >
-                            Limpar
+                            Limpar Seleção
                         </button>
                     </div>
                 </div>
