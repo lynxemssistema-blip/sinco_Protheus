@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useHelp } from '../contexts/HelpContext';
 import { getCompanySettings } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
-import logo from '../assets/lynx-ems-logo.jpg';
+import logo from '../assets/app-logo.png';
 import ChangePasswordModal from './ChangePasswordModal';
 import './Sidebar.css';
 

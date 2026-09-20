@@ -5,7 +5,7 @@ import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus, HelpCircle, Smartph
 import { api } from '../services/api';
 import { useHelp } from '../contexts/HelpContext';
 import HelpDrawer from '../components/HelpDrawer';
-import logo from '../assets/lynx-ems-logo.jpg';
+import logo from '../assets/app-logo.png';
 import simLogo from '../assets/sim-consultoria-logo.png';
 
 import LandingPage from './LandingPage';
@@ -224,7 +224,7 @@ const Login = () => {
             {/* Login Form Container */}
             <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 overflow-y-auto">
                 <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl overflow-hidden border border-slate-100 relative transform transition-all my-auto">
-                    <div className="bg-[#1F365C] p-8 text-center text-white relative flex flex-col items-center">
+                    <div className="bg-[#32423D] p-8 text-center text-white relative flex flex-col items-center">
                     {view !== 'login' ? (
                         <button 
                             onClick={() => { setView('login'); setError(''); setSuccessMsg(''); }}
@@ -241,11 +241,11 @@ const Login = () => {
                             <ArrowLeft className="w-4 h-4" /> Site
                         </button>
                     )}
-                    <div className="bg-white p-2 rounded-2xl shadow-md mb-4 flex items-center justify-center border border-slate-100">
-                        <img src={logo} alt="Lynx EMS Sistemas" className="h-12 w-12 rounded-xl object-cover" />
+                    <div className="bg-white/10 backdrop-blur-sm p-2 rounded-2xl shadow-md mb-4 flex items-center justify-center border border-white/20">
+                        <img src={logo} alt="SINCO Suite" className="h-14 w-14 rounded-xl object-contain" />
                     </div>
                     <h1 className="text-2xl font-black mb-1 tracking-tight">SINCO Industrial Suite</h1>
-                    <p className="text-blue-200 font-semibold text-xs tracking-wider uppercase mb-1">Lynx EMS Sistemas</p>
+                    <p className="text-[#E0E800] font-bold text-xs tracking-wider uppercase mb-1">Lynx EMS Sistemas ✕ SIM Consultoria</p>
                     <p className="opacity-90 font-medium text-sm">
                         {view === 'recover' ? 'Recuperação de Acesso' : view === 'register' ? 'Criar Nova Conta' : 'Acesso Restrito ao Sistema'}
                     </p>
