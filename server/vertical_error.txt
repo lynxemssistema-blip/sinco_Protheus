@@ -1,4 +1,0 @@
-error: canceling statement due to statement timeout
-    at C:\Users\lynx\Documents\MetalFisa Anty\server\node_modules\pg\lib\client.js:545:17
-    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
-    at async C:\Users\lynx\Documents\MetalFisa Anty\server\routes\producao.js:945:18

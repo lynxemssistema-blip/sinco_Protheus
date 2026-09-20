@@ -9,7 +9,7 @@ const db = require('../db');
  * @param {string} params.usuario - Username trigger the planning
  * @returns {Promise<Object>} Execution summary
  */
-async function runFcsSequencing({ ops, opsData = null, simulationOnly = false, data_inicio, usuario = 'planejamento_inteligente', include_saturday = false, preload_existing = false, clear_existing = false, sync_data_pcp = false }) {
+async function runFcsSequencing({ ops, opsData = null, simulationOnly = false, data_inicio, usuario = 'planejamento_inteligente', include_saturday = false, preload_existing = false, clear_existing = false, sync_data_pcp = false, io = null, runId = null }) {
     let pgClient;
     const agent_logs = [];
     try {
@@ -82,22 +82,22 @@ async function runFcsSequencing({ ops, opsData = null, simulationOnly = false, d
             ordemRecurso[r.recurso_codigo] = idx; // posição 0-based na ordem configurada
         });
 
-        // Buscar descrição dos recursos via roteiro sg2010
+        // Buscar descrição oficial e padrão dos recursos via sh1010 (H1_DESCRI)
         const recursosCodigos = capRows.map(r => r.recurso_codigo).filter(Boolean);
         const descRecursoMap = {};
         if (recursosCodigos.length > 0) {
             try {
-                const sg2Res = await pgClient.query(
-                    `SELECT DISTINCT TRIM(g2_recurso) AS cod, TRIM(g2_descri) AS descri
-                     FROM public.sg2010
+                const sh1Res = await pgClient.query(
+                    `SELECT DISTINCT TRIM(h1_codigo) AS cod, TRIM(h1_descri) AS descri
+                     FROM public.sh1010
                      WHERE COALESCE(d_e_l_e_t_,'') IN ('',' ')
-                       AND TRIM(g2_recurso) = ANY($1)
-                       AND g2_descri IS NOT NULL AND TRIM(g2_descri) <> ''`,
+                       AND TRIM(h1_codigo) = ANY($1)
+                       AND h1_descri IS NOT NULL AND TRIM(h1_descri) <> ''`,
                     [recursosCodigos]
                 );
-                sg2Res.rows.forEach(r => { if (!descRecursoMap[r.cod]) descRecursoMap[r.cod] = r.descri; });
-            } catch {
-                // descrição é opcional
+                sh1Res.rows.forEach(r => { if (!descRecursoMap[r.cod]) descRecursoMap[r.cod] = r.descri; });
+            } catch (e) {
+                console.warn('⚠️ Não foi possível carregar descrições de recursos do SH1010:', e.message);
             }
         }
 
@@ -110,55 +110,77 @@ async function runFcsSequencing({ ops, opsData = null, simulationOnly = false, d
         });
         agent_logs.push(`------`);
 
-        // Buscar detalhes das OPs selecionadas no Protheus
+        // Buscar detalhes das OPs selecionadas no Protheus (Otimizado com índices do sc2010)
+        const rawOpsList = (ops && ops.length > 0) ? ops : (opsData || []).map(o => o.op_num || o.op);
+        const fullKeysList = [...new Set(rawOpsList.map(o => String(o || '').trim()).filter(Boolean))];
+        const expandedFullKeys = [...new Set(
+            fullKeysList.flatMap(o => {
+                const clean = o.replace(/\s+/g, '');
+                if (clean.length <= 6) {
+                    return [clean, clean.padStart(6, '0')];
+                }
+                return [clean];
+            })
+        )];
+        const base6List = [...new Set(
+            expandedFullKeys.map(o => o.substring(0, 6)).filter(Boolean)
+        )];
+
         const pgOpsQuery = `
-            WITH RECURSIVE ParentOPs AS (
-                SELECT 
-                    TRIM(c2_num) AS op_num,
-                    TRIM(c2_pedido) AS pedido,
-                    TRIM(c2_itempv) AS itempv
-                FROM public.sc2010
-                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
-                  AND c2_sequen = '001'
-                  AND TRIM(c2_pedido) <> ''
-                
-                UNION
-                
-                SELECT 
-                    TRIM(child.c2_num) AS op_num,
-                    p.pedido,
-                    p.itempv
-                FROM public.sc2010 child
-                INNER JOIN ParentOPs p 
-                    ON TRIM(child.c2_obs) LIKE '%' || p.op_num || '%'
-                WHERE COALESCE(child.d_e_l_e_t_, '') IN ('', ' ')
-                  AND child.c2_sequen = '001'
-                  AND TRIM(child.c2_pedido) = ''
-            )
             SELECT 
                 TRIM(c2.c2_num) AS op_num,
                 TRIM(c2.c2_item) AS item_op,
                 TRIM(c2.c2_sequen) AS sequen,
                 TRIM(c2.c2_produto) AS produto,
-                COALESCE(NULLIF(TRIM(c2.c2_pedido), ''), parent.pedido) AS pedido,
-                COALESCE(NULLIF(TRIM(c2.c2_itempv), ''), parent.itempv) AS itempv,
+                COALESCE(NULLIF(TRIM(c2.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), ''), TRIM(c2.c2_num)) AS pedido,
+                COALESCE(NULLIF(TRIM(c2.c2_itempv), ''), NULLIF(TRIM(root_op.c2_itempv), '')) AS itempv,
                 c2.c2_quant AS qtde,
-                c2.c2_quje AS qtde_feita
+                c2.c2_quje AS qtde_feita,
+                TRIM(c2.c2_status) AS status_op,
+                TRIM(sb1.b1_msblql) AS bloqueado_sb1,
+                c5.c5_tipo AS tipo_pedido,
+                TRIM(a1.a1_nome) AS cliente_nome,
+                c6.c6_qtdven AS qtd_ven,
+                c6.c6_qtdent AS qtd_ent,
+                c6.c6_qtdlib AS qtd_lib
             FROM public.sc2010 c2
-            LEFT JOIN ParentOPs parent ON parent.op_num = TRIM(c2.c2_num)
+            LEFT JOIN public.sc2010 root_op 
+                ON root_op.c2_filial = c2.c2_filial 
+                AND root_op.c2_num = c2.c2_num 
+                AND root_op.c2_item = c2.c2_item 
+                AND root_op.c2_sequen = '001' 
+                AND COALESCE(root_op.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sb1010 sb1 
+                ON sb1.b1_cod = c2.c2_produto 
+                AND COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sc5010 c5 
+                ON c5.c5_num = COALESCE(NULLIF(TRIM(c2.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), ''))
+                AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sa1010 a1 
+                ON a1.a1_cod = c5.c5_cliente 
+                AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sc6010 c6 
+                ON c6.c6_num = COALESCE(NULLIF(TRIM(c2.c2_pedido), ''), NULLIF(TRIM(root_op.c2_pedido), '')) 
+                AND c6.c6_item = COALESCE(NULLIF(TRIM(c2.c2_itempv), ''), NULLIF(TRIM(root_op.c2_itempv), '')) 
+                AND COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ')
             WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-              AND TRIM(c2.c2_num) = ANY($1::text[])
+              AND c2.c2_num = ANY($1::text[])
+              AND (
+                  TRIM(c2.c2_num) = ANY($2::text[])
+                  OR (TRIM(c2.c2_num) || TRIM(c2.c2_item) || TRIM(c2.c2_sequen)) = ANY($2::text[])
+                  OR (TRIM(c2.c2_num) || TRIM(c2.c2_item)) = ANY($2::text[])
+              )
             ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen
         `;
         let opsEncontradas = [];
-        if (opsData && opsData.length > 0) {
-            opsEncontradas = opsData;
-        } else {
-            const opsResult = await pgClient.query(pgOpsQuery, [ops]);
+        if (base6List.length > 0) {
+            const opsResult = await pgClient.query(pgOpsQuery, [base6List, expandedFullKeys]);
             opsEncontradas = opsResult.rows;
+        } else if (opsData && opsData.length > 0) {
+            opsEncontradas = opsData;
         }
 
-        // ETAPA EXTRA: Desconsiderar OPs associadas a pedidos inativos e sem OP/Pedido válido
+        // ETAPA EXTRA: Desconsiderar OPs associadas a pedidos inativos (padrão Visão Geral)
         try {
             const [inativosResult] = await mysqlPool.query('SELECT pedido_numero FROM app_pedidos_inativos');
             const inativosSet = new Set(inativosResult.map(r => String(r.pedido_numero).trim()));
@@ -168,15 +190,59 @@ async function runFcsSequencing({ ops, opsData = null, simulationOnly = false, d
                 const hasPedido = op.pedido && op.pedido.trim() !== '';
 
                 if (!hasPedido || !isValidOpNum) {
-                    agent_logs.push(`⚠️ OP ${op.op_num || '(sem numero)'} desconsiderada do FCS pois não possui pedido ou número de OP válido (Produto: ${op.produto}).`);
+                    agent_logs.push(`⚠️ OP ${op.op_num || '(sem numero)'} desconsiderada: sem pedido ou número de OP válido (Produto: ${op.produto}).`);
                     continue;
                 }
 
-                if (inativosSet.has(op.pedido)) {
-                    agent_logs.push(`⚠️ OP ${op.op_num} desconsiderada do FCS pois o pedido ${op.pedido} está inativo/faturado.`);
-                } else {
-                    opsFiltradas.push(op);
+                // 1. Pedido inativo na tabela app_pedidos_inativos (SINCO / Visão Geral)
+                if (inativosSet.has(op.pedido) || inativosSet.has(op.op_num?.substring(0, 6))) {
+                    agent_logs.push(`⚠️ OP ${op.op_num} desconsiderada: pedido ${op.pedido} está inativo/arquivado no SINCO.`);
+                    continue;
                 }
+
+                // 1.5. Ordem de serviço sem cliente vinculado
+                if (!op.cliente_nome || !op.cliente_nome.trim()) {
+                    agent_logs.push(`⚠️ OP ${op.op_num} desconsiderada: sem cliente comercial vinculado no Protheus.`);
+                    continue;
+                }
+
+                // 2. Pedido Orçamento (tipo B - desconsiderar)
+                if (op.tipo_pedido === 'B') {
+                    agent_logs.push(`⚠️ OP ${op.op_num} desconsiderada: pedido ${op.pedido} é do tipo Orçamento (B).`);
+                    continue;
+                }
+
+                // 3. OP Cancelada no Protheus (c2_status = 'C')
+                if (String(op.status_op || '').trim().toUpperCase() === 'C') {
+                    agent_logs.push(`⚠️ OP ${op.op_num} desconsiderada: OP cancelada no Protheus.`);
+                    continue;
+                }
+
+                // 4. OP já 100% concluída/apontada no Protheus
+                const qtdeTotal = Number(op.qtde) || 0;
+                const qtdeFeita = Number(op.qtde_feita) || 0;
+                if (qtdeTotal > 0 && qtdeFeita >= qtdeTotal) {
+                    agent_logs.push(`⚠️ OP ${op.op_num} desconsiderada: OP já 100% concluída no Protheus (${qtdeFeita}/${qtdeTotal}).`);
+                    continue;
+                }
+
+                // 5. Produto Bloqueado no Protheus (b1_msblql)
+                if (['1', 'S', 'T', 'Y'].includes(String(op.bloqueado_sb1 || '').trim().toUpperCase())) {
+                    agent_logs.push(`⚠️ OP ${op.op_num} desconsiderada: produto ${op.produto} bloqueado no Protheus (SB1).`);
+                    continue;
+                }
+
+                // 6. Pedido 100% Entregue/Faturado (Visão Geral)
+                if (op.qtd_ven !== undefined && op.qtd_ent !== undefined && op.qtd_ven !== null && op.qtd_ent !== null) {
+                    const saldoFaturar = Number(op.qtd_ven) - Number(op.qtd_ent);
+                    const saldoLiberado = Number(op.qtd_lib || 0);
+                    if (saldoFaturar <= 0 && saldoLiberado <= 0) {
+                        agent_logs.push(`⚠️ OP ${op.op_num} desconsiderada: pedido ${op.pedido} já 100% faturado/entregue.`);
+                        continue;
+                    }
+                }
+
+                opsFiltradas.push(op);
             }
             opsEncontradas = opsFiltradas;
         } catch (e) {
@@ -584,7 +650,8 @@ async function runFcsSequencing({ ops, opsData = null, simulationOnly = false, d
             }
         };
 
-        for (const op of opsEncontradas) {
+        for (let opIdx = 0; opIdx < opsEncontradas.length; opIdx++) {
+            const op = opsEncontradas[opIdx];
             const roteiros = roteiroMap[op.produto] || [];
             let currentDate = dataBaseUtil;
             let lastAllocatedDate = null;
@@ -782,6 +849,41 @@ async function runFcsSequencing({ ops, opsData = null, simulationOnly = false, d
                     data_prevista_faturamento: lastAllocatedDate,
                     quantidade_pcp: finalQtdeRestante,
                     op_protheus: op.op_num
+                });
+            }
+
+            // ── LIVE STREAMING (Socket.io) ───────────────────────────────────────────
+            // Emite progresso em tempo real a cada OP alocada para o frontend
+            if (io && runId) {
+                const current_carga = {};
+                for (const [date, recursos] of Object.entries(resource_buckets)) {
+                    for (const [recurso, restante] of Object.entries(recursos)) {
+                        const capDia = (capacidades[recurso] > 0) ? capacidades[recurso] : 480;
+                        const consumido = capDia - restante;
+                        if (consumido > 0) {
+                            if (!current_carga[recurso]) {
+                                current_carga[recurso] = {
+                                    recurso,
+                                    desc: descRecursoMap[recurso] || recurso,
+                                    capDia,
+                                    ordem: ordemRecurso[recurso] ?? 9999,
+                                    dates: {}
+                                };
+                            }
+                            current_carga[recurso].dates[date] = consumido;
+                        }
+                    }
+                }
+                io.emit('fcs_live_step', {
+                    runId,
+                    op_num: op.op_num,
+                    produto: op.produto,
+                    desc_produto: op.produto_desc || op.produto,
+                    step: opIdx + 1,
+                    total_ops: opsEncontradas.length,
+                    carga_diaria: current_carga,
+                    last_date: lastAllocatedDate,
+                    foi_sobrecarga: foiSobrecarga
                 });
             }
         }
@@ -1048,7 +1150,15 @@ async function runFcsSequencing({ ops, opsData = null, simulationOnly = false, d
                 const capDia = (capacidades[recurso] > 0) ? capacidades[recurso] : 480;
                 const consumido = capDia - restante;
                 if (consumido > 0) {
-                    if (!carga_diaria[recurso]) carga_diaria[recurso] = { capDia, dates: {} };
+                    if (!carga_diaria[recurso]) {
+                        carga_diaria[recurso] = {
+                            recurso,
+                            desc: descRecursoMap[recurso] || recurso,
+                            capDia,
+                            ordem: ordemRecurso[recurso] ?? 9999,
+                            dates: {}
+                        };
+                    }
                     carga_diaria[recurso].dates[date] = consumido;
                 }
             }

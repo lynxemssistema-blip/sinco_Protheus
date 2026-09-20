@@ -274,6 +274,8 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     const filters = useMemo(() => ({
         cliente: orderFilters.cliente,
         pedido: orderFilters.pedido,
+        item: orderFilters.item || '',
+        op: orderFilters.op || '',
         produto: orderFilters.produto,
         pedcli: orderFilters.pedcli || '',
         refCliente: orderFilters.refCliente || '',
@@ -287,7 +289,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         sortBy: orderFilters.sortBy,
         sortOrder: orderFilters.sortOrder
     }), [
-        orderFilters.cliente, orderFilters.pedido, orderFilters.produto, orderFilters.pedcli, orderFilters.refCliente,
+        orderFilters.cliente, orderFilters.pedido, orderFilters.item, orderFilters.op, orderFilters.produto, orderFilters.pedcli, orderFilters.refCliente,
         orderFilters.dataInicial, orderFilters.dataFinal, orderFilters.dateType,
         orderFilters.tipo_item, orderFilters.op_status, orderFilters.only_active, orderFilters.somente_prioridades,
         orderFilters.sortBy, orderFilters.sortOrder
@@ -392,7 +394,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     useEffect(() => { setSelectedItems([]); }, [orders, viewMode]);
 
     const hasAnyFilter = () => {
-        return !!(filters.cliente || filters.pedido || filters.produto || filters.pedcli || filters.dataInicial || filters.dataFinal || filters.tipo_item || filters.op_status);
+        return !!(filters.cliente || filters.pedido || filters.item || filters.produto || filters.pedcli || filters.dataInicial || filters.dataFinal || filters.tipo_item || filters.op_status);
     };
 
     const isInitialMount = React.useRef(true);
@@ -1586,10 +1588,42 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                             <input
                                 type="text"
                                 name="pedido"
-                                placeholder="NÂº Pedido..."
+                                placeholder="Nº Pedido..."
                                 value={filters.pedido}
                                 onChange={handleFilterChange}
                                 className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                        <label className="text-[11px] font-medium text-gray-600 ml-1" title="Item do Pedido Metalfisa (SC6)">Item Pedido:</label>
+                        <div className="relative">
+                            <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                            <input
+                                type="text"
+                                name="item"
+                                placeholder="Item (ex: 01)..."
+                                value={filters.item || ''}
+                                onChange={handleFilterChange}
+                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                                title="Filtrar por item do pedido Metalfisa (ex: 01, 02)"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                        <label className="text-[11px] font-medium text-gray-600 ml-1" title="Ordem de Produção (OP)">OP:</label>
+                        <div className="relative">
+                            <Factory className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                            <input
+                                type="text"
+                                name="op"
+                                placeholder="Nº OP..."
+                                value={filters.op || ''}
+                                onChange={handleFilterChange}
+                                className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                                title="Filtrar por número da Ordem de Produção (ex: 006806, 006807)"
                             />
                         </div>
                     </div>

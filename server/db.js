@@ -14,6 +14,9 @@ const pool = new Pool({
 });
 
 pool.on('connect', (client) => {
+    client.on('error', (err) => {
+        console.error('⚠️ [PG Client Socket Error]:', err.message);
+    });
     client.query("SET client_encoding TO 'WIN1252'").catch((err) => {
         console.error('⚠️ Error setting client_encoding:', err.message);
     });
@@ -26,5 +29,12 @@ pool.on('error', (err) => {
 
 module.exports = {
     query: (text, params) => pool.query(text, params),
-    connect: () => pool.connect(),
+    connect: async () => {
+        const client = await pool.connect();
+        client.on('error', (err) => {
+            console.error('⚠️ [PG Checked-out Client Socket Error]:', err.message);
+        });
+        return client;
+    },
+    pool
 };

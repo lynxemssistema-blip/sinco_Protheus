@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
     DollarSign, 
     TrendingUp, 
@@ -6,26 +6,34 @@ import {
     Calendar, 
     ChevronDown, 
     ChevronUp, 
+    ChevronRight,
     Users, 
     ShoppingBag, 
     Package, 
     BarChart2, 
     AlertCircle,
-    ArrowUpDown,
-    Layers,
-    List,
-    FileText
+    Layers, 
+    List, 
+    FileText,
+    Eye,
+    EyeOff,
+    Flame,
+    FileSpreadsheet,
+    Loader2,
+    RefreshCw
 } from 'lucide-react';
 import { getFileUrl } from '../../services/api';
 import { toast } from 'react-toastify';
+import useStickyState from '../../hooks/useStickyState';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
+import { exportFinancialExcel } from '../../services/financialExcelGenerator';
 
 const SortableHeader = ({ label, columnKey, sortConfig, requestSort, filterValue, onFilterChange, className = "", align = "left" }) => {
     return (
-        <th className={`px-2 py-2 font-semibold ${className} align-top`}>
+        <th className={`px-2 py-1.5 font-semibold ${className} align-top`}>
             <div className="flex flex-col gap-1">
                 <div 
-                    className={`flex items-center gap-1 cursor-pointer hover:bg-slate-200/50 p-1 rounded transition-colors ${align === 'center' ? 'justify-center' : align === 'right' ? 'justify-end' : 'justify-start'}`}
+                    className={`flex items-center gap-1 cursor-pointer hover:bg-slate-200/60 p-1 rounded transition-colors ${align === 'center' ? 'justify-center' : align === 'right' ? 'justify-end' : 'justify-start'}`}
                     onClick={() => columnKey && requestSort(columnKey)}
                     title={columnKey ? `Clique para ordenar por ${label}` : ''}
                 >
@@ -40,7 +48,7 @@ const SortableHeader = ({ label, columnKey, sortConfig, requestSort, filterValue
                 {columnKey && (
                     <input
                         type="text"
-                        className="w-full min-w-[60px] text-[10px] font-normal border border-slate-200 rounded px-1.5 py-1 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 text-slate-700 bg-white"
+                        className="w-full min-w-[55px] text-[10px] font-normal border border-slate-200 rounded px-1.5 py-0.5 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 text-slate-700 bg-white"
                         placeholder="Filtrar..."
                         value={filterValue || ''}
                         onChange={(e) => onFilterChange(columnKey, e.target.value)}
@@ -52,15 +60,18 @@ const SortableHeader = ({ label, columnKey, sortConfig, requestSort, filterValue
     );
 };
 
-const FinancialView = ({ rows, loading, error }) => {
-    // Grouping: 'prev_fat', 'cliente', 'pedido', 'produto', 'sem_agrupamento'
-    const [grouping, setGrouping] = useState('prev_fat');
+const FinancialView = ({ rows, loading, error, onRefresh }) => {
+    // Grouping: 'prev_fat', 'data_pcp', 'cliente', 'pedido', 'produto', 'sem_agrupamento'
+    const [grouping, setGrouping] = useStickyState('prev_fat', '@metalfisa:financial_grouping');
     
     // Expanded groups state: { [groupKey]: boolean }
     const [expandedGroups, setExpandedGroups] = useState({});
 
-    // Filter states
-    const [filters, setFilters] = useState({
+    // Toggle do gráfico comparativo com persistência no LocalStorage (padrão: recolhido/falso)
+    const [showComparativeChart, setShowComparativeChart] = useStickyState(false, '@metalfisa:financial_show_chart');
+
+    // Filter states persistentes
+    const [filters, setFilters] = useStickyState({
         cliente: '',
         pedido: '',
         produto: '',
@@ -68,7 +79,42 @@ const FinancialView = ({ rows, loading, error }) => {
         dataInicial: '',
         dataFinal: '',
         showMode: 'all' // 'all', 'pending', 'billed'
-    });
+    }, '@metalfisa:financial_filters');
+
+    // Estado do progresso da exportação Excel em tempo real
+    const [exportProgress, setExportProgress] = useState(null);
+
+    const timelineContainerRef = useRef(null);
+
+    // Disparador da exportação financeira no Padrão MetalFisa com feedback em tempo real
+    const handleExportFinancialExcel = async () => {
+        if (!filteredRows || filteredRows.length === 0) {
+            toast.warning('Nenhum item filtrado para exportação.');
+            return;
+        }
+
+        try {
+            setExportProgress({
+                percent: 0,
+                current: 0,
+                total: filteredRows.length,
+                stepMessage: 'Iniciando preparação dos dados...'
+            });
+
+            const fileName = await exportFinancialExcel(filteredRows, filters, grouping, (progress) => {
+                setExportProgress(progress);
+            });
+
+            toast.success(`Planilha "${fileName}" exportada com sucesso no padrão MetalFisa!`);
+        } catch (err) {
+            console.error('Erro ao exportar Excel Financeiro:', err);
+            toast.error('Erro ao gerar planilha: ' + (err.message || err));
+        } finally {
+            setTimeout(() => {
+                setExportProgress(null);
+            }, 600);
+        }
+    };
 
     // Toggle expand/collapse for a specific group
     const toggleGroup = (key) => {
@@ -123,7 +169,7 @@ const FinancialView = ({ rows, loading, error }) => {
             if (filters.dataInicial || filters.dataFinal) {
                 const dateFieldFull = filters.dateType === 'prev_fat' ? row.data_prevista_faturamento : row.data_entrega_pcp;
                 if (!dateFieldFull) return false;
-                const prevDate = dateFieldFull.split('T')[0]; // Extract YYYY-MM-DD
+                const prevDate = dateFieldFull.split('T')[0]; // YYYY-MM-DD
                 if (filters.dataInicial && prevDate < filters.dataInicial) return false;
                 if (filters.dataFinal && prevDate > filters.dataFinal) return false;
             }
@@ -156,9 +202,8 @@ const FinancialView = ({ rows, loading, error }) => {
                 effectiveValUnit = precoCadastro;
             }
 
-            // Using total order value to map the financial progression
             const valPendente = parseFloat(row.qtd_faturar || 0) * effectiveValUnit;
-            if (valPendente <= 0) return; // Only show pending amounts in this projection
+            if (valPendente <= 0) return;
 
             const formatMonth = (dateStr) => {
                 if (!dateStr) return null;
@@ -178,10 +223,8 @@ const FinancialView = ({ rows, loading, error }) => {
             if (mPrev) { ensureMonth(mPrev); monthMap[mPrev].prevFat += valPendente; }
         });
 
-        // Convert to array and sort chronologically
         const sortedData = Object.values(monthMap).sort((a, b) => a.rawMonth.localeCompare(b.rawMonth));
         
-        // Format names to MM/YYYY
         return sortedData.map(d => ({
             ...d,
             name: `${d.rawMonth.split('-')[1]}/${d.rawMonth.split('-')[0]}`
@@ -195,6 +238,7 @@ const FinancialView = ({ rows, loading, error }) => {
         filteredRows.forEach(row => {
             let groupKey = '';
             let groupLabel = '';
+            let weekDay = '';
             
             if (grouping === 'prev_fat' || grouping === 'data_pcp') {
                 const dateField = grouping === 'prev_fat' ? row.data_prevista_faturamento : row.data_entrega_pcp;
@@ -202,6 +246,16 @@ const FinancialView = ({ rows, loading, error }) => {
                     const datePart = dateField.split('T')[0];
                     const parts = datePart.split('-');
                     groupKey = datePart;
+                    
+                    if (parts.length === 3) {
+                        const y = parseInt(parts[0], 10);
+                        const m = parseInt(parts[1], 10);
+                        const d = parseInt(parts[2], 10);
+                        const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+                        const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+                        weekDay = days[dateObj.getUTCDay()] || '';
+                    }
+
                     const prefix = grouping === 'prev_fat' ? 'Prev. Fat' : 'Data PCP';
                     groupLabel = `${prefix}: ${parts[2]}/${parts[1]}/${parts[0]}`;
                 } else {
@@ -226,6 +280,8 @@ const FinancialView = ({ rows, loading, error }) => {
                 map[groupKey] = {
                     key: groupKey,
                     label: groupLabel,
+                    weekDay: weekDay,
+                    dateRaw: (grouping === 'prev_fat' || grouping === 'data_pcp') && groupKey !== 'sem_previsao' ? groupKey : null,
                     items: [],
                     totalPendente: 0,
                     totalFaturado: 0,
@@ -243,7 +299,6 @@ const FinancialView = ({ rows, loading, error }) => {
             const precoCadastro = parseFloat(row.preco_cadastro || 0);
             let effectiveValUnit = qtdVen > 0 ? (parseFloat(row.valor_total || 0) / qtdVen) : parseFloat(row.valor_unitario || 0);
             
-            // Use fallback if order value is symbolic (<= 0.01)
             if (effectiveValUnit <= 0.01 && precoCadastro > 0) {
                 effectiveValUnit = precoCadastro;
             }
@@ -267,7 +322,6 @@ const FinancialView = ({ rows, loading, error }) => {
             if (b.key === 'sem_previsao' || b.key === 'sem_cliente' || b.key === 'sem_pedido' || b.key === 'sem_produto') return -1;
             
             if (grouping === 'prev_fat' || grouping === 'data_pcp') {
-                // Sort by date key chronologically
                 return a.key.localeCompare(b.key);
             }
             return a.label.localeCompare(b.label);
@@ -298,43 +352,95 @@ const FinancialView = ({ rows, loading, error }) => {
         return { totalPendente, totalFaturado, totalGeral, itemsCount };
     }, [filteredRows]);
 
+    // Timeline diária compacta com acumulado contínuo
+    const dailyTimelineData = useMemo(() => {
+        if (grouping !== 'prev_fat' && grouping !== 'data_pcp') return [];
+        
+        const dateGroups = groups.filter(g => g.dateRaw);
+        if (dateGroups.length === 0) return [];
+
+        let runningAccumulator = 0;
+        const maxVal = Math.max(...dateGroups.map(g => g.totalPendente), 1);
+
+        return dateGroups.map(g => {
+            runningAccumulator += g.totalPendente;
+            const isPeak = g.totalPendente >= maxVal * 0.65 && g.totalPendente > 0;
+            const parts = g.dateRaw.split('-');
+            const shortDate = `${parts[2]}/${parts[1]}`;
+
+            return {
+                ...g,
+                shortDate,
+                runningAccumulator,
+                isPeak,
+                intensityPercent: Math.min(100, Math.round((g.totalPendente / maxVal) * 100))
+            };
+        });
+    }, [groups, grouping]);
+
     const formatCurrency = (val) => {
-        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val || 0);
+    };
+
+    const formatShortCurrency = (val) => {
+        if (!val || val === 0) return 'R$ 0';
+        if (val >= 1000000) return `R$ ${(val / 1000000).toFixed(1)}M`;
+        if (val >= 1000) return `R$ ${(val / 1000).toFixed(1)}k`;
+        return `R$ ${Math.round(val)}`;
     };
 
     const getGroupIcon = () => {
         switch (grouping) {
-            case 'prev_fat': return <Calendar className="h-5 w-5 text-indigo-500" />;
-            case 'cliente': return <Users className="h-5 w-5 text-emerald-500" />;
-            case 'pedido': return <ShoppingBag className="h-5 w-5 text-blue-500" />;
-            case 'produto': return <Package className="h-5 w-5 text-orange-500" />;
-            default: return <Layers className="h-5 w-5 text-slate-500" />;
+            case 'prev_fat': return <Calendar className="h-4 w-4 text-indigo-600" />;
+            case 'data_pcp': return <Calendar className="h-4 w-4 text-cyan-600" />;
+            case 'cliente': return <Users className="h-4 w-4 text-emerald-600" />;
+            case 'pedido': return <ShoppingBag className="h-4 w-4 text-blue-600" />;
+            case 'produto': return <Package className="h-4 w-4 text-amber-600" />;
+            default: return <Layers className="h-4 w-4 text-slate-600" />;
+        }
+    };
+
+    const handleScrollToGroup = (groupKey) => {
+        setExpandedGroups(prev => ({ ...prev, [groupKey]: true }));
+        const el = document.getElementById(`group-row-${groupKey}`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('ring-2', 'ring-indigo-400');
+            setTimeout(() => el.classList.remove('ring-2', 'ring-indigo-400'), 1500);
         }
     };
 
     return (
         <div className="flex flex-col flex-1 overflow-hidden bg-slate-50">
-            {/* Top filter bar specific for financial analysis */}
-            <div className="p-4 bg-white border-b border-gray-200 shrink-0 shadow-sm">
-                <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center mb-4">
-                    <div>
-                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                            <BarChart2 className="h-5 w-5 text-blue-600 animate-pulse" />
-                            Painel Financeiro de Itens a Faturar
-                        </h3>
-                        <p className="text-xs text-gray-500">Agregações de valores faturados, saldos pendentes e previsões.</p>
+            {/* 1. COMPACT FINANCIAL TOOLBAR */}
+            <div className="px-3 py-2 bg-white border-b border-slate-200 shrink-0 shadow-sm">
+                <div className="flex flex-col xl:flex-row gap-2.5 justify-between items-start xl:items-center">
+                    {/* Title + Indicator */}
+                    <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg border border-blue-100">
+                            <BarChart2 className="h-4 w-4" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-800 leading-none flex items-center gap-1.5">
+                                Painel Financeiro
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded font-semibold">
+                                    {filteredRows.length} itens
+                                </span>
+                            </h3>
+                            <span className="text-[11px] text-slate-400">Valores faturados, saldos pendentes e projeções diárias</span>
+                        </div>
                     </div>
 
-                    {/* Grouping Selector */}
-                    <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 self-stretch lg:self-auto">
-                        <span className="text-[11px] font-bold text-slate-500 uppercase px-2">Agrupar por:</span>
+                    {/* Grouping Selector Buttons */}
+                    <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 w-full xl:w-auto">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase px-1.5">Agrupar:</span>
                         <button
                             onClick={() => { 
                                 setGrouping('prev_fat'); 
                                 toggleAll(false); 
                                 setFilters(prev => ({ ...prev, dateType: 'prev_fat' }));
                             }}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${grouping === 'prev_fat' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:bg-slate-200/50'}`}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${grouping === 'prev_fat' ? 'bg-white text-indigo-700 shadow-xs font-bold border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'}`}
                         >
                             Prev. Faturamento
                         </button>
@@ -344,260 +450,419 @@ const FinancialView = ({ rows, loading, error }) => {
                                 toggleAll(false); 
                                 setFilters(prev => ({ ...prev, dateType: 'data_pcp' }));
                             }}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${grouping === 'data_pcp' ? 'bg-white text-cyan-700 shadow-sm' : 'text-slate-600 hover:bg-slate-200/50'}`}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${grouping === 'data_pcp' ? 'bg-white text-cyan-700 shadow-xs font-bold border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'}`}
                         >
                             Data PCP
                         </button>
                         <button
                             onClick={() => { setGrouping('cliente'); toggleAll(false); }}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${grouping === 'cliente' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600 hover:bg-slate-200/50'}`}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${grouping === 'cliente' ? 'bg-white text-emerald-700 shadow-xs font-bold border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'}`}
                         >
                             Cliente
                         </button>
                         <button
                             onClick={() => { setGrouping('pedido'); toggleAll(false); }}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${grouping === 'pedido' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:bg-slate-200/50'}`}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${grouping === 'pedido' ? 'bg-white text-blue-700 shadow-xs font-bold border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'}`}
                         >
                             Pedido
                         </button>
                         <button
                             onClick={() => { setGrouping('produto'); toggleAll(false); }}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${grouping === 'produto' ? 'bg-white text-orange-700 shadow-sm' : 'text-slate-600 hover:bg-slate-200/50'}`}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${grouping === 'produto' ? 'bg-white text-amber-700 shadow-xs font-bold border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'}`}
                         >
                             Produto
                         </button>
                         <button
                             onClick={() => { setGrouping('sem_agrupamento'); toggleAll(false); }}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${grouping === 'sem_agrupamento' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-600 hover:bg-slate-200/50'}`}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${grouping === 'sem_agrupamento' ? 'bg-white text-slate-800 shadow-xs font-bold border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'}`}
                         >
                             Sem Agrupamento
                         </button>
                     </div>
                 </div>
 
-                {/* Filters Row */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3 pt-3 border-t border-slate-100">
-                    <div className="flex flex-col gap-0.5">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Cliente</label>
+                {/* Filters Input Row (Compact 6 Cols) */}
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mt-2 pt-2 border-t border-slate-100">
+                    <div>
                         <input
                             type="text"
-                            placeholder="Filtrar por nome..."
+                            placeholder="Buscar Cliente..."
                             value={filters.cliente}
                             onChange={(e) => setFilters(prev => ({ ...prev, cliente: e.target.value }))}
-                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-slate-50 outline-none focus:bg-white focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-2 py-1 text-xs border border-slate-200 rounded-md bg-slate-50 outline-none focus:bg-white focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
                         />
                     </div>
-                    <div className="flex flex-col gap-0.5">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Pedido</label>
+                    <div>
                         <input
                             type="text"
                             placeholder="Nº Pedido..."
                             value={filters.pedido}
                             onChange={(e) => setFilters(prev => ({ ...prev, pedido: e.target.value }))}
-                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-slate-50 outline-none focus:bg-white focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-2 py-1 text-xs border border-slate-200 rounded-md bg-slate-50 outline-none focus:bg-white focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
                         />
                     </div>
-                    <div className="flex flex-col gap-0.5">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Produto</label>
+                    <div>
                         <input
                             type="text"
-                            placeholder="Código..."
+                            placeholder="Cód. Produto..."
                             value={filters.produto}
                             onChange={(e) => setFilters(prev => ({ ...prev, produto: e.target.value }))}
-                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-slate-50 outline-none focus:bg-white focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-2 py-1 text-xs border border-slate-200 rounded-md bg-slate-50 outline-none focus:bg-white focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
                         />
                     </div>
-                    <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-1">
-                            <select 
-                                value={filters.dateType} 
-                                onChange={(e) => setFilters(prev => ({ ...prev, dateType: e.target.value }))}
-                                className="text-[10px] font-bold text-slate-500 uppercase bg-transparent outline-none cursor-pointer hover:text-blue-600"
-                            >
-                                <option value="prev_fat">Prev. Fat. De</option>
-                                <option value="data_pcp">Data PCP De</option>
-                            </select>
-                        </div>
+                    <div className="flex items-center gap-1">
+                        <select 
+                            value={filters.dateType} 
+                            onChange={(e) => setFilters(prev => ({ ...prev, dateType: e.target.value }))}
+                            className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded px-1 py-1 border border-slate-200 outline-none cursor-pointer"
+                            title="Filtrar por tipo de data"
+                        >
+                            <option value="prev_fat">Prev</option>
+                            <option value="data_pcp">PCP</option>
+                        </select>
                         <input
                             type="date"
                             value={filters.dataInicial}
                             onChange={(e) => setFilters(prev => ({ ...prev, dataInicial: e.target.value }))}
-                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-slate-50 outline-none focus:bg-white focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-1.5 py-1 text-xs border border-slate-200 rounded-md bg-slate-50 outline-none focus:bg-white"
+                            title="Data Inicial"
                         />
                     </div>
-                    <div className="flex flex-col gap-0.5">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Até</label>
+                    <div>
                         <input
                             type="date"
                             value={filters.dataFinal}
                             onChange={(e) => setFilters(prev => ({ ...prev, dataFinal: e.target.value }))}
-                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-slate-50 outline-none focus:bg-white focus:ring-1 focus:ring-blue-500"
+                            className="w-full px-1.5 py-1 text-xs border border-slate-200 rounded-md bg-slate-50 outline-none focus:bg-white"
+                            title="Data Final"
                         />
                     </div>
-                    <div className="flex flex-col gap-0.5">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase">Status Faturamento</label>
+                    <div className="flex items-center gap-1.5">
                         <select
                             value={filters.showMode}
                             onChange={(e) => setFilters(prev => ({ ...prev, showMode: e.target.value }))}
-                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-slate-50 outline-none focus:bg-white focus:ring-1 focus:ring-blue-500"
+                            className="flex-1 px-1.5 py-1 text-xs border border-slate-200 rounded-md bg-slate-50 outline-none focus:bg-white"
                         >
                             <option value="all">Ver Tudo</option>
-                            <option value="pending">Apenas Pendentes (A Faturar)</option>
-                            <option value="billed">Apenas Faturados (NFs emitidas)</option>
+                            <option value="pending">Apenas Pendentes</option>
+                            <option value="billed">Apenas Faturados</option>
                         </select>
+
+                        {onRefresh && (
+                            <button
+                                type="button"
+                                onClick={() => onRefresh()}
+                                disabled={loading}
+                                className="px-2.5 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-md transition-all flex items-center gap-1.5 shadow-2xs disabled:opacity-50 shrink-0 cursor-pointer"
+                                title="Atualizar dados com base nos filtros"
+                            >
+                                <RefreshCw className={`h-3 w-3 shrink-0 ${loading ? 'animate-spin' : ''}`} />
+                                <span className="hidden xl:inline">{loading ? 'Atualizando...' : 'Atualizar'}</span>
+                            </button>
+                        )}
+
+                        {(filters.cliente || filters.pedido || filters.produto || filters.dataInicial || filters.dataFinal || filters.showMode !== 'all') && (
+                            <button
+                                onClick={handleClearFilters}
+                                className="px-2 py-1 text-[11px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-md transition-colors whitespace-nowrap cursor-pointer"
+                                title="Limpar todos os filtros"
+                            >
+                                Limpar
+                            </button>
+                        )}
                     </div>
                 </div>
 
-                <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-100">
-                    <div className="flex gap-2">
+                {/* Sub-actions toolbar */}
+                <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-slate-100 text-[11px]">
+                    <div className="flex items-center gap-2">
                         <button
                             onClick={() => toggleAll(true)}
-                            className="px-2.5 py-1 text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded transition-all"
+                            className="px-2 py-0.5 font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded transition-colors"
                         >
                             Expandir Todos
                         </button>
                         <button
                             onClick={() => toggleAll(false)}
-                            className="px-2.5 py-1 text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded transition-all"
+                            className="px-2 py-0.5 font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded transition-colors"
                         >
                             Recolher Todos
                         </button>
                     </div>
 
-                    {(filters.cliente || filters.pedido || filters.produto || filters.dataInicial || filters.dataFinal || filters.showMode !== 'all') && (
+                    <div className="flex items-center gap-2">
+                        {onRefresh && (
+                            <button
+                                type="button"
+                                onClick={() => onRefresh()}
+                                disabled={loading}
+                                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:text-blue-700 active:bg-slate-100 disabled:opacity-50 transition-colors shadow-2xs cursor-pointer"
+                                title="Recarregar e atualizar dados do servidor com base nos filtros"
+                            >
+                                <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${loading ? 'animate-spin' : ''}`} />
+                                <span>{loading ? 'Atualizando Dados...' : 'Atualizar Dados com Base nos Filtros'}</span>
+                            </button>
+                        )}
+                        {/* Botão de Exportação para Excel Padrão MetalFisa */}
                         <button
-                            onClick={handleClearFilters}
-                            className="text-[11px] text-red-500 hover:text-red-700 font-bold flex items-center gap-1 transition-colors"
+                            type="button"
+                            onClick={handleExportFinancialExcel}
+                            disabled={exportProgress !== null || filteredRows.length === 0}
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs transition-colors cursor-pointer"
+                            title="Exportar Carteira Financeira Analítica e Consolidada para Excel (Padrão Oficial MetalFisa)"
                         >
-                            Limpar Filtros
+                            <FileSpreadsheet className="h-3.5 w-3.5" />
+                            <span>Exportar Excel (MetalFisa)</span>
+                            <span className="text-[10px] bg-emerald-800/40 px-1.5 py-0.2 rounded font-mono">
+                                {filteredRows.length}
+                            </span>
                         </button>
-                    )}
+
+                        {/* TOGGLE DO GRÁFICO COMPARATIVO MENSAL */}
+                        <button
+                            type="button"
+                            onClick={() => setShowComparativeChart(prev => !prev)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition-all border ${
+                                showComparativeChart 
+                                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-xs' 
+                                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                            }`}
+                            title="Alternar visibilidade do gráfico comparativo mensal"
+                        >
+                            <BarChart2 className="h-3.5 w-3.5" />
+                            <span>Comparativo Mensal</span>
+                            {showComparativeChart ? (
+                                <span className="flex items-center gap-1 text-[10px] text-indigo-600 bg-indigo-100/60 px-1 rounded">
+                                    <Eye className="h-3 w-3" /> Visível
+                                </span>
+                            ) : (
+                                <span className="flex items-center gap-1 text-[10px] text-slate-400 bg-slate-200/60 px-1 rounded">
+                                    <EyeOff className="h-3 w-3" /> Oculto
+                                </span>
+                            )}
+                            {showComparativeChart ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            {/* Financial Comparative Chart */}
-            {chartData.length > 0 && (
-                <div className="p-4 bg-white border-b border-gray-200 shrink-0 shadow-sm">
-                    <h4 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
-                        <BarChart2 className="h-4 w-4 text-indigo-500" />
-                        A Faturar por Mês: Comparativo (Entrega Original vs Data PCP vs Previsão de Faturamento)
-                    </h4>
-                    <div className="h-64 w-full">
+            {/* 2. FINANCIAL COMPARATIVE CHART (COLLAPSIBLE WITH ZERO WASTED SPACE) */}
+            {showComparativeChart && chartData.length > 0 && (
+                <div className="px-3 py-2 bg-white border-b border-slate-200 shrink-0 transition-all duration-300 animate-fadeIn">
+                    <div className="flex justify-between items-center mb-1">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-700">
+                                Projeção Mensal de Faturamento (Entrega Original vs PCP vs Prev. Faturamento)
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400">
+                                ({chartData.length} meses analisados)
+                            </span>
+                        </div>
+                    </div>
+                    <div className="h-44 w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
+                            <BarChart data={chartData} margin={{ top: 5, right: 5, left: -10, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="2 2" vertical={false} stroke="#f1f5f9" />
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} dy={2} />
                                 <YAxis 
                                     axisLine={false} 
                                     tickLine={false} 
-                                    tick={{ fontSize: 12, fill: '#64748b' }} 
+                                    tick={{ fontSize: 10, fill: '#64748b' }} 
                                     tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
-                                    dx={-10}
-                                    width={80}
+                                    width={65}
                                 />
                                 <RechartsTooltip 
                                     formatter={(value) => formatCurrency(value)}
-                                    cursor={{ fill: '#f1f5f9' }}
-                                    contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                    cursor={{ fill: '#f8fafc' }}
+                                    contentStyle={{ borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px', padding: '6px 10px' }}
                                 />
-                                <Legend wrapperStyle={{ paddingTop: '10px' }} />
-                                <Bar dataKey="entrega" name="Original (Entrega)" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="pcp" name="Data PCP" fill="#06b6d4" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="prevFat" name="Prev. Faturamento" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                                <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '4px' }} />
+                                <Bar dataKey="entrega" name="Entrega Original" fill="#94a3b8" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                                <Bar dataKey="pcp" name="Data PCP" fill="#06b6d4" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                                <Bar dataKey="prevFat" name="Prev. Faturamento" fill="#4f46e5" radius={[3, 3, 0, 0]} maxBarSize={28} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
             )}
 
-            {/* Financial summary metrics card layout */}
-            <div className="p-4 grid grid-cols-1 md:grid-cols-4 gap-4 shrink-0 bg-slate-50 border-b border-gray-200">
-                <div className="bg-gradient-to-br from-indigo-50 to-indigo-100/50 p-4 rounded-xl border border-indigo-200/50 shadow-sm flex items-center justify-between transition-transform duration-200 hover:scale-[1.02]">
+            {/* 3. HIGH DENSITY FINANCIAL KPI STRIP (ZERO WHITE SPACE) */}
+            <div className="px-3 py-2 grid grid-cols-2 md:grid-cols-4 gap-2 shrink-0 bg-slate-100/60 border-b border-slate-200">
+                {/* A Faturar */}
+                <div className="bg-white px-3 py-2 rounded-lg border border-indigo-100 shadow-xs flex items-center justify-between">
                     <div>
-                        <span className="block text-xs font-semibold text-indigo-700 uppercase tracking-wider">A Faturar (Pendente)</span>
-                        <span className="text-lg sm:text-xl font-black text-indigo-900 font-mono mt-1 block">
+                        <span className="block text-[10px] font-bold text-indigo-600 uppercase tracking-wider">A Faturar (Pendente)</span>
+                        <span className="text-base sm:text-lg font-black text-indigo-950 font-mono mt-0.5 block leading-none">
                             {formatCurrency(totals.totalPendente)}
                         </span>
                     </div>
-                    <div className="bg-indigo-500/10 p-2.5 rounded-lg text-indigo-600">
-                        <TrendingUp className="h-6 w-6 animate-pulse" />
+                    <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-md">
+                        <TrendingUp className="h-4 w-4" />
                     </div>
                 </div>
 
-                <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 p-4 rounded-xl border border-emerald-200/50 shadow-sm flex items-center justify-between transition-transform duration-200 hover:scale-[1.02]">
+                {/* Já Faturado */}
+                <div className="bg-white px-3 py-2 rounded-lg border border-emerald-100 shadow-xs flex items-center justify-between">
                     <div>
-                        <span className="block text-xs font-semibold text-emerald-700 uppercase tracking-wider">Já Faturado</span>
-                        <span className="text-lg sm:text-xl font-black text-emerald-900 font-mono mt-1 block">
+                        <span className="block text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Já Faturado</span>
+                        <span className="text-base sm:text-lg font-black text-emerald-950 font-mono mt-0.5 block leading-none">
                             {formatCurrency(totals.totalFaturado)}
                         </span>
                     </div>
-                    <div className="bg-emerald-500/10 p-2.5 rounded-lg text-emerald-600">
-                        <CheckCircle className="h-6 w-6" />
+                    <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-md">
+                        <CheckCircle className="h-4 w-4" />
                     </div>
                 </div>
 
-                <div className="bg-gradient-to-br from-slate-100 to-slate-200/50 p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between transition-transform duration-200 hover:scale-[1.02]">
+                {/* Total Geral */}
+                <div className="bg-white px-3 py-2 rounded-lg border border-slate-200 shadow-xs flex items-center justify-between">
                     <div>
-                        <span className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Total Geral</span>
-                        <span className="text-lg sm:text-xl font-black text-slate-900 font-mono mt-1 block">
+                        <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Geral</span>
+                        <span className="text-base sm:text-lg font-black text-slate-900 font-mono mt-0.5 block leading-none">
                             {formatCurrency(totals.totalGeral)}
                         </span>
                     </div>
-                    <div className="bg-slate-500/10 p-2.5 rounded-lg text-slate-700">
-                        <DollarSign className="h-6 w-6" />
+                    <div className="p-1.5 bg-slate-100 text-slate-700 rounded-md">
+                        <DollarSign className="h-4 w-4" />
                     </div>
                 </div>
 
-                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
-                    <div>
-                        <span className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Faturamento Concluído</span>
-                        <div className="flex items-center gap-2 mt-1.5">
-                            <span className="text-lg font-black text-slate-800 font-mono">
+                {/* Progresso Concluído */}
+                <div className="bg-white px-3 py-2 rounded-lg border border-slate-200 shadow-xs flex items-center justify-between">
+                    <div className="flex-1 pr-2">
+                        <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Faturado</span>
+                            <span className="text-xs font-black text-slate-800 font-mono">
                                 {totals.totalGeral > 0 ? Math.round((totals.totalFaturado / totals.totalGeral) * 100) : 0}%
                             </span>
-                            <span className="text-[11px] text-gray-400">({totals.itemsCount} itens)</span>
                         </div>
-                        <div className="w-full bg-gray-100 rounded-full h-2 mt-2">
+                        <div className="w-full bg-slate-100 rounded-full h-1.5 mt-1.5 overflow-hidden">
                             <div 
-                                className="bg-emerald-500 h-2 rounded-full transition-all duration-500" 
+                                className="bg-emerald-500 h-1.5 rounded-full transition-all duration-300" 
                                 style={{ width: `${totals.totalGeral > 0 ? (totals.totalFaturado / totals.totalGeral) * 100 : 0}%` }}
                             ></div>
                         </div>
                     </div>
+                    <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                        {totals.itemsCount} itens
+                    </span>
                 </div>
             </div>
 
-            {/* Main scrollable body */}
-            <div className="flex-1 overflow-auto p-4">
+            {/* 4. PAINEL DE FITA DIÁRIA / TIMELINE COMPACTA (QUANDO AGRUPADO POR PREVISÃO/PCP) */}
+            {dailyTimelineData.length > 0 && (
+                <div className="px-3 py-2 bg-white border-b border-slate-200 shrink-0 shadow-xs">
+                    <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                            <Calendar className="h-3.5 w-3.5 text-indigo-600" />
+                            <span>Fita Diária de Faturamento</span>
+                            <span className="text-[10px] text-slate-400 font-normal">
+                                (Clique no dia para rolar e abrir os detalhes)
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
+                            <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Normal
+                            </span>
+                            <span className="flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-amber-500"></span> Pico de Volume
+                            </span>
+                        </div>
+                    </div>
+
+                    <div 
+                        ref={timelineContainerRef}
+                        className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-slate-300"
+                    >
+                        {dailyTimelineData.map(day => {
+                            const isSelected = !!expandedGroups[day.key];
+                            return (
+                                <div
+                                    key={day.key}
+                                    onClick={() => handleScrollToGroup(day.key)}
+                                    className={`shrink-0 min-w-[145px] max-w-[160px] p-2 rounded-lg border transition-all cursor-pointer select-none ${
+                                        isSelected 
+                                            ? 'bg-indigo-50/70 border-indigo-400 shadow-xs' 
+                                            : day.isPeak
+                                                ? 'bg-amber-50/40 border-amber-300 hover:border-amber-400'
+                                                : 'bg-slate-50/70 border-slate-200 hover:border-slate-300 hover:bg-white'
+                                    }`}
+                                >
+                                    {/* Header do card com Dia da semana */}
+                                    <div className="flex items-center justify-between text-[11px] leading-tight mb-1">
+                                        <div className="flex items-center gap-1">
+                                            <span className={`font-bold uppercase ${day.weekDay === 'Sáb' || day.weekDay === 'Dom' ? 'text-rose-600' : 'text-slate-700'}`}>
+                                                {day.weekDay}
+                                            </span>
+                                            <span className="font-mono text-slate-500">{day.shortDate}</span>
+                                        </div>
+                                        {day.isPeak ? (
+                                            <span className="p-0.5 bg-amber-100 text-amber-700 rounded" title="Dia com alto volume de faturamento">
+                                                <Flame className="h-3 w-3" />
+                                            </span>
+                                        ) : (
+                                            <span className="text-[10px] font-mono text-slate-400">
+                                                {day.items.length} un
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Valor pendente do dia */}
+                                    <div className="text-xs font-black font-mono text-emerald-800 leading-tight">
+                                        {formatCurrency(day.totalPendente)}
+                                    </div>
+
+                                    {/* Barra e acumulado */}
+                                    <div className="mt-1 flex items-center justify-between text-[9px] text-slate-400 font-mono">
+                                        <span>Acumulado:</span>
+                                        <span className="font-bold text-slate-600">
+                                            {formatShortCurrency(day.runningAccumulator)}
+                                        </span>
+                                    </div>
+                                    <div className="w-full bg-slate-200 rounded-full h-1 mt-1 overflow-hidden">
+                                        <div 
+                                            className={`h-1 rounded-full ${day.isPeak ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                            style={{ width: `${day.intensityPercent}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {/* 5. MAIN SCROLLABLE LIST OF GROUPS (CHRONOLOGICAL DENSE ACCORDIONS) */}
+            <div className="flex-1 overflow-auto p-3">
                 {loading ? (
-                    <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-gray-200 shadow-sm">
-                        <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-600 border-t-transparent mb-3"></div>
-                        <span className="text-slate-500 font-medium">Processando e consolidando agregados financeiros...</span>
+                    <div className="flex flex-col items-center justify-center py-20 bg-white rounded-xl border border-slate-200 shadow-xs">
+                        <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent mb-2"></div>
+                        <span className="text-slate-500 font-medium text-xs">Consolidando visão financeira...</span>
                     </div>
                 ) : error ? (
-                    <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-gray-200 shadow-sm text-red-500">
-                        <AlertCircle className="h-12 w-12 mb-3" />
-                        <span className="font-semibold text-lg">Erro ao carregar dados</span>
-                        <p className="text-sm text-gray-400 mt-1">{error}</p>
+                    <div className="flex flex-col items-center justify-center py-16 bg-white rounded-xl border border-rose-200 shadow-xs text-rose-600">
+                        <AlertCircle className="h-10 w-10 mb-2" />
+                        <span className="font-bold text-sm">Erro ao carregar dados</span>
+                        <p className="text-xs text-slate-400 mt-1">{error}</p>
                     </div>
                 ) : groups.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-gray-200 shadow-sm text-gray-400">
-                        <AlertCircle className="h-10 w-10 mb-2" />
-                        <span>Nenhum item com dados financeiros corresponde aos filtros selecionados.</span>
+                    <div className="flex flex-col items-center justify-center py-16 bg-white rounded-xl border border-slate-200 shadow-xs text-slate-400">
+                        <AlertCircle className="h-8 w-8 mb-1.5 text-slate-300" />
+                        <span className="text-xs">Nenhum item corresponde aos filtros selecionados.</span>
                     </div>
                 ) : grouping === 'sem_agrupamento' ? (
                     /* Flat table when no grouping selected */
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                        <div className="p-3 bg-slate-50 border-b border-gray-200 font-bold text-xs text-slate-600 uppercase flex items-center gap-1.5">
-                            <List className="h-4 w-4" /> Itens Listados ({filteredRows.length})
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+                        <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 font-bold text-xs text-slate-700 uppercase flex items-center gap-1.5">
+                            <List className="h-4 w-4 text-slate-500" /> Itens Listados ({filteredRows.length})
                         </div>
-                        <div className="overflow-auto max-h-[600px]">
-                            <FlatDetailsTable items={filteredRows} formatCurrency={formatCurrency} formatProtheusDate={(d) => d} />
+                        <div className="overflow-auto max-h-[calc(100vh-320px)]">
+                            <FlatDetailsTable items={filteredRows} formatCurrency={formatCurrency} />
                         </div>
                     </div>
                 ) : (
-                    /* Cards Grid Layout (Option B) */
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-20">
+                    /* DENSE FULL-WIDTH CHRONOLOGICAL ACCORDIONS */
+                    <div className="flex flex-col gap-1.5 pb-16">
                         {groups.map(group => {
                             const isExpanded = !!expandedGroups[group.key];
                             const percentBilled = group.totalGeral > 0 ? Math.round((group.totalFaturado / group.totalGeral) * 100) : 0;
@@ -605,67 +870,87 @@ const FinancialView = ({ rows, loading, error }) => {
                             return (
                                 <div 
                                     key={group.key} 
-                                    className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm transition-all duration-200 flex flex-col hover:shadow-md ${isExpanded ? 'md:col-span-2 xl:col-span-3' : 'hover:scale-[1.01]'}`}
+                                    id={`group-row-${group.key}`}
+                                    className={`bg-white rounded-lg border transition-all duration-150 flex flex-col ${
+                                        isExpanded 
+                                            ? 'border-indigo-300 shadow-sm ring-1 ring-indigo-200/50' 
+                                            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
+                                    }`}
                                 >
-                                    {/* Card Header */}
+                                    {/* COMPACT ACCORDION HEADER (~38px) */}
                                     <div 
                                         onClick={() => toggleGroup(group.key)}
-                                        className="p-4 cursor-pointer flex items-center justify-between border-b border-slate-100 select-none hover:bg-slate-50/55 transition-colors"
+                                        className="px-3 py-2 cursor-pointer flex items-center justify-between select-none"
                                     >
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            <div className="p-2 bg-slate-100 rounded-xl shrink-0">
+                                        {/* Left: Icon, Date/Name, Item count */}
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <div className="text-slate-400 hover:text-indigo-600 transition-colors">
+                                                <ChevronRight className={`h-4 w-4 transition-transform duration-200 ${isExpanded ? 'rotate-90 text-indigo-600' : ''}`} />
+                                            </div>
+                                            <div className="p-1 bg-slate-100 rounded text-slate-600 shrink-0">
                                                 {getGroupIcon()}
                                             </div>
-                                            <div className="min-w-0">
-                                                <h4 className="font-bold text-slate-800 text-sm sm:text-base truncate" title={group.label}>
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <span className="font-bold text-slate-800 text-xs sm:text-sm truncate" title={group.label}>
                                                     {group.label}
-                                                </h4>
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mt-0.5">
+                                                </span>
+                                                {group.weekDay && (
+                                                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded uppercase ${group.weekDay === 'Sáb' || group.weekDay === 'Dom' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>
+                                                        {group.weekDay}
+                                                    </span>
+                                                )}
+                                                <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
                                                     {group.items.length} {group.items.length === 1 ? 'item' : 'itens'}
                                                 </span>
                                             </div>
                                         </div>
                                         
-                                        <div className="flex items-center gap-2">
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${percentBilled >= 100 ? 'bg-emerald-100 text-emerald-700' : percentBilled > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-600'}`}>
-                                                {percentBilled}% Fat.
-                                            </span>
-                                            {isExpanded ? <ChevronUp className="h-5 w-5 text-gray-400" /> : <ChevronDown className="h-5 w-5 text-gray-400" />}
-                                        </div>
-                                    </div>
-
-                                    {/* Card Body (Summary Info) */}
-                                    <div className="p-4 grid grid-cols-3 gap-2 bg-slate-50/30">
-                                        <div className="border-r border-slate-100 pr-1">
-                                            <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-wider block">A Faturar</span>
-                                            <span className="text-xs sm:text-sm font-black text-indigo-950 font-mono mt-0.5 block truncate">
-                                                {formatCurrency(group.totalPendente)}
-                                            </span>
-                                        </div>
-                                        <div className="border-r border-slate-100 px-1">
-                                            <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider block">Já Faturado</span>
-                                            <span className="text-xs sm:text-sm font-black text-emerald-950 font-mono mt-0.5 block truncate">
-                                                {formatCurrency(group.totalFaturado)}
-                                            </span>
-                                        </div>
-                                        <div className="pl-1">
-                                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Total Geral</span>
-                                            <span className="text-xs sm:text-sm font-black text-slate-950 font-mono mt-0.5 block truncate">
-                                                {formatCurrency(group.totalGeral)}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {/* Expanded Detail View */}
-                                    {isExpanded && (
-                                        <div className="border-t border-slate-100 overflow-hidden bg-white rounded-b-2xl">
-                                            <div className="p-3 bg-slate-50/70 border-b border-slate-100 flex justify-between items-center">
-                                                <span className="text-xs font-bold text-slate-600 flex items-center gap-1">
-                                                    <List className="h-3.5 w-3.5 text-slate-400" /> Detalhes dos Itens do Grupo
+                                        {/* Right: Values aligned in a single dense row */}
+                                        <div className="flex items-center gap-4 shrink-0 font-mono text-xs">
+                                            {/* Progress / Percent */}
+                                            <div className="hidden sm:flex items-center gap-1.5">
+                                                <div className="w-16 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                                                    <div 
+                                                        className="bg-emerald-500 h-1.5 rounded-full" 
+                                                        style={{ width: `${percentBilled}%` }}
+                                                    ></div>
+                                                </div>
+                                                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${percentBilled >= 100 ? 'bg-emerald-100 text-emerald-700' : percentBilled > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                                                    {percentBilled}%
                                                 </span>
                                             </div>
-                                            <div className="overflow-auto max-h-[400px]">
-                                                <FlatDetailsTable items={group.items} formatCurrency={formatCurrency} formatProtheusDate={(d) => d} />
+
+                                            {/* Pendente / A Faturar (Destaque Principal) */}
+                                            <div className="text-right">
+                                                <span className="text-[9px] font-bold text-indigo-600 uppercase tracking-wider block sm:hidden">A Faturar</span>
+                                                <span className="font-black text-indigo-900 text-xs sm:text-sm">
+                                                    {formatCurrency(group.totalPendente)}
+                                                </span>
+                                            </div>
+
+                                            {/* Já Faturado (Secundário) */}
+                                            <div className="text-right hidden md:block border-l border-slate-200 pl-3">
+                                                <span className="text-slate-400 text-[10px] mr-1">Fat:</span>
+                                                <span className="font-semibold text-emerald-800">
+                                                    {formatCurrency(group.totalFaturado)}
+                                                </span>
+                                            </div>
+
+                                            {/* Total Geral */}
+                                            <div className="text-right hidden lg:block border-l border-slate-200 pl-3 text-slate-600">
+                                                <span className="text-slate-400 text-[10px] mr-1">Tot:</span>
+                                                <span className="font-semibold">
+                                                    {formatCurrency(group.totalGeral)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* EXPANDED INNER TABLE */}
+                                    {isExpanded && (
+                                        <div className="border-t border-slate-100 overflow-hidden bg-slate-50/30 rounded-b-lg">
+                                            <div className="overflow-auto max-h-[420px] bg-white">
+                                                <FlatDetailsTable items={group.items} formatCurrency={formatCurrency} />
                                             </div>
                                         </div>
                                     )}
@@ -675,6 +960,68 @@ const FinancialView = ({ rows, loading, error }) => {
                     </div>
                 )}
             </div>
+
+            {/* MODAL DE FEEDBACK DE PROGRESSO EM TEMPO REAL */}
+            {exportProgress !== null && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+                    <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden p-6 space-y-4">
+                        {/* Header com ícone e títulos */}
+                        <div className="flex items-center gap-3">
+                            <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-lg shrink-0 border border-emerald-100">
+                                <FileSpreadsheet className="w-6 h-6 animate-pulse" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <h3 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
+                                    <span>Gerando Planilha MetalFisa</span>
+                                    <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded">
+                                        ExcelJS
+                                    </span>
+                                </h3>
+                                <p className="text-xs text-slate-500 truncate mt-0.5">
+                                    Padrão Corporativo Oficial • Dados Expandidos
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Barra de Progresso com Gradiente */}
+                        <div className="space-y-1.5">
+                            <div className="flex justify-between items-center text-xs">
+                                <span className="font-semibold text-slate-700">Progresso</span>
+                                <span className="font-mono font-bold text-indigo-700 text-sm">
+                                    {exportProgress.percent}%
+                                </span>
+                            </div>
+                            <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden border border-slate-200 p-0.5">
+                                <div 
+                                    className="bg-gradient-to-r from-blue-900 via-blue-600 to-emerald-500 h-full rounded-full transition-all duration-200 ease-out shadow-xs"
+                                    style={{ width: `${Math.min(100, Math.max(0, exportProgress.percent))}%` }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Contador de Itens e Status da Etapa */}
+                        <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 text-xs space-y-1.5">
+                            <div className="flex justify-between text-slate-600">
+                                <span>Itens Processados:</span>
+                                <span className="font-mono font-bold text-slate-800">
+                                    {exportProgress.current.toLocaleString('pt-BR')} de {exportProgress.total.toLocaleString('pt-BR')}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60 text-slate-600">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 shrink-0" />
+                                <span className="text-[11px] font-medium text-slate-700 leading-tight">
+                                    {exportProgress.stepMessage}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Rodapé informativo */}
+                        <p className="text-[10px] text-slate-400 text-center italic">
+                            Aguarde... o arquivo será baixado automaticamente ao concluir.
+                        </p>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -682,7 +1029,7 @@ const FinancialView = ({ rows, loading, error }) => {
 // Internal table detail rendering
 const FlatDetailsTable = ({ items, formatCurrency }) => {
     const [sortConfig, setSortConfig] = useState({ key: '', direction: '' });
-    const [columnFilters, setColumnFilters] = useState({});
+    const [columnFilters, setColumnFilters] = useStickyState({}, '@metalfisa:financial_table_colFilters');
 
     const requestSort = (key) => {
         let direction = 'asc';
@@ -718,7 +1065,6 @@ const FlatDetailsTable = ({ items, formatCurrency }) => {
     const sortedAndFilteredItems = useMemo(() => {
         let result = items;
 
-        // Apply column filters
         Object.keys(columnFilters).forEach(key => {
             const filterValue = (columnFilters[key] || '').toLowerCase();
             if (filterValue) {
@@ -729,20 +1075,17 @@ const FlatDetailsTable = ({ items, formatCurrency }) => {
             }
         });
 
-        // Apply sorting
         if (sortConfig.key) {
             result = [...result].sort((a, b) => {
                 let aValue = a[sortConfig.key];
                 let bValue = b[sortConfig.key];
 
-                // Numeric sorting
                 const numericFields = ['valor_unitario', 'valor_total', 'quantidade', 'qtd_entreg', 'qtd_faturar'];
                 if (numericFields.includes(sortConfig.key)) {
                     const diff = parseFloat(aValue || 0) - parseFloat(bValue || 0);
                     return sortConfig.direction === 'asc' ? diff : -diff;
                 }
 
-                // String sorting
                 const strA = String(aValue || '').toLowerCase();
                 const strB = String(bValue || '').toLowerCase();
                 if (strA < strB) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -756,27 +1099,27 @@ const FlatDetailsTable = ({ items, formatCurrency }) => {
 
     return (
         <table className="w-full text-xs text-left text-slate-600 whitespace-nowrap">
-            <thead className="text-[10px] text-slate-700 uppercase bg-slate-50 border-b border-slate-100 font-bold sticky top-0">
+            <thead className="text-[10px] text-slate-700 uppercase bg-slate-100/80 border-b border-slate-200 font-bold sticky top-0 z-10">
                 <tr>
-                    <th className="px-3 py-2 text-center align-top pt-5">Doc/PDF</th>
+                    <th className="px-2 py-1.5 text-center align-top pt-4">Doc</th>
                     <SortableHeader label="Pedido" columnKey="pedido" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['pedido']} onFilterChange={handleColumnFilterChange} />
                     <SortableHeader label="Item" columnKey="item" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['item']} onFilterChange={handleColumnFilterChange} />
                     <SortableHeader label="Cód. Produto" columnKey="codigo" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['codigo']} onFilterChange={handleColumnFilterChange} />
                     <SortableHeader label="Descrição" columnKey="descricao" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['descricao']} onFilterChange={handleColumnFilterChange} />
                     <SortableHeader label="Cliente" columnKey="nome_cliente" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['nome_cliente']} onFilterChange={handleColumnFilterChange} />
                     <SortableHeader label="V. Unitário" columnKey="valor_unitario" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['valor_unitario']} onFilterChange={handleColumnFilterChange} />
-                    <th className="px-3 py-2 text-right text-indigo-700 bg-indigo-50/20 align-top pt-5">A Faturar (R$)</th>
-                    <th className="px-3 py-2 text-right text-emerald-700 bg-emerald-50/20 align-top pt-5">Faturado (R$)</th>
+                    <th className="px-2 py-1.5 text-right text-indigo-700 bg-indigo-50/40 align-top pt-4">A Faturar (R$)</th>
+                    <th className="px-2 py-1.5 text-right text-emerald-700 bg-emerald-50/40 align-top pt-4">Faturado (R$)</th>
                     <SortableHeader label="Total (R$)" columnKey="valor_total" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['valor_total']} onFilterChange={handleColumnFilterChange} />
                     <SortableHeader label="Qtd. Solicitada" columnKey="quantidade" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['quantidade']} onFilterChange={handleColumnFilterChange} />
-                    <SortableHeader label="Qtd. A Faturar" columnKey="qtd_faturar" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['qtd_faturar']} onFilterChange={handleColumnFilterChange} className="text-indigo-700 bg-indigo-50/20" />
-                    <SortableHeader label="Qtd. Entregue" columnKey="qtd_entreg" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['qtd_entreg']} onFilterChange={handleColumnFilterChange} className="text-emerald-700 bg-emerald-50/20" />
+                    <SortableHeader label="Qtd. A Faturar" columnKey="qtd_faturar" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['qtd_faturar']} onFilterChange={handleColumnFilterChange} className="text-indigo-700 bg-indigo-50/40" />
+                    <SortableHeader label="Qtd. Entregue" columnKey="qtd_entreg" align="right" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['qtd_entreg']} onFilterChange={handleColumnFilterChange} className="text-emerald-700 bg-emerald-50/40" />
                     <SortableHeader label="Data PCP" columnKey="data_entrega_pcp" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['data_entrega_pcp']} onFilterChange={handleColumnFilterChange} />
                     <SortableHeader label="Prev. Faturamento" columnKey="data_prevista_faturamento" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['data_prevista_faturamento']} onFilterChange={handleColumnFilterChange} />
-                    <th className="px-3 py-2 text-center align-top pt-5">Status</th>
+                    <th className="px-2 py-1.5 text-center align-top pt-4">Status</th>
                 </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
+            <tbody className="divide-y divide-slate-100 font-medium text-[11px]">
                 {sortedAndFilteredItems.map((row, idx) => {
                     const qtyTotal = parseFloat(row.quantidade || 0);
                     const precoCadastro = parseFloat(row.preco_cadastro || 0);
@@ -787,15 +1130,13 @@ const FlatDetailsTable = ({ items, formatCurrency }) => {
                     }
                     
                     const valTotalItem = effectiveValUnit * qtyTotal;
-                    
                     const qtyFaturar = parseFloat(row.qtd_faturar || 0);
                     const qtyEntreg = parseFloat(row.qtd_entreg || 0);
-                    
                     const isBilled = qtyFaturar <= 0;
                     
                     return (
-                        <tr key={idx} className={`hover:bg-slate-50/50 ${isBilled ? 'bg-slate-50/30 opacity-75' : 'bg-white'}`}>
-                            <td className="px-3 py-1.5 text-center">
+                        <tr key={idx} className={`hover:bg-slate-50/80 ${isBilled ? 'bg-slate-50/40 opacity-75' : 'bg-white'}`}>
+                            <td className="px-2 py-1 text-center">
                                 {row.has_docs ? (
                                     <FileText 
                                         onClick={() => { 
@@ -806,40 +1147,41 @@ const FlatDetailsTable = ({ items, formatCurrency }) => {
                                             }
                                         }}
                                         className="w-3.5 h-3.5 mx-auto text-red-500 cursor-pointer hover:text-red-700 transition-colors" 
+                                        title="Visualizar Desenho Técnico"
                                     />
                                 ) : (
                                     <FileText className="w-3.5 h-3.5 mx-auto text-slate-300" title="Sem documento" />
                                 )}
                             </td>
-                            <td className="px-3 py-1.5 font-bold text-slate-900">{row.pedido}</td>
-                            <td className="px-3 py-1.5 font-mono text-[10px]">{row.item}</td>
-                            <td className="px-3 py-1.5 font-mono text-slate-500 font-bold">{row.codigo}</td>
-                            <td className="px-3 py-1.5">
-                                <div className="truncate max-w-[150px]" title={row.descricao}>{row.descricao}</div>
+                            <td className="px-2 py-1 font-bold text-slate-900">{row.pedido}</td>
+                            <td className="px-2 py-1 font-mono text-[10px] text-slate-500">{row.item}</td>
+                            <td className="px-2 py-1 font-mono text-indigo-700 font-semibold">{row.codigo}</td>
+                            <td className="px-2 py-1">
+                                <div className="truncate max-w-[140px]" title={row.descricao}>{row.descricao}</div>
                             </td>
-                            <td className="px-3 py-1.5">
+                            <td className="px-2 py-1">
                                 <div className="truncate max-w-[120px]" title={row.nome_cliente}>{row.nome_cliente}</div>
                             </td>
-                            <td className="px-3 py-1.5 text-right font-mono text-slate-500">{formatCurrency(effectiveValUnit)}</td>
-                            <td className="px-3 py-1.5 text-right font-mono font-bold text-indigo-700 bg-indigo-50/10">{formatCurrency(qtyFaturar * effectiveValUnit)}</td>
-                            <td className="px-3 py-1.5 text-right font-mono font-bold text-emerald-700 bg-emerald-50/10">{formatCurrency(qtyEntreg * effectiveValUnit)}</td>
-                            <td className="px-3 py-1.5 text-right font-mono font-bold text-slate-950">{formatCurrency(valTotalItem)}</td>
+                            <td className="px-2 py-1 text-right font-mono text-slate-500">{formatCurrency(effectiveValUnit)}</td>
+                            <td className="px-2 py-1 text-right font-mono font-bold text-indigo-900 bg-indigo-50/30">{formatCurrency(qtyFaturar * effectiveValUnit)}</td>
+                            <td className="px-2 py-1 text-right font-mono font-bold text-emerald-800 bg-emerald-50/30">{formatCurrency(qtyEntreg * effectiveValUnit)}</td>
+                            <td className="px-2 py-1 text-right font-mono font-bold text-slate-950">{formatCurrency(valTotalItem)}</td>
                             
-                            <td className="px-3 py-1.5 text-right font-mono">{qtyTotal.toLocaleString('pt-BR')}</td>
-                            <td className="px-3 py-1.5 text-right font-mono font-bold text-indigo-600 bg-indigo-50/10">{qtyFaturar.toLocaleString('pt-BR')}</td>
-                            <td className="px-3 py-1.5 text-right font-mono font-bold text-emerald-600 bg-emerald-50/10">{qtyEntreg.toLocaleString('pt-BR')}</td>
+                            <td className="px-2 py-1 text-right font-mono">{qtyTotal.toLocaleString('pt-BR')}</td>
+                            <td className="px-2 py-1 text-right font-mono font-bold text-indigo-700 bg-indigo-50/30">{qtyFaturar.toLocaleString('pt-BR')}</td>
+                            <td className="px-2 py-1 text-right font-mono font-bold text-emerald-700 bg-emerald-50/30">{qtyEntreg.toLocaleString('pt-BR')}</td>
                             
-                            <td className="px-3 py-1.5 text-center text-[11px] font-bold text-cyan-700">
+                            <td className="px-2 py-1 text-center text-[10px] font-bold text-cyan-700">
                                 {row.data_entrega_pcp ? formatProtheusDate(row.data_entrega_pcp) : <span className="text-slate-300">—</span>}
                             </td>
-                            <td className="px-3 py-1.5 text-center text-[11px] font-bold text-teal-700">
+                            <td className="px-2 py-1 text-center text-[10px] font-bold text-teal-700">
                                 {row.data_prevista_faturamento ? formatProtheusDate(row.data_prevista_faturamento) : <span className="text-slate-300">—</span>}
                             </td>
-                            <td className="px-3 py-1.5 text-center">
+                            <td className="px-2 py-1 text-center">
                                 {qtyFaturar <= 0 ? (
                                     <span className="bg-emerald-100 text-emerald-800 text-[9px] uppercase font-bold py-0.5 px-1.5 rounded">Faturado 100%</span>
                                 ) : qtyEntreg > 0 ? (
-                                    <span className="bg-orange-100 text-orange-800 text-[9px] uppercase font-bold py-0.5 px-1.5 rounded">Fat. Parcial</span>
+                                    <span className="bg-amber-100 text-amber-800 text-[9px] uppercase font-bold py-0.5 px-1.5 rounded">Fat. Parcial</span>
                                 ) : (
                                     <span className="bg-slate-100 text-slate-600 text-[9px] uppercase font-bold py-0.5 px-1.5 rounded">A Faturar</span>
                                 )}

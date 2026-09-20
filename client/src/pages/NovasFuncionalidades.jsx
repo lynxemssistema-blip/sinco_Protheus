@@ -80,7 +80,7 @@ export default function NovasFuncionalidades() {
                             Marco Oficial de Entrega: 09/09/2026
                         </div>
                         <span className="text-xs text-slate-300 font-medium">
-                            Versão Atual: <strong className="text-white">v2026.4.5</strong>
+                            Versão Atual: <strong className="text-white">{CHANGELOG_DATA[0]?.versao || 'v2026.4.7'}</strong>
                         </span>
                     </div>
 

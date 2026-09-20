@@ -98,8 +98,13 @@ const ItensAFaturar = React.lazy(() => import('./pages/ItensAFaturar'));
 const GestaoOPsPage = React.lazy(() => import('./pages/GestaoOPsPage'));
 const FaturamentoSolicitacoesHistorico = React.lazy(() => import('./pages/FaturamentoSolicitacoesHistorico'));
 const FaturamentoPainel = React.lazy(() => import('./pages/FaturamentoPainel'));
+const ErpProdutosPage = React.lazy(() => import('./pages/erp/ErpProdutosPage'));
+const ErpPedidosPage = React.lazy(() => import('./pages/erp/ErpPedidosPage'));
+const ErpClientesPage = React.lazy(() => import('./pages/erp/ErpClientesPage'));
+const ErpProducaoPage = React.lazy(() => import('./pages/erp/ErpProducaoPage'));
 const ControleFaturamento = React.lazy(() => import('./pages/ControleFaturamento'));
 const DashboardFaturamento = React.lazy(() => import('./pages/comercial/DashboardFaturamento'));
+const PropostaComercialPage = React.lazy(() => import('./pages/admin/PropostaComercialPage'));
 const FluxoCaixa = React.lazy(() => import('./pages/financeiro/FluxoCaixa'));
 const ProtheusOverview = React.lazy(() => import('./pages/protheus/ProtheusOverview'));
 const EngineeringReleaseReport = React.lazy(() => import('./pages/EngineeringReleaseReport'));
@@ -345,6 +350,28 @@ function App() {
                                                 <VisaoGerencialProdutos />
                                             </Layout>
                                         } />
+                                        {/* SINCO ERP Nativo */}
+                                        <Route path="/erp/produtos" element={
+                                            <Layout fullWidth={true}>
+                                                <ErpProdutosPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/erp/pedidos" element={
+                                            <Layout fullWidth={true}>
+                                                <ErpPedidosPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/erp/clientes" element={
+                                            <Layout fullWidth={true}>
+                                                <ErpClientesPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/erp/producao" element={
+                                            <Layout fullWidth={true}>
+                                                <ErpProducaoPage />
+                                            </Layout>
+                                        } />
+
                                         <Route path="/produtos" element={
                                             <Layout>
                                                 <ProductCatalog />
@@ -965,6 +992,15 @@ function App() {
                                         <Route path="/manutencao/materiais" element={
                                             <Layout fullWidth={true}>
                                                 <GestaoMateriais />
+                                            </Layout>
+                                        } />
+
+                                        {/* Proposta Comercial Lynx / Metalfisa (Exclusivo Superadmin) */}
+                                        <Route path="/admin/proposta-comercial" element={
+                                            <Layout fullWidth={true}>
+                                                <Suspense fallback={<div className="p-8 text-center text-slate-500">Carregando Proposta Comercial...</div>}>
+                                                    <PropostaComercialPage />
+                                                </Suspense>
                                             </Layout>
                                         } />
 

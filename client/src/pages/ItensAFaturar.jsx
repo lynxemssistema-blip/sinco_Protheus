@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, Package, FileText, Bot, Printer, Factory, ClipboardList, MoreVertical, LayoutList, Image as ImageIcon, ShoppingCart, CheckSquare, X, Save, History, BarChart2, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, Package, FileText, Bot, Printer, Factory, ClipboardList, MoreVertical, LayoutList, Image as ImageIcon, ShoppingCart, CheckSquare, X, Save, History, BarChart2, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react';
 import { getPedidosFlat, api, getProdutos, createFaturamentoSolicitacao, getProductDocs, getFileUrl } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
@@ -95,7 +95,7 @@ const ItensAFaturar = () => {
     const limit = 100;
 
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
-    const [columnFilters, setColumnFilters] = useState({});
+    const [columnFilters, setColumnFilters] = useStickyState({}, '@metalfisa:itensFat_colFilters');
 
     // --- FATURAMENTO CART STATE ---
     const [selectedItems, setSelectedItems] = useState({}); // { 'pedido-item': orderObject }
@@ -179,10 +179,34 @@ const ItensAFaturar = () => {
         setFilters(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSearch = (e) => {
-        e.preventDefault();
+    const handleRefresh = (overrides = {}) => {
+        toast.info('Atualizando dados com base nos filtros...', { autoClose: 1500 });
         setPage(1);
-        fetchData({ page: 1 });
+        fetchData({ page: 1, ...overrides });
+    };
+
+    const handleClearFilters = () => {
+        const cleared = {
+            cliente: '',
+            pedido: '',
+            produto: '',
+            dataInicial: '',
+            dataFinal: '',
+            dateType: 'pedido',
+            only_active: 'true',
+            somente_prontos: 'false',
+            pcpDataInicial: '',
+            pcpDataFinal: ''
+        };
+        setFilters(cleared);
+        setColumnFilters({});
+        setPage(1);
+        fetchData({ ...cleared, page: 1 });
+    };
+
+    const handleSearch = (e) => {
+        if (e) e.preventDefault();
+        handleRefresh();
     };
 
     const handleViewImage = async (productCode) => {
@@ -1114,12 +1138,22 @@ const ItensAFaturar = () => {
                         )}
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
+                        <button
+                            type="button"
+                            onClick={() => handleRefresh()}
+                            disabled={loading || loadingMore}
+                            className="bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 font-semibold rounded-lg text-sm px-3.5 py-2 flex items-center gap-2 transition-colors shadow-xs whitespace-nowrap disabled:opacity-50 cursor-pointer"
+                            title="Atualizar dados com base nos filtros"
+                        >
+                            <RefreshCw className={`h-4 w-4 text-blue-600 ${loading || loadingMore ? 'animate-spin' : ''}`} />
+                            <span className="hidden sm:inline">{loading || loadingMore ? 'Atualizando...' : 'Atualizar Dados'}</span>
+                        </button>
                         <button
                             type="button"
                             onClick={handleExportExcel}
                             disabled={exporting || filteredRows.length === 0}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm px-4 py-2 flex items-center gap-2 transition-colors shadow-sm whitespace-nowrap disabled:opacity-50"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm px-4 py-2 flex items-center gap-2 transition-colors shadow-sm whitespace-nowrap disabled:opacity-50 cursor-pointer"
                             title="Exportar dados filtrados do grid para Excel"
                         >
                             {exporting ? (
@@ -1182,13 +1216,30 @@ const ItensAFaturar = () => {
                             </div>
                         </div>
 
-                        <div className="md:col-span-2 flex gap-2">
+                        <div className="md:col-span-2 flex gap-2 items-center">
                             <button
                                 type="submit"
-                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm px-5 py-2.5 text-center flex items-center justify-center gap-2 shadow-sm"
+                                disabled={loading || loadingMore}
+                                className="flex-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded-lg text-sm px-4 py-2.5 text-center flex items-center justify-center gap-2 shadow-sm transition-all disabled:opacity-60 cursor-pointer"
+                                title="Atualizar os dados da tabela aplicando os filtros informados"
                             >
-                                <Search className="h-4 w-4" /> Buscar Dados
+                                <RefreshCw className={`h-4 w-4 shrink-0 ${loading || loadingMore ? 'animate-spin' : ''}`} />
+                                <span className="whitespace-nowrap">
+                                    {loading || loadingMore ? 'Atualizando...' : 'Atualizar Dados com Base nos Filtros'}
+                                </span>
                             </button>
+                            {(filters.cliente || filters.pedido || filters.produto || filters.pcpDataInicial || filters.pcpDataFinal) && (
+                                <button
+                                    type="button"
+                                    onClick={handleClearFilters}
+                                    disabled={loading || loadingMore}
+                                    className="px-3 py-2.5 text-xs font-semibold text-gray-600 hover:text-red-600 bg-gray-100 hover:bg-red-50 border border-gray-200 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 disabled:opacity-50 cursor-pointer"
+                                    title="Limpar todos os filtros"
+                                >
+                                    <X className="h-4 w-4" />
+                                    <span className="hidden xl:inline">Limpar</span>
+                                </button>
+                            )}
                         </div>
 
                         <div className="md:col-span-7 flex flex-col gap-3 mt-1 bg-gray-50 p-3 rounded-lg border border-gray-100">
@@ -1538,8 +1589,9 @@ const ItensAFaturar = () => {
                 {activeTab === 'financeiro' && canViewFinancialTab && (
                     <FinancialView 
                         rows={rows} 
-                        loading={loading} 
+                        loading={loading || loadingMore} 
                         error={error} 
+                        onRefresh={handleRefresh}
                     />
                 )}
             </div>

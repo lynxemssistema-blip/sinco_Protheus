@@ -39,7 +39,7 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
     const [debouncedFilters, setDebouncedFilters] = useState(filters);
 
     // Text-based filter keys that should be debounced
-    const TEXT_FILTER_KEYS = ['cliente', 'produto', 'pedcli', 'refCliente'];
+    const TEXT_FILTER_KEYS = ['cliente', 'pedido', 'item', 'op', 'produto', 'pedcli', 'refCliente'];
 
     useEffect(() => {
         const hasTextChange = TEXT_FILTER_KEYS.some(
@@ -84,6 +84,8 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
         const searchFilters = {
             cliente: overrides.cliente !== undefined ? overrides.cliente : activeFilters.cliente,
             pedido: overrides.pedido !== undefined ? overrides.pedido : activeFilters.pedido,
+            item: overrides.item !== undefined ? overrides.item : activeFilters.item,
+            op: overrides.op !== undefined ? overrides.op : activeFilters.op,
             produto: overrides.produto !== undefined ? overrides.produto : activeFilters.produto,
             pedcli: overrides.pedcli !== undefined ? overrides.pedcli : activeFilters.pedcli,
             refCliente: overrides.refCliente !== undefined ? overrides.refCliente : activeFilters.refCliente,
@@ -113,7 +115,7 @@ export const useOrders = ({ limit, viewMode, filters, page }) => {
             try {
                 let result;
                 if (searchViewMode === 'flat') {
-                    result = await getPedidosFlat({ ...searchFilters, page: searchPage, limit: searchLimit }, reqOptions);
+                    result = await getPedidosFlat({ ...searchFilters, include_evolution: 'true', page: searchPage, limit: searchLimit }, reqOptions);
                 } else {
                     result = await getPedidos({ ...searchFilters, page: searchPage, limit: searchLimit }, reqOptions);
                 }

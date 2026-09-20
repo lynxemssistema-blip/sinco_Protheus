@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const protheusDB = require('../services/protheusDB');
+const mysqlService = require('../services/mysqlService');
+const opExplosionService = require('../services/opExplosionService');
 const axios = require('axios');
 const https = require('https');
 const { hasFinancialAccess } = require('../util/permissionHelper');
@@ -454,269 +456,443 @@ router.post('/produtos/update', async (req, res) => {
 });
 
 // =========================================================================
-// ROTA: Gerar Ordem de Producao via API POST (Lote)
+// ROTA: Gerar Ordem de Producao 100% no Banco Novo (MySQL erp_ordens_producao)
+// SEM VÍNCULO COM O PROTHEUS (Independente de TLPP, Webservice ou Protheus Online)
 // =========================================================================
 router.post('/ordem-producao/incluir', async (req, res) => {
+    const conn = await mysqlService.getConnection();
     try {
         const { items } = req.body;
         if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ error: 'Nenhum item informado para gerar O.P.' });
         }
 
-        // 1. Requisitar Token
-        let accessToken = '';
-        try {
-            const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
-            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 10000 });
-            accessToken = tokenRes.data.access_token;
-        } catch (authError) {
-            throw new Error('Falha de Login na API Protheus (O.P.): ' + authError.message);
-        }
-        if (!accessToken) throw new Error('Token JWT retornado estava em branco.');
+        await conn.beginTransaction();
 
-        // Busca proximo numero de OP valido para nao enviar 000000
-        let baseOpNum = 0;
-        try {
-            const resOp = await queryProtheus(`SELECT MAX(c2_num) as max_op FROM public.sc2010 WHERE c2_num ~ '^[0-9]+$' AND c2_num < '900000' AND TRIM(COALESCE(d_e_l_e_t_, '')) = ''`);
-            if (resOp.length > 0 && resOp[0].max_op) {
-                baseOpNum = parseInt(resOp[0].max_op, 10);
+        // 1. Descobrir o próximo número base sequencial da OP no Banco Novo (MySQL)
+        const [[maxRow]] = await conn.query(`
+            SELECT MAX(CAST(SUBSTRING(numero_op, 1, 6) AS UNSIGNED)) as max_base 
+            FROM erp_ordens_producao 
+            WHERE numero_op REGEXP '^[0-9]{6}' AND CAST(SUBSTRING(numero_op, 1, 6) AS UNSIGNED) < 900000
+        `);
+        let baseOpNum = parseInt(maxRow?.max_base || 6805, 10);
+
+        // Mapeamento de Pedido -> Número Base da OP (para garantir que itens do mesmo pedido compartilhem a mesma base de 6 dígitos)
+        const pedidoBaseMap = new Map();
+
+        const getBaseOpForPedido = async (pedStr) => {
+            if (pedStr && pedidoBaseMap.has(pedStr)) {
+                return pedidoBaseMap.get(pedStr);
             }
-        } catch (dbErr) {
-            console.error(`Erro ao buscar ultima OP:`, dbErr.message);
-        }
 
-        // 2. Montar OPs — layout exato da documentação API Sinco
-        const ordensProducao = [];
-        for (const it of items) {
-            const pedidoStr = String(it.pedido || "").padStart(6, '0');
-            const itemPvStr = String(it.itempv || "01").padStart(2, '0');
-            let filial = (it.filial || "01").trim();
-
-            // 1. VERIFICAÇÃO DE SEGURANÇA: Status do Item deve ser 'PCP'
-            let isPCP = true;
-            try {
-                const statusQuery = `
-                    SELECT 
-                        CASE
-                            WHEN sb1.b1_msblql IN ('1','S','T','Y') OR sz0.ok IS NOT NULL THEN 'Restrição'
-                            WHEN COALESCE(c6.c6_xrevm, '') <> COALESCE(c6.c6_xrevc, '') THEN 'Revisão'
-                            WHEN sg1.ok IS NULL AND sg2.ok IS NULL THEN 'Novo'
-                            ELSE 'PCP'
-                        END AS status_tipo_item
-                    FROM public.sc6010 c6
-                    LEFT JOIN public.sb1010 sb1 ON sb1.b1_cod = c6.c6_produto AND TRIM(COALESCE(sb1.d_e_l_e_t_, '')) = ''
-                    LEFT JOIN LATERAL (SELECT 1 as ok FROM public.sz0010 s WHERE s.z0_produto = c6.c6_produto AND s.z0_status = 'P' AND TRIM(COALESCE(s.d_e_l_e_t_, '')) = '' LIMIT 1) sz0 ON true
-                    LEFT JOIN LATERAL (SELECT 1 as ok FROM public.sg1010 s WHERE s.g1_cod = c6.c6_produto AND TRIM(COALESCE(s.d_e_l_e_t_, '')) = '' LIMIT 1) sg1 ON true
-                    LEFT JOIN LATERAL (SELECT 1 as ok FROM public.sg2010 s WHERE s.g2_produto = c6.c6_produto AND TRIM(COALESCE(s.d_e_l_e_t_, '')) = '' LIMIT 1) sg2 ON true
-                    WHERE c6.c6_num = $1 AND c6.c6_item = $2 AND TRIM(COALESCE(c6.d_e_l_e_t_, '')) = ''
+            // A. Se o pedido já possui alguma OP gravada em erp_ordens_producao, reaproveitar a mesma base de 6 dígitos
+            if (pedStr) {
+                const [[existingOpRow]] = await conn.query(`
+                    SELECT SUBSTRING(numero_op, 1, 6) as base_op
+                    FROM erp_ordens_producao
+                    WHERE (pedido_venda = ? OR pedido_venda = ?)
+                      AND numero_op REGEXP '^[0-9]{6}'
                     LIMIT 1
-                `;
-                const statusRes = await queryProtheus(statusQuery, [pedidoStr, itemPvStr]);
-                if (statusRes.length > 0) {
-                    const statusVal = statusRes[0].status_tipo_item;
-                    if (statusVal !== 'PCP') {
-                        isPCP = false;
-                        console.log(`[OP BUILDER] Bloqueio Segurança: Pedido ${pedidoStr} Item ${itemPvStr} não está liberado (Status: ${statusVal}).`);
-                    }
-                }
-            } catch (err) {
-                console.error("Erro ao validar status_tipo_item na OP:", err.message);
-            }
+                `, [pedStr, parseInt(pedStr, 10) || 0]);
 
-            if (!isPCP) {
-                return res.status(403).json({ error: `Bloqueio de Segurança: O item ${itemPvStr} do pedido ${pedidoStr} não possui status "PCP" (está em Revisão, Restrição ou Novo). A geração de O.P. não é permitida.` });
-            }
-
-            // 2. Nova pesquisa no banco (ignora frontend memory para o Produto)
-            let produto = "";
-            let qtd_venda = 0;
-            try {
-                const sc6Rows = await queryProtheus(
-                    `SELECT c6_produto, c6_filial, c6_qtdven FROM public.sc6010 WHERE c6_num = $1 AND c6_item = $2 AND TRIM(COALESCE(d_e_l_e_t_, '')) = '' LIMIT 1`,
-                    [pedidoStr, itemPvStr]
-                );
-                if (sc6Rows.length > 0 && sc6Rows[0].c6_produto) {
-                    produto = sc6Rows[0].c6_produto.trim().replace(/\s/g, '');
-                    if (sc6Rows[0].c6_filial) filial = sc6Rows[0].c6_filial.trim();
-                    qtd_venda = parseFloat(sc6Rows[0].c6_qtdven) || 0;
-                } else {
-                    produto = (it.produto || "").trim().replace(/\s/g, ''); // fallback
-                }
-            } catch (err) {
-                console.error("Erro SC6:", err.message);
-                produto = (it.produto || "").trim().replace(/\s/g, '');
-            }
-
-            // BUSCAR QTD JÁ GERADA DE OPs PARA ESTE ITEM NO PROTHEUS
-            let qtd_op_gerada = 0;
-            try {
-                const opRows = await queryProtheus(
-                    `SELECT SUM(c2_quant) as total_gerado FROM public.sc2010 WHERE c2_pedido = $1 AND c2_itempv = $2 AND TRIM(COALESCE(d_e_l_e_t_, '')) = ''`,
-                    [pedidoStr, itemPvStr]
-                );
-                if (opRows.length > 0 && opRows[0].total_gerado) {
-                    qtd_op_gerada = parseFloat(opRows[0].total_gerado) || 0;
-                }
-            } catch (err) {
-                console.error("Erro SC2 sum:", err.message);
-            }
-
-            let quantFinal = Number(it.quant) || 0;
-
-            // SE A QUANTIDADE DO PEDIDO FOR MAIOR QUE ZERO, LIMITAMOS A QUANTIDADE A SER GERADA
-            if (qtd_venda > 0) {
-                const saldoDisponivel = qtd_venda - qtd_op_gerada;
-                if (saldoDisponivel <= 0) {
-                    console.log(`[OP BUILDER] Pulo item ${itemPvStr} do Pedido ${pedidoStr}: saldo disponivel zero (venda: ${qtd_venda}, op: ${qtd_op_gerada}).`);
-                    continue; // PULA ESTE ITEM, POIS JÁ TEM OP PARA TUDO!
-                }
-                if (quantFinal > saldoDisponivel || quantFinal === 0) {
-                    quantFinal = saldoDisponivel; // CORRIGE PARA NÃO EXTRAPOLAR A QUANTIDADE DO PEDIDO!
+                if (existingOpRow?.base_op) {
+                    const base = existingOpRow.base_op;
+                    pedidoBaseMap.set(pedStr, base);
+                    return base;
                 }
             }
+
+            // B. Caso contrário, encontrar próxima base sequencial não utilizada
+            while (true) {
+                baseOpNum += 1;
+                const candidateBase = String(baseOpNum).padStart(6, '0');
+                const [[usedRow]] = await conn.query(`
+                    SELECT id FROM erp_ordens_producao 
+                    WHERE numero_op LIKE ? LIMIT 1
+                `, [`${candidateBase}%`]);
+
+                if (!usedRow) {
+                    if (pedStr) pedidoBaseMap.set(pedStr, candidateBase);
+                    return candidateBase;
+                }
+            }
+        };
+
+        const ordensProducao = [];
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        for (const it of items) {
+            const pedidoStr = String(it.pedido || '').trim().padStart(6, '0');
+            const itemPvStr = String(it.itempv || '01').trim().padStart(2, '0');
+            let produto = String(it.produto || '').trim();
+            const quantFinal = parseFloat(it.quant) || 0;
 
             if (quantFinal <= 0) {
-                console.log(`[OP BUILDER] Pulo item ${itemPvStr} do Pedido ${pedidoStr}: quantFinal inválida (${quantFinal}).`);
+                console.log(`[OP BUILDER - NOVO BANCO] Pulo item ${itemPvStr} do Pedido ${pedidoStr}: quantidade inválida (${quantFinal}).`);
                 continue;
             }
 
-            // Incrementa o numero da OP para cada item no array
-            baseOpNum += 1;
-            const nextOpStr = String(baseOpNum).padStart(6, '0');
-
-            // Busca o último roteiro (maior código) para a peça no SG2010
-            let roteiro = "00";
-            if (produto) {
-                try {
-                    const rotRows = await queryProtheus(
-                        `SELECT g2_codigo FROM public.sg2010 WHERE btrim(g2_produto) = $1 AND TRIM(COALESCE(d_e_l_e_t_, '')) = '' ORDER BY g2_codigo DESC LIMIT 1`,
-                        [produto]
-                    );
-                    if (rotRows.length > 0 && rotRows[0].g2_codigo) {
-                        roteiro = rotRows[0].g2_codigo.trim();
-                        if (roteiro.length < 2) roteiro = roteiro.padStart(2, '0');
-                    }
-                } catch (dbErr) {
-                    console.error(`Erro ao buscar roteiro para o produto ${produto}:`, dbErr.message);
+            // Se produto não veio no payload, busca na tabela de itens do novo banco
+            if (!produto) {
+                const [[prodRow]] = await conn.query(
+                    `SELECT produto_codigo FROM erp_pedidos_itens WHERE (pedido_numero = ? OR pedido_numero = ?) AND (item_seq = ? OR CAST(item_seq AS UNSIGNED) = CAST(? AS UNSIGNED)) LIMIT 1`,
+                    [pedidoStr, parseInt(pedidoStr, 10), itemPvStr, parseInt(itemPvStr, 10)]
+                );
+                if (prodRow?.produto_codigo) {
+                    produto = prodRow.produto_codigo.trim();
                 }
             }
 
-            console.log(`[OP BUILDER] Produto: ${produto} | Roteiro encontrado: ${roteiro}`);
+            // Formatação de datas
+            const formatData = (d) => {
+                if (!d) return todayStr;
+                const s = String(d).trim().replace(/\D/g, '');
+                if (s.length === 8) {
+                    return `${s.substring(0, 4)}-${s.substring(4, 6)}-${s.substring(6, 8)}`;
+                }
+                return String(d).split('T')[0] || todayStr;
+            };
+
+            const dataInicio = formatData(it.datpri);
+            const dataFim = formatData(it.datprf);
+
+            // -------------------------------------------------------------------------
+            // CONTROLE DE SALDO E FRACIONAMENTO INDUSTRIAL DE ITENS DO PEDIDO DE VENDA
+            // -------------------------------------------------------------------------
+            let totalQtdOriginal = quantFinal;
+            let precoUnitario = 0.01;
+
+            // 1. Busca quantidade total original e preço no Postgres (sc6010) ou fallback MySQL
+            try {
+                const sc6Rows = await queryProtheus(
+                    'SELECT c6_qtdven, c6_prcven FROM public.sc6010 WHERE c6_num = $1 AND (c6_item = $2 OR CAST(c6_item AS INT) = $3)',
+                    [pedidoStr, itemPvStr, parseInt(itemPvStr, 10) || 0]
+                );
+                if (sc6Rows && sc6Rows.length > 0) {
+                    totalQtdOriginal = parseFloat(sc6Rows[0].c6_qtdven) || quantFinal;
+                    precoUnitario = parseFloat(sc6Rows[0].c6_prcven) || 0.01;
+                }
+            } catch (pgErr) {
+                // Postgres indisponível ou timeout
+            }
+
+            // Fallback MySQL para obter a quantidade total original do pedido
+            try {
+                const [[itRow]] = await conn.query(
+                    'SELECT quantidade, quantidade_original, preco_unitario FROM erp_pedidos_itens WHERE (pedido_numero = ? OR pedido_numero = ?) AND item_seq = ?',
+                    [pedidoStr, parseInt(pedidoStr, 10) || 0, itemPvStr]
+                );
+                if (itRow) {
+                    if (itRow.quantidade_original && parseFloat(itRow.quantidade_original) > 0) {
+                        totalQtdOriginal = parseFloat(itRow.quantidade_original);
+                    } else if (!totalQtdOriginal || totalQtdOriginal === quantFinal) {
+                        // Soma de todas as frações já criadas para este item base (ex: 01 + 01A)
+                        const [myFracs] = await conn.query(`
+                            SELECT SUM(quantidade) as soma_qtd, MAX(quantidade_original) as max_orig
+                            FROM erp_pedidos_itens 
+                            WHERE (pedido_numero = ? OR pedido_numero = ?) 
+                              AND (item_seq = ? OR item_seq LIKE ?)
+                        `, [pedidoStr, parseInt(pedidoStr, 10) || 0, itemPvStr, `${itemPvStr}%`]);
+
+                        if (myFracs[0]?.max_orig && parseFloat(myFracs[0].max_orig) > 0) {
+                            totalQtdOriginal = parseFloat(myFracs[0].max_orig);
+                        } else if (myFracs[0]?.soma_qtd && parseFloat(myFracs[0].soma_qtd) > 0) {
+                            totalQtdOriginal = Math.max(totalQtdOriginal, parseFloat(myFracs[0].soma_qtd));
+                        } else if (itRow.quantidade) {
+                            totalQtdOriginal = parseFloat(itRow.quantidade);
+                        }
+                    }
+                    if (itRow.preco_unitario) precoUnitario = parseFloat(itRow.preco_unitario);
+                }
+            } catch (myErr) {
+                console.warn('⚠️ [OP INCLUIR] Erro ao consultar erp_pedidos_itens:', myErr.message);
+            }
+
+            // 2. Busca OPs já geradas no sistema para este item base e suas frações
+            // CRÍTICO: Filtrar por produto_codigo = produto e is_sub_op = 0 para NÃO somar sub-OPs de componentes da BOM
+            const [existingOps] = await conn.query(`
+                SELECT numero_op, item_pedido, quantidade_planejada 
+                FROM erp_ordens_producao 
+                WHERE (pedido_venda = ? OR pedido_venda = ?)
+                  AND (item_pedido = ? OR item_pedido LIKE ?)
+                  AND produto_codigo = ?
+                  AND (is_sub_op = 0 OR is_sub_op IS NULL)
+            `, [pedidoStr, parseInt(pedidoStr, 10) || 0, itemPvStr, `${itemPvStr}%`, produto]);
+
+            let totalJaEmOp = existingOps.reduce((sum, o) => sum + (parseFloat(o.quantidade_planejada) || 0), 0);
+
+            // Se não encontrou em erp_ordens_producao, verifica em sc2010 (apenas produto pai / c2_sequen = '001')
+            if (totalJaEmOp <= 0) {
+                const [sc2Ops] = await conn.query(`
+                    SELECT c2_quant
+                    FROM sc2010
+                    WHERE (c2_pedido = ? OR c2_pedido = ?)
+                      AND (c2_itempv = ? OR c2_itempv LIKE ?)
+                      AND (c2_produto = ? OR c2_sequen = '001')
+                `, [pedidoStr, parseInt(pedidoStr, 10) || 0, itemPvStr, `${itemPvStr}%`, produto]);
+                totalJaEmOp = sc2Ops.reduce((sum, o) => sum + (parseFloat(o.c2_quant) || 0), 0);
+            }
+
+            const saldoDisponivel = Math.max(0, totalQtdOriginal - totalJaEmOp);
+
+            // Validação 1: Bloqueia se a quantidade total do pedido já estiver 100% coberta por OPs
+            if (totalJaEmOp >= totalQtdOriginal && totalQtdOriginal > 0) {
+                await conn.rollback();
+                return res.status(400).json({
+                    error: `O item ${itemPvStr} do Pedido ${pedidoStr} já possui 100% de sua quantidade (${totalQtdOriginal.toLocaleString('pt-BR')} un) coberta por Ordem de Produção. Não há saldo restante para emitir nova OP.`
+                });
+            }
+
+            // Validação 2: Bloqueia se a quantidade solicitada exceder o saldo disponível do pedido
+            if (quantFinal > saldoDisponivel + 0.01 && saldoDisponivel > 0) {
+                await conn.rollback();
+                return res.status(400).json({
+                    error: `A quantidade solicitada (${quantFinal.toLocaleString('pt-BR')} un) excede o saldo restante do pedido (${saldoDisponivel.toLocaleString('pt-BR')} un) para o item ${itemPvStr}.`
+                });
+            }
+
+            let targetItemPv = itemPvStr;
+            let isFracionado = false;
+
+            // Se a quantidade solicitada for menor que o total do pedido OU já houver OP anterior gerada,
+            // ativa o fracionamento industrial com sufixo alfabético (ex: 01A, 01B, 01C...)
+            if (totalJaEmOp > 0 || quantFinal < totalQtdOriginal) {
+                isFracionado = true;
+
+                // Consulta letras de frações já usadas no pedido (01A, 01B...)
+                const [existingItems] = await conn.query(`
+                    SELECT item_seq FROM erp_pedidos_itens 
+                    WHERE (pedido_numero = ? OR pedido_numero = ?) 
+                      AND (item_seq = ? OR item_seq LIKE ?)
+                    ORDER BY item_seq ASC
+                `, [pedidoStr, parseInt(pedidoStr, 10) || 0, itemPvStr, `${itemPvStr}%`]);
+
+                const usedLetters = new Set();
+                existingItems.forEach(i => {
+                    const seq = String(i.item_seq).trim();
+                    if (seq.startsWith(itemPvStr) && seq.length > itemPvStr.length) {
+                        usedLetters.add(seq.substring(itemPvStr.length).toUpperCase());
+                    }
+                });
+
+                existingOps.forEach(o => {
+                    const ip = String(o.item_pedido || '').trim();
+                    if (ip.startsWith(itemPvStr) && ip.length > itemPvStr.length) {
+                        usedLetters.add(ip.substring(itemPvStr.length).toUpperCase());
+                    }
+                });
+
+                let charCode = 65; // 'A'
+                while (usedLetters.has(String.fromCharCode(charCode))) {
+                    charCode++;
+                }
+                targetItemPv = `${itemPvStr}${String.fromCharCode(charCode)}`;
+
+                const saldoRestanteAposOp = Math.max(0, totalQtdOriginal - totalJaEmOp - quantFinal);
+                console.log(`⚡ [OP FRACIONAMENTO] Pedido ${pedidoStr}: Item ${itemPvStr} original ${totalQtdOriginal}. Criando fração ${targetItemPv} com ${quantFinal} un. Saldo restante: ${saldoRestanteAposOp}.`);
+
+                // Passo 1: Preserva quantidade_original no item original, atualiza o saldo e mantém SEM OP vinculada
+                await conn.query(`
+                    UPDATE erp_pedidos_itens 
+                    SET quantidade_original = COALESCE(quantidade_original, ?),
+                        quantidade = ?,
+                        quantidade_saldo = ?,
+                        numero_op_gerada = NULL,
+                        status = ?
+                    WHERE (pedido_numero = ? OR pedido_numero = ?) AND item_seq = ?
+                `, [totalQtdOriginal, saldoRestanteAposOp, saldoRestanteAposOp, saldoRestanteAposOp > 0 ? 'aberto' : 'em_producao', pedidoStr, parseInt(pedidoStr, 10) || 0, itemPvStr]);
+
+                // Passo 2: Adiciona o item fracionado (ex: 01A, 01B) ao pedido no banco
+                await conn.query(`
+                    INSERT INTO erp_pedidos_itens (
+                        pedido_numero, item_seq, produto_codigo, quantidade, quantidade_original,
+                        quantidade_entregue, quantidade_saldo, preco_unitario, valor_total,
+                        data_entrega_prevista, status
+                    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'em_producao')
+                    ON DUPLICATE KEY UPDATE
+                        quantidade = VALUES(quantidade),
+                        quantidade_original = VALUES(quantidade_original),
+                        quantidade_saldo = VALUES(quantidade_saldo),
+                        status = 'em_producao'
+                `, [
+                    pedidoStr,
+                    targetItemPv,
+                    produto,
+                    quantFinal,
+                    totalQtdOriginal,
+                    quantFinal,
+                    precoUnitario,
+                    precoUnitario * quantFinal,
+                    dataFim
+                ]);
+            } else {
+                // OP cobrindo 100% do saldo de uma vez na primeira emissão
+                await conn.query(`
+                    UPDATE erp_pedidos_itens 
+                    SET quantidade_original = COALESCE(quantidade_original, ?),
+                        quantidade_saldo = 0
+                    WHERE (pedido_numero = ? OR pedido_numero = ?) AND item_seq = ?
+                `, [totalQtdOriginal, pedidoStr, parseInt(pedidoStr, 10) || 0, itemPvStr]);
+            }
+
+            // 3. Obter base de 6 dígitos unificada para o pedido e compor número completo da OP normal
+            const nextOpStr = await getBaseOpForPedido(pedidoStr);
+            const fullOp = `${nextOpStr}${targetItemPv}001`;
+
+            // 4. Gravar Ordem de Produção no Banco Novo (erp_ordens_producao)
+            await conn.query(`
+                INSERT INTO erp_ordens_producao (
+                    numero_op, produto_codigo, quantidade_planejada, quantidade_produzida,
+                    quantidade_perdida, pedido_venda, item_pedido, data_emissao,
+                    data_inicio_prevista, data_fim_prevista, prioridade, status, observacoes
+                ) VALUES (?, ?, ?, 0, 0, ?, ?, CURRENT_DATE, ?, ?, 5, 'aberta', ?)
+                ON DUPLICATE KEY UPDATE
+                    produto_codigo = VALUES(produto_codigo),
+                    quantidade_planejada = VALUES(quantidade_planejada),
+                    pedido_venda = VALUES(pedido_venda),
+                    item_pedido = VALUES(item_pedido),
+                    data_inicio_prevista = VALUES(data_inicio_prevista),
+                    data_fim_prevista = VALUES(data_fim_prevista),
+                    status = 'aberta',
+                    observacoes = VALUES(observacoes)
+            `, [
+                fullOp,
+                produto,
+                quantFinal,
+                pedidoStr,
+                targetItemPv,
+                dataInicio,
+                dataFim,
+                ((it.obs || '').trim() + (isFracionado ? ` [Item Fracionado ${targetItemPv}]` : '')).trim()
+            ]);
+
+            // 4.1 Gravar Espelho da OP em sc2010
+            await conn.query(`
+                INSERT INTO sc2010 (
+                    c2_filial, c2_num, c2_item, c2_sequen, c2_produto,
+                    c2_local, c2_quant, c2_um, c2_datpri, c2_datprf,
+                    c2_obs, c2_emissao, c2_prior, c2_quje, c2_status,
+                    c2_perda, c2_roteiro, c2_recurso, c2_pedido, c2_itempv,
+                    c2_tpop, c2_op, d_e_l_e_t_
+                ) VALUES (
+                    '0101', ?, ?, '001', ?,
+                    '01', ?, 'UN', ?, ?,
+                    ?, DATE_FORMAT(CURRENT_DATE, '%Y%m%d'), '500', 0, 'P',
+                    0, '01', '', ?, ?,
+                    'F', ?, ''
+                ) ON DUPLICATE KEY UPDATE
+                    c2_quant = VALUES(c2_quant),
+                    c2_datpri = VALUES(c2_datpri),
+                    c2_datprf = VALUES(c2_datprf),
+                    c2_obs = VALUES(c2_obs),
+                    c2_status = 'P'
+            `, [
+                nextOpStr,
+                targetItemPv,
+                produto,
+                quantFinal,
+                dataInicio.replace(/-/g, ''),
+                dataFim.replace(/-/g, ''),
+                ((it.obs || '').trim() + (isFracionado ? ` [Item Fracionado ${targetItemPv}]` : '')).trim(),
+                pedidoStr,
+                targetItemPv,
+                fullOp
+            ]);
+
+            // 5. Atualizar o item correspondente com o número da OP gerada
+            await conn.query(`
+                UPDATE erp_pedidos_itens 
+                SET numero_op_gerada = ?, status = 'em_producao'
+                WHERE (pedido_numero = ? OR pedido_numero = ?) 
+                  AND item_seq = ?
+            `, [fullOp, pedidoStr, parseInt(pedidoStr, 10), targetItemPv]);
+
+            // 6. Atualizar ou inserir tabela de previsões de entrega app_pcp_delivery_forecasts para o item específico
+            const fractionLetter = isFracionado ? targetItemPv.substring(itemPvStr.length) : null;
+            await conn.query(`
+                INSERT INTO app_pcp_delivery_forecasts (
+                    pedido, item, data_entrega_pcp, quantidade_pcp, usuario,
+                    observacao, op_protheus, numero_lote, lote
+                ) VALUES (?, ?, ?, ?, 'Gestão PCP', ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    data_entrega_pcp = VALUES(data_entrega_pcp),
+                    quantidade_pcp = VALUES(quantidade_pcp),
+                    op_protheus = VALUES(op_protheus),
+                    numero_lote = VALUES(numero_lote),
+                    lote = VALUES(lote)
+            `, [
+                pedidoStr,
+                targetItemPv,
+                dataFim,
+                quantFinal,
+                ((it.obs || '').trim() + (isFracionado ? ` [Item Fracionado ${targetItemPv}]` : '')).trim(),
+                fullOp,
+                fractionLetter,
+                fractionLetter ? `Lote ${fractionLetter}` : null
+            ]);
+
+            // 7. Atualizar status do pedido pai para 'em_producao'
+            await conn.query(`
+                UPDATE erp_pedidos_venda 
+                SET status = 'em_producao' 
+                WHERE (numero_pedido = ? OR numero_pedido = ?) AND status = 'aberto'
+            `, [pedidoStr, parseInt(pedidoStr, 10)]);
+
+            // 8. Explodir materiais (SD4) e operações (SH6) industriais de forma síncrona/transacional
+            const explosionResult = await opExplosionService.explodirOrdemProducao({
+                numero_op: fullOp,
+                produto_codigo: produto,
+                quantidade: quantFinal,
+                pedido_venda: pedidoStr,
+                item_pedido: targetItemPv,
+                data_inicio: dataInicio,
+                data_fim: dataFim,
+                conn
+            });
+
+            console.log(`✅ [OP BANCO NOVO] OP ${fullOp} gerada para Pedido ${pedidoStr} Item ${targetItemPv} (${quantFinal} un):`, {
+                materiais: explosionResult?.total_materiais || 0,
+                operacoes: explosionResult?.total_operacoes || 0,
+                sub_ops: explosionResult?.sub_ops?.length || 0
+            });
 
             ordensProducao.push({
-                EMPRESA: "01",
-                CFILANT: filial,
-                NOPER: 3,
-                C2_NUM: nextOpStr,
-                C2_ITEM: itemPvStr,
-                C2_PRODUTO: produto.padEnd(15, ' '),
-                C2_QUANT: quantFinal,
-                C2_DATPRI: it.datpri || "",
-                C2_DATPRF: it.datprf || "",
-                C2_OBS: (it.obs || "").trim(),
-                C2_ROTEIRO: roteiro,
-                C2_PEDIDO: pedidoStr,
-                C2_ITEMPV: itemPvStr
+                pedido: pedidoStr,
+                item: targetItemPv,
+                item_original: itemPvStr,
+                is_fracionado: isFracionado,
+                op_base: nextOpStr,
+                op_num: fullOp,
+                op_completa: fullOp,
+                produto: produto,
+                quantidade: quantFinal,
+                materiais_empenhados: explosionResult?.total_materiais || 0,
+                operacoes_instanciadas: explosionResult?.total_operacoes || 0,
+                sub_ops: explosionResult?.sub_ops || []
             });
         }
 
-        // Se não sobrou nenhum item válido para gerar OP
         if (ordensProducao.length === 0) {
-            return res.status(400).json({ error: 'Nenhum item com saldo disponível para gerar O.P. Todos os itens já possuem OP gerada ou saldo insuficiente.' });
+            await conn.rollback();
+            return res.status(400).json({ error: 'Nenhum item com quantidade válida para gerar O.P.' });
         }
 
-        // 3. Payload — estrutura exata da documentação
-        const payload = { data: { ordensProducao } };
-
-        console.log('🚀 [OP] Payload →', JSON.stringify(payload, null, 2));
-
-        // 4. Enviar para o Protheus
-        const protheusRes = await axios.post(
-            'https://192.168.1.60:47500/ordem-producao/incluir',
-            payload,
-            { headers: { 'Authorization': `Bearer ${accessToken}` }, httpsAgent, timeout: 60000 }
-        );
-
-        const protheusResp = protheusRes.data;
-        console.log('📬 [OP] Resposta Protheus →', protheusResp);
-
-        try {
-            const path = require('path');
-            require('fs').appendFileSync(path.join(__dirname, '../protheus_log.txt'), new Date().toISOString() + ' RESP: ' + JSON.stringify(protheusResp) + '\\n');
-        } catch (logErr) {
-            console.error('[protheus_log] Failed to write log:', logErr.message);
-        }
-
-        // Protheus retorna HTTP 200 mesmo em falha; checar messages[]
-        const messages = Array.isArray(protheusResp.message)
-            ? protheusResp.message.map(String)
-            : (protheusResp.message ? [String(protheusResp.message)] : []);
-
-        const hasError = protheusResp.status === "error"
-            || messages.some(m => m.toLowerCase().includes('erro'));
-
-        if (hasError) {
-            return res.status(400).json({
-                error: 'Protheus recusou a O.P.',
-                details: messages.join(' | ') || 'Erro sem detalhes retornado pelo Protheus.'
-            });
-        }
-
-        let opNumber = null;
-        for (const m of messages) {
-            const match = m.match(/ORDEM DE PRODUCAO:\s*([0-9]+)\s*CRIADA/i);
-            if (match) {
-                opNumber = match[1];
-                break;
-            }
-        }
-
-        // FIX: A API do Protheus falha em propagar o C2_PEDIDO para os itens filhos (c2_sequen > '001') durante a explosão da estrutura
-        // Rodamos um UPDATE rápido direto no Postgres logo após a criação para preencher o C2_PEDIDO nos itens filhos.
-        try {
-            for (const op of ordensProducao) {
-                if (op.C2_PEDIDO && op.C2_NUM) {
-                    const queryUpdate = `
-                        UPDATE public.sc2010 
-                        SET c2_pedido = $1 
-                        WHERE c2_num = $2 AND c2_item = $3 
-                        AND TRIM(COALESCE(c2_pedido, '')) = '' 
-                        AND TRIM(COALESCE(d_e_l_e_t_, '')) = ''
-                    `;
-                    await queryProtheus(queryUpdate, [String(op.C2_PEDIDO).trim(), String(op.C2_NUM).trim(), String(op.C2_ITEMPV).trim()]);
-                    console.log(`[OP BUILDER] Fix aplicado: C2_PEDIDO ${op.C2_PEDIDO} propagado para itens filhos da OP ${op.C2_NUM}.`);
-                }
-            }
-        } catch (dbErr) {
-            console.error('[OP BUILDER] Falha ao propagar C2_PEDIDO para itens filhos:', dbErr.message);
-        }
-
-        const defaultItemPv = String(ordensProducao[0]?.C2_ITEMPV || ordensProducao[0]?.C2_ITEM || '01').trim().padStart(2, '0');
-        const fullOpNumber = opNumber ? `${opNumber}${defaultItemPv}001` : (ordensProducao[0] ? `${String(ordensProducao[0].C2_NUM).trim()}${defaultItemPv}001` : null);
+        await conn.commit();
 
         res.json({
             success: true,
-            message: 'O.P.(s) gerada(s) com sucesso.',
-            op_number: fullOpNumber,
-            generated_ops: ordensProducao.map(op => {
-                const opBase = String(op.C2_NUM).trim();
-                const itemPv = String(op.C2_ITEMPV || op.C2_ITEM || '01').trim().padStart(2, '0');
-                const fullOp = `${opBase}${itemPv}001`;
-                return {
-                    pedido: String(op.C2_PEDIDO).trim(),
-                    item: String(op.C2_ITEMPV).trim(),
-                    op_base: opBase,
-                    op_num: fullOp,
-                    op_completa: fullOp
-                };
-            }),
-            details: protheusResp
+            banco: 'MySQL (erp_ordens_producao - 100% Independente do Protheus)',
+            message: 'Ordem(ns) de Produção gerada(s) com sucesso no Banco Novo (MySQL)!',
+            op_number: ordensProducao[0].op_num,
+            generated_ops: ordensProducao
         });
 
     } catch (error) {
-        console.error('[OP] Erro integração:', error.response?.data || error.message);
-        const detail = error.response?.data?.message || error.response?.data || error.message;
-        res.status(500).json({ error: 'Erro ao submeter O.P. ao Protheus.', details: detail });
+        await conn.rollback();
+        console.error('[OP BANCO NOVO] Erro ao gerar OP:', error.message);
+        res.status(500).json({ error: 'Erro ao gerar O.P. no banco novo.', details: error.message });
+    } finally {
+        conn.release();
     }
 });
 
@@ -761,21 +937,29 @@ router.post('/estrutura-produtos/editar', async (req, res) => {
                 G1_QUANT: quantidade || 1,
                 AUTOREV: false,
                 estrutura: estrutura.map(item => {
-                    let trt = item.G1_TRT;
+                    let trt = item.G1_TRT || item.trt;
                     if (!trt || String(trt).trim() === '') {
                         trt = "   ";
                     } else {
                         trt = String(trt).padEnd(3, ' ').substring(0, 3);
                     }
+                    const comp = String(item.G1_COMP || item.componente || '').trim().toUpperCase();
+                    const quant = item.G1_QUANT !== undefined ? Number(item.G1_QUANT) : (item.quantidade !== undefined ? Number(item.quantidade) : 1);
+                    let opcao = item.OPCAO;
+                    if (!opcao) {
+                        if (item.deleted) opcao = "EXCLUIR";
+                        else if (Number(noper) === 3) opcao = "INCLUIR";
+                        else opcao = "ALTERAR";
+                    }
                     return {
                         G1_COD: produto,
-                        G1_COMP: item.G1_COMP,
+                        G1_COMP: comp,
                         G1_TRT: trt,
-                        G1_QUANT: item.G1_QUANT,
-                        G1_PERDA: item.G1_PERDA || 0,
-                        G1_INI: item.G1_INI || "19000101",
-                        G1_FIM: item.G1_FIM || "20491231",
-                        OPCAO: item.OPCAO // "INCLUIR", "ALTERAR" ou "EXCLUIR"
+                        G1_QUANT: quant,
+                        G1_PERDA: item.G1_PERDA !== undefined ? Number(item.G1_PERDA) : (item.perda !== undefined ? Number(item.perda) : 0),
+                        G1_INI: item.G1_INI || item.ini || "19000101",
+                        G1_FIM: item.G1_FIM || item.fim || "20491231",
+                        OPCAO: opcao // "INCLUIR", "ALTERAR" ou "EXCLUIR"
                     };
                 })
             }
@@ -794,11 +978,11 @@ router.post('/estrutura-produtos/editar', async (req, res) => {
         const responseData = createRes.data;
         console.log('📬 [ESTRUTURA] Resposta Protheus:', responseData);
 
-        // Se o status da API for OK, mas o conteúdo for um erro
-        if (responseData.status === "error") {
+        // Se o status da API for erro ou erro parcial
+        if (responseData.status === "error" || responseData.status === "partial") {
             return res.status(400).json({ 
                 success: false,
-                error: 'Erro ao processar estrutura no Protheus', 
+                error: responseData.status === "partial" ? 'Erro parcial retornado pelo Protheus' : 'Erro ao processar estrutura no Protheus', 
                 message: responseData.message || 'Erro retornado pela API Protheus',
                 details: responseData.message || responseData,
                 protheusRawResponse: responseData,
@@ -876,7 +1060,7 @@ router.post('/roteiro-produtivo/editar', async (req, res) => {
                 G2_RECURSO: recursoCod,
                 G2_FERRAM: String(r.G2_FERRAM || ''),
                 G2_TPALOCF: String(r.G2_TPALOCF || ''),
-                G2_SETUP: r.G2_SETUP !== undefined && r.G2_SETUP !== '' ? String(r.G2_SETUP) : "",
+                G2_SETUP: r.G2_SETUP !== undefined && r.G2_SETUP !== '' ? Number(r.G2_SETUP) : 0,
                 G2_FORMSTP: String(r.G2_FORMSTP || ''),
                 G2_LOTEPAD: 1,
                 G2_TEMPAD: Number(r.G2_TEMPAD || 1),
@@ -892,10 +1076,10 @@ router.post('/roteiro-produtivo/editar', async (req, res) => {
 
         const normalizedPayload = {
             data: {
-                NOPER: data.NOPER || 4,
-                EMPRESA: data.EMPRESA || "01",
-                CFILANT: data.CFILANT || "0101",
-                G2_CODIGO: data.G2_CODIGO || "01",
+                NOPER: Number(data.NOPER) || 4,
+                EMPRESA: String(data.EMPRESA || "01").trim(),
+                CFILANT: String(data.CFILANT || "0101").trim(),
+                G2_CODIGO: String(data.G2_CODIGO || "01").trim().padStart(2, '0'),
                 G2_PRODUTO: String(data.G2_PRODUTO).trim().toUpperCase(),
                 roteiros: sanitizedRoteiros
             }
@@ -928,11 +1112,11 @@ router.post('/roteiro-produtivo/editar', async (req, res) => {
         const responseData = createRes.data;
         console.log('📬 [ROTEIRO] Resposta Protheus:', responseData);
 
-        // Se o status da API for OK, mas o conteúdo for um erro
-        if (responseData.status === "error") {
+        // Se o status da API for erro ou erro parcial
+        if (responseData.status === "error" || responseData.status === "partial") {
             return res.status(400).json({ 
                 success: false,
-                error: 'Erro ao processar roteiro no Protheus', 
+                error: responseData.status === "partial" ? 'Erro parcial retornado pelo Protheus' : 'Erro ao processar roteiro no Protheus', 
                 message: responseData.message || 'Erro retornado pela API Protheus',
                 details: responseData.message || responseData,
                 protheusRawResponse: responseData,
@@ -1010,6 +1194,94 @@ router.get('/produto-cliente/:codigo', async (req, res) => {
 // =========================================================================
 // ROTA: Editar Restrição Produto x Cliente (SZ1) via API POST
 // =========================================================================
+
+/**
+ * Helper para validar regras de negócio do Protheus na tabela SZ1010 (Produto x Cliente)
+ * O Protheus possui índice único 1: Z1_FILIAL + Z1_CLIENTE + Z1_LOJA + Z1_CODCLI + Z1_REVISAO.
+ * Não permite que dois produtos internos compartilhem o mesmo código de desenho e revisão para o mesmo cliente.
+ */
+async function verificarConflitoSz1(produtosClientes, noper) {
+    if (!produtosClientes || !Array.isArray(produtosClientes)) return null;
+
+    for (const item of produtosClientes) {
+        const cliente = String(item.Z1_CLIENTE || item.cliente || '').trim().toUpperCase();
+        const loja = String(item.Z1_LOJA || item.loja || '0001').trim().toUpperCase();
+        const codcli = String(item.Z1_CODCLI || item.cod_cliente || '').trim().toUpperCase();
+        const revisao = String(item.Z1_REVISAO || item.revisao || '').trim().toUpperCase();
+        const produtoAtual = String(item.Z1_PRODUTO || item.produto || '').trim().toUpperCase();
+        const recno = item.RECNO !== undefined ? Number(item.RECNO) : (item.recno !== undefined ? Number(item.recno) : null);
+
+        if (!cliente || !codcli) continue;
+
+        const query = `
+            SELECT 
+                TRIM(z1.z1_filial)  AS filial,
+                TRIM(z1.z1_cliente) AS cliente,
+                TRIM(z1.z1_loja)    AS loja,
+                TRIM(z1.z1_codcli)  AS cod_cliente,
+                TRIM(z1.z1_revisao) AS revisao,
+                TRIM(z1.z1_produto) AS produto_existente,
+                TRIM(b1.b1_desc)    AS desc_produto_existente,
+                TRIM(z1.z1_desccli) AS desc_cliente,
+                TRIM(a1.a1_nome)    AS nome_cliente,
+                z1.r_e_c_n_o_       AS recno
+            FROM public.sz1010 z1
+            LEFT JOIN public.sb1010 b1 ON TRIM(b1.b1_cod) = TRIM(z1.z1_produto) AND COALESCE(b1.d_e_l_e_t_, '') <> '*'
+            LEFT JOIN public.sa1010 a1 ON TRIM(a1.a1_cod) = TRIM(z1.z1_cliente) AND TRIM(a1.a1_loja) = TRIM(z1.z1_loja) AND COALESCE(a1.d_e_l_e_t_, '') <> '*'
+            WHERE TRIM(z1.z1_cliente) = $1
+              AND TRIM(z1.z1_loja) = $2
+              AND TRIM(z1.z1_codcli) = $3
+              AND TRIM(z1.z1_revisao) = $4
+              AND COALESCE(z1.d_e_l_e_t_, '') <> '*'
+            LIMIT 1
+        `;
+
+        try {
+            const rows = await queryProtheus(query, [cliente, loja, codcli, revisao]);
+            if (rows && rows.length > 0) {
+                const conf = rows[0];
+                const confRecno = Number(conf.recno);
+                const isMesmaLinha = recno && confRecno === recno;
+                
+                // Conflito se for nova inclusão (NOPER 3), ou se a linha encontrada não for a mesma sendo editada
+                // ou se o produto amarrado no banco for diferente do produto atual
+                if (Number(noper) === 3 || (!isMesmaLinha && conf.produto_existente !== produtoAtual)) {
+                    return {
+                        cliente: conf.cliente,
+                        loja: conf.loja,
+                        nome_cliente: conf.nome_cliente || conf.desc_cliente || `Cliente ${conf.cliente}`,
+                        cod_cliente: conf.cod_cliente,
+                        revisao: conf.revisao || '00',
+                        produto_atual: produtoAtual,
+                        produto_existente: conf.produto_existente,
+                        desc_produto_existente: conf.desc_produto_existente || 'Sem descrição cadastrada',
+                        recno: conf.recno
+                    };
+                }
+            }
+        } catch (dbErr) {
+            console.warn('⚠️ [SZ1 Check Conflito] Falha na verificação prévia do espelho Protheus:', dbErr.message);
+        }
+    }
+    return null;
+}
+
+function formatarMensagemRegraSz1(conflito) {
+    return {
+        isBusinessRule: true,
+        ruleCode: 'SZ1_DUPLICIDADE_PRODUTO_CLIENTE',
+        error: 'Regra Protheus (SZ1): Código de desenho já vinculado a outro produto',
+        message: `O código de cliente/desenho '${conflito.cod_cliente}' (Revisão '${conflito.revisao}') já está em uso pelo produto ${conflito.produto_existente} (${conflito.desc_produto_existente}) para o cliente ${conflito.cliente} - ${conflito.nome_cliente}.`,
+        motivo: `No Protheus, a amarração Produto x Cliente (tabela SZ1) possui chave única por [Cliente + Loja + Cód. Cliente + Revisão]. O sistema bloqueia duplicidades para que não haja ambiguidade na entrada de pedidos e emissão de notas fiscais.`,
+        solucoes: [
+            `1. Se este novo produto (${conflito.produto_atual}) é uma nova versão do desenho, informe uma nova revisão (ex: '01', '02').`,
+            `2. Se este produto é uma peça ou conjunto diferente, utilize o código de desenho específico do cliente para ele.`,
+            `3. Se o código pertencia erroneamente ao produto ${conflito.produto_existente}, acesse aquele produto e altere ou exclua a amarração anterior antes de cadastrar neste.`
+        ],
+        conflito
+    };
+}
+
 router.post('/produto-cliente/editar', async (req, res) => {
     try {
         const { data } = req.body;
@@ -1040,6 +1312,20 @@ router.post('/produto-cliente/editar', async (req, res) => {
             return formatted;
         });
 
+        // Verificação proativa das regras de negócio do Protheus (SZ1)
+        const conflitoPrevio = await verificarConflitoSz1(data.produtos_clientes, data.NOPER);
+        if (conflitoPrevio) {
+            console.warn('⚠️ [SZ1 PRODUTO-CLIENTE] Conflito de regra detectado antecipadamente:', conflitoPrevio);
+            const infoRegra = formatarMensagemRegraSz1(conflitoPrevio);
+            return res.status(400).json({
+                success: false,
+                ...infoRegra,
+                frontendPayload: req.body,
+                endpoint: '/api/protheus/produto-cliente/editar',
+                timestamp: new Date().toISOString()
+            });
+        }
+
         // 1. Requisitar Token (Login)
         let accessToken = '';
         try {
@@ -1069,6 +1355,24 @@ router.post('/produto-cliente/editar', async (req, res) => {
 
         // Se o status da API for OK, mas o conteúdo for um erro ou erro parcial
         if (responseData.status === "error" || responseData.status === "partial") {
+            const rawMsg = Array.isArray(responseData.message) ? responseData.message.join(' | ') : String(responseData.message || '');
+            
+            // Se for o erro clássico de duplicidade da SZ1 no Protheus
+            if (rawMsg.toLowerCase().includes('já existe') || rawMsg.toLowerCase().includes('ja existe')) {
+                const conflito = await verificarConflitoSz1(data.produtos_clientes, data.NOPER);
+                if (conflito) {
+                    const infoRegra = formatarMensagemRegraSz1(conflito);
+                    return res.status(400).json({
+                        success: false,
+                        ...infoRegra,
+                        protheusRawResponse: responseData,
+                        frontendPayload: req.body,
+                        endpoint: '/api/protheus/produto-cliente/editar',
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            }
+
             return res.status(400).json({ 
                 success: false,
                 error: 'Erro no Protheus', 
@@ -1096,6 +1400,23 @@ router.post('/produto-cliente/editar', async (req, res) => {
     } catch (error) {
         console.error('❌ Protheus Integrador Erro [Produto-Cliente SZ1]:', error.response?.data || error.message);
         const errDetails = error.response?.data || error.message;
+        const rawErrStr = typeof errDetails === 'object' ? JSON.stringify(errDetails) : String(errDetails);
+        
+        if (rawErrStr.toLowerCase().includes('já existe') || rawErrStr.toLowerCase().includes('ja existe')) {
+            const conflito = await verificarConflitoSz1(req.body?.data?.produtos_clientes, req.body?.data?.NOPER);
+            if (conflito) {
+                const infoRegra = formatarMensagemRegraSz1(conflito);
+                return res.status(400).json({
+                    success: false,
+                    ...infoRegra,
+                    protheusRawResponse: error.response?.data || null,
+                    frontendPayload: req.body,
+                    endpoint: '/api/protheus/produto-cliente/editar',
+                    timestamp: new Date().toISOString()
+                });
+            }
+        }
+
         res.status(error.response?.status || 500).json({ 
             success: false,
             error: 'Erro ao Submeter Produto-Cliente à API Protheus.', 

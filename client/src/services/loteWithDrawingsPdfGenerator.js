@@ -122,7 +122,7 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 dataPcpVal,
                 order.nome_cliente || '-',
                 pedCompra,
-                order.visual_op || order.op_num || order.pedido,
+                order.visual_op || order.op_num || '-',
                 codProduto,
                 order.descricao || order.desc_produto || '',
                 order.visual_qtd || ((order.qtd_faturar || order.quantidade) + '')
@@ -222,7 +222,7 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                                 }
 
                                 operationsMap.get(key).push({
-                                    opVisual: order.visual_op || order.op_num || order.pedido,
+                                    opVisual: order.visual_op || order.op_num || '-',
                                     pedido: order.pedido,
                                     nivel: isLevel0 ? 'PAI' : component.nivel,
                                     parentCode: parentCode,

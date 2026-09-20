@@ -372,7 +372,7 @@ router.get('/estrutura/:codProdutoPai', async (req, res) => {
                         TRIM(sb1.b1_xrevcli) as revisao_cli,
                         TRIM(sb1.b1_xdesen) as desenho_cli,
                         sb1.b1_msblql as bloqueio_padrao,
-                        (SELECT sz0.z0_status FROM public.sz0010 sz0 WHERE TRIM(sz0.z0_produto) = TRIM(sb1.b1_cod) AND COALESCE(sz0.d_e_l_e_t_, '') <> '*' ORDER BY sz0.r_e_c_n_o_ DESC LIMIT 1) as bloqueio_eng
+                        (SELECT sz0.z0_status FROM public.sz0010 sz0 WHERE TRIM(sz0.z0_produto) = TRIM(sb1.b1_cod) AND COALESCE(sz0.d_e_l_e_t_, '') <> '*' AND COALESCE(sz0.z0_status, '') <> 'L' ORDER BY sz0.r_e_c_n_o_ DESC LIMIT 1) as bloqueio_eng
                     FROM public.sb1010 sb1
                     WHERE TRIM(sb1.b1_cod) = ANY($1::text[])
                       AND COALESCE(sb1.d_e_l_e_t_, '') <> '*'
@@ -935,6 +935,7 @@ router.post('/validar-estruturas', express.json(), async (req, res) => {
             FROM public.sz0010
             WHERE TRIM(z0_produto) = ANY($1::text[])
               AND COALESCE(d_e_l_e_t_, '') <> '*'
+              AND COALESCE(z0_status, '') <> 'L'
         `;
 
         const [resSg1, resSz1, resSg2, resSz0] = await Promise.all([
@@ -1217,7 +1218,7 @@ router.get('/operacoes/:codigo', async (req, res) => {
         const rows = await queryProtheus(`
             SELECT
                 TRIM(g2.g2_operac)                                          AS operacao,
-                TRIM(h1.h1_descri)                                          AS descricao,
+                TRIM(COALESCE(NULLIF(g2.g2_descri, ''), h1.h1_descri, '')) AS descricao,
                 TRIM(g2.g2_recurso)                                         AS recurso,
                 TRIM(h1.h1_descri)                                          AS recurso_descricao,
                 TRIM(COALESCE(g2.g2_ctrab, h1.h1_ctrab, ''))                AS ctrab,
@@ -1279,6 +1280,7 @@ router.get('/restricoes-sz0/:codigo', async (req, res) => {
                 AND COALESCE(B1.d_e_l_e_t_, '') NOT IN ('*', '  *')
             WHERE TRIM(Z0.z0_produto) = $1
               AND COALESCE(Z0.d_e_l_e_t_, '') NOT IN ('*', '  *')
+              AND COALESCE(Z0.z0_status, '') <> 'L'
             ORDER BY Z0.z0_item
         `, [codigo]);
 
@@ -1348,6 +1350,7 @@ router.get('/restricoes-sz0-todas', async (req, res) => {
                 ON TRIM(B1.b1_cod) = TRIM(Z0.z0_produto)
                 AND COALESCE(B1.d_e_l_e_t_, '') NOT IN ('*', '  *')
             WHERE COALESCE(Z0.d_e_l_e_t_, '') NOT IN ('*', '  *')
+              AND COALESCE(Z0.z0_status, '') <> 'L'
             ORDER BY Z0.z0_produto, Z0.z0_item
         `);
 
@@ -1440,8 +1443,84 @@ router.post('/restricao/edit', async (req, res) => {
         }
         const accessToken = tokenResp.data.access_token;
 
-        // 2. Enviar restrição
-        const body = JSON.stringify(req.body);
+        // 2. Normalização e Higienização do Payload para a API Protheus TLPP
+        let rawRestricoes = [];
+        if (Array.isArray(req.body?.data?.restricoes)) {
+            rawRestricoes = req.body.data.restricoes;
+        } else if (req.body?.restricoes && Array.isArray(req.body.restricoes)) {
+            rawRestricoes = req.body.restricoes;
+        } else if (req.body?.produto || req.body?.Z0_PRODUTO) {
+            rawRestricoes = [{
+                EMPRESA: req.body.empresa || req.body.EMPRESA || '01',
+                CFILANT: req.body.filial || req.body.CFILANT || '01',
+                NOPER: Number(req.body.noper || req.body.NOPER) || 3,
+                Z0_PRODUTO: req.body.produto || req.body.Z0_PRODUTO,
+                Z0_ITEM: req.body.item || req.body.Z0_ITEM || '001',
+                Z0_STATUS: req.body.status || req.body.Z0_STATUS || 'P',
+                Z0_RESUMO: req.body.resumo || req.body.Z0_RESUMO || '',
+                Z0_RESTRIC: req.body.restricao || req.body.Z0_RESTRIC || '',
+                Z0_RESPONS: req.body.responsavel || req.body.Z0_RESPONS || 'ENGENHARIA',
+                Z0_XREVM: req.body.revMetalfisa || req.body.Z0_XREVM || ''
+            }];
+        }
+
+        const now = new Date();
+        const dtHoje = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const hrAgora = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+        const sanitizedRestricoes = [];
+        for (const r of rawRestricoes) {
+            const noperRaw = Number(r.NOPER);
+            // CRÍTICO: No Protheus TLPP (APICADASTRORESTRICAO.TLPP), NOPER 5 (Exclusão física) NÃO é implementado e
+            // gera Internal Server Error 500 no backend Protheus.
+            // Para "excluir/cancelar" a restrição mantendo conformidade ISO/SGQ e liberando o produto,
+            // convertemos para NOPER 4 com Z0_STATUS = 'L' (Liberada/Inativa).
+            const isExclusao = noperRaw === 5 || r.OPERACAO === 'EXCLUIR' || r.OPCAO === 'EXCLUIR' || r.deleted;
+            const noperFinal = isExclusao ? 4 : (noperRaw === 3 ? 3 : 4);
+            const statusFinal = isExclusao ? 'L' : (r.Z0_STATUS || 'P');
+            const produtoCod = String(r.Z0_PRODUTO || r.produto || '').trim().toUpperCase();
+
+            let itemFinal = String(r.Z0_ITEM || r.item || '001').padStart(3, '0');
+            // Se for inclusão (NOPER 3), garante que Z0_ITEM não colida com nenhum item existente no Protheus (mesmo os com status 'L' ou deletados)
+            if (!isExclusao && noperFinal === 3 && produtoCod) {
+                try {
+                    const maxRes = await protheusDB.query(
+                        'SELECT MAX(z0_item) as max_item FROM public.sz0010 WHERE TRIM(z0_produto) = $1',
+                        [produtoCod]
+                    );
+                    const maxVal = parseInt(maxRes.rows[0]?.max_item || '0', 10);
+                    if (!isNaN(maxVal) && maxVal >= parseInt(itemFinal, 10)) {
+                        itemFinal = String(maxVal + 1).padStart(3, '0');
+                    }
+                } catch (dbErr) {
+                    console.warn('⚠️ [SINCO] Erro ao obter MAX(z0_item):', dbErr.message);
+                }
+            }
+
+            sanitizedRestricoes.push({
+                EMPRESA: String(r.EMPRESA || '01').trim(),
+                CFILANT: String(r.CFILANT || '01').trim(),
+                NOPER: noperFinal,
+                Z0_PRODUTO: produtoCod,
+                Z0_ITEM: itemFinal,
+                Z0_STATUS: ['P', 'L', 'A'].includes(statusFinal) ? statusFinal : 'P',
+                Z0_RESUMO: String(r.Z0_RESUMO || r.resumo || 'RESTRIÇÃO').trim().substring(0, 80),
+                Z0_RESTRIC: String(r.Z0_RESTRIC || r.restricao || r.Z0_RESUMO || r.resumo || 'RESTRIÇÃO').trim().substring(0, 500),
+                Z0_RESPONS: String(r.Z0_RESPONS || r.responsavel || 'ENGENHARIA').trim().substring(0, 15),
+                Z0_DTULTAL: String(r.Z0_DTULTAL || dtHoje).trim(),
+                Z0_HRULTAL: String(r.Z0_HRULTAL || hrAgora).trim(),
+                Z0_XREVM: String(r.Z0_XREVM || r.revMetalfisa || '').trim().substring(0, 2)
+            });
+        }
+
+        const normalizedPayload = {
+            data: {
+                restricoes: sanitizedRestricoes
+            }
+        };
+
+        // 3. Enviar restrição higienizada
+        const body = JSON.stringify(normalizedPayload);
         const editResp = await httpsRequest(
             `${PROTHEUS_BASE}/restricao/edit`,
             {
@@ -1454,15 +1533,15 @@ router.post('/restricao/edit', async (req, res) => {
             body
         );
 
-        if (editResp.status >= 400) {
-            return res.status(editResp.status).json({
+        if (editResp.status >= 400 || editResp.data?.status === 'partial') {
+            return res.status(editResp.status >= 400 ? editResp.status : 400).json({
                 success: false,
                 error: 'Erro retornado pela API Protheus de Restrições (SZ0)',
-                message: editResp.data?.message || 'Falha no processamento da restrição',
+                message: Array.isArray(editResp.data?.message) ? editResp.data.message.join(' | ') : (editResp.data?.message || 'Falha no processamento da restrição'),
                 details: editResp.data,
                 protheusStatus: editResp.status,
                 protheusRawResponse: editResp.data || editResp.raw,
-                protheusPayload: req.body,
+                protheusPayload: normalizedPayload,
                 frontendPayload: req.body,
                 endpoint: '/api/sinco/restricao/edit',
                 timestamp: new Date().toISOString()
@@ -1473,7 +1552,7 @@ router.post('/restricao/edit', async (req, res) => {
             message: 'Restrição (SZ0) salva/atualizada com sucesso no Protheus',
             protheusStatus: editResp.status,
             protheusRawResponse: editResp.data || editResp.raw,
-            protheusPayload: req.body,
+            protheusPayload: normalizedPayload,
             frontendPayload: req.body,
             endpoint: '/api/sinco/restricao/edit',
             timestamp: new Date().toISOString(),

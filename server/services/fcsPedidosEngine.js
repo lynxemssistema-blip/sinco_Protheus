@@ -1,7 +1,7 @@
 const db = require('../db');
 const { runFcsSequencing } = require('./fcsEngine');
 
-async function planPedidosFCS({ pedidos, data_inicio, include_saturday, clear_existing = false, sync_data_pcp = false, usuario = 'planejamento_inteligente' }) {
+async function planPedidosFCS({ pedidos, data_inicio, include_saturday, clear_existing = false, sync_data_pcp = false, usuario = 'planejamento_inteligente', io = null, runId = null }) {
     if (!pedidos || !pedidos.length) throw new Error("Nenhum pedido fornecido.");
     
     let pgClient = null;
@@ -77,7 +77,9 @@ async function planPedidosFCS({ pedidos, data_inicio, include_saturday, clear_ex
             usuario,
             include_saturday,
             clear_existing,
-            sync_data_pcp
+            sync_data_pcp,
+            io,
+            runId
         });
 
         return {

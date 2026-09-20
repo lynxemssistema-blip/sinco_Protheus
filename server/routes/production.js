@@ -1468,121 +1468,260 @@ router.get('/matrix', async (req, res) => {
             }
         }
 
-        let pgQuery = `
-            WITH filtered_ops AS (
-                SELECT DISTINCT
-                    c2.c2_num,
-                    c2.c2_item
-                FROM public.sc2010 c2
-                WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-                AND TRIM(c2.c2_num) != ''
-                AND c2.c2_datpri >= '20240101'
-        `;
+        // -------------------------------------------------------------
+        // FONTE 1: Banco Novo (MySQL - erp_ordens_producao e operacoes)
+        // -------------------------------------------------------------
+        let mysqlItems = [];
+        let mysqlRoutings = [];
+        try {
+            let myConditions = ['1=1'];
+            let myParams = [];
 
-        if (data_inicio) {
-            pgQuery += ` AND c2.c2_datpri >= $${paramCount++}`;
-            params.push(data_inicio.replace(/-/g, ''));
+            if (op) {
+                const cleanOp = String(op).trim();
+                myConditions.push('(p.numero_op LIKE ? OR SUBSTRING(p.numero_op, 1, 6) = ?)');
+                myParams.push(`%${cleanOp}%`, cleanOp);
+            }
+
+            if (pedido) {
+                const pStr = String(pedido).trim().padStart(6, '0');
+                myConditions.push('(p.pedido_venda = ? OR p.pedido_venda = ?)');
+                myParams.push(pStr, String(parseInt(pStr, 10) || pStr));
+            }
+
+            if (produto) {
+                const prodTrim = String(produto).trim();
+                myConditions.push('(p.produto_codigo LIKE ?)');
+                myParams.push(`%${prodTrim}%`);
+            }
+
+            const [myRows] = await mysqlPool.query(`
+                SELECT 
+                    SUBSTRING(p.numero_op, 1, 6) AS op,
+                    SUBSTRING(p.numero_op, 7, 2) AS item_op,
+                    SUBSTRING(p.numero_op, 9, 3) AS sequencia,
+                    p.produto_codigo AS cod_produto,
+                    p.pedido_venda,
+                    p.quantidade_planejada AS qtd_planejada_item,
+                    p.numero_op
+                FROM erp_ordens_producao p
+                WHERE ${myConditions.join(' AND ')}
+                ORDER BY p.pedido_venda ASC, p.item_pedido ASC, p.numero_op ASC
+                LIMIT 100
+            `, myParams);
+
+            if (myRows && myRows.length > 0) {
+                const peds = [...new Set(myRows.map(r => String(r.pedido_venda || '').trim()).filter(Boolean))];
+                const prods = [...new Set(myRows.map(r => String(r.cod_produto || '').trim()).filter(Boolean))];
+                const fullOps = myRows.map(r => r.numero_op);
+
+                let clientMap = new Map();
+                if (peds.length > 0) {
+                    try {
+                        const { rows: cliRows } = await db.query(`
+                            SELECT TRIM(c5.c5_num) as pedido, TRIM(c5.c5_cliente) as cod_cliente, TRIM(sa1.a1_nome) as nome_cliente
+                            FROM public.sc5010 c5
+                            LEFT JOIN public.sa1010 sa1 ON sa1.a1_cod = c5.c5_cliente AND sa1.a1_loja = c5.c5_lojacli AND COALESCE(sa1.d_e_l_e_t_, '') = ''
+                            WHERE TRIM(c5.c5_num) = ANY($1) AND COALESCE(c5.d_e_l_e_t_, '') = ''
+                        `, [peds]);
+                        cliRows.forEach(c => clientMap.set(c.pedido, c));
+                    } catch (_) {}
+                }
+
+                let prodMap = new Map();
+                if (prods.length > 0) {
+                    const [pDbRows] = await mysqlPool.query(`SELECT codigo, descricao FROM erp_produtos WHERE codigo IN (?)`, [prods]);
+                    pDbRows.forEach(p => prodMap.set(String(p.codigo).trim(), p.descricao));
+                    try {
+                        const { rows: sbRows } = await db.query(
+                            `SELECT TRIM(b1_cod) as cod, TRIM(b1_desc) as descri FROM public.sb1010 WHERE TRIM(b1_cod) = ANY($1)`,
+                            [prods]
+                        );
+                        sbRows.forEach(sb => { if (!prodMap.has(sb.cod)) prodMap.set(sb.cod, sb.descri); });
+                    } catch (_) {}
+                }
+
+                mysqlItems = myRows.map(r => {
+                    const cli = clientMap.get(r.pedido_venda) || {};
+                    return {
+                        op: r.op,
+                        item_op: r.item_op,
+                        sequencia: r.sequencia,
+                        cod_produto: r.cod_produto,
+                        pedido_venda: r.pedido_venda,
+                        desc_produto: prodMap.get(r.cod_produto) || '',
+                        qtd_planejada_item: parseFloat(r.qtd_planejada_item) || 0,
+                        nome_cliente: cli.nome_cliente || '',
+                        cod_cliente: cli.cod_cliente || ''
+                    };
+                });
+
+                const [myOps] = await mysqlPool.query(`
+                    SELECT 
+                        SUBSTRING(o.numero_op, 1, 6) as op,
+                        SUBSTRING(o.numero_op, 7, 2) as item_op,
+                        SUBSTRING(o.numero_op, 9, 3) as sequen,
+                        o.produto_codigo as cod_produto,
+                        o.quantidade_planejada as qtd_planejada,
+                        o.operacao_seq as operacao,
+                        o.codigo_recurso as recurso,
+                        COALESCE(o.descricao_operacao, '') as desc_operacao,
+                        o.codigo_recurso as master_desc_recurso
+                    FROM erp_ordens_producao_operacoes o
+                    WHERE o.numero_op IN (?)
+                    ORDER BY o.numero_op ASC, CAST(o.operacao_seq AS UNSIGNED) ASC
+                `, [fullOps]);
+
+                mysqlRoutings = myOps.map(o => ({
+                    ...o,
+                    master_desc_recurso: o.recurso === 'MO0013' ? 'LASE' : (o.desc_operacao || o.recurso)
+                }));
+            }
+        } catch (myErr) {
+            console.error('⚠️ [MATRIX] Erro ao buscar OPs do MySQL:', myErr.message);
         }
-        if (data_fim) {
-            pgQuery += ` AND c2.c2_datpri <= $${paramCount++}`;
-            params.push(data_fim.replace(/-/g, ''));
-        }
-        if (op) {
-            pgQuery += ` AND c2.c2_num LIKE $${paramCount++}`;
-            params.push(`%${op}%`);
-        }
-        if (produto) {
-            pgQuery += ` ${prodCond}`;
-        }
-        if (cliente) {
-            pgQuery += ` AND (a1.a1_nome LIKE $${paramCount} OR c5.c5_cliente LIKE $${paramCount})`;
-            params.push(`%${cliente.toUpperCase()}%`);
-            paramCount++;
-        }
+
+        // -------------------------------------------------------------
+        // FONTE 2: Protheus Legado (PostgreSQL - sc2010)
+        // -------------------------------------------------------------
+        let pgItems = [];
+        let pgRoutings = [];
+        let skipPgSearch = false;
+
         if (pedido) {
             const paddedPedido = pedido.trim().padStart(6, '0');
-            pgQuery += ` AND c2.c2_pedido LIKE $${paramCount++}`;
-            params.push(`${paddedPedido}%`);
+            try {
+                const { rows: pgOrderOps } = await pgClient.query(
+                    `SELECT DISTINCT TRIM(c2_num) as num FROM public.sc2010 WHERE TRIM(c2_pedido) = $1 AND COALESCE(d_e_l_e_t_, '') = ''`,
+                    [paddedPedido]
+                );
+                if (pgOrderOps.length === 0) {
+                    skipPgSearch = true;
+                }
+            } catch (_) {}
         }
-        if (operacao) {
-            pgQuery += ` ${opCond}`;
+
+        if (!skipPgSearch) {
+            let pgQuery = `
+                WITH filtered_ops AS (
+                    SELECT DISTINCT
+                        c2.c2_num,
+                        c2.c2_item
+                    FROM public.sc2010 c2
+                    WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+                    AND TRIM(c2.c2_num) != ''
+                    AND c2.c2_datpri >= '20240101'
+            `;
+
+            if (data_inicio) {
+                pgQuery += ` AND c2.c2_datpri >= $${paramCount++}`;
+                params.push(data_inicio.replace(/-/g, ''));
+            }
+            if (data_fim) {
+                pgQuery += ` AND c2.c2_datpri <= $${paramCount++}`;
+                params.push(data_fim.replace(/-/g, ''));
+            }
+            if (op) {
+                pgQuery += ` AND c2.c2_num LIKE $${paramCount++}`;
+                params.push(`%${op}%`);
+            }
+            if (produto) {
+                pgQuery += ` ${prodCond}`;
+            }
+            if (cliente) {
+                pgQuery += ` AND (a1.a1_nome LIKE $${paramCount} OR c5.c5_cliente LIKE $${paramCount})`;
+                params.push(`%${cliente.toUpperCase()}%`);
+                paramCount++;
+            }
+            if (pedido) {
+                const paddedPedido = pedido.trim().padStart(6, '0');
+                pgQuery += ` AND c2.c2_pedido LIKE $${paramCount++}`;
+                params.push(`${paddedPedido}%`);
+            }
+            if (operacao) {
+                pgQuery += ` ${opCond}`;
+            }
+
+            // Fechar CTE e limitar resultados (paginação)
+            pgQuery += `
+                    LIMIT 100
+                )
+                SELECT
+                    c2.c2_num     AS op,
+                    c2.c2_item    AS item_op,
+                    c2.c2_sequen  AS sequencia,
+                    TRIM(c2.c2_produto) AS cod_produto,
+                    MAX(TRIM(c2.c2_pedido)) AS pedido_venda,
+                    MAX(sb1.b1_desc) AS desc_produto,
+                    MAX(c2.c2_quant::numeric) AS qtd_planejada_item,
+                    MAX(a1.a1_nome) AS nome_cliente,
+                    MAX(c5.c5_cliente) AS cod_cliente
+                FROM public.sc2010 c2
+                INNER JOIN filtered_ops fo ON fo.c2_num = c2.c2_num AND fo.c2_item = c2.c2_item
+                LEFT JOIN public.sb1010 sb1 ON sb1.b1_cod = c2.c2_produto AND COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
+                LEFT JOIN public.sc5010 c5 ON c5.c5_num = TRIM(c2.c2_pedido) AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
+                LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
+                WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+                AND TRIM(c2.c2_num) != ''
+                GROUP BY c2.c2_num, c2.c2_item, c2.c2_sequen, c2.c2_produto
+                ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen
+            `;
+
+            try {
+                const pgRes = await pgClient.query(pgQuery, params);
+                pgItems = pgRes.rows;
+
+                if (pgItems.length > 0) {
+                    const itemCodes = pgItems.map(i => i.op);
+                    const pgPlaceholders = itemCodes.map((_, idx) => `$${idx + 1}`).join(',');
+                    const routingRes = await pgClient.query(`
+                        SELECT
+                            c2.c2_num as op,
+                            c2.c2_item as item_op,
+                            c2.c2_sequen as sequen,
+                            c2.c2_produto as cod_produto,
+                            c2.c2_quant as qtd_planejada,
+                            c2.c2_datpri as data_inicio_erp,
+                            c2.c2_datprf as data_fim_erp,
+                            g2.g2_operac as operacao,
+                            g2.g2_recurso as recurso,
+                            g2.g2_descri as desc_operacao,
+                            h1.h1_descri as master_desc_recurso
+                        FROM public.sc2010 c2
+                        LEFT JOIN public.sg2010 g2 ON
+                            btrim(g2.g2_produto) = btrim(c2.c2_produto)
+                            AND btrim(g2.g2_filial) = btrim(c2.c2_filial)
+                            AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+                        LEFT JOIN public.sh1010 h1 ON
+                            h1.h1_codigo = g2.g2_recurso
+                            AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+                        WHERE
+                            c2.c2_num IN (${pgPlaceholders})
+                            AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
+                        ORDER BY c2.c2_num, c2.c2_item, g2.g2_operac
+                    `, itemCodes);
+                    pgRoutings = routingRes.rows;
+                }
+            } catch (errPg) {
+                console.warn('⚠️ [MATRIX] Erro ao consultar Postgres:', errPg.message);
+            }
         }
 
-        // Fechar CTE e limitar resultados (paginação)
-        pgQuery += `
-                LIMIT 100
-            )
-            SELECT
-                c2.c2_num     AS op,
-                c2.c2_item    AS item_op,
-                c2.c2_sequen  AS sequencia,
-                TRIM(c2.c2_produto) AS cod_produto,
-                MAX(TRIM(c2.c2_pedido)) AS pedido_venda,
-                MAX(sb1.b1_desc) AS desc_produto,
-                MAX(c2.c2_quant::numeric) AS qtd_planejada_item,
-                MAX(a1.a1_nome) AS nome_cliente,
-                MAX(c5.c5_cliente) AS cod_cliente
-            FROM public.sc2010 c2
-            INNER JOIN filtered_ops fo ON fo.c2_num = c2.c2_num AND fo.c2_item = c2.c2_item
-            LEFT JOIN public.sb1010 sb1 ON sb1.b1_cod = c2.c2_produto AND COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sc5010 c5 ON c5.c5_num = TRIM(c2.c2_pedido) AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
-            WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-            AND TRIM(c2.c2_num) != ''
-            GROUP BY c2.c2_num, c2.c2_item, c2.c2_sequen, c2.c2_produto
-            ORDER BY c2.c2_num, c2.c2_item, c2.c2_sequen
-        `;
+        // Unificação Híbrida de Itens da Matriz
+        const combinedItemsMap = new Map();
+        mysqlItems.forEach(i => combinedItemsMap.set(`${i.op}_${i.item_op}_${i.sequencia}`, i));
+        pgItems.forEach(i => {
+            const key = `${i.op}_${i.item_op}_${i.sequencia}`;
+            if (!combinedItemsMap.has(key)) combinedItemsMap.set(key, i);
+        });
+        const items = Array.from(combinedItemsMap.values());
+        const routingRaw = [...mysqlRoutings, ...pgRoutings];
 
-        const pgRes = await pgClient.query(pgQuery, params);
-        const items = pgRes.rows;
-
-        console.log(`📦 [MATRIX] Found ${items.length} items`);
+        console.log(`📦 [MATRIX] Found ${items.length} items (MySQL: ${mysqlItems.length}, PG: ${pgItems.length})`);
 
         if (items.length === 0) {
             return res.json({ operations: [], items: [] });
         }
-
-        const itemCodes = items.map(i => i.op); // Use 'op' as the identifier for the main item
-        const placeholders = itemCodes.map((_, idx) => `$${idx + 1}`).join(',');
-
-        // 2. [REMOVIDO] Não vamos mais buscar operações globais para evitar 'lixo'.
-        // As colunas serão determinadas dinamicamente com base nos roteiros dos itens encontrados.
-
-        // 3. Buscar documentos (MySQL) - MOVIDO PARA BAIXO (Step 4.6)
-        // para evitar redeclaração e manter fluxo lógico após ter os itens filtrados.
-        console.log('[MATRIX] Step 3: Skipped (Moved to 4.6)');
-
-        // 4. Buscar Roteiros (Postgres Only)
-        // JOIN com g2_recurso para informações extras, mas chave principal é g2_operac
-        const routingRes = await pgClient.query(`
-            SELECT
-                c2.c2_num as op,
-                c2.c2_item as item_op,
-                c2.c2_sequen as sequen,
-                c2.c2_produto as cod_produto,
-                c2.c2_quant as qtd_planejada,
-                c2.c2_datpri as data_inicio_erp,
-                c2.c2_datprf as data_fim_erp,
-                g2.g2_operac as operacao,
-                g2.g2_recurso as recurso,
-                g2.g2_descri as desc_operacao,
-                h1.h1_descri as master_desc_recurso
-            FROM public.sc2010 c2
-            LEFT JOIN public.sg2010 g2 ON
-                btrim(g2.g2_produto) = btrim(c2.c2_produto)
-                AND btrim(g2.g2_filial) = btrim(c2.c2_filial)
-                AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sh1010 h1 ON
-                h1.h1_codigo = g2.g2_recurso
-                AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
-            WHERE
-                c2.c2_num IN (${placeholders})
-                AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-            ORDER BY c2.c2_num, c2.c2_item, g2.g2_operac
-        `, itemCodes);
-
-        const routingRaw = routingRes.rows;
-        console.log(`[MATRIX] Step 4 OK: Found ${routingRaw.length} routing rows`);
 
         // NOVO: Agrupar por RECURSO (MOxxx, STxxx) conforme solicitado pelo usuário
         const distinctResources = [...new Set(routingRaw.map(r => r.recurso ? r.recurso.trim() : null).filter(Boolean))];
@@ -2770,30 +2909,65 @@ router.post('/appoint', async (req, res) => {
 
         // --- VALIDAÇÃO DE SALDO (Sempre ativa, independente do modo configurado) ---
         let qtdPlanejada = 0;
-        const pgRes = await db.query(
-            `SELECT c2.c2_quant::numeric AS qtd_planejada
-             FROM public.sc2010 c2
-             WHERE c2.c2_num = $1 AND c2.c2_item = $2 AND c2.c2_sequen = $3
-             AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')`,
-            [op_numero, op_item, op_sequencia]
-        );
+        try {
+            const pgPromise = db.query(
+                `SELECT c2.c2_quant::numeric AS qtd_planejada
+                 FROM public.sc2010 c2
+                 WHERE c2.c2_num = $1 AND c2.c2_item = $2 AND c2.c2_sequen = $3
+                 AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')`,
+                [op_numero, op_item, op_sequencia]
+            );
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('PG Timeout')), 1500));
+            const pgRes = await Promise.race([pgPromise, timeoutPromise]);
+            if (pgRes?.rows?.length > 0) {
+                qtdPlanejada = Number(pgRes.rows[0].qtd_planejada) || 0;
+            }
+        } catch (e) {
+            // Postgres timeout ou indisponível
+        }
 
-        if (pgRes.rows.length > 0) {
-            qtdPlanejada = Number(pgRes.rows[0].qtd_planejada) || 0;
-            if (qtdPlanejada > 0) {
-                const [appRows] = await connection.execute(
-                    `SELECT SUM(quantidade) AS total FROM app_production_appointments
-                     WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?
-                     AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')`,
-                     [op_numero, op_item, op_sequencia, operacao_codigo]
+        // Fallback MySQL para validação de saldo (OPs criadas localmente)
+        if (qtdPlanejada <= 0) {
+            try {
+                const [mySc] = await connection.query(
+                    `SELECT CAST(c2_quant AS DECIMAL(15,4)) AS qtd_planejada
+                     FROM sc2010
+                     WHERE TRIM(c2_num) = ? AND TRIM(c2_item) = ? AND TRIM(c2_sequen) = ?
+                     LIMIT 1`,
+                    [op_numero, op_item, op_sequencia]
                 );
-                const produzido = Number(appRows[0].total) || 0;
-                if (produzido + qtyNum > qtdPlanejada + 0.001) {
-                    await connection.rollback();
-                    return res.status(400).json({
-                        error: `Quantidade excede saldo! Planejado: ${qtdPlanejada} | Já Produzido: ${produzido} | Tentativa: ${qtyNum}`
-                    });
+                if (mySc?.length > 0 && Number(mySc[0].qtd_planejada) > 0) {
+                    qtdPlanejada = Number(mySc[0].qtd_planejada);
+                } else {
+                    const [myErp] = await connection.query(
+                        `SELECT CAST(quantidade_planejada AS DECIMAL(15,4)) AS qtd_planejada
+                         FROM erp_ordens_producao
+                         WHERE numero_op LIKE ?
+                         LIMIT 1`,
+                        [`${op_numero}%${op_item}%`]
+                    );
+                    if (myErp?.length > 0 && Number(myErp[0].qtd_planejada) > 0) {
+                        qtdPlanejada = Number(myErp[0].qtd_planejada);
+                    }
                 }
+            } catch (myErr) {
+                console.warn('⚠️ [APPOINT] Erro ao buscar qtd_planejada no MySQL:', myErr.message);
+            }
+        }
+
+        if (qtdPlanejada > 0) {
+            const [appRows] = await connection.execute(
+                `SELECT SUM(quantidade) AS total FROM app_production_appointments
+                 WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?
+                 AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')`,
+                 [op_numero, op_item, op_sequencia, operacao_codigo]
+            );
+            const produzido = Number(appRows[0].total) || 0;
+            if (produzido + qtyNum > qtdPlanejada + 0.001) {
+                await connection.rollback();
+                return res.status(400).json({
+                    error: `Quantidade excede saldo! Planejado: ${qtdPlanejada} | Já Produzido: ${produzido} | Tentativa: ${qtyNum}`
+                });
             }
         }
 
@@ -2899,21 +3073,45 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         // --- INÍCIO VERIFICAÇÃO PPAP / GITS PARA WHATSAPP ---
         (async () => {
             try {
-                const pgRes = await db.query(
-                    `SELECT c2_pedido, c2_itempd, c2_produto
-                     FROM public.sc2010
-                     WHERE c2_num = $1 AND c2_item = $2
-                     AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')`,
-                    [op_numero, op_item]
-                );
+                let pedido = '';
+                let itempv = '';
+                let produto = '';
 
-                if (pgRes.rows.length > 0) {
-                    const { c2_pedido: pedido, c2_itempd: itempd, c2_produto: produto } = pgRes.rows[0];
-                    if (pedido && itempd) {
-                        const [classifRows] = await mysqlPool.query(
-                            'SELECT classificacao FROM app_pedido_itens_classificacao WHERE pedido = ? AND item = ?',
-                            [pedido.trim(), itempd.trim()]
-                        );
+                try {
+                    const pgRes = await db.query(
+                        `SELECT c2_pedido, c2_itempv, c2_produto
+                         FROM public.sc2010
+                         WHERE c2_num = $1 AND c2_item = $2
+                         AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')`,
+                        [op_numero, op_item]
+                    );
+                    if (pgRes.rows.length > 0) {
+                        pedido = pgRes.rows[0].c2_pedido;
+                        itempv = pgRes.rows[0].c2_itempv;
+                        produto = pgRes.rows[0].c2_produto;
+                    }
+                } catch(e) {}
+
+                if (!pedido) {
+                    const [mySc] = await mysqlPool.query(
+                        `SELECT c2_pedido, c2_itempv, c2_produto
+                         FROM sc2010
+                         WHERE TRIM(c2_num) = ? AND TRIM(c2_item) = ?
+                         LIMIT 1`,
+                        [op_numero, op_item]
+                    );
+                    if (mySc?.length > 0) {
+                        pedido = mySc[0].c2_pedido;
+                        itempv = mySc[0].c2_itempv;
+                        produto = mySc[0].c2_produto;
+                    }
+                }
+
+                if (pedido && itempv) {
+                    const [classifRows] = await mysqlPool.query(
+                        'SELECT classificacao FROM app_pedido_itens_classificacao WHERE pedido = ? AND item = ?',
+                        [pedido.trim(), itempv.trim()]
+                    );
 
                         if (classifRows.length > 0) {
                             const classificacao = classifRows[0].classificacao || '';
@@ -2921,7 +3119,7 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 const { sendText, msgAvisoPpapGits } = require('../services/whatsapp');
                                 const waText = msgAvisoPpapGits({
                                     pedido: pedido.trim(),
-                                    item: itempd.trim(),
+                                    item: itempv.trim(),
                                     produto: produto ? produto.trim() : 'Desconhecido',
                                     recurso: operacao_codigo,
                                     usuario: usuario || 'Sistema',
@@ -2933,7 +3131,6 @@ VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 console.log(`[WhatsApp] Aviso PPAP enviado para grupo referente à OP ${op_numero}`);
                             }
                         }
-                    }
                 }
             } catch (err) {
                 console.error('[PPAP WhatsApp Error]', err.message);

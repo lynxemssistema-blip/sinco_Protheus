@@ -1,8 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bot, Calendar, Play, AlertTriangle, X, CheckCircle, Clock, Loader2, BrainCircuit, Database, Cpu, FileText, FileSpreadsheet } from 'lucide-react';
+import { 
+    Bot, Calendar, Play, AlertTriangle, X, CheckCircle, Clock, Loader2, 
+    BrainCircuit, Database, Cpu, FileText, FileSpreadsheet,
+    LayoutGrid, ListOrdered, ChevronDown, Activity, BookOpen, HelpCircle
+} from 'lucide-react';
+import { io } from 'socket.io-client';
 import api from '../services/api';
 import { toast } from 'react-toastify';
 import SmartPlannerReport from './SmartPlannerReport';
+import FcsExplanationModal from './FcsExplanationModal';
 
 export default function PlanejamentoInteligenteModal({ isOpen, onClose, selectedOps, selectedPedidos, onPlanSuccess, hermesTaskId = null }) {
     const getTodayDate = () => {
@@ -24,17 +30,23 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
     const [resourceChart, setResourceChart] = useState({});
     const [finalAnswer, setFinalAnswer] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
-    // { 'MEC01': { desc, capDia, dates: { '2026-06-06': allocatedMin } } }
+    const [showExplanationModal, setShowExplanationModal] = useState(false);
 
-    const logsEndRef = useRef(null);
-    const pendingAlloc = useRef(null); // correlaciona log de operação com log de alocação
+    // Novos controles de visualização e live-streaming
+    const [viewMode, setViewMode] = useState('recurso'); // 'recurso' | 'data'
+    const [expandAll, setExpandAll] = useState(false);
+    const [expandedRecursos, setExpandedRecursos] = useState({});
+    const [liveStepInfo, setLiveStepInfo] = useState(null);
 
+    const consoleContainerRef = useRef(null);
+    const currentRunIdRef = useRef(null);
+    const socketRef = useRef(null);
     const [autoScroll, setAutoScroll] = useState(true);
 
-    // Auto-scroll para o último log sempre que um novo for adicionado
+    // Auto-scroll direto para o fim do container sem enfileirar animações suaves (zero lag)
     useEffect(() => {
-        if (autoScroll && logsEndRef.current) {
-            logsEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        if (autoScroll && consoleContainerRef.current) {
+            consoleContainerRef.current.scrollTop = consoleContainerRef.current.scrollHeight;
         }
     }, [agentLogs, autoScroll]);
 
@@ -51,81 +63,86 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
             setLoading(false);
             setAutoScroll(true);
             setResourceChart({});
-            pendingAlloc.current = null;
+            setLiveStepInfo(null);
+            setExpandedRecursos({});
             setIncludeSaturday(false);
             setClearExisting(false);
             setSyncDataPcp(false);
         }
     }, [isOpen]);
 
-    // Modo Hermes: escuta progresso do FCS rodando no servidor via socket.io
+    // Socket.io: Escuta eventos do motor FCS e do Hermes em tempo real
     useEffect(() => {
-        if (!isOpen || !hermesTaskId) return;
+        if (!isOpen) {
+            if (socketRef.current) {
+                socketRef.current.disconnect();
+                socketRef.current = null;
+            }
+            return;
+        }
 
-        setLoading(true);
-        setAgentLogs([]);
-        setSuccessMessage('');
-        setErrorMessage('');
-        setFinalAnswer('');
-        setResourceChart({});
+        const socket = io(window.location.origin, {
+            transports: ['polling', 'websocket'],
+            reconnectionAttempts: 5,
+        });
+        socketRef.current = socket;
 
-        let socket = null;
-        const isNumericId = /^\d+$/.test(String(hermesTaskId));
-
-        import('socket.io-client').then(({ io }) => {
-            socket = io(window.location.origin, {
-                transports: ['polling', 'websocket'],
-                reconnectionAttempts: 5,
+        // 1. Escuta progresso do cálculo FCS em tempo real (para qualquer planejamento)
+        socket.on('fcs_live_step', (data) => {
+            if (currentRunIdRef.current && data.runId !== currentRunIdRef.current) return;
+            setLiveStepInfo({
+                op: data.op_num,
+                produto: data.produto,
+                descProduto: data.desc_produto,
+                step: data.step,
+                totalOps: data.total_ops,
+                lastDate: data.last_date,
+                foiSobrecarga: data.foi_sobrecarga
             });
+            if (data.carga_diaria) {
+                setResourceChart(data.carga_diaria);
+            }
+        });
 
-            // 1. Escuta progresso do FCS
+        // 2. Se for acionado via Hermes com taskId
+        if (hermesTaskId) {
+            const isNumericId = /^\d+$/.test(String(hermesTaskId));
             socket.on('hermes_fcs_progress', (data) => {
-                // Aceita progresso se for o runId direto ou se for o runId dinâmico capturado da task
                 if (data.runId !== hermesTaskId && data.runId !== socket._currentFcsRunId) return;
-
                 if (data.agent_logs?.length) {
                     setAgentLogs(prev => [
                         ...prev,
-                        ...data.agent_logs.map(msg => ({ msg, icon: '⚙️', time: new Date() }))
+                        ...data.agent_logs.map(msg => ({ msg, icon: <Cpu className="w-3.5 h-3.5 text-slate-400" />, time: new Date() }))
                     ]);
                 }
-
-                if (data.carga_diaria) {
-                    setResourceChart(data.carga_diaria);
-                }
-
+                if (data.carga_diaria) setResourceChart(data.carga_diaria);
                 if (data.done) {
                     setLoading(false);
-                    setSuccessMessage(data.message || 'Planejamento FCS concluído pelo Hermes (Servidor).');
+                    setSuccessMessage(data.message || 'Planejamento FCS concluído pelo Hermes.');
                     if (onPlanSuccess) onPlanSuccess();
                 }
             });
 
-            // 2. Escuta inicio global do FCS para capturar a runId dinâmica
             socket.on('hermes_fcs_started', ({ runId }) => {
                 socket._currentFcsRunId = runId;
+                currentRunIdRef.current = runId;
                 setAgentLogs(prev => [
                     ...prev,
-                    { msg: `🚀 Motor FCS Iniciado (ID: ${runId}). Rastreando progresso...`, icon: '🤖', time: new Date() }
+                    { msg: `🚀 Motor FCS Iniciado (ID: ${runId}). Rastreando progresso...`, icon: <BrainCircuit className="w-3.5 h-3.5 text-indigo-400" />, time: new Date() }
                 ]);
             });
 
-            // 3. Escuta eventos genéricos de Task (caso hermesTaskId seja numérico)
             if (isNumericId) {
                 socket.on('connect', () => {
                     socket.emit('join_hermes_task', Number(hermesTaskId));
                 });
-
                 socket.on('hermes_task_step', (step) => {
                     setAgentLogs(prev => [
                         ...prev,
-                        { msg: step.message, icon: step.icon || '⚙️', time: new Date() }
+                        { msg: step.message, icon: <Cpu className="w-3.5 h-3.5 text-slate-400" />, time: new Date() }
                     ]);
                 });
-
                 socket.on('hermes_task_done', (payload) => {
-                    // Se o FCS rodou, a conclusão vem pelo hermes_fcs_progress.
-                    // Caso contrário, finaliza pela conclusão da tarefa hermes.
                     if (!socket._currentFcsRunId) {
                         setLoading(false);
                         if (payload.status === 'error') {
@@ -138,18 +155,19 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                     }
                 });
 
-                // Dispara a execução no backend
                 api.post(`/hermes/tasks/${hermesTaskId}/execute`).catch(err => {
                     setLoading(false);
                     setErrorMessage(err.response?.data?.error || 'Falha ao acionar a execução da tarefa no servidor.');
                 });
             }
-        }).catch(() => {
-            setLoading(false);
-            setErrorMessage('Erro ao conectar ao socket do servidor.');
-        });
+        }
 
-        return () => { if (socket) socket.disconnect(); };
+        return () => {
+            if (socketRef.current) {
+                socketRef.current.disconnect();
+                socketRef.current = null;
+            }
+        };
     }, [isOpen, hermesTaskId]);
 
     if (!isOpen) return null;
@@ -185,32 +203,6 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
         }
     };
 
-    // Distribui `totalMin` pelos dias úteis entre dateStart e dateEnd,
-    // respeitando o teto de `capDia` por dia e a opção de sábado.
-    const distributeLoad = (dateStart, dateEnd, totalMin, capDia, includeSat = false) => {
-        const days = [];
-        const cur = new Date(dateStart + 'T12:00:00');
-        const end = new Date(dateEnd + 'T12:00:00');
-        while (cur <= end) {
-            const dow = cur.getDay();
-            if (dow !== 0 && (dow !== 6 || includeSat)) {
-                days.push(cur.toISOString().split('T')[0]);
-            }
-            cur.setDate(cur.getDate() + 1);
-        }
-        // Fallback: ao menos o dia inicial
-        if (days.length === 0) return { [dateStart]: Math.min(totalMin, capDia) };
-        const result = {};
-        let remaining = totalMin;
-        for (const d of days) {
-            if (remaining <= 0) break;
-            const allocated = Math.min(remaining, capDia);
-            result[d] = allocated;
-            remaining -= allocated;
-        }
-        return result;
-    };
-
     const handlePlan = async () => {
         if (!dataInicio) {
             toast.warning('Por favor, informe a data de início.');
@@ -228,103 +220,84 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
             return;
         }
 
-        const opList = selectedOps?.map(op => op.op || op.op_num) || [];
+        const opList = selectedOps?.map(op => (typeof op === 'string' ? op : (op.op || op.op_num || op.visual_op))).filter(Boolean) || [];
+
+        const runId = 'fcs_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        currentRunIdRef.current = runId;
 
         setLoading(true);
         setMissingTimes([]);
         setSuccessMessage('');
+        setErrorMessage('');
         setAgentLogs([]);
-        addLog(`[SISTEMA] Iniciando Inteligência de Planejamento para ${selectedPedidos?.length ? selectedPedidos.length + ' Pedidos' : (selectedOps?.length || 0) + ' OPs'}...`, <Bot className="w-4 h-4" />);
+        setResourceChart({});
+        setLiveStepInfo(null);
+
+        const totalItemsCount = selectedPedidos?.length || opList.length;
+        addLog(`[SISTEMA] Iniciando Inteligência de Planejamento FCS para ${selectedPedidos?.length ? selectedPedidos.length + ' Pedidos' : opList.length + ' OPs'} (ID: ${runId})...`, <Bot className="w-4 h-4 text-indigo-400" />);
 
         try {
-            const BATCH_SIZE = 50;
+            const BATCH_SIZE = 5;
             let totalPlans = 0;
             let finalReport = null;
-            let totalLotes = Math.ceil(opList.length / BATCH_SIZE) || 1;
+            const isPedidoMode = selectedPedidos && selectedPedidos.length > 0;
+            const itemsList = isPedidoMode ? selectedPedidos : opList;
+            let totalLotes = Math.ceil(itemsList.length / BATCH_SIZE) || 1;
 
-            for (let i = 0; i < (opList.length || 1); i += BATCH_SIZE) {
-                const batch = opList.slice(i, i + BATCH_SIZE);
+            for (let i = 0; i < (itemsList.length || 1); i += BATCH_SIZE) {
+                const batch = itemsList.slice(i, i + BATCH_SIZE);
                 const loteNum = Math.floor(i / BATCH_SIZE) + 1;
 
-                addLog(`📦 Processando lote ${loteNum}/${totalLotes}...`, <FileText className="w-4 h-4 text-indigo-400" />);
+                addLog(`📦 Processando lote ${loteNum}/${totalLotes} (${batch.length} ${isPedidoMode ? 'pedidos' : 'OPs'})...`, <FileText className="w-4 h-4 text-indigo-400" />);
 
                 let res;
-                if (selectedPedidos && selectedPedidos.length > 0) {
-                    res = await api.post('/pcp-refinado/smart-plan-pedidos', {
-                        pedidos: selectedPedidos,
-                        data_inicio: dataInicio,
-                        include_saturday: includeSaturday,
-                        clear_existing: clearExisting,
-                        sync_data_pcp: syncDataPcp
-                    });
-                } else {
-                    res = await api.post('/pcp-refinado/smart-plan', {
-                        ops: batch,
-                        data_inicio: dataInicio,
-                        include_saturday: includeSaturday,
-                        preload_existing: loteNum > 1,
-                        clear_existing: loteNum === 1 ? clearExisting : false, // Só limpa no primeiro lote
-                        sync_data_pcp: syncDataPcp
-                    }, {
-                        timeout: 600000
-                    });
+                try {
+                    if (isPedidoMode) {
+                        res = await api.post('/pcp-refinado/smart-plan-pedidos', {
+                            pedidos: batch,
+                            data_inicio: dataInicio,
+                            include_saturday: includeSaturday,
+                            clear_existing: loteNum === 1 ? clearExisting : false,
+                            preload_existing: loteNum > 1,
+                            sync_data_pcp: syncDataPcp,
+                            run_id: runId
+                        }, { timeout: 300000 });
+                    } else {
+                        res = await api.post('/pcp-refinado/smart-plan', {
+                            ops: batch,
+                            data_inicio: dataInicio,
+                            include_saturday: includeSaturday,
+                            preload_existing: loteNum > 1,
+                            clear_existing: loteNum === 1 ? clearExisting : false,
+                            sync_data_pcp: syncDataPcp,
+                            run_id: runId
+                        }, {
+                            timeout: 300000
+                        });
+                    }
+                } catch (batchErr) {
+                    console.error(`Erro no lote ${loteNum}:`, batchErr);
+                    const errMsg = batchErr.response?.data?.error || batchErr.message;
+                    addLog(`⚠️ Falha no lote ${loteNum}: ${errMsg}. Continuando próximos lotes...`, <AlertTriangle className="w-4 h-4 text-amber-500" />);
+                    continue;
                 }
 
                 if (res.data.agent_logs && res.data.agent_logs.length > 0) {
-                    pendingAlloc.current = null;
-                    for (let j = 0; j < res.data.agent_logs.length; j++) {
-                        const log = res.data.agent_logs[j];
-
-                        let icon = <Cpu className="w-4 h-4 text-slate-400" />;
-                        if (log.includes('Iniciando') || log.includes('ESTUDO')) icon = <BrainCircuit className="w-4 h-4 text-indigo-500" />;
-                        else if (log.includes('Obtendo') || log.includes('Buscando') || log.includes('Salvando')) icon = <Database className="w-4 h-4 text-blue-500" />;
-                        else if (log.includes('Alocados')) icon = <Clock className="w-4 h-4 text-emerald-500" />;
-                        else if (log.includes('Sem capacidade') || log.includes('Transição')) icon = <Calendar className="w-4 h-4 text-amber-500" />;
-
-                        addLog(log, icon);
-
-                        // ── PARSER DE CARGA EM TEMPO REAL ──────────────────────────────
-                        const opMatch = log.match(/Operação\s+\w+\s+\((\w+)\).*Requer\s+([\d.]+)\s+min.*Cap\/dia\s*=\s*([\d.]+)\s*min/);
-                        if (opMatch) {
-                            pendingAlloc.current = {
-                                recurso: opMatch[1],
-                                minNeeded: parseFloat(opMatch[2]),
-                                capDia: parseFloat(opMatch[3])
-                            };
-                            // Tenta capturar descrição do log de capacidade anterior
-                            // Formato: "  [MO0013] LASER: 1920 min/dia"
-                            const descMatch = log.match(/\[(\w+)\]\s+(.+?):\s*[\d]+\s*min\/dia/);
-                            if (descMatch && descMatch[1] === opMatch[1]) {
-                                pendingAlloc.current.desc = descMatch[2].trim();
-                            }
-                        }
-                        const allocMatch = log.match(/Aloca[çc][aã]o conclu[íi]da: de (\d{4}-\d{2}-\d{2}) at[eé] (\d{4}-\d{2}-\d{2})/);
-                        if (allocMatch && pendingAlloc.current) {
-                            const { recurso, minNeeded, capDia, desc = '' } = pendingAlloc.current;
-                            const d1 = allocMatch[1], d2 = allocMatch[2];
-                            const dayMap = distributeLoad(d1, d2, minNeeded, capDia, includeSaturday);
-                            setResourceChart(prev => {
-                                const next = { ...prev };
-                                if (!next[recurso]) next[recurso] = { capDia, desc, dates: {} };
-                                next[recurso].dates = { ...next[recurso].dates };
-                                Object.entries(dayMap).forEach(([d, min]) => {
-                                    next[recurso].dates[d] = (next[recurso].dates[d] || 0) + min;
-                                });
-                                return next;
-                            });
-                            pendingAlloc.current = null;
-                        }
-                        // ───────────────────────────────────────────────────────────────
-
-                        await new Promise(r => setTimeout(r, 20)); // Delay reduzido p/ lotes
-                    }
+                    const newLogs = res.data.agent_logs.map(log => {
+                        let icon = <Cpu className="w-3.5 h-3.5 text-slate-400" />;
+                        if (log.includes('Iniciando') || log.includes('ESTUDO')) icon = <BrainCircuit className="w-3.5 h-3.5 text-indigo-400" />;
+                        else if (log.includes('Obtendo') || log.includes('Buscando') || log.includes('Salvando')) icon = <Database className="w-3.5 h-3.5 text-blue-400" />;
+                        else if (log.includes('Alocação') || log.includes('Alocados')) icon = <Clock className="w-3.5 h-3.5 text-emerald-400" />;
+                        else if (log.includes('Sem capacidade') || log.includes('Transição') || log.includes('SOBRECARGA')) icon = <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />;
+                        return { msg: log, icon, time: new Date() };
+                    });
+                    setAgentLogs(prev => [...prev, ...newLogs]);
                 } else {
                     addLog(`Processamento do lote ${loteNum} concluído.`, <CheckCircle className="w-4 h-4 text-green-500" />);
                 }
 
                 totalPlans += res.data.plans || 0;
                 
-                // O último lote sobrescreve com o report completo de carga finalizada (preloaded)
                 if (res.data.report) {
                     finalReport = res.data.report;
                     if (res.data.report.carga_diaria) {
@@ -333,14 +306,13 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                 }
             }
 
+            setReportData(finalReport);
+            setLiveStepInfo(null);
             const modoLabel = selectedPedidos?.length
                 ? `${selectedPedidos.length} pedido(s)`
                 : `${totalPlans} operações`;
             setSuccessMessage(`✅ Planejamento concluído! ${modoLabel} sequenciados pelo Agente FCS. Use os botões abaixo para exportar o relatório.`);
             toast.success('Planejamento inteligente aplicado com sucesso!');
-
-            if (finalReport) setReportData(finalReport);
-            
             if (onPlanSuccess) onPlanSuccess();
 
         } catch (error) {
@@ -504,29 +476,53 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                             </p>
                         </div>
                     </div>
-                    {!loading && (
-                        <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
-                            <X className="w-5 h-5" />
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setShowExplanationModal(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition-all shadow-xs"
+                            title="Clique para ver toda a lógica e fórmulas de cálculo do motor FCS"
+                        >
+                            <BookOpen className="w-4 h-4 text-indigo-600" />
+                            <span className="hidden sm:inline">Entenda a Lógica FCS</span>
                         </button>
-                    )}
+                        {!loading && (
+                            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* BODY */}
                 <div className="p-4 flex-1 overflow-y-auto bg-slate-50 space-y-4">
 
                     {/* ── REGRAS SEMPRE VISÍVEIS ───────────────────────────────── */}
-                    <div className="bg-indigo-950 rounded-xl border border-indigo-800 px-4 py-3">
-                        <div className="flex items-center gap-2 mb-2">
-                            <BrainCircuit className="w-4 h-4 text-indigo-400 shrink-0" />
-                            <span className="text-indigo-300 text-xs font-bold uppercase tracking-wider">Regras do Motor FCS</span>
+                    <div className="bg-indigo-950 rounded-xl border border-indigo-800 px-4 py-3 shadow-xs">
+                        <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                                <BrainCircuit className="w-4 h-4 text-indigo-400 shrink-0" />
+                                <span className="text-indigo-300 text-xs font-bold uppercase tracking-wider">
+                                    Regra Geral do Motor de Sequenciamento FCS (Capacidade Finita)
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowExplanationModal(true)}
+                                className="flex items-center gap-1.5 px-3 py-1 bg-indigo-800 hover:bg-indigo-700 text-indigo-100 rounded-lg text-xs font-bold transition-all border border-indigo-600 shadow-xs"
+                                title="Clique para abrir o guia visual completo de funcionamento do Agente"
+                            >
+                                <HelpCircle className="w-3.5 h-3.5 text-indigo-300" />
+                                <span>Ver Explicação Completa ➜</span>
+                            </button>
                         </div>
                         <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-indigo-200 text-xs">
-                            <li>📋 <strong>Varredura do passado:</strong> OPs não executadas antes de hoje são incluídas automaticamente.</li>
                             <li>🎯 <strong>Prioridade por entrega PCP:</strong> quem entrega mais cedo recebe capacidade primeiro.</li>
-                            <li>📅 <strong>Sem data PCP:</strong> vão para o final da fila.</li>
-                            <li>🚫 <strong>Passado bloqueado:</strong> disponibilidade zero antes da data base.</li>
-                            <li>⚙️ <strong>Carga = Qtd × Tempo unitário</strong> do roteiro (SG2010).</li>
+                            <li>🌳 <strong>Árvore do Produto (BOM):</strong> peças base (laser/corte) antes de dobra e solda.</li>
+                            <li>⚙️ <strong>Carga = Qtd Pendente × Tempo</strong> unitário do roteiro de engenharia (SG2010).</li>
                             <li>🔁 <strong>Multi-dia:</strong> excesso de carga transborda para o próximo dia útil.</li>
+                            <li>⚡ <strong>Sobreposição (180 min):</strong> próximo posto inicia sem esperar o lote todo.</li>
+                            <li>🔥 <strong>Sobrecarga (+50%):</strong> libera horas extras automáticas se o prazo for estourar.</li>
                         </ul>
                     </div>
 
@@ -582,25 +578,84 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                         </label>
 
                         {/* Aviso explicativo do Sync — aparece apenas quando ativo */}
-                        {syncDataPcp && (
-                            <div className="w-full mt-1 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 leading-relaxed space-y-1.5 animate-in fade-in duration-200">
-                                <p className="font-bold text-amber-900 flex items-center gap-1.5">
-                                    <span>📅</span> Regra do Sync Prev. Fat → Data PCP
-                                </p>
-                                <p>
-                                    Após calcular a <span className="font-semibold">Prev. Fat</span> de cada pedido, o motor verifica se a <span className="font-semibold">Data PCP</span> está <span className="font-semibold text-red-700">vencida</span> (anterior à Data de Início).
-                                </p>
-                                <div className="bg-amber-100 rounded p-2 space-y-0.5 font-mono text-[11px]">
-                                    <div className="text-slate-600">Data de Início informada: <span className="font-bold text-slate-800">{dataInicio || '—'}</span></div>
-                                    <div className="text-red-700">Data PCP vencida (ex): <span className="line-through">05/07/2026</span></div>
-                                    <div className="text-emerald-700">Motor calcula Prev. Fat: <span className="font-bold">28/08/2026</span></div>
-                                    <div className="text-amber-700 font-bold">→ Data PCP atualizada para: 28/08/2026 ✓</div>
+                        {syncDataPcp && (() => {
+                            // Gera exemplo com datas 100% coerentes a partir da data de início selecionada
+                            let dtInicioFmt = '17/09/2026';
+                            let dtVencidaFmt = '15/08/2026';
+                            let dtCalculadaFmt = '08/10/2026';
+                            let dtFuturaFmt = '25/11/2026';
+
+                            if (dataInicio && dataInicio.includes('-')) {
+                                const [y, m, d] = dataInicio.split('-').map(Number);
+                                const dObj = new Date(y, m - 1, d);
+                                if (!isNaN(dObj.getTime())) {
+                                    const pad = (n) => String(n).padStart(2, '0');
+                                    const fmt = (dt) => `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`;
+                                    
+                                    dtInicioFmt = fmt(dObj);
+                                    
+                                    const dVencida = new Date(dObj);
+                                    dVencida.setDate(dVencida.getDate() - 30);
+                                    dtVencidaFmt = fmt(dVencida);
+                                    
+                                    const dCalc = new Date(dObj);
+                                    dCalc.setDate(dCalc.getDate() + 21); // ~3 semanas de produção no futuro
+                                    dtCalculadaFmt = fmt(dCalc);
+
+                                    const dFut = new Date(dObj);
+                                    dFut.setDate(dFut.getDate() + 60);
+                                    dtFuturaFmt = fmt(dFut);
+                                }
+                            }
+
+                            return (
+                                <div className="w-full mt-1 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 leading-relaxed space-y-2.5 animate-in fade-in duration-200 shadow-xs">
+                                    <div className="flex items-center justify-between">
+                                        <p className="font-bold text-amber-950 flex items-center gap-1.5 text-sm">
+                                            <span>📅</span> Regra do Sync Prev. Fat → Data PCP
+                                        </p>
+                                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-800">
+                                            Exemplo Prático e Coerente
+                                        </span>
+                                    </div>
+                                    <p className="text-slate-700">
+                                        Ao concluir o cálculo da simulação com capacidade finita, o Agente determina a data real em que a fábrica conclui a última peça do pedido (<span className="font-semibold text-emerald-700">Prev. Fat</span>).
+                                    </p>
+                                    
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                                        {/* Exemplo 1: Data Vencida */}
+                                        <div className="bg-white p-2.5 rounded-lg border border-amber-200 space-y-1 font-mono">
+                                            <div className="font-bold text-slate-800 font-sans flex items-center gap-1">
+                                                <span>🔄</span> Caso 1: Data PCP Vencida no Passado
+                                            </div>
+                                            <div className="text-slate-600">Data Início informada: <strong>{dtInicioFmt}</strong></div>
+                                            <div className="text-red-600">Data PCP antiga no ERP: <span className="line-through">{dtVencidaFmt}</span> (vencida)</div>
+                                            <div className="text-emerald-700">Agente calcula Prev. Fat: <strong>{dtCalculadaFmt}</strong> (no futuro)</div>
+                                            <div className="text-amber-800 font-bold bg-amber-100 px-1.5 py-0.5 rounded text-[10px]">
+                                                → Data PCP atualizada para: {dtCalculadaFmt} ✓
+                                            </div>
+                                        </div>
+
+                                        {/* Exemplo 2: Data Futura Preservada */}
+                                        <div className="bg-white p-2.5 rounded-lg border border-slate-200 space-y-1 font-mono">
+                                            <div className="font-bold text-slate-800 font-sans flex items-center gap-1">
+                                                <span>🛡️</span> Caso 2: Data PCP já no Futuro
+                                            </div>
+                                            <div className="text-slate-600">Data Início informada: <strong>{dtInicioFmt}</strong></div>
+                                            <div className="text-emerald-700">Data PCP no ERP: <strong>{dtFuturaFmt}</strong> (prometida)</div>
+                                            <div className="text-slate-500 text-[10px]">A data prometida é posterior à Data de Início.</div>
+                                            <div className="text-slate-700 font-bold bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">
+                                                → Data PCP mantida intacta: {dtFuturaFmt} (não altera)
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <p className="text-[11px] text-amber-800">
+                                        ⚠️ <strong>Proteção de Datas:</strong> Apenas datas PCP que ficaram para trás no passado (anteriores à Data de Início {dtInicioFmt}) são sobrescritas. Datas futuras acordadas com clientes nunca são perdidas.
+                                    </p>
                                 </div>
-                                <p className="text-amber-700">
-                                    ⚠️ Apenas datas PCP <span className="font-semibold">anteriores à Data de Início</span> são sobrescritas. Datas futuras válidas <span className="font-semibold">nunca são alteradas</span>.
-                                </p>
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         <div className="text-xs text-slate-400 self-end pb-1">
                             {selectedPedidos?.length
@@ -609,91 +664,252 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                         </div>
                     </div>
 
-                    {/* ── RESOURCE CHART (aparece assim que há dados) ──────────── */}
+                    {/* ── RESOURCE CHART (Cálculo em Tempo Real) ──────────── */}
                     {Object.keys(resourceChart).length > 0 && (
-                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                            <div className="flex items-center gap-2 mb-3">
-                                <Clock className="w-4 h-4 text-indigo-500" />
-                                <span className="text-sm font-bold text-slate-700">Carga por Recurso — Tempo Real</span>
-                                {loading && <span className="ml-auto flex items-center gap-1 text-xs text-indigo-500 animate-pulse"><Loader2 className="w-3 h-3 animate-spin" />calculando...</span>}
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                                <div className="flex items-center gap-2">
+                                    <Clock className="w-4 h-4 text-indigo-500" />
+                                    <span className="text-sm font-bold text-slate-800">Carga Diária Calculada — Tempo Real</span>
+                                    {loading && (
+                                        <span className="flex items-center gap-1 text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full font-medium animate-pulse">
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                            calculando...
+                                        </span>
+                                    )}
+                                </div>
+
+                                {/* Controles de Visualização para o Usuário */}
+                                <div className="flex items-center gap-2">
+                                    <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-semibold">
+                                        <button
+                                            type="button"
+                                            onClick={() => setViewMode('recurso')}
+                                            className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${viewMode === 'recurso' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                                            title="Visualizar agrupado por Máquina/Recurso"
+                                        >
+                                            <LayoutGrid className="w-3 h-3" />
+                                            Por Recurso
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setViewMode('data')}
+                                            className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${viewMode === 'data' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                                            title="Visualizar cronograma cronológico por Data"
+                                        >
+                                            <ListOrdered className="w-3 h-3" />
+                                            Por Data
+                                        </button>
+                                    </div>
+
+                                    {viewMode === 'recurso' && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setExpandAll(v => !v)}
+                                            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1 rounded border border-indigo-200 hover:bg-indigo-50 transition-colors"
+                                        >
+                                            {expandAll ? 'Modo Compacto' : 'Expandir Todos'}
+                                        </button>
+                                    )}
+                                </div>
                             </div>
-                            <div className="space-y-4 max-h-56 overflow-y-auto pr-1">
-                                {Object.entries(resourceChart)
-                                .sort(([a], [b]) => a.localeCompare(b))
-                                    .map(([recurso, info]) => {
-                                        // Normaliza: nunca deixa um dia exceder capDia visualmente.
-                                        // Excesso transborda para o próximo dia útil como nova barra.
-                                        const nextWorkingDay = (dateStr) => {
-                                            const d = new Date(dateStr + 'T12:00:00');
-                                            d.setDate(d.getDate() + 1);
-                                            while (true) {
-                                                const dow = d.getDay();
-                                                if (dow !== 0 && (dow !== 6 || includeSaturday)) break;
-                                                d.setDate(d.getDate() + 1);
-                                            }
-                                            return d.toISOString().split('T')[0];
-                                        };
 
-                                        const rawDates = Object.entries(info.dates).sort(([a], [b]) => a.localeCompare(b));
-                                        const normalizedDates = {};
-                                        for (const [date, allocated] of rawDates) {
-                                            let remaining = allocated;
-                                            let cur = date;
-                                            let safety = 0;
-                                            while (remaining > 0 && safety++ < 60) {
-                                                const jaOcupado = normalizedDates[cur] || 0;
-                                                const espaco = Math.max(0, info.capDia - jaOcupado);
-                                                if (espaco > 0) {
-                                                    const canFit = Math.min(remaining, espaco);
-                                                    normalizedDates[cur] = jaOcupado + canFit;
-                                                    remaining -= canFit;
-                                                }
-                                                if (remaining > 0) cur = nextWorkingDay(cur);
-                                            }
-                                        }
-                                        const sortedDates = Object.entries(normalizedDates).sort(([a], [b]) => a.localeCompare(b));
+                            {/* Banner de Live Streaming da OP sendo calculada */}
+                            {loading && liveStepInfo && (
+                                <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50/80 border border-indigo-200/70 rounded-lg text-xs text-indigo-900">
+                                    <Activity className="w-4 h-4 text-indigo-600 animate-spin shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 font-semibold truncate">
+                                            <span>OP {liveStepInfo.op}</span>
+                                            <span className="text-slate-400 font-normal">|</span>
+                                            <span className="truncate text-slate-700">{liveStepInfo.descProduto || liveStepInfo.produto}</span>
+                                        </div>
+                                        <div className="text-[11px] text-slate-500">
+                                            Alocada até: <span className="font-mono font-medium text-indigo-700">{liveStepInfo.lastDate || 'em cálculo...'}</span>
+                                            {liveStepInfo.foiSobrecarga && <span className="ml-2 text-amber-700 font-bold">(Modo Sobrecarga +50%)</span>}
+                                        </div>
+                                    </div>
+                                    <span className="font-mono text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full font-bold shrink-0">
+                                        {liveStepInfo.step} / {liveStepInfo.totalOps} OPs
+                                    </span>
+                                </div>
+                            )}
 
-                                        return (
-                                            <div key={recurso}>
-                                                <div className="flex items-center gap-2 mb-1.5">
-                                                    <span className="text-xs font-bold text-slate-800 font-mono bg-slate-100 px-2 py-0.5 rounded">{recurso}</span>
-                                                    {info.desc && info.desc !== recurso && (
-                                                        <span className="text-xs font-semibold text-indigo-600">{info.desc}</span>
-                                                    )}
-                                                    <span className="text-xs text-slate-400 ml-auto">cap. {info.capDia} min/dia</span>
-                                                </div>
-                                                <div className="space-y-1">
-                                                    {sortedDates.map(([date, allocated]) => {
-                                                        const pct = (allocated / info.capDia) * 100;
-                                                        const d = new Date(date + 'T12:00:00');
-                                                        const label = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', weekday: 'short' });
-                                                        const color = pct >= 100 ? 'bg-red-500' : pct > 79 ? 'bg-amber-400' : 'bg-emerald-500';
-                                                        const textColor = pct >= 100 ? 'text-red-600' : pct > 79 ? 'text-amber-600' : 'text-emerald-600';
-                                                        return (
-                                                            <div key={date} className="flex items-center gap-2">
-                                                                <span className="text-[10px] text-slate-500 w-24 shrink-0 font-mono">{label}</span>
-                                                                <div className="flex-1 bg-slate-100 rounded-full h-4 overflow-hidden">
-                                                                    <div
-                                                                        className={`h-full rounded-full transition-all duration-500 ${color}`}
-                                                                        style={{ width: `${Math.min(pct, 100)}%` }}
-                                                                    />
+                            {/* MODO 1: POR RECURSO */}
+                            {viewMode === 'recurso' && (
+                                <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
+                                    {Object.entries(resourceChart)
+                                        .sort(([a, infoA], [b, infoB]) => (infoA.ordem ?? 9999) - (infoB.ordem ?? 9999) || a.localeCompare(b))
+                                        .map(([recurso, info]) => {
+                                            const sortedDates = Object.entries(info.dates || {})
+                                                .sort(([a], [b]) => a.localeCompare(b));
+                                            if (sortedDates.length === 0) return null;
+
+                                            const isExpanded = expandAll || !!expandedRecursos[recurso];
+                                            const visibleDates = isExpanded ? sortedDates : sortedDates.slice(0, 4);
+                                            const hasMore = sortedDates.length > 4;
+
+                                            return (
+                                                <div key={recurso} className="bg-slate-50/50 rounded-lg p-2.5 border border-slate-100">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className="text-xs font-bold text-slate-800 font-mono bg-white px-2 py-0.5 rounded border border-slate-250 shadow-2xs">
+                                                            {recurso}
+                                                        </span>
+                                                        {info.desc && info.desc !== recurso && (
+                                                            <span className="text-xs font-semibold text-indigo-700 truncate">
+                                                                {info.desc}
+                                                            </span>
+                                                        )}
+                                                        <span className="text-xs text-slate-400 ml-auto shrink-0">
+                                                            cap. {info.capDia} min/dia
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="space-y-1.5">
+                                                        {visibleDates.map(([date, allocated]) => {
+                                                            const pct = (allocated / info.capDia) * 100;
+                                                            const d = new Date(date + 'T12:00:00');
+                                                            const label = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', weekday: 'short' });
+                                                            const isOver = pct > 100;
+                                                            const isFull = pct >= 80 && pct <= 100;
+                                                            const barColor = isOver ? 'bg-red-500' : isFull ? 'bg-blue-600' : 'bg-emerald-500';
+                                                            const textColor = isOver ? 'text-red-600' : isFull ? 'text-blue-700' : 'text-emerald-700';
+
+                                                            return (
+                                                                <div key={date} className="flex items-center gap-2">
+                                                                    <span className="text-[11px] text-slate-600 w-24 shrink-0 font-mono font-medium">
+                                                                        {label}
+                                                                    </span>
+                                                                    <div className="flex-1 bg-slate-200/80 rounded-full h-3.5 overflow-hidden">
+                                                                        <div
+                                                                            className={`h-full rounded-full transition-all duration-300 ${barColor}`}
+                                                                            style={{ width: `${Math.min(pct, 100)}%` }}
+                                                                        />
+                                                                    </div>
+                                                                    <span className={`text-[11px] font-bold w-12 text-right shrink-0 ${textColor}`}>
+                                                                        {Math.round(pct)}%
+                                                                    </span>
+                                                                    <span className="text-[10px] text-slate-500 w-16 text-right shrink-0 font-mono">
+                                                                        {Math.round(allocated)}m
+                                                                    </span>
+                                                                    {isOver && (
+                                                                        <span className="text-[9px] font-bold bg-red-100 text-red-700 px-1 py-0.2 rounded shrink-0">
+                                                                            +50%
+                                                                        </span>
+                                                                    )}
                                                                 </div>
-                                                                <span className={`text-[10px] font-bold w-12 text-right shrink-0 ${textColor}`}>
-                                                                    {Math.round(pct)}%
-                                                                </span>
-                                                                <span className="text-[10px] text-slate-400 shrink-0">{Math.round(allocated)}m</span>
-                                                            </div>
-                                                        );
-                                                    })}
+                                                            );
+                                                        })}
+                                                    </div>
+
+                                                    {hasMore && (
+                                                        <div className="mt-1.5 pt-1 border-t border-slate-200/50 flex justify-end">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setExpandedRecursos(prev => ({ ...prev, [recurso]: !prev[recurso] }))}
+                                                                className="text-[11px] text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+                                                            >
+                                                                {isExpanded ? (
+                                                                    <>Recolher dias extras <ChevronDown className="w-3 h-3 rotate-180" /></>
+                                                                ) : (
+                                                                    <>+ Ver mais {sortedDates.length - 4} dia(s) <ChevronDown className="w-3 h-3" /></>
+                                                                )}
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            </div>
-                                        );
-                                    })}
-                            </div>
-                            <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-400">
-                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"/>Normal (&lt;80%)</span>
-                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block"/>Alto (80–100%)</span>
-                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block"/>Sobrecarga (&gt;100%)</span>
+                                            );
+                                        })}
+                                </div>
+                            )}
+
+                            {/* MODO 2: POR DATA (Linha do Tempo Cronológica) */}
+                            {viewMode === 'data' && (
+                                <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                                    {(() => {
+                                        const datesMap = {};
+                                        Object.entries(resourceChart).forEach(([recurso, info]) => {
+                                            Object.entries(info.dates || {}).forEach(([date, allocated]) => {
+                                                if (!datesMap[date]) datesMap[date] = [];
+                                                datesMap[date].push({
+                                                    recurso,
+                                                    desc: info.desc || recurso,
+                                                    capDia: info.capDia,
+                                                    allocated,
+                                                    pct: (allocated / info.capDia) * 100
+                                                });
+                                            });
+                                        });
+                                        const sortedDays = Object.entries(datesMap).sort(([a], [b]) => a.localeCompare(b));
+
+                                        if (sortedDays.length === 0) {
+                                            return <div className="text-xs text-slate-400 p-2">Nenhuma alocação registrada.</div>;
+                                        }
+
+                                        return sortedDays.map(([date, items]) => {
+                                            const d = new Date(date + 'T12:00:00');
+                                            const label = d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+
+                                            return (
+                                                <div key={date} className="bg-slate-50 rounded-lg p-2.5 border border-slate-200/70">
+                                                    <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-200/60">
+                                                        <span className="text-xs font-bold text-slate-800 capitalize flex items-center gap-1.5">
+                                                            <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                                                            {label}
+                                                        </span>
+                                                        <span className="text-[11px] text-slate-400">
+                                                            {items.length} recurso(s) ativo(s)
+                                                        </span>
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        {items.map(it => {
+                                                            const isOver = it.pct > 100;
+                                                            const isFull = it.pct >= 80 && it.pct <= 100;
+                                                            const barColor = isOver ? 'bg-red-500' : isFull ? 'bg-blue-600' : 'bg-emerald-500';
+                                                            const textColor = isOver ? 'text-red-600' : isFull ? 'text-blue-700' : 'text-emerald-700';
+
+                                                            return (
+                                                                <div key={it.recurso} className="flex items-center gap-2">
+                                                                    <span className="text-[11px] font-mono font-bold text-slate-700 w-24 shrink-0 truncate" title={it.desc}>
+                                                                        {it.recurso}
+                                                                    </span>
+                                                                    <div className="flex-1 bg-slate-200/80 rounded-full h-3 overflow-hidden">
+                                                                        <div
+                                                                            className={`h-full rounded-full transition-all duration-300 ${barColor}`}
+                                                                            style={{ width: `${Math.min(it.pct, 100)}%` }}
+                                                                        />
+                                                                    </div>
+                                                                    <span className={`text-[11px] font-bold w-12 text-right shrink-0 ${textColor}`}>
+                                                                        {Math.round(it.pct)}%
+                                                                    </span>
+                                                                    <span className="text-[10px] text-slate-500 w-16 text-right shrink-0 font-mono">
+                                                                        {Math.round(it.allocated)}m
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+                            )}
+
+                            {/* Legenda de Cores */}
+                            <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-500">
+                                <div className="flex items-center gap-3">
+                                    <span className="flex items-center gap-1">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"/> Normal (&lt;80%)
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"/> Plena (80–100%)
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"/> Sobrecarga (&gt;100%)
+                                    </span>
+                                </div>
+                                <span className="text-slate-400 text-[10px]">Capacidade Finita (FCS)</span>
                             </div>
                         </div>
                     )}
@@ -730,7 +946,7 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                         </div>
                     )}
 
-                    {/* ── CONSOLE DE LOGS ──────────────────────────────────────── */}
+                    {/* ── CONSOLE DE LOGS (Zero-Lag, Instant Scroll) ──────────── */}
                     {agentLogs.length > 0 && (
                         <div className="bg-slate-900 rounded-xl p-4 font-mono shadow-inner border border-slate-700">
                             <div className="flex items-center gap-2 mb-3 text-indigo-400 border-b border-slate-700 pb-2">
@@ -738,15 +954,16 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                                 <span className="text-xs font-bold uppercase tracking-wider">Console do Agente FCS</span>
                             </div>
                             <div
-                                className="max-h-56 overflow-y-auto space-y-2 pr-1"
+                                ref={consoleContainerRef}
+                                className="max-h-56 overflow-y-auto space-y-1.5 pr-1"
                                 onWheel={() => setAutoScroll(false)}
                                 onScroll={(e) => {
                                     const { scrollTop, scrollHeight, clientHeight } = e.target;
-                                    if (scrollHeight - scrollTop - clientHeight < 10) setAutoScroll(true);
+                                    if (scrollHeight - scrollTop - clientHeight < 15) setAutoScroll(true);
                                 }}
                             >
                                 {agentLogs.map((log, idx) => (
-                                    <div key={idx} className="flex items-start gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                                    <div key={idx} className="flex items-start gap-2">
                                         <span className="text-slate-500 shrink-0 text-[10px] mt-0.5">[{log.time.toLocaleTimeString([], { hour12: false })}]</span>
                                         <div className="shrink-0 mt-0.5">{log.icon}</div>
                                         <span className="text-slate-200 text-xs leading-relaxed">{log.msg}</span>
@@ -755,10 +972,9 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                                 {loading && (
                                     <div className="flex items-center gap-2 text-indigo-400 animate-pulse mt-1">
                                         <Loader2 className="w-3 h-3 animate-spin" />
-                                        <span className="text-xs">Processando...</span>
+                                        <span className="text-xs">Processando alocação...</span>
                                     </div>
                                 )}
-                                <div ref={logsEndRef} />
                             </div>
                         </div>
                     )}
@@ -887,6 +1103,12 @@ export default function PlanejamentoInteligenteModal({ isOpen, onClose, selected
                 onClose={() => setShowReport(false)}
             />
         )}
+
+        {/* MODAL EXPLICATIVA DAS REGRAS E LÓGICA DO MOTOR FCS */}
+        <FcsExplanationModal
+            isOpen={showExplanationModal}
+            onClose={() => setShowExplanationModal(false)}
+        />
     </>
     );
 }

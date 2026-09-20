@@ -27,6 +27,16 @@ export const MENU_GROUPS = [
         ]
     },
     {
+        id: 'sinco_erp',
+        label: 'SINCO ERP Nativo',
+        items: [
+            { id: 'erp_produtos', label: 'Cadastro de Produtos', path: '/erp/produtos', icon: Package },
+            { id: 'erp_pedidos', label: 'Pedidos de Venda', path: '/erp/pedidos', icon: ShoppingCart },
+            { id: 'erp_clientes', label: 'Cadastro de Clientes', path: '/erp/clientes', icon: Users },
+            { id: 'erp_producao', label: 'Ordens de Produção', path: '/erp/producao', icon: Factory }
+        ]
+    },
+    {
         id: 'comercial',
         label: 'Comercial',
         items: [

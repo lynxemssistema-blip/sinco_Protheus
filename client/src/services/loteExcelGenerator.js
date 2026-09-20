@@ -41,7 +41,7 @@ export const generateLoteExcel = async (release, user = null, onProgress = null)
         for (let i = 0; i < ops.length; i++) {
             const op = ops[i];
             if (onProgress) {
-                onProgress(i + 1, totalOps, `Buscando estrutura completa da OP ${op.visual_op || op.pedido}...`);
+                onProgress(i + 1, totalOps, `Buscando estrutura completa da OP ${op.visual_op || op.op_num || `Ped. ${op.pedido} Item ${op.item}`}...`);
             }
 
             try {
@@ -129,7 +129,7 @@ export const generateLoteExcel = async (release, user = null, onProgress = null)
                 idx + 1,
                 op.pedido || '-',
                 op.item || '-',
-                op.visual_op || op.op_num || `${op.pedido}${op.item}`,
+                op.visual_op || op.op_num || '-',
                 op.codigo || op.produto || op.cod_produto || '-',
                 op.descricao || '-',
                 Number(op.qtd || op.visual_qtd) || 0,
@@ -206,7 +206,7 @@ export const generateLoteExcel = async (release, user = null, onProgress = null)
 
         let opsRowCount = 0;
         opMirrors.forEach(({ op, data }) => {
-            const visualOp = op.visual_op || op.op_num || `${op.pedido}${op.item}`;
+            const visualOp = op.visual_op || op.op_num || '-';
             const opQty = Number(op.qtd || op.visual_qtd || 1);
             const mainProdCode = op.codigo || op.produto || op.cod_produto || '-';
             const mainProdDesc = op.descricao || '-';
@@ -349,7 +349,7 @@ export const generateLoteExcel = async (release, user = null, onProgress = null)
 
         let bomRowCount = 0;
         opMirrors.forEach(({ op, data }) => {
-            const visualOp = op.visual_op || op.op_num || `${op.pedido}${op.item}`;
+            const visualOp = op.visual_op || op.op_num || '-';
             const opQty = Number(op.qtd || op.visual_qtd || 1);
             const parentCode = op.codigo || op.produto || op.cod_produto || '-';
             const parentDesc = op.descricao || '-';

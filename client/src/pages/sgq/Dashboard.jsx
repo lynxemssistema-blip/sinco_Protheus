@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, AlertTriangle, Search, Wrench, GraduationCap, BarChart3, ChevronRight, Building2, Users } from 'lucide-react';
+import { FileText, AlertTriangle, Search, Wrench, GraduationCap, BarChart3, ChevronRight, Building2, Users, ExternalLink, Award } from 'lucide-react';
+import simLogo from '../../assets/sim-consultoria-logo.png';
 
 const SGQDashboard = () => {
     const navigate = useNavigate();
@@ -94,11 +95,43 @@ const SGQDashboard = () => {
             {/* Header */}
             <div className="bg-white border-b border-gray-200 shadow-sm">
                 <div className="w-full max-w-[1920px] mx-auto px-6 py-8">
-                    <div className="flex items-center gap-3 mb-2">
-                        <Building2 className="h-10 w-10 text-blue-600" />
-                        <h1 className="text-3xl font-bold text-gray-900">Sistema de Gestão da Qualidade</h1>
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                        <div>
+                            <div className="flex items-center gap-3 mb-2">
+                                <Building2 className="h-10 w-10 text-blue-600" />
+                                <h1 className="text-3xl font-bold text-gray-900">Sistema de Gestão da Qualidade</h1>
+                            </div>
+                            <p className="text-gray-600">Gerencie todos os aspectos da qualidade da METALFISA com rigor metrológico e conformidade normativa</p>
+                        </div>
+
+                        {/* Co-Branding SIM Consultoria */}
+                        <div className="flex items-center gap-4 bg-slate-50 border border-slate-200 p-3.5 rounded-2xl shadow-xs">
+                            <img 
+                                src={simLogo} 
+                                alt="SIM Consultoria" 
+                                className="h-12 w-12 rounded-xl object-contain bg-white border border-slate-200 p-1 shadow-2xs" 
+                            />
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-black text-slate-900">SIM Consultoria</span>
+                                    <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                                        17 Anos
+                                    </span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                                    Parceira Técnica em Gestão da Qualidade
+                                </p>
+                                <a 
+                                    href="https://www.instagram.com/sim.consultoria/" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold inline-flex items-center gap-1 mt-0.5"
+                                >
+                                    @sim.consultoria <ExternalLink className="w-3 h-3" />
+                                </a>
+                            </div>
+                        </div>
                     </div>
-                    <p className="text-gray-600">Gerencie todos os aspectos da qualidade da METALFISA</p>
                 </div>
             </div>
 

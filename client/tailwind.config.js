@@ -32,6 +32,14 @@ export default {
                     800: '#99600f',
                     900: '#7d4d0f',
                     950: '#472904',
+                },
+                lynx: {
+                    dark: '#32423D',       // Base Forest Slate / Dark Tone
+                    forest: '#425750',     // Medium Forest Green / Primary
+                    metal: '#6F7170',      // Soft Metal Gray / Subtle Neutral
+                    snow: '#F9F8F3',       // Warm Ivory Snow White
+                    lime: '#E0E800',       // Electric Lime IDV Accent
+                    deep: '#23302C',       // Deeper Forest Slate
                 }
             }
         },

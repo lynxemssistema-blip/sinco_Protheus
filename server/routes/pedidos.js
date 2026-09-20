@@ -140,11 +140,12 @@ async function checkOrderAccess(req, res, next) {
 }
 
 const { getForecastMapCached, invalidateForecastCache } = require('../services/forecastCache');
+const { rebuildDailyOccupancyCache } = require('../services/occupancyCacheService');
 
 // GET /api/pedidos
 router.get('/', async (req, res) => {
     try {
-        const { cliente, pedido, produto, pedcli, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', somente_prioridades = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
+        const { cliente, pedido, item, produto, pedcli, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', somente_prioridades = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC', op } = req.query;
 
         // Paginação
         const limitParsed = parseInt(limit, 10) || 50;
@@ -180,7 +181,7 @@ router.get('/', async (req, res) => {
         const params = [];
         let paramCount = 1;
 
-        const getInactiveFilter = await getInactiveOrdersFilter();
+        const getInactiveFilter = await getInactiveOrdersFilter(true);
 
         // Construção dinâmica de filtros
         let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B'" + getInactiveFilter('c5.c5_num');
@@ -288,11 +289,65 @@ router.get('/', async (req, res) => {
             whereClause += ` AND (c5.c5_cliente, c5.c5_lojacli) IN (${inValues})`;
         }
 
+        // 1. Resolução estrita de Busca por OP (Ordem de Produção)
+        const opSearchParam = op || req.query.op_numero;
+        if (opSearchParam) {
+            const rawOps = String(opSearchParam).split(',').map(s => s.trim()).filter(Boolean);
+            if (rawOps.length > 0) {
+                let opResolvedPedidos = [];
+
+                // 1. Busca em MySQL erp_ordens_producao e erp_pedidos_itens
+                try {
+                    const opPatterns = rawOps.map(o => `%${o}%`);
+                    const [mysqlMatchedOps] = await mysqlPool.query(
+                        `SELECT DISTINCT pedido_venda FROM erp_ordens_producao WHERE ` +
+                        opPatterns.map(() => `numero_op LIKE ?`).join(' OR ') +
+                        ` UNION SELECT DISTINCT pedido_numero as pedido_venda FROM erp_pedidos_itens WHERE ` +
+                        opPatterns.map(() => `numero_op_gerada LIKE ?`).join(' OR '),
+                        [...opPatterns, ...opPatterns]
+                    );
+                    mysqlMatchedOps.forEach(m => {
+                        if (m.pedido_venda) opResolvedPedidos.push(String(m.pedido_venda).trim().padStart(6, '0'));
+                    });
+                } catch (e) {
+                    console.warn('⚠️ [GET /] Erro ao buscar OPs no MySQL:', e.message);
+                }
+
+                // 2. Busca em PostgreSQL sc2010
+                try {
+                    const { rows: pgMatchedOps } = await db.query(
+                        `SELECT DISTINCT TRIM(c2_pedido) as pedido FROM public.sc2010 WHERE (` +
+                        rawOps.map((_, idx) => `c2_num LIKE $${idx + 1} OR (c2_num || c2_item || c2_sequen) LIKE $${idx + 1}`).join(' OR ') +
+                        `) AND COALESCE(d_e_l_e_t_, '') = ''`,
+                        rawOps.map(o => `%${o}%`)
+                    );
+                    pgMatchedOps.forEach(p => {
+                        if (p.pedido) opResolvedPedidos.push(String(p.pedido).trim().padStart(6, '0'));
+                    });
+                } catch (e) {
+                    console.warn('⚠️ [GET /] Erro ao buscar OPs no Postgres:', e.message);
+                }
+
+                if (opResolvedPedidos.length === 0) {
+                    return res.json({ data: [], meta: { hasNextPage: false, total: 0 } });
+                }
+
+                const resolvedList = [...new Set(opResolvedPedidos)];
+                const placeholders = resolvedList.map((_, i) => `$${paramCount + i}`).join(', ');
+                whereClause += ` AND TRIM(c5.c5_num) IN (${placeholders})`;
+                params.push(...resolvedList);
+                paramCount += resolvedList.length;
+            }
+        }
+
+        // 2. Filtro estrito por Pedido de Venda (SC5)
         if (pedido) {
-            const pedidoList = String(pedido).split(',')
+            let pedidoList = String(pedido).split(',')
                 .map(p => p.trim())
                 .filter(p => p.length > 0)
                 .map(p => p.padStart(6, '0'));
+
+            pedidoList = [...new Set(pedidoList)];
 
             if (pedidoList.length === 1) {
                 whereClause += ` AND TRIM(c5.c5_num) = $${paramCount}`;
@@ -303,6 +358,35 @@ router.get('/', async (req, res) => {
                 whereClause += ` AND TRIM(c5.c5_num) IN (${placeholders})`;
                 params.push(...pedidoList);
                 paramCount += pedidoList.length;
+            }
+        }
+
+        if (item) {
+            const itemList = String(item).split(',')
+                .map(i => i.trim())
+                .filter(i => i.length > 0);
+
+            if (itemList.length > 0) {
+                const itemVariants = new Set();
+                itemList.forEach(it => {
+                    itemVariants.add(it);
+                    if (/^\d+$/.test(it)) {
+                        itemVariants.add(it.padStart(2, '0'));
+                        itemVariants.add(it.padStart(4, '0'));
+                        itemVariants.add(String(parseInt(it, 10)));
+                    }
+                });
+                const variantsArr = Array.from(itemVariants);
+                const placeholders = variantsArr.map((_, idx) => `$${paramCount + idx}`).join(', ');
+                whereClause += ` AND EXISTS (
+                    SELECT 1 FROM public.sc6010 c6_item_filter 
+                    WHERE c6_item_filter.c6_num = c5.c5_num 
+                    AND c6_item_filter.c6_filial = c5.c5_filial 
+                    AND TRIM(c6_item_filter.c6_item) IN (${placeholders})
+                    AND COALESCE(c6_item_filter.d_e_l_e_t_, '') = ''
+                )`;
+                params.push(...variantsArr);
+                paramCount += variantsArr.length;
             }
         }
 
@@ -331,31 +415,89 @@ router.get('/', async (req, res) => {
         }
 
         if (op_status === 'com_op') {
-            whereClause += ` AND EXISTS (
-                SELECT 1 FROM public.sc6010 c6_op_filter
-                WHERE c6_op_filter.c6_num = c5.c5_num
-                AND c6_op_filter.c6_filial = c5.c5_filial
-                AND COALESCE(c6_op_filter.d_e_l_e_t_, '') = ''
-                AND EXISTS (
-                     SELECT 1 FROM public.sc2010 c2_op
-                     WHERE (c2_op.c2_pedido = c6_op_filter.c6_num)
-                     AND c2_op.c2_itempv = c6_op_filter.c6_item
-                     AND COALESCE(c2_op.d_e_l_e_t_, '') = ''
-                )
-            )`;
+            let mysqlOpOrders = [];
+            try {
+                const [mRows] = await mysqlPool.query(`
+                    SELECT DISTINCT TRIM(pedido_venda) as ped FROM erp_ordens_producao WHERE pedido_venda IS NOT NULL AND pedido_venda <> ''
+                    UNION
+                    SELECT DISTINCT TRIM(pedido_numero) as ped FROM erp_pedidos_itens WHERE numero_op_gerada IS NOT NULL AND numero_op_gerada <> ''
+                `);
+                mysqlOpOrders = mRows.map(r => String(r.ped).trim().padStart(6, '0')).filter(Boolean);
+            } catch (_) {}
+
+            if (mysqlOpOrders.length > 0) {
+                const mysqlIn = [...new Set(mysqlOpOrders)].map(p => `'${p}'`).join(',');
+                whereClause += ` AND (
+                    EXISTS (
+                        SELECT 1 FROM public.sc6010 c6_op_filter
+                        WHERE c6_op_filter.c6_num = c5.c5_num
+                        AND c6_op_filter.c6_filial = c5.c5_filial
+                        AND COALESCE(c6_op_filter.d_e_l_e_t_, '') = ''
+                        AND EXISTS (
+                             SELECT 1 FROM public.sc2010 c2_op
+                             WHERE (c2_op.c2_pedido = c6_op_filter.c6_num)
+                             AND c2_op.c2_itempv = c6_op_filter.c6_item
+                             AND COALESCE(c2_op.d_e_l_e_t_, '') = ''
+                        )
+                    )
+                    OR TRIM(c5.c5_num) IN (${mysqlIn})
+                )`;
+            } else {
+                whereClause += ` AND EXISTS (
+                    SELECT 1 FROM public.sc6010 c6_op_filter
+                    WHERE c6_op_filter.c6_num = c5.c5_num
+                    AND c6_op_filter.c6_filial = c5.c5_filial
+                    AND COALESCE(c6_op_filter.d_e_l_e_t_, '') = ''
+                    AND EXISTS (
+                         SELECT 1 FROM public.sc2010 c2_op
+                         WHERE (c2_op.c2_pedido = c6_op_filter.c6_num)
+                         AND c2_op.c2_itempv = c6_op_filter.c6_item
+                         AND COALESCE(c2_op.d_e_l_e_t_, '') = ''
+                    )
+                )`;
+            }
         } else if (op_status === 'sem_op') {
-            whereClause += ` AND EXISTS (
-                SELECT 1 FROM public.sc6010 c6_sem_op_filter
-                WHERE c6_sem_op_filter.c6_num = c5.c5_num
-                AND c6_sem_op_filter.c6_filial = c5.c5_filial
-                AND COALESCE(c6_sem_op_filter.d_e_l_e_t_, '') = ''
-                AND NOT EXISTS (
-                     SELECT 1 FROM public.sc2010 c2_op
-                     WHERE (c2_op.c2_pedido = c5.c5_num)
-                     AND c2_op.c2_itempv = c6_sem_op_filter.c6_item
-                     AND COALESCE(c2_op.d_e_l_e_t_, '') = ''
-                )
-            )`;
+            let mysqlOpOrders = [];
+            try {
+                const [mRows] = await mysqlPool.query(`
+                    SELECT DISTINCT TRIM(pedido_venda) as ped FROM erp_ordens_producao WHERE pedido_venda IS NOT NULL AND pedido_venda <> ''
+                    UNION
+                    SELECT DISTINCT TRIM(pedido_numero) as ped FROM erp_pedidos_itens WHERE numero_op_gerada IS NOT NULL AND numero_op_gerada <> ''
+                `);
+                mysqlOpOrders = mRows.map(r => String(r.ped).trim().padStart(6, '0')).filter(Boolean);
+            } catch (_) {}
+
+            if (mysqlOpOrders.length > 0) {
+                const mysqlIn = [...new Set(mysqlOpOrders)].map(p => `'${p}'`).join(',');
+                whereClause += ` AND (
+                    EXISTS (
+                        SELECT 1 FROM public.sc6010 c6_sem_op_filter
+                        WHERE c6_sem_op_filter.c6_num = c5.c5_num
+                        AND c6_sem_op_filter.c6_filial = c5.c5_filial
+                        AND COALESCE(c6_sem_op_filter.d_e_l_e_t_, '') = ''
+                        AND NOT EXISTS (
+                             SELECT 1 FROM public.sc2010 c2_op
+                             WHERE (c2_op.c2_pedido = c5.c5_num)
+                             AND c2_op.c2_itempv = c6_sem_op_filter.c6_item
+                             AND COALESCE(c2_op.d_e_l_e_t_, '') = ''
+                        )
+                    )
+                    AND TRIM(c5.c5_num) NOT IN (${mysqlIn})
+                )`;
+            } else {
+                whereClause += ` AND EXISTS (
+                    SELECT 1 FROM public.sc6010 c6_sem_op_filter
+                    WHERE c6_sem_op_filter.c6_num = c5.c5_num
+                    AND c6_sem_op_filter.c6_filial = c5.c5_filial
+                    AND COALESCE(c6_sem_op_filter.d_e_l_e_t_, '') = ''
+                    AND NOT EXISTS (
+                         SELECT 1 FROM public.sc2010 c2_op
+                         WHERE (c2_op.c2_pedido = c5.c5_num)
+                         AND c2_op.c2_itempv = c6_sem_op_filter.c6_item
+                         AND COALESCE(c2_op.d_e_l_e_t_, '') = ''
+                    )
+                )`;
+            }
         }
 
         // Filtro por data
@@ -514,6 +656,47 @@ router.get('/', async (req, res) => {
 
         const result = await db.query(query, params);
 
+        if (result.rows.length > 0) {
+            try {
+                const peds = [...new Set(result.rows.map(r => String(r.pedido).trim()))].filter(Boolean);
+                if (peds.length > 0) {
+                    const [mysqlCounts] = await mysqlPool.query(`
+                        SELECT ped, COUNT(DISTINCT itm) as mysql_op_count FROM (
+                            SELECT TRIM(pedido_venda) as ped, TRIM(item_pedido) as itm
+                            FROM erp_ordens_producao
+                            WHERE pedido_venda IN (?)
+                            UNION
+                            SELECT TRIM(pedido_numero) as ped, TRIM(item_seq) as itm
+                            FROM erp_pedidos_itens
+                            WHERE pedido_numero IN (?) AND numero_op_gerada IS NOT NULL AND numero_op_gerada <> ''
+                        ) combined
+                        GROUP BY ped
+                    `, [peds, peds]);
+
+                    const countMap = new Map();
+                    mysqlCounts.forEach(c => { countMap.set(String(c.ped).trim(), parseInt(c.mysql_op_count, 10) || 0); });
+
+                    result.rows.forEach(row => {
+                        const pedTrim = String(row.pedido).trim();
+                        const mysqlCount = countMap.get(pedTrim) || 0;
+                        if (mysqlCount > 0) {
+                            row.itens_com_op = Math.max(parseInt(row.itens_com_op, 10) || 0, mysqlCount);
+                            const itensCount = parseInt(row.itens_count, 10) || 0;
+                            if (itensCount > 0) {
+                                if (row.itens_com_op >= itensCount) {
+                                    row.status_cor = 'green';
+                                } else if (row.itens_com_op > 0) {
+                                    row.status_cor = 'orange';
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (errCnt) {
+                console.warn('⚠️ [GET /] Erro ao enriquecer contagem de OPs do MySQL:', errCnt.message);
+            }
+        }
+
         const data = result.rows.map(row => {
             const parseDateStr = (dStr) => {
                 if (!dStr || dStr.trim() === '' || dStr.length < 8) return '';
@@ -550,7 +733,7 @@ router.get('/flat', async (req, res) => {
     let errorStep = '';
     try {
         const canViewFinancials = await hasFinancialAccess(req);
-        const { cliente, pedido, produto, pedcli, refCliente, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', somente_prioridades = 'false', tipo_item = '', classificacao_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC' } = req.query;
+        const { cliente, pedido, item, produto, pedcli, refCliente, dataInicial, dataFinal, dateType = 'pedido', page = 1, limit = 50, only_active = 'false', somente_prioridades = 'false', tipo_item = '', classificacao_item = '', pcpDataInicial = '', pcpDataFinal = '', pcpDateFilter = 'false', op_status = '', sortBy = 'emissao', sortOrder = 'DESC', op } = req.query;
         const limitParsed = parseInt(limit, 10) || 50;
         const pageParsed = parseInt(page, 10) || 1;
         const offset = (pageParsed - 1) * limitParsed;
@@ -561,7 +744,7 @@ router.get('/flat', async (req, res) => {
 
         const [forecastMap, getInactiveFilter] = await Promise.all([
             getForecastMapCached(),
-            getInactiveOrdersFilter()
+            getInactiveOrdersFilter(true)
         ]);
         const inactiveFilterSql = getInactiveFilter('c5.c5_num');
         let whereClause = "WHERE COALESCE(c5.d_e_l_e_t_, '') = '' AND c5.c5_tipo <> 'B'" + inactiveFilterSql;
@@ -674,11 +857,86 @@ router.get('/flat', async (req, res) => {
             countWhereClause += ` AND (c5.c5_cliente, c5.c5_lojacli) IN (${inValues})`;
         }
 
+        // 1. Resolução estrita por OP em nível de ITEM (MySQL erp_ordens_producao / erp_pedidos_itens + PostgreSQL sc2010)
+        const opSearchParam = op || req.query.op_numero;
+        if (opSearchParam) {
+            const rawOps = String(opSearchParam).split(',').map(s => s.trim()).filter(Boolean);
+            if (rawOps.length > 0) {
+                const opMatchedItemKeys = new Set();
+
+                // 1. Busca em MySQL erp_ordens_producao e erp_pedidos_itens
+                try {
+                    const opPatterns = rawOps.map(o => `%${o}%`);
+                    const [mysqlMatchedOps] = await mysqlPool.query(
+                        `SELECT DISTINCT pedido_venda, item_pedido FROM erp_ordens_producao WHERE ` +
+                        opPatterns.map(() => `numero_op LIKE ?`).join(' OR ') +
+                        ` UNION SELECT DISTINCT pedido_numero as pedido_venda, item_seq as item_pedido FROM erp_pedidos_itens WHERE ` +
+                        opPatterns.map(() => `numero_op_gerada LIKE ?`).join(' OR '),
+                        [...opPatterns, ...opPatterns]
+                    );
+                    mysqlMatchedOps.forEach(m => {
+                        const ped = String(m.pedido_venda || '').trim().padStart(6, '0');
+                        const itm = String(m.item_pedido || '').trim();
+                        if (ped && itm) {
+                            opMatchedItemKeys.add(`${ped}|${itm}`);
+                            if (/^\d+$/.test(itm)) {
+                                opMatchedItemKeys.add(`${ped}|${itm.padStart(2, '0')}`);
+                                opMatchedItemKeys.add(`${ped}|${itm.padStart(4, '0')}`);
+                                opMatchedItemKeys.add(`${ped}|${String(parseInt(itm, 10))}`);
+                            }
+                        }
+                    });
+                } catch (e) {
+                    console.warn('⚠️ [GET /flat] Erro ao buscar OPs no MySQL:', e.message);
+                }
+
+                // 2. Busca em PostgreSQL sc2010
+                try {
+                    const { rows: pgMatchedOps } = await db.query(
+                        `SELECT DISTINCT TRIM(c2_pedido) as pedido, TRIM(c2_itempv) as item FROM public.sc2010 WHERE (` +
+                        rawOps.map((_, idx) => `c2_num LIKE $${idx + 1} OR (c2_num || c2_item || c2_sequen) LIKE $${idx + 1}`).join(' OR ') +
+                        `) AND COALESCE(d_e_l_e_t_, '') = ''`,
+                        rawOps.map(o => `%${o}%`)
+                    );
+                    pgMatchedOps.forEach(p => {
+                        const ped = String(p.pedido || '').trim().padStart(6, '0');
+                        const itm = String(p.item || '').trim();
+                        if (ped && itm) {
+                            opMatchedItemKeys.add(`${ped}|${itm}`);
+                            if (/^\d+$/.test(itm)) {
+                                opMatchedItemKeys.add(`${ped}|${itm.padStart(2, '0')}`);
+                                opMatchedItemKeys.add(`${ped}|${itm.padStart(4, '0')}`);
+                                opMatchedItemKeys.add(`${ped}|${String(parseInt(itm, 10))}`);
+                            }
+                        }
+                    });
+                } catch (e) {
+                    console.warn('⚠️ [GET /flat] Erro ao buscar OPs no Postgres:', e.message);
+                }
+
+                if (opMatchedItemKeys.size === 0) {
+                    return res.json({ data: [], meta: { hasNextPage: false, total: 0 } });
+                }
+
+                const opPairsArr = Array.from(opMatchedItemKeys);
+                whereClause += ` AND (TRIM(c5.c5_num) || '|' || TRIM(c6.c6_item)) = ANY($${paramCount}::varchar[])`;
+                params.push(opPairsArr);
+                paramCount++;
+
+                countWhereClause += ` AND (TRIM(c5.c5_num) || '|' || TRIM(c6.c6_item)) = ANY($${countParamCount}::varchar[])`;
+                countParams.push(opPairsArr);
+                countParamCount++;
+            }
+        }
+
+        // 2. Filtro estrito por Pedido de Venda (SC5)
         if (pedido) {
-            const pedidoList = String(pedido).split(',')
+            let pedidoList = String(pedido).split(',')
                 .map(p => p.trim())
                 .filter(p => p.length > 0)
                 .map(p => p.padStart(6, '0'));
+
+            pedidoList = [...new Set(pedidoList)];
 
             if (pedidoList.length === 1) {
                 whereClause += ` AND TRIM(c5.c5_num) = $${paramCount}`;
@@ -687,7 +945,7 @@ router.get('/flat', async (req, res) => {
                 countWhereClause += ` AND TRIM(c5.c5_num) = $${countParamCount}`;
                 countParams.push(pedidoList[0]);
                 countParamCount++;
-            } else {
+            } else if (pedidoList.length > 1) {
                 const placeholders = pedidoList.map((_, i) => `$${paramCount + i}`).join(', ');
                 whereClause += ` AND TRIM(c5.c5_num) IN (${placeholders})`;
                 params.push(...pedidoList);
@@ -697,6 +955,34 @@ router.get('/flat', async (req, res) => {
                 countWhereClause += ` AND TRIM(c5.c5_num) IN (${countPlaceholders})`;
                 countParams.push(...pedidoList);
                 countParamCount += pedidoList.length;
+            }
+        }
+
+        if (item) {
+            const itemList = String(item).split(',')
+                .map(i => i.trim())
+                .filter(i => i.length > 0);
+
+            if (itemList.length > 0) {
+                const itemVariants = new Set();
+                itemList.forEach(it => {
+                    itemVariants.add(it);
+                    if (/^\d+$/.test(it)) {
+                        itemVariants.add(it.padStart(2, '0'));
+                        itemVariants.add(it.padStart(4, '0'));
+                        itemVariants.add(String(parseInt(it, 10)));
+                    }
+                });
+                const variantsArr = Array.from(itemVariants);
+                const placeholders = variantsArr.map((_, idx) => `$${paramCount + idx}`).join(', ');
+                whereClause += ` AND TRIM(c6.c6_item) IN (${placeholders})`;
+                params.push(...variantsArr);
+                paramCount += variantsArr.length;
+
+                const countPlaceholders = variantsArr.map((_, idx) => `$${countParamCount + idx}`).join(', ');
+                countWhereClause += ` AND TRIM(c6.c6_item) IN (${countPlaceholders})`;
+                countParams.push(...variantsArr);
+                countParamCount += variantsArr.length;
             }
         }
 
@@ -830,13 +1116,93 @@ router.get('/flat', async (req, res) => {
         }
 
         if (op_status === 'com_op') {
-            const opFilter = ` AND EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
-            whereClause += opFilter;
-            countWhereClause += opFilter;
+            let mysqlOpPairs = [];
+            try {
+                const [mRows] = await mysqlPool.query(`
+                    SELECT DISTINCT TRIM(pedido_venda) as ped, TRIM(item_pedido) as itm 
+                    FROM erp_ordens_producao 
+                    WHERE pedido_venda IS NOT NULL AND pedido_venda <> ''
+                    UNION
+                    SELECT DISTINCT TRIM(pedido_numero) as ped, TRIM(item_seq) as itm
+                    FROM erp_pedidos_itens
+                    WHERE numero_op_gerada IS NOT NULL AND numero_op_gerada <> ''
+                `);
+                mRows.forEach(r => {
+                    if (r.ped && r.itm) {
+                        const pedPadded = String(r.ped).trim().padStart(6, '0');
+                        const itmRaw = String(r.itm).trim();
+                        const itmPadded2 = itmRaw.padStart(2, '0');
+                        const itmPadded4 = itmRaw.padStart(4, '0');
+                        mysqlOpPairs.push(`${pedPadded}|${itmRaw}`);
+                        if (itmPadded2 !== itmRaw) mysqlOpPairs.push(`${pedPadded}|${itmPadded2}`);
+                        if (itmPadded4 !== itmRaw && itmPadded4 !== itmPadded2) mysqlOpPairs.push(`${pedPadded}|${itmPadded4}`);
+                    }
+                });
+                mysqlOpPairs = [...new Set(mysqlOpPairs)];
+            } catch (_) {}
+
+            if (mysqlOpPairs.length > 0) {
+                const opFilter = ` AND (
+                    EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')
+                    OR (TRIM(c5.c5_num) || '|' || TRIM(c6.c6_item)) = ANY($${paramCount}::varchar[])
+                )`;
+                whereClause += opFilter;
+                params.push(mysqlOpPairs);
+                paramCount++;
+
+                const countOpFilter = ` AND (
+                    EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')
+                    OR (TRIM(c5.c5_num) || '|' || TRIM(c6.c6_item)) = ANY($${countParamCount}::varchar[])
+                )`;
+                countWhereClause += countOpFilter;
+                countParams.push(mysqlOpPairs);
+                countParamCount++;
+            } else {
+                const opFilter = ` AND EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
+                whereClause += opFilter;
+                countWhereClause += opFilter;
+            }
         } else if (op_status === 'sem_op') {
-            const opFilter = ` AND NOT EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
-            whereClause += opFilter;
-            countWhereClause += opFilter;
+            let mysqlOpPairs = [];
+            try {
+                const [mRows] = await mysqlPool.query(`
+                    SELECT DISTINCT TRIM(pedido_venda) as ped, TRIM(item_pedido) as itm 
+                    FROM erp_ordens_producao 
+                    WHERE pedido_venda IS NOT NULL AND pedido_venda <> ''
+                    UNION
+                    SELECT DISTINCT TRIM(pedido_numero) as ped, TRIM(item_seq) as itm
+                    FROM erp_pedidos_itens
+                    WHERE numero_op_gerada IS NOT NULL AND numero_op_gerada <> ''
+                `);
+                mRows.forEach(r => {
+                    if (r.ped && r.itm) {
+                        const pedPadded = String(r.ped).trim().padStart(6, '0');
+                        const itmRaw = String(r.itm).trim();
+                        const itmPadded2 = itmRaw.padStart(2, '0');
+                        const itmPadded4 = itmRaw.padStart(4, '0');
+                        mysqlOpPairs.push(`${pedPadded}|${itmRaw}`);
+                        if (itmPadded2 !== itmRaw) mysqlOpPairs.push(`${pedPadded}|${itmPadded2}`);
+                        if (itmPadded4 !== itmRaw && itmPadded4 !== itmPadded2) mysqlOpPairs.push(`${pedPadded}|${itmPadded4}`);
+                    }
+                });
+                mysqlOpPairs = [...new Set(mysqlOpPairs)];
+            } catch (_) {}
+
+            if (mysqlOpPairs.length > 0) {
+                const opFilter = ` AND NOT EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '') AND NOT ((TRIM(c5.c5_num) || '|' || TRIM(c6.c6_item)) = ANY($${paramCount}::varchar[]))`;
+                whereClause += opFilter;
+                params.push(mysqlOpPairs);
+                paramCount++;
+
+                const countOpFilter = ` AND NOT EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '') AND NOT ((TRIM(c5.c5_num) || '|' || TRIM(c6.c6_item)) = ANY($${countParamCount}::varchar[]))`;
+                countWhereClause += countOpFilter;
+                countParams.push(mysqlOpPairs);
+                countParamCount++;
+            } else {
+                const opFilter = ` AND NOT EXISTS (SELECT 1 FROM public.sc2010 c2_status WHERE (c2_status.c2_pedido = c5.c5_num) AND c2_status.c2_itempv = c6.c6_item AND COALESCE(c2_status.d_e_l_e_t_, '') = '')`;
+                whereClause += opFilter;
+                countWhereClause += opFilter;
+            }
         }
 
         if (dataInicial || dataFinal) {
@@ -1137,6 +1503,156 @@ router.get('/flat', async (req, res) => {
             pgClient?.release();
         }
 
+        // -------------------------------------------------------------
+        // CAMADA DE HIDRATAÇÃO HÍBRIDA DE OPs (MySQL erp_ordens_producao / erp_pedidos_itens)
+        // Prioridade Absoluta: OPs geradas no MySQL sobrepõem dados legados ou ausentes do Protheus
+        // -------------------------------------------------------------
+        if (result && result.rows && result.rows.length > 0) {
+            try {
+                const uniquePeds = [...new Set(result.rows.map(r => String(r.pedido || '').trim()))].filter(Boolean);
+                if (uniquePeds.length > 0) {
+                    const [mysqlOps] = await mysqlPool.query(
+                        `SELECT numero_op, pedido_venda, item_pedido, produto_codigo, quantidade_planejada, status, id, is_sub_op 
+                         FROM erp_ordens_producao 
+                         WHERE pedido_venda IN (?) AND (is_sub_op = 0 OR is_sub_op IS NULL)
+                         ORDER BY id ASC`,
+                        [uniquePeds]
+                    );
+
+                    const normalizeItem = (val) => {
+                        const s = String(val || '').trim();
+                        if (!s) return '';
+                        if (/^[0-9]+$/.test(s)) return s.padStart(2, '0');
+                        const m = s.match(/^([0-9]+)([A-Z]+)$/i);
+                        if (m) return m[1].padStart(2, '0') + m[2].toUpperCase();
+                        return s.toUpperCase();
+                    };
+
+                    // Busca todos os itens de pedidos no MySQL
+                    const [allErpItems] = await mysqlPool.query(
+                        `SELECT pedido_numero, item_seq, produto_codigo, quantidade, quantidade_original, quantidade_saldo, numero_op_gerada, status 
+                         FROM erp_pedidos_itens 
+                         WHERE pedido_numero IN (?)`,
+                        [uniquePeds]
+                    );
+
+                    let fractionForecasts = [];
+                    const [fcRows] = await mysqlPool.query(
+                        `SELECT pedido, item, data_entrega_pcp, data_prevista_faturamento, observacao, op_protheus, numero_lote, lote 
+                         FROM app_pcp_delivery_forecasts 
+                         WHERE pedido IN (?)`,
+                        [uniquePeds]
+                    );
+                    fractionForecasts = fcRows || [];
+
+                    const newRows = [];
+                    for (const row of result.rows) {
+                        const ped = String(row.pedido || '').trim();
+                        const itm = String(row.item || '').trim();
+                        const itmBase = itm.replace(/[A-Z]+$/i, '').padStart(2, '0');
+
+                        // Busca OPs deste pedido e item base (apenas produto pai / is_sub_op = 0)
+                        const itemOps = mysqlOps.filter(o => 
+                            String(o.pedido_venda || '').trim() === ped &&
+                            normalizeItem(o.item_pedido).replace(/[A-Z]+$/i, '') === itmBase &&
+                            (o.is_sub_op === 0 || o.is_sub_op === null || !o.is_sub_op)
+                        );
+
+                        // Busca item base em erp_pedidos_itens se existir
+                        const baseErpItem = allErpItems.find(f => 
+                            String(f.pedido_numero || '').trim() === ped &&
+                            normalizeItem(f.item_seq) === itmBase
+                        );
+
+                        const totalQtdOriginal = parseFloat(baseErpItem?.quantidade_original || row.quantidade_original || row.c6_qtdven || row.quantidade || 0);
+                        const totalEmOp = itemOps.reduce((sum, o) => sum + (parseFloat(o.quantidade_planejada) || 0), 0);
+                        const saldoRestante = Math.max(0, totalQtdOriginal - totalEmOp);
+
+                        // Cenário 1: Sem fracionamento (0 OPs ou 1 única OP cobrindo 100% no item base)
+                        if (itemOps.length === 0 || (itemOps.length === 1 && Math.abs(totalEmOp - totalQtdOriginal) < 0.001)) {
+                            if (itemOps.length === 1) {
+                                const cleanOp = String(itemOps[0].numero_op || '').trim();
+                                row.op_num = cleanOp.length >= 6 ? cleanOp.substring(0, 6) : cleanOp;
+                                row.op_num_completa = cleanOp;
+                                row.op_tipo = 'F';
+                                row.op_qtd = totalQtdOriginal;
+                                row.status_op_erp = itemOps[0].status || 'aberta';
+                                row.tem_op = true;
+                                row.origem_op = 'mysql';
+                            } else if (row.op_num && String(row.op_num).trim() !== '' && String(row.op_num).trim() !== '-') {
+                                row.tem_op = true;
+                                row.origem_op = 'protheus';
+                            } else {
+                                row.tem_op = false;
+                            }
+                            row.quantidade_original = totalQtdOriginal;
+                            newRows.push(row);
+                        } else {
+                            // Cenário 2: Item Fracionado / Parcial
+                            // 2.1 Linha do Saldo Disponível (Item Original): Mantém visível com o saldo restante
+                            if (saldoRestante > 0.0001) {
+                                newRows.push({
+                                    ...row,
+                                    item: itmBase,
+                                    item_raw: itmBase,
+                                    quantidade: saldoRestante,
+                                    qtd_faturar: saldoRestante,
+                                    quantidade_original: totalQtdOriginal,
+                                    op_num: null,
+                                    op_num_completa: null,
+                                    op_tipo: null,
+                                    op_qtd: null,
+                                    tem_op: false,
+                                    origem_op: null,
+                                    status_op_erp: null,
+                                    item_fracionado: false,
+                                    is_saldo_disponivel: true
+                                });
+                            }
+
+                            // 2.2 Linhas das Frações para CADA OP emitida do item (01A, 01B, 01C...)
+                            const sortedOps = [...itemOps].sort((a, b) => a.id - b.id);
+                            sortedOps.forEach((op, idx) => {
+                                const fracLetter = String.fromCharCode(65 + idx);
+                                const displaySeq = `${itmBase}${fracLetter}`;
+                                const cleanOp = String(op.numero_op || '').trim();
+                                const opQtd = parseFloat(op.quantidade_planejada) || 0;
+                                const fracFc = fractionForecasts.find(f => 
+                                    String(f.pedido).trim() === ped && 
+                                    (String(f.op_protheus || '').trim() === cleanOp || normalizeItem(f.item) === displaySeq || normalizeItem(f.item) === normalizeItem(op.item_pedido))
+                                );
+
+                                newRows.push({
+                                    ...row,
+                                    item: displaySeq,
+                                    item_raw: displaySeq,
+                                    quantidade: opQtd,
+                                    qtd_faturar: opQtd,
+                                    quantidade_original: totalQtdOriginal,
+                                    op_num: cleanOp.length >= 6 ? cleanOp.substring(0, 6) : (cleanOp || null),
+                                    op_num_completa: cleanOp || null,
+                                    op_tipo: 'F',
+                                    op_qtd: opQtd,
+                                    tem_op: true,
+                                    origem_op: 'mysql',
+                                    status_op_erp: op.status || 'aberta',
+                                    item_fracionado: true,
+                                    data_entrega_pcp: fracFc?.data_entrega_pcp || row.data_entrega_pcp,
+                                    data_prevista_faturamento: fracFc?.data_prevista_faturamento || row.data_prevista_faturamento,
+                                    observacao_pcp: fracFc?.observacao || null,
+                                    numero_lote: fracFc?.numero_lote || null,
+                                    lote: fracFc?.lote || null
+                                });
+                            });
+                        }
+                    }
+                    result.rows = newRows;
+                }
+            } catch (errHydrate) {
+                console.warn('⚠️ [GET /flat] Erro na hidratação híbrida de OPs:', errHydrate.message);
+            }
+        }
+
         // Dado sensível não sai do servidor sem a permissão "valores_financeiros" —
         // esconder só na tela não é suficiente (fica visível na aba de rede do navegador).
         const stripFinancials = (row) => {
@@ -1309,8 +1825,8 @@ router.get('/flat', async (req, res) => {
             }
             // --- FIM BUSCA DE PRIORIDADES DE OP ---
 
-            // --- INÍCIO CÁLCULO EVOLUÇÃO OP (Opcional - somente se solicitado expressamente) ---
-            if (req.query.include_evolution === 'true') {
+            // --- INÍCIO CÁLCULO EVOLUÇÃO OP ---
+            if (req.query.include_evolution !== 'false') {
             try {
                 const uniqueOpNumsEvol = [...new Set(result.rows.map(r => r.op_num ? String(r.op_num).trim() : null).filter(Boolean))];
                 if (uniqueOpNumsEvol.length > 0) {
@@ -1354,18 +1870,24 @@ router.get('/flat', async (req, res) => {
                             });
 
                             const evolutionMap = {}; 
+                            const evolutionByOpMap = {};
                             const opsByItemEvol = {};
+                            const opsByOpNum = {};
                             
                             opsRowsEvol.forEach(op => {
                                 const key = `${op.pedido}_${op.item_pedido}`;
+                                const opNumKey = String(op.op_num).trim();
                                 if (!opsByItemEvol[key]) opsByItemEvol[key] = [];
+                                if (!opsByOpNum[opNumKey]) opsByOpNum[opNumKey] = [];
 
                                 const apptKey = `${op.op_num}_${op.item_op}_${op.op_sequencia_split}_${op.sequencia}`;
                                 const qtdApontada = apptMapEvol[apptKey] || 0;
                                 const qtdPlanejada = parseFloat(op.qtd_planejada) || 0;
                                 const pct = qtdPlanejada > 0 ? Math.round((qtdApontada / qtdPlanejada) * 100) : 0;
+                                const cappedPct = Math.min(pct, 100);
 
-                                opsByItemEvol[key].push(Math.min(pct, 100));
+                                opsByItemEvol[key].push(cappedPct);
+                                opsByOpNum[opNumKey].push(cappedPct);
                             });
 
                             for (const key in opsByItemEvol) {
@@ -1374,12 +1896,24 @@ router.get('/flat', async (req, res) => {
                                 evolutionMap[key] = avg;
                             }
 
+                            for (const opKey in opsByOpNum) {
+                                const pcts = opsByOpNum[opKey];
+                                const avg = pcts.length > 0 ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : 0;
+                                evolutionByOpMap[opKey] = avg;
+                            }
+
                             result.rows.forEach(r => {
                                 const key = `${String(r.pedido).trim()}_${String(r.item).trim()}`;
-                                const evolucao_pct = evolutionMap[key] || 0;
+                                const opNumKey = r.op_num ? String(r.op_num).trim() : null;
+                                let evolucao_pct = evolutionMap[key];
+                                if (evolucao_pct === undefined && opNumKey && evolutionByOpMap[opNumKey] !== undefined) {
+                                    evolucao_pct = evolutionByOpMap[opNumKey];
+                                }
+                                evolucao_pct = evolucao_pct || 0;
                                 const op_qtd = parseFloat(r.op_qtd) || 0;
                                 r.saldo_produzido = (evolucao_pct / 100) * op_qtd;
                                 r.evolucao_pct = evolucao_pct;
+                                r.evolucao_op = evolucao_pct;
                             });
                         }
                     }
@@ -3243,22 +3777,31 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
             }
         }
 
-        let queryDup = `SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? LIMIT 1`;
-        let paramsDup = [String(pedido).trim(), String(item).trim()];
-        
-        const [dupCheck] = await mysqlPool.query(queryDup, paramsDup);
-        if (dupCheck.length > 0) {
-             if (req.body.sobrescrever_existente) {
-                 const existingId = dupCheck[0].id;
-                 await mysqlPool.query(
-                     'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, lote=?, numero_lote=?, op_protheus=?, data_prevista_faturamento=? WHERE id=?',
-                     [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, req.body.op_protheus || null, data_prevista_faturamento || null, existingId]
-                 );
-                 invalidateForecastCache();
-                 return res.json({ success: true, id: existingId, updated: true });
-             } else {
-                 return res.status(400).json({ error: 'Já existe uma Programação PCP para este pedido/item. Só é permitida uma data por OP. Edite a programação existente.' });
-             }
+        // Se veio ID específico para edição, atualiza a programação existente
+        if (req.body.id) {
+            await mysqlPool.query(
+                'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, lote=?, numero_lote=?, op_protheus=?, data_prevista_faturamento=? WHERE id=?',
+                [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, req.body.op_protheus || null, data_prevista_faturamento || null, req.body.id]
+            );
+            invalidateForecastCache();
+            return res.json({ success: true, id: req.body.id, updated: true });
+        }
+
+        // Se marcou para sobrescrever existente e passou op_protheus correspondente
+        if (req.body.sobrescrever_existente && req.body.op_protheus) {
+            const [existingByOp] = await mysqlPool.query(
+                'SELECT id FROM app_pcp_delivery_forecasts WHERE TRIM(op_protheus) = ? LIMIT 1',
+                [String(req.body.op_protheus).trim()]
+            );
+            if (existingByOp.length > 0) {
+                const existingId = existingByOp[0].id;
+                await mysqlPool.query(
+                    'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, lote=?, numero_lote=?, data_prevista_faturamento=? WHERE id=?',
+                    [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, data_prevista_faturamento || null, existingId]
+                );
+                invalidateForecastCache();
+                return res.json({ success: true, id: existingId, updated: true });
+            }
         }
 
         if (qtd_total_item !== undefined) {
@@ -3285,6 +3828,277 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
         res.json({ success: true, id: result.insertId });
     } catch (err) {
         console.error('Error saving PCP forecast:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Endpoint para simulação de cascata finita no fracionamento de OPs (Agente de Planejamento Inteligente)
+router.post('/split-cascade-preview', async (req, res) => {
+    try {
+        const { pedido, item, codigo_produto, data_inicio, incluiSabado, fractions } = req.body;
+
+        if (!Array.isArray(fractions) || fractions.length === 0) {
+            return res.status(400).json({ error: 'Nenhuma fração informada para a cascata.' });
+        }
+
+        const pedidoClean = String(pedido || '').trim();
+        const itemClean = String(item || '').trim();
+
+        // 1. Descobrir código do produto (caso não enviado)
+        let prodCode = String(codigo_produto || '').trim().toUpperCase();
+        if (!prodCode && pedidoClean && itemClean) {
+            const sc6Res = await db.query(
+                `SELECT TRIM(c6_produto) as produto FROM public.sc6010 WHERE TRIM(c6_num) = $1 AND TRIM(c6_item) = $2 AND COALESCE(d_e_l_e_t_,'') IN ('', ' ') LIMIT 1`,
+                [pedidoClean, itemClean]
+            );
+            if (sc6Res.rows.length > 0) {
+                prodCode = (sc6Res.rows[0].produto || '').trim().toUpperCase();
+            }
+        }
+
+        // 2. Buscar roteiro de operações do produto no Protheus (SG2010 + SH1010)
+        let routingOps = [];
+        if (prodCode) {
+            const sgRes = await db.query(`
+                WITH max_rev AS (
+                    SELECT MAX(TRIM(g2_codigo)) as max_codigo
+                    FROM public.sg2010
+                    WHERE TRIM(g2_produto) = $1 AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                )
+                SELECT DISTINCT ON (TRIM(g2.g2_operac))
+                       TRIM(g2.g2_operac) as sequen,
+                       TRIM(g2.g2_operac) as operacao,
+                       TRIM(g2.g2_recurso) as recurso,
+                       TRIM(COALESCE(h1.h1_descri, g2.g2_recurso)) as desc_recurso,
+                       ROUND(COALESCE(g2.g2_tempad, 0)::numeric, 4) as tempad,
+                       COALESCE(g2.g2_setup, 0) as setup
+                FROM public.sg2010 g2
+                JOIN max_rev mr ON TRIM(g2.g2_codigo) = mr.max_codigo
+                LEFT JOIN public.sh1010 h1 ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso) AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+                WHERE TRIM(g2.g2_produto) = $1 AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+                ORDER BY TRIM(g2.g2_operac) ASC
+            `, [prodCode]);
+
+            routingOps = sgRes.rows;
+        }
+
+        // Se o produto não tiver roteiro cadastrado no Protheus, cria uma operação padrão de montagem/produção
+        if (routingOps.length === 0) {
+            routingOps = [
+                {
+                    sequen: '01',
+                    operacao: '01',
+                    recurso: 'PROD',
+                    desc_recurso: 'Produção Geral',
+                    tempad: 1,
+                    setup: 0
+                }
+            ];
+        }
+
+        // 3. Capacidades dos Recursos no MySQL (minutos por dia)
+        const [caps] = await mysqlPool.query(
+            'SELECT recurso_codigo, capacidade_diaria_minutos, tempo_padrao_minutos FROM app_recursos_capacidade'
+        );
+        const capMap = {};
+        caps.forEach(c => {
+            const code = String(c.recurso_codigo || '').trim().toUpperCase();
+            if (code) {
+                capMap[code] = {
+                    cap_dia_min: parseFloat(c.capacidade_diaria_minutos) || 528,
+                    tempo_padrao: parseFloat(c.tempo_padrao_minutos) || 1
+                };
+            }
+        });
+
+        // 4. Configuração do Calendário de Planejamento (FCS - Finite Capacity Scheduling)
+        const resourceCalendar = {}; // { [recurso]: { [YYYY-MM-DD]: usedMinutes } }
+
+        const isWorkingDay = (d) => {
+            const day = d.getDay();
+            if (day === 0) return false; // Domingo nunca é dia útil
+            if (!incluiSabado && day === 6) return false; // Sábado apenas se habilitado
+            return true;
+        };
+
+        const pad = (n) => String(n).padStart(2, '0');
+        const formatDateYMD = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        const formatDateTime = (d) => `${formatDateYMD(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+
+        let baseDate = data_inicio ? new Date(data_inicio) : new Date();
+        if (isNaN(baseDate.getTime())) baseDate = new Date();
+        baseDate.setHours(8, 0, 0, 0);
+
+        while (!isWorkingDay(baseDate)) {
+            baseDate.setDate(baseDate.getDate() + 1);
+            baseDate.setHours(8, 0, 0, 0);
+        }
+
+        const calculatedFractions = [];
+
+        for (let fIdx = 0; fIdx < fractions.length; fIdx++) {
+            const frac = fractions[fIdx];
+            const fracQtd = parseFloat(frac.quantidade_pcp) || 0;
+            const letter = String.fromCharCode(65 + Math.floor(fIdx / 26)) + String.fromCharCode(65 + (fIdx % 26));
+            const fracOp = frac.op_protheus ? String(frac.op_protheus).trim() : `${pedidoClean.padStart(6, '0')}${itemClean.padStart(2, '0')}${letter}`;
+
+            const fracOperations = [];
+            let prevOpStart = null;
+            let prevOpEnd = null;
+
+            for (let opIdx = 0; opIdx < routingOps.length; opIdx++) {
+                const rOp = routingOps[opIdx];
+                const recurso = (rOp.recurso || 'GERAL').trim().toUpperCase();
+                const descRecurso = rOp.desc_recurso || recurso;
+                const operacao = (rOp.operacao || pad(opIdx + 1)).trim();
+                const sequen = (rOp.sequen || pad(opIdx + 1)).trim();
+
+                const capData = capMap[recurso] || { cap_dia_min: 528, tempo_padrao: 1 };
+                const tempad = parseFloat(rOp.tempad) || 0;
+                const tempoUnitarioMin = tempad > 0.0001 ? tempad : capData.tempo_padrao;
+                const setupMin = (parseFloat(rOp.setup) || 0) * 60;
+                const tempoTotalMin = fracQtd > 0 ? setupMin + (fracQtd * tempoUnitarioMin) : 0;
+                const capDiariaMin = capData.cap_dia_min > 0 ? capData.cap_dia_min : 528;
+                const diasNecessarios = capDiariaMin > 0 ? (tempoTotalMin / capDiariaMin) : 0;
+
+                // Data de início candidata da operação
+                let opStartDate;
+                if (prevOpStart) {
+                    // Sobreposição com operação anterior (máx 180 min de defasagem)
+                    let overlapDate = new Date(prevOpStart.getTime() + (180 * 60000));
+                    if (prevOpEnd && prevOpEnd < overlapDate) {
+                        overlapDate = new Date(prevOpEnd);
+                    }
+                    opStartDate = new Date(overlapDate);
+                } else {
+                    opStartDate = new Date(baseDate);
+                }
+
+                while (!isWorkingDay(opStartDate)) {
+                    opStartDate.setDate(opStartDate.getDate() + 1);
+                    opStartDate.setHours(8, 0, 0, 0);
+                }
+                if (opStartDate.getHours() < 8) opStartDate.setHours(8, 0, 0, 0);
+
+                if (!resourceCalendar[recurso]) {
+                    resourceCalendar[recurso] = {};
+                }
+
+                let currDate = new Date(opStartDate);
+                let actualStartDate = null;
+                let tempoRestante = tempoTotalMin;
+
+                if (tempoRestante <= 0) {
+                    actualStartDate = new Date(currDate);
+                }
+
+                while (tempoRestante > 0) {
+                    const dateKey = formatDateYMD(currDate);
+                    const usedToday = resourceCalendar[recurso][dateKey] || 0;
+                    const availableToday = capDiariaMin - usedToday;
+
+                    if (availableToday <= 0) {
+                        currDate.setDate(currDate.getDate() + 1);
+                        currDate.setHours(8, 0, 0, 0);
+                        while (!isWorkingDay(currDate)) {
+                            currDate.setDate(currDate.getDate() + 1);
+                            currDate.setHours(8, 0, 0, 0);
+                        }
+                        continue;
+                    }
+
+                    if (!actualStartDate) {
+                        actualStartDate = new Date(currDate);
+                    }
+
+                    if (tempoRestante <= availableToday) {
+                        resourceCalendar[recurso][dateKey] = usedToday + tempoRestante;
+                        currDate.setTime(currDate.getTime() + (tempoRestante * 60000));
+                        tempoRestante = 0;
+                    } else {
+                        resourceCalendar[recurso][dateKey] = capDiariaMin;
+                        tempoRestante -= availableToday;
+                        currDate.setDate(currDate.getDate() + 1);
+                        currDate.setHours(8, 0, 0, 0);
+                        while (!isWorkingDay(currDate)) {
+                            currDate.setDate(currDate.getDate() + 1);
+                            currDate.setHours(8, 0, 0, 0);
+                        }
+                    }
+                }
+
+                const opEndDate = new Date(currDate);
+                if (!actualStartDate) actualStartDate = new Date(opEndDate);
+
+                prevOpStart = new Date(actualStartDate);
+                prevOpEnd = new Date(opEndDate);
+
+                fracOperations.push({
+                    op_numero: fracOp,
+                    op_item: itemClean,
+                    op_sequencia: sequen,
+                    operacao_codigo: operacao,
+                    recurso_codigo: recurso,
+                    desc_recurso: descRecurso,
+                    produto_codigo: prodCode,
+                    data_planejada_inicio: formatDateTime(actualStartDate),
+                    data_planejada_fim: formatDateTime(opEndDate),
+                    tempo_total_horas: parseFloat((tempoTotalMin / 60).toFixed(2)),
+                    dias_necessarios: parseFloat(diasNecessarios.toFixed(2)),
+                    setup_minutos: setupMin,
+                    tempo_unitario_minutos: parseFloat(tempoUnitarioMin.toFixed(3))
+                });
+            }
+
+            let deliveryDate = frac.data_entrega_pcp;
+            if (fracOperations.length > 0) {
+                const lastOp = fracOperations[fracOperations.length - 1];
+                deliveryDate = lastOp.data_planejada_fim.split('T')[0];
+            }
+
+            calculatedFractions.push({
+                ...frac,
+                numero_lote: frac.numero_lote || letter,
+                op_protheus: fracOp,
+                data_entrega_pcp: deliveryDate,
+                operacoes: fracOperations
+            });
+        }
+
+        res.json({
+            success: true,
+            produto: prodCode,
+            routing_found: routingOps.length > 0,
+            total_operacoes_por_fracao: routingOps.length,
+            fractions: calculatedFractions
+        });
+    } catch (err) {
+        console.error('[SPLIT CASCADE ERROR]', err);
+        res.status(500).json({ error: 'Erro ao gerar cascata do fracionamento: ' + err.message });
+    }
+});
+
+// Endpoint para buscar operações já salvas das frações de uma OP
+router.get('/split-operations/:pedido/:item', async (req, res) => {
+    try {
+        const { pedido, item } = req.params;
+        const pedidoClean = String(pedido).trim();
+        const itemClean = String(item).trim();
+        const baseOp = `${pedidoClean.padStart(6, '0')}${itemClean.padStart(2, '0')}`;
+
+        const [rows] = await mysqlPool.query(`
+            SELECT p.op_numero, p.op_item, p.op_sequencia, p.operacao_codigo,
+                   p.recurso_codigo, p.produto_codigo, p.data_planejada_inicio,
+                   p.data_planejada_fim, p.duracao_dias, p.observacao_lote
+            FROM app_production_planning p
+            WHERE (TRIM(p.pedido_venda) = ? AND TRIM(p.op_item) = ?)
+               OR p.op_numero LIKE ?
+            ORDER BY p.op_numero ASC, p.op_sequencia ASC, p.operacao_codigo ASC
+        `, [pedidoClean, itemClean, `${baseOp}%`]);
+
+        res.json({ success: true, operations: rows });
+    } catch (err) {
+        console.error('[SPLIT OPERATIONS ERROR]', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -3335,10 +4149,17 @@ router.post('/split-op', async (req, res) => {
             }
         }
 
-        // Remove os registros existentes de previsão deste pedido + item
+        // 1. Remove os registros existentes de previsão deste pedido + item
         await connection.query(
             'DELETE FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ?',
             [pedidoClean, itemClean]
+        );
+
+        // 2. Limpa planejamentos anteriores de produção associados a essas frações
+        const baseOp = `${pedidoClean.padStart(6, '0')}${itemClean.padStart(2, '0')}`;
+        await connection.query(
+            'DELETE FROM app_production_planning WHERE op_numero LIKE ? OR (TRIM(pedido_venda) = ? AND TRIM(op_item) = ?)',
+            [`${baseOp}%`, pedidoClean, itemClean]
         );
 
         const savedFractions = [];
@@ -3347,7 +4168,7 @@ router.post('/split-op', async (req, res) => {
             const fracQtd = parseFloat(frac.quantidade_pcp);
             const fracDate = frac.data_entrega_pcp;
             const letter = String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26));
-            const fracOp = frac.op_protheus ? String(frac.op_protheus).trim() : `${pedidoClean.padStart(6, '0')}${itemClean.padStart(2, '0')}${letter}`;
+            const fracOp = frac.op_protheus ? String(frac.op_protheus).trim() : `${baseOp}${letter}`;
             const fracObs = frac.observacao || `Fração ${letter} (Lote ${letter})`;
             const fracLote = frac.lote || `Lote ${letter}`;
             const fracNumLote = frac.numero_lote || letter;
@@ -3356,6 +4177,48 @@ router.post('/split-op', async (req, res) => {
                 'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, op_protheus, data_prevista_faturamento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 [pedidoClean, itemClean, fracDate, fracQtd, usuario || 'Gestão de OPs', fracObs, frac.numero_serie || null, frac.serie_cliente || null, frac.serie_metalfisa || null, fracLote, fracNumLote, fracOp, frac.data_prevista_faturamento || null]
             );
+
+            // 3. Grava o planejamento detalhado das operações por recurso no app_production_planning
+            if (Array.isArray(frac.operacoes) && frac.operacoes.length > 0) {
+                for (const op of frac.operacoes) {
+                    const startDt = op.data_planejada_inicio ? op.data_planejada_inicio.replace('T', ' ').substring(0, 19) : null;
+                    const endDt = op.data_planejada_fim ? op.data_planejada_fim.replace('T', ' ').substring(0, 19) : null;
+                    if (!startDt || !endDt) continue;
+
+                    await connection.query(`
+                        INSERT INTO app_production_planning
+                            (op_numero, op_item, op_sequencia, operacao_codigo,
+                             recurso_codigo, produto_codigo, pedido_venda,
+                             data_planejada_inicio, data_planejada_fim,
+                             usuario_planejador, lote_id, observacao_lote,
+                             duracao_dias, modo_calculo, selecionado)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cascata_split', 1)
+                        ON DUPLICATE KEY UPDATE
+                            recurso_codigo = VALUES(recurso_codigo),
+                            data_planejada_inicio = VALUES(data_planejada_inicio),
+                            data_planejada_fim = VALUES(data_planejada_fim),
+                            usuario_planejador = VALUES(usuario_planejador),
+                            lote_id = VALUES(lote_id),
+                            observacao_lote = VALUES(observacao_lote),
+                            duracao_dias = VALUES(duracao_dias),
+                            modo_calculo = VALUES(modo_calculo)
+                    `, [
+                        fracOp,
+                        itemClean,
+                        op.op_sequencia || '01',
+                        op.operacao_codigo || '01',
+                        op.recurso_codigo || null,
+                        op.produto_codigo || null,
+                        pedidoClean,
+                        startDt,
+                        endDt,
+                        usuario || 'Gestão de OPs',
+                        `LOTE-SPLIT-${Date.now()}-${fracNumLote}`,
+                        fracObs,
+                        op.dias_necessarios ? Math.ceil(op.dias_necessarios) : 1
+                    ]);
+                }
+            }
 
             savedFractions.push({
                 id: ins.insertId,
@@ -3369,9 +4232,14 @@ router.post('/split-op', async (req, res) => {
         await connection.commit();
         invalidateForecastCache();
 
+        // Dispara recálculo de cache de ocupação da fábrica em background
+        rebuildDailyOccupancyCache().catch(err => {
+            console.warn('[SPLIT-OP] Warning rebuilding occupancy cache:', err.message);
+        });
+
         res.json({
             success: true,
-            message: `OP dividida com sucesso em ${fractions.length} frações independentes!`,
+            message: `OP dividida com sucesso em ${fractions.length} frações independentes com cronograma finito!`,
             fractions: savedFractions
         });
     } catch (err) {
@@ -3388,13 +4256,20 @@ router.delete('/split-op/:pedido/:item', async (req, res) => {
     const { pedido, item } = req.params;
     const pedidoClean = String(pedido).trim();
     const itemClean = String(item).trim();
+    const baseOp = `${pedidoClean.padStart(6, '0')}${itemClean.padStart(2, '0')}`;
 
     try {
         await mysqlPool.query(
             'DELETE FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ?',
             [pedidoClean, itemClean]
         );
+        await mysqlPool.query(
+            'DELETE FROM app_production_planning WHERE op_numero LIKE ? OR (TRIM(pedido_venda) = ? AND TRIM(op_item) = ?)',
+            [`${baseOp}%`, pedidoClean, itemClean]
+        );
         invalidateForecastCache();
+        rebuildDailyOccupancyCache().catch(() => {});
+
         res.json({ success: true, message: 'Fracionamento desfeito com sucesso. OP unificada em lote único.' });
     } catch (err) {
         console.error('Erro ao unificar OP:', err);
@@ -3611,9 +4486,11 @@ router.post('/pcp-forecasts/balance', async (req, res) => {
 router.get('/items/:pedido/:item/pcp-forecasts/history', checkOrderAccess, async (req, res) => {
     try {
         const { pedido, item } = req.params;
+        const itemClean = String(item).trim();
+        const baseItem = itemClean.replace(/[A-Z]+$/i, '');
         const [rows] = await mysqlPool.query(
-            'SELECT * FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? ORDER BY id ASC',
-            [String(pedido).trim(), String(item).trim()]
+            'SELECT * FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND (TRIM(item) = ? OR TRIM(item) = ? OR TRIM(item) LIKE ?) ORDER BY id ASC',
+            [String(pedido).trim(), itemClean, baseItem, `${baseItem}%`]
         );
         res.json(rows);
     } catch (err) {
@@ -3685,7 +4562,7 @@ router.get('/op-mirror/:id', checkOrderAccess, async (req, res) => {
                 FROM sc6010 c6
                 LEFT JOIN sc2010 c2 ON c2.c2_filial = c6.c6_filial AND TRIM(c2.c2_pedido) = TRIM(c6.c6_num) AND c2.c2_itempv = c6.c6_item AND c2.c2_sequen = '001' AND COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
                 LEFT JOIN sb1010 sb1 ON TRIM(sb1.b1_cod) = TRIM(c6.c6_produto) AND COALESCE(sb1.d_e_l_e_t_, '') IN ('', ' ')
-                WHERE TRIM(c6.c6_num) = $1 AND COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ') AND COALESCE(TRIM(c6.c6_numop), '') != '' ${itemCondition} ${pendingCondition}
+                WHERE TRIM(c6.c6_num) = $1 AND COALESCE(c6.d_e_l_e_t_, '') IN ('', ' ') ${itemCondition} ${pendingCondition}
             ),
             estrutura AS (
                 SELECT pv.item_pedido, 0 AS nivel, pv.produto_venda AS produto_pai, pv.produto_venda AS componente, pv.desc_venda AS descricao, pv.tipo_venda AS tipo, pv.unid_venda AS unidade, pv.rev_metalfisa AS revisao, 1::numeric AS qtd_base, pv.qtd_venda AS qtd_necessaria, pv.op_num AS op_relacionada, pv.op_tipo AS op_tipo_relacionada FROM pv_itens pv
@@ -3701,8 +4578,51 @@ router.get('/op-mirror/:id', checkOrderAccess, async (req, res) => {
 
         const forecastMap = await getForecastMapCached();
         const explosionResult = await client.query(explosionQuery, explosionParams);
+
+        // Hidratação com OPs do MySQL para este pedido
+        const mysqlOrderOpMap = new Map();
+        try {
+            const cleanOrderId = String(id).trim();
+            const [mOps] = await mysqlPool.query(
+                `SELECT numero_op, pedido_venda, item_pedido, produto_codigo, quantidade_planejada, status 
+                 FROM erp_ordens_producao 
+                 WHERE pedido_venda = ? 
+                 ORDER BY COALESCE(is_sub_op, 0) ASC, id DESC`,
+                [cleanOrderId]
+            );
+            const [mItemOps] = await mysqlPool.query(
+                `SELECT pedido_numero, item_seq, numero_op_gerada, produto_codigo, quantidade 
+                 FROM erp_pedidos_itens 
+                 WHERE pedido_numero = ? AND numero_op_gerada IS NOT NULL AND numero_op_gerada <> ''`,
+                [cleanOrderId]
+            );
+            mOps.forEach(op => {
+                const itm = String(op.item_pedido || '').trim();
+                const itmNorm = String(parseInt(itm, 10) || itm);
+                if (!mysqlOrderOpMap.has(itm)) mysqlOrderOpMap.set(itm, op.numero_op);
+                if (!mysqlOrderOpMap.has(itmNorm)) mysqlOrderOpMap.set(itmNorm, op.numero_op);
+            });
+            mItemOps.forEach(item => {
+                const itm = String(item.item_seq || '').trim();
+                const itmNorm = String(parseInt(itm, 10) || itm);
+                if (!mysqlOrderOpMap.has(itm)) mysqlOrderOpMap.set(itm, item.numero_op_gerada);
+                if (!mysqlOrderOpMap.has(itmNorm)) mysqlOrderOpMap.set(itmNorm, item.numero_op_gerada);
+            });
+        } catch (e) {
+            console.warn('⚠️ [op-mirror] Erro ao buscar OPs do MySQL:', e.message);
+        }
+
         const itemsMap = new Map();
         explosionResult.rows.forEach(row => {
+            const itmStr = String(row.item_pedido).trim();
+            const itmNorm = String(parseInt(itmStr, 10) || itmStr);
+            const mysqlOp = mysqlOrderOpMap.get(itmStr) || mysqlOrderOpMap.get(itmNorm);
+            if (mysqlOp) {
+                const cleanOp = String(mysqlOp).trim();
+                row.op_relacionada = cleanOp.length >= 6 ? cleanOp.substring(0, 6) : cleanOp;
+                row.op_tipo_relacionada = 'F';
+            }
+
             if (!itemsMap.has(row.item_pedido)) {
                 const fcKey = `${String(id).trim()}|${String(row.item_pedido).trim()}`;
                 const fc = forecastMap.get(fcKey);
@@ -3756,7 +4676,12 @@ router.get('/op-mirror/:id', checkOrderAccess, async (req, res) => {
             orderData.quantidade = Array.from(itemsMap.values()).reduce((acc, ig) => acc + (parseFloat(ig.produto_principal?.quantidade_venda || 0)), 0);
         }
 
-        res.json({ pedido: orderData, itens: Array.from(itemsMap.values()) });
+        let returnItens = Array.from(itemsMap.values());
+        if (!queryItem) {
+            returnItens = returnItens.filter(ig => ig.produto_principal?.op_num && String(ig.produto_principal.op_num).trim() !== '' && String(ig.produto_principal.op_num).trim() !== '-');
+        }
+
+        res.json({ pedido: orderData, itens: returnItens });
     } catch (err) {
         console.error('[OP Mirror Error]', err);
         res.status(500).json({ error: 'Erro interno ao gerar espelho de OP', details: err.message });
@@ -3905,7 +4830,7 @@ router.get('/portal-cliente', async (req, res) => {
 
         // Filtrar pedidos inativos (app_pedidos_inativos)
         try {
-            const getInactiveFilter = await getInactiveOrdersFilter();
+            const getInactiveFilter = await getInactiveOrdersFilter(true);
             extraFilters += getInactiveFilter('c5.c5_num');
         } catch (inactiveErr) {
             console.error('[Portal Cliente] Erro ao obter filtro de inativos:', inactiveErr.message);
@@ -4183,6 +5108,62 @@ router.get('/portal-cliente', async (req, res) => {
                         r.op_apontado = op ? op.total_apontado : '0';
                         r.tem_op = op ? true : false;
                     });
+                }
+
+                // Batch lookup 3b: OPs do MySQL (Prioridade Absoluta)
+                const pagePedidosRaw = [...new Set(itemRows.map(r => String(r.pedido).trim()))].filter(Boolean);
+                if (pagePedidosRaw.length > 0) {
+                    try {
+                        const [mysqlOps] = await mysqlPool.query(
+                            `SELECT numero_op, pedido_venda, item_pedido, produto_codigo, quantidade_planejada, quantidade_produzida 
+                             FROM erp_ordens_producao 
+                             WHERE pedido_venda IN (?) 
+                             ORDER BY id DESC`,
+                            [pagePedidosRaw]
+                        );
+                        const [mysqlItemOps] = await mysqlPool.query(
+                            `SELECT pedido_numero, item_seq, numero_op_gerada, produto_codigo, quantidade 
+                             FROM erp_pedidos_itens 
+                             WHERE pedido_numero IN (?) AND numero_op_gerada IS NOT NULL AND numero_op_gerada <> ''`,
+                            [pagePedidosRaw]
+                        );
+                        const myOpMap = new Map();
+                        mysqlOps.forEach(op => {
+                            const ped = String(op.pedido_venda || '').trim();
+                            const itm = String(op.item_pedido || '').trim();
+                            const itmNorm = String(parseInt(itm, 10) || itm);
+                            if (!myOpMap.has(`${ped}|${itm}`)) myOpMap.set(`${ped}|${itm}`, op);
+                            if (!myOpMap.has(`${ped}|${itmNorm}`)) myOpMap.set(`${ped}|${itmNorm}`, op);
+                        });
+                        mysqlItemOps.forEach(it => {
+                            const ped = String(it.pedido_numero || '').trim();
+                            const itm = String(it.item_seq || '').trim();
+                            const itmNorm = String(parseInt(itm, 10) || itm);
+                            if (!myOpMap.has(`${ped}|${itm}`)) myOpMap.set(`${ped}|${itm}`, {
+                                numero_op: it.numero_op_gerada,
+                                quantidade_planejada: it.quantidade,
+                                quantidade_produzida: 0
+                            });
+                            if (!myOpMap.has(`${ped}|${itmNorm}`)) myOpMap.set(`${ped}|${itmNorm}`, myOpMap.get(`${ped}|${itm}`));
+                        });
+
+                        itemRows.forEach(r => {
+                            const ped = String(r.pedido).trim();
+                            const itm = String(r.item).trim();
+                            const itmNorm = String(parseInt(itm, 10) || itm);
+                            const mop = myOpMap.get(`${ped}|${itm}`) || myOpMap.get(`${ped}|${itmNorm}`);
+                            if (mop && mop.numero_op) {
+                                const clean = String(mop.numero_op).trim();
+                                r.op_num = clean.length >= 6 ? clean.substring(0, 6) : clean;
+                                r.op_tipo = 'F';
+                                r.op_planejado = mop.quantidade_planejada || r.op_planejado || '0';
+                                r.op_apontado = mop.quantidade_produzida || r.op_apontado || '0';
+                                r.tem_op = true;
+                            }
+                        });
+                    } catch (e) {
+                        console.warn('⚠️ [Portal Cliente] Erro ao enriquecer OPs do MySQL:', e.message);
+                    }
                 }
 
                 // Batch lookup 4: NFs (SD2010 + SF2010)

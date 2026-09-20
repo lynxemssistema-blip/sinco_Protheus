@@ -339,8 +339,8 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
             return mergedPdfBytes;
         }
 
-        const batchOpSafe = batchContext && batchContext.visual_op ? batchContext.visual_op : mirrorData.pedido.pedido;
-        const safePedido = String(batchOpSafe).replace(/[^a-zA-Z0-9-]/g, '');
+        const opNumRaw = mirrorData.opNumFromTable || ((mirrorData.items && mirrorData.items.length > 0) ? (mirrorData.items[0].op_num_completa || mirrorData.items[0].op_num || '') : '');
+        const opPrefix = batchContext && batchContext.visual_op ? `OP_${String(batchContext.visual_op).replace(/[^a-zA-Z0-9-]/g, '')}` : (opNumRaw ? `OP_${opNumRaw.replace(/[^a-zA-Z0-9]/g, '')}` : `Pedido_${String(mirrorData.pedido?.pedido || '').replace(/[^a-zA-Z0-9-]/g, '')}`);
         
         const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
@@ -350,9 +350,7 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
         if (includeRoteiroStamp) {
             filenameSuffix = includeDesc ? '_Por_Recursos_Roteiro_Descricao.pdf' : '_Por_Recursos_Roteiro.pdf';
         }
-    const opNumRaw = mirrorData.opNumFromTable || ((mirrorData.items && mirrorData.items.length > 0) ? (mirrorData.items[0].op_num_completa || mirrorData.items[0].op_num || '') : '');
-    const opSuffix = opNumRaw ? `_OP_${opNumRaw.replace(/[^a-zA-Z0-9]/g, '')}` : '';
-        link.download = `Pacote_OP_${safePedido}${opSuffix}${filenameSuffix}`;
+        link.download = `Pacote_${opPrefix}${filenameSuffix}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

@@ -4,6 +4,7 @@ const mysql = require('../services/mysqlService');
 // getInactiveOrdersFilter is called on every paginated request across multiple routes,
 // so without caching it drains the MySQL pool under concurrent load.
 let _inactiveCache = { fn: null, expiresAt: 0 };
+let _forcedInactiveCache = { fn: null, expiresAt: 0 };
 
 /**
  * Retorna uma string SQL para ser concatenada numa query do Postgres
@@ -11,23 +12,26 @@ let _inactiveCache = { fn: null, expiresAt: 0 };
  *
  * Exemplo de uso:
  * const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
- * const filter = await getInactiveOrdersFilter();
+ * const filter = await getInactiveOrdersFilter(true); // true força exclusão sem depender de app_settings
  * const sql = `SELECT * FROM sc2010 WHERE 1=1 ${filter('c2_pedido')}`;
  */
-async function getInactiveOrdersFilter() {
-    if (Date.now() < _inactiveCache.expiresAt && _inactiveCache.fn !== null) {
-        return _inactiveCache.fn;
+async function getInactiveOrdersFilter(force = false) {
+    const cache = force ? _forcedInactiveCache : _inactiveCache;
+    if (Date.now() < cache.expiresAt && cache.fn !== null) {
+        return cache.fn;
     }
 
     try {
-        // Verificar se a feature está ativada
-        const [settings] = await mysql.query(
-            "SELECT setting_value FROM app_settings WHERE setting_key = 'hide_inactive_orders'"
-        );
-
         let isEnabled = true;
-        if (settings && settings.length > 0) {
-            isEnabled = settings[0].setting_value === 'true';
+        if (!force) {
+            // Verificar se a feature está ativada
+            const [settings] = await mysql.query(
+                "SELECT setting_value FROM app_settings WHERE setting_key = 'hide_inactive_orders'"
+            );
+
+            if (settings && settings.length > 0) {
+                isEnabled = settings[0].setting_value === 'true';
+            }
         }
 
         if (!isEnabled) {
@@ -42,11 +46,28 @@ async function getInactiveOrdersFilter() {
         if (!rows || rows.length === 0) {
             fn = () => '';
         } else {
-            const pedidos = rows.map(r => `'${r.pedido_numero.trim()}'`);
-            fn = (columnName) => ` AND TRIM(BOTH FROM ${columnName}) <> ALL (ARRAY[${pedidos.join(', ')}]::text[]) `;
+            const pedidos = new Set();
+            rows.forEach(r => {
+                if (r && r.pedido_numero) {
+                    const num = String(r.pedido_numero).trim();
+                    if (num) {
+                        pedidos.add(`'${num}'`);
+                        if (/^\d+$/.test(num)) {
+                            pedidos.add(`'${num.padStart(6, '0')}'`);
+                            const noLeading = num.replace(/^0+/, '') || '0';
+                            pedidos.add(`'${noLeading}'`);
+                        }
+                    }
+                }
+            });
+            fn = (columnName) => ` AND TRIM(BOTH FROM ${columnName}) <> ALL (ARRAY[${Array.from(pedidos).join(', ')}]::text[]) `;
         }
 
-        _inactiveCache = { fn, expiresAt: Date.now() + 60_000 };
+        if (force) {
+            _forcedInactiveCache = { fn, expiresAt: Date.now() + 60_000 };
+        } else {
+            _inactiveCache = { fn, expiresAt: Date.now() + 60_000 };
+        }
         return fn;
 
     } catch (err) {

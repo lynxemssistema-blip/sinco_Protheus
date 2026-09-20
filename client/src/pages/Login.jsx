@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus, HelpCircle, Smartphone, Zap, RefreshCw, Clock } from 'lucide-react';
+import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus, HelpCircle, Smartphone, Zap, RefreshCw, Clock, ExternalLink } from 'lucide-react';
 import { api } from '../services/api';
 import { useHelp } from '../contexts/HelpContext';
 import HelpDrawer from '../components/HelpDrawer';
-import logo from '../assets/metalfisa-logo.png';
+import logo from '../assets/lynx-ems-logo.jpg';
+import simLogo from '../assets/sim-consultoria-logo.png';
 
 import LandingPage from './LandingPage';
 
@@ -240,10 +241,11 @@ const Login = () => {
                             <ArrowLeft className="w-4 h-4" /> Site
                         </button>
                     )}
-                    <div className="bg-white p-3 rounded-2xl shadow-md mb-4 flex items-center justify-center">
-                        <img src={logo} alt="Logo MetalFisa" className="h-10 w-auto object-contain" />
+                    <div className="bg-white p-2 rounded-2xl shadow-md mb-4 flex items-center justify-center border border-slate-100">
+                        <img src={logo} alt="Lynx EMS Sistemas" className="h-12 w-12 rounded-xl object-cover" />
                     </div>
-                    <h1 className="text-2xl font-bold mb-1 tracking-tight">Portal Metalfisa</h1>
+                    <h1 className="text-2xl font-black mb-1 tracking-tight">SINCO Industrial Suite</h1>
+                    <p className="text-blue-200 font-semibold text-xs tracking-wider uppercase mb-1">Lynx EMS Sistemas</p>
                     <p className="opacity-90 font-medium text-sm">
                         {view === 'recover' ? 'Recuperação de Acesso' : view === 'register' ? 'Criar Nova Conta' : 'Acesso Restrito ao Sistema'}
                     </p>
@@ -491,6 +493,34 @@ const Login = () => {
                             </div>
                         </form>
                     )}
+
+                    {/* SGQ Partner Co-Branding */}
+                    <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+                        <div className="flex items-center gap-2.5">
+                            <img 
+                                src={simLogo} 
+                                alt="SIM Consultoria" 
+                                className="h-7 w-7 rounded-lg object-contain bg-white border border-slate-200 p-0.5 shadow-2xs" 
+                            />
+                            <div className="text-left">
+                                <span className="block font-bold text-slate-700 leading-none text-[11px]">
+                                    Gestão da Qualidade (SGQ)
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-medium">
+                                    SIM Consultoria • 17 Anos
+                                </span>
+                            </div>
+                        </div>
+                        <a 
+                            href="https://www.instagram.com/sim.consultoria/" 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1 transition-colors"
+                        >
+                            <span>@sim.consultoria</span>
+                            <ExternalLink className="w-3 h-3" />
+                        </a>
+                    </div>
 
                 </div>
             </div>

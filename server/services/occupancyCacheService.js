@@ -30,13 +30,22 @@ async function rebuildDailyOccupancyCache() {
         // 1. Fetch open OPs from Postgres
         console.time('Step 1: Fetch OPs from PG');
         const pgResult = await pgClient.query(`
-            SELECT TRIM(c2.c2_num) AS op_num, TRIM(c2.c2_item) AS item_op,
-                   TRIM(c2.c2_produto) AS produto, TRIM(c2.c2_pedido) AS pedido,
-                   TRIM(c2.c2_itempv) AS item_pedido, c2.c2_quant AS qtde, c2.c2_quje AS qtde_feita,
+            SELECT TRIM(c2.c2_num) AS op_num, TRIM(c2.c2_item) AS item_op, TRIM(c2.c2_sequen) AS sequen,
+                   TRIM(c2.c2_produto) AS produto, 
+                   COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),''), '') AS pedido,
+                   COALESCE(NULLIF(TRIM(c2.c2_itempv),''), NULLIF(TRIM(root_op.c2_itempv),''), '') AS item_pedido,
+                   c2.c2_quant AS qtde, c2.c2_quje AS qtde_feita,
                    TRIM(a1.a1_nome) AS cliente_nome
             FROM public.sc2010 c2
-            LEFT JOIN public.sc5010 c5 ON TRIM(c5.c5_num)=TRIM(c2.c2_pedido) AND COALESCE(c5.d_e_l_e_t_,'') IN ('',' ')
-            LEFT JOIN public.sa1010 a1 ON TRIM(a1.a1_cod)=TRIM(c5.c5_cliente) AND COALESCE(a1.d_e_l_e_t_,'') IN ('',' ')
+            LEFT JOIN public.sc2010 root_op ON root_op.c2_filial = c2.c2_filial 
+                 AND root_op.c2_num = c2.c2_num 
+                 AND root_op.c2_item = c2.c2_item 
+                 AND root_op.c2_sequen = '001' 
+                 AND COALESCE(root_op.d_e_l_e_t_,'') IN ('',' ')
+            LEFT JOIN public.sc5010 c5 ON TRIM(c5.c5_num) = COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),'')) 
+                 AND COALESCE(c5.d_e_l_e_t_,'') IN ('',' ')
+            LEFT JOIN public.sa1010 a1 ON TRIM(a1.a1_cod) = TRIM(c5.c5_cliente) 
+                 AND COALESCE(a1.d_e_l_e_t_,'') IN ('',' ')
             WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
               AND c2.c2_quje < c2.c2_quant
               AND TRIM(c2.c2_num) NOT IN ('', '-', '000000')
@@ -47,12 +56,24 @@ async function rebuildDailyOccupancyCache() {
         console.log(`Fetched ${opRows.length} OPs from Postgres.`);
 
         const opMap = {};
-        for (const r of opRows) opMap[`${r.op_num}|${r.item_op}`] = r;
+        const opBaseMap = {};
+        for (const r of opRows) {
+            if (r.sequen) {
+                opMap[`${r.op_num}|${r.item_op}|${r.sequen}`] = r;
+            }
+            if (!opMap[`${r.op_num}|${r.item_op}`] || r.sequen === '001') {
+                opMap[`${r.op_num}|${r.item_op}`] = r;
+            }
+            if (!opBaseMap[r.op_num]) {
+                opBaseMap[r.op_num] = r;
+            }
+        }
 
         // 2. Fetch routing
         console.time('Step 2: Fetch routing');
         const distinctProds = [...new Set(opRows.map(r => r.produto).filter(Boolean))];
         const routingMap = {};
+        const recursoDescriMap = {};
         if (distinctProds.length > 0) {
             const pgRouting = await pgClient.query(`
                 SELECT TRIM(g2.g2_produto) prod, TRIM(g2.g2_operac) operac,
@@ -65,11 +86,15 @@ async function rebuildDailyOccupancyCache() {
             `, [distinctProds]);
             for (const r of pgRouting.rows) {
                 if (!routingMap[r.prod]) routingMap[r.prod] = {};
+                const desc = sanitizeString(r.recurso_descri || r.recurso);
                 routingMap[r.prod][r.operac] = {
                     recurso_codigo: r.recurso,
-                    recurso_descri: sanitizeString(r.recurso_descri || r.recurso),
+                    recurso_descri: desc,
                     tempo: Math.round((parseFloat(r.tempo) || 0) * 1000) / 1000
                 };
+                if (r.recurso && !recursoDescriMap[r.recurso]) {
+                    recursoDescriMap[r.recurso] = desc;
+                }
             }
         }
         console.timeEnd('Step 2: Fetch routing');
@@ -82,14 +107,35 @@ async function rebuildDailyOccupancyCache() {
             for (let i = 0; i < opNums.length; i += 500) {
                 const chunk = opNums.slice(i, i + 500);
                 const [rows] = await mysqlPool.query(`
-                    SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim 
+                    SELECT op_numero, op_item, op_sequencia, operacao_codigo, recurso_codigo, produto_codigo, pedido_venda, data_planejada_inicio, data_planejada_fim 
                     FROM app_production_planning 
-                    WHERE op_numero IN (?)
-                `, [chunk]);
+                    WHERE op_numero IN (?) OR LEFT(op_numero, 6) IN (?)
+                `, [chunk, chunk]);
                 planRows = planRows.concat(rows);
             }
         }
         console.timeEnd('Step 3: Fetch planning from MySQL');
+
+        // 3B. Fractional Delivery Forecasts from MySQL
+        console.time('Step 3B: Fetch fraction forecasts from MySQL');
+        const fractionForecastMap = {};
+        if (opNums.length > 0) {
+            for (let i = 0; i < opNums.length; i += 500) {
+                const chunk = opNums.slice(i, i + 500);
+                const [fracRows] = await mysqlPool.query(`
+                    SELECT op_protheus, quantidade_pcp, numero_lote, pedido, item, data_entrega_pcp
+                    FROM app_pcp_delivery_forecasts
+                    WHERE op_protheus IN (?) OR LEFT(op_protheus, 6) IN (?)
+                `, [chunk, chunk]);
+                for (const fr of fracRows) {
+                    const cleanFracOp = (fr.op_protheus || '').trim();
+                    if (cleanFracOp) {
+                        fractionForecastMap[cleanFracOp] = fr;
+                    }
+                }
+            }
+        }
+        console.timeEnd('Step 3B: Fetch fraction forecasts from MySQL');
 
         // 4. Appointments MySQL
         console.time('Step 4: Fetch appointments from MySQL');
@@ -102,8 +148,8 @@ async function rebuildDailyOccupancyCache() {
                 const [rows] = await mysqlPool.query(`
                     SELECT op_numero, op_item, operacao_codigo, data_fim, quantidade 
                     FROM app_production_appointments 
-                    WHERE op_numero IN (${ph}) 
-                `, chunk);
+                    WHERE op_numero IN (${ph}) OR LEFT(op_numero, 6) IN (${ph})
+                `, [...chunk, ...chunk]);
                 for (const a of rows) {
                     const key = `${(a.op_numero||'').trim()}|${(a.op_item||'').trim()}|${(a.operacao_codigo||'').trim()}`;
                     apptsMap[key] = (apptsMap[key] || 0) + Number(a.quantidade || 0);
@@ -177,19 +223,41 @@ async function rebuildDailyOccupancyCache() {
         for (let planIdx = 0; planIdx < planRows.length; planIdx++) {
             if (planIdx > 0 && planIdx % 500 === 0) await yieldLoop();
             const plan = planRows[planIdx];
-            const resCode = (plan.recurso_codigo || '').trim();
-            if (!resCode) continue;
 
             const opn = (plan.op_numero || '').trim();
             const itn = (plan.op_item   || '').trim();
+            const seqn = (plan.op_sequencia || '').trim();
+            const baseOp = opn.length > 6 ? opn.substring(0, 6) : opn;
 
-            // Descarta pedidos inativos
-            const opRow = opMap[`${opn}|${itn}`];
-            if (opRow?.pedido && inativosSet.has(opRow.pedido)) continue;
+            // Resolve opRow: tenta chave com sequencia, chave completa, chave base com item, ou primeiro match
+            const opRow = opMap[`${opn}|${itn}|${seqn}`]
+                || opMap[`${baseOp}|${itn}|${seqn}`]
+                || opMap[`${opn}|${itn}`] 
+                || opMap[`${baseOp}|${itn}`] 
+                || opMap[`${baseOp}|${opn.substring(6, 8)}|${seqn}`]
+                || opMap[`${baseOp}|${opn.substring(6, 8)}`] 
+                || opBaseMap[baseOp];
+
+            // 1. Descarta pedidos/projetos inativos (app_pedidos_inativos)
+            const ped = (opRow?.pedido || '').trim();
+            if ((ped && inativosSet.has(ped)) || inativosSet.has(baseOp) || inativosSet.has(opn)) continue;
+
+            // 2. Descarta ordens de serviço sem cliente comercial
+            if (!opRow?.cliente_nome || !opRow.cliente_nome.trim()) continue;
 
             const pIni = fmtDate(plan.data_planejada_inicio);
             const pFim = fmtDate(plan.data_planejada_fim);
             if (!pIni) continue;
+
+            // Determina o código do recurso: planning > roteiro > config
+            const opcn = (plan.operacao_codigo || '').trim();
+            let resCode = (plan.recurso_codigo || '').trim();
+            if (!resCode && opRow) {
+                const prodRouting = routingMap[opRow.produto] || {};
+                const rEntry = prodRouting[opcn.padStart(4, '0')] || prodRouting[opcn];
+                if (rEntry) resCode = rEntry.recurso_codigo;
+            }
+            if (!resCode) continue;
 
             const conf     = configMap[resCode] || {};
             const capacity = parseFloat(conf.capacidade_diaria_minutos) || 480;
@@ -197,9 +265,8 @@ async function rebuildDailyOccupancyCache() {
             // Obtém o tempo unitário do roteiro para calcular carga em minutos
             let unitTimeMin = 0;
             if (opRow) {
-                const opcn = (plan.operacao_codigo || '').trim();
                 const prodRouting = routingMap[opRow.produto] || {};
-                const rEntry = prodRouting[opcn.padStart(4,'0')] || prodRouting[opcn];
+                const rEntry = prodRouting[opcn.padStart(4, '0')] || prodRouting[opcn];
                 if (rEntry) {
                     unitTimeMin = parseFloat(rEntry.tempo) || 0;
                 }
@@ -207,11 +274,19 @@ async function rebuildDailyOccupancyCache() {
             // Fallback: usa tempo_padrao_minutos do recurso se não achou roteiro
             if (unitTimeMin <= 0) unitTimeMin = parseFloat(conf.tempo_padrao_minutos) || 0;
 
-            // Calcula qtde pendente
-            const opcKey = `${opn}|${itn}|${(plan.operacao_codigo||'').trim()}`;
+            // Calcula quantidade total da fração vs OP principal
+            const fracInfo = fractionForecastMap[opn];
+            let qtde_total = 0;
+            if (fracInfo && Number(fracInfo.quantidade_pcp) > 0) {
+                qtde_total = Number(fracInfo.quantidade_pcp);
+            } else if (opRow) {
+                qtde_total = Number(opRow.qtde) || 0;
+            }
+
+            // Calcula qtde pendente e executada
+            const opcKey = `${opn}|${itn}|${opcn}`;
             const qtde_apontada = apptsMap[opcKey] || 0;
-            const qtde_total    = opRow ? (Number(opRow.qtde) || 0) : 0;
-            const qtde_feita    = qtde_apontada > 0 ? qtde_apontada : (opRow ? (Number(opRow.qtde_feita) || 0) : 0);
+            const qtde_feita    = qtde_apontada > 0 ? qtde_apontada : (fracInfo ? 0 : (opRow ? (Number(opRow.qtde_feita) || 0) : 0));
             const qtde_pendente = Math.max(0, qtde_total - qtde_feita);
 
             const min_totais = qtde_total    * unitTimeMin;
@@ -222,9 +297,7 @@ async function rebuildDailyOccupancyCache() {
             const bDays = getBusinessDaysBetween(pIni, pFim);
             let remaining_totais = min_totais || capacity; // se não há tempo, usa 1 capacidade como proxy
 
-            const resDescri = (opRow && routingMap[opRow.produto])
-                ? Object.values(routingMap[opRow.produto]).find(e => e.recurso_codigo === resCode)?.recurso_descri || resCode
-                : resCode;
+            const resDescri = recursoDescriMap[resCode] || resCode;
 
             for (let i = 0; i < bDays.length; i++) {
                 const d = bDays[i];
@@ -252,14 +325,20 @@ async function rebuildDailyOccupancyCache() {
         }
 
         // 6.2 Aggregate daily actual execution from appointments
+        let apptCounter = 0;
         for (const [d, apptsOnDate] of Object.entries(dailyApptsMap)) {
             for (const [key, qty] of Object.entries(apptsOnDate)) {
+                if (++apptCounter % 500 === 0) await yieldLoop();
                 const parts = key.split('|');
                 const opn = parts[0];
                 const itn = parts[1];
                 const opcn = parts[2];
+                const baseOp = opn.length > 6 ? opn.substring(0, 6) : opn;
                 
-                const opRow = opMap[`${opn}|${itn}`];
+                const opRow = opMap[`${opn}|${itn}`] 
+                    || opMap[`${baseOp}|${itn}`] 
+                    || opMap[`${baseOp}|${opn.substring(6, 8)}`] 
+                    || opBaseMap[baseOp];
                 if (!opRow) continue;
                 
                 const prodRouting = routingMap[opRow.produto] || {};

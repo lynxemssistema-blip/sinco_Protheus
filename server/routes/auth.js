@@ -64,7 +64,7 @@ router.post('/login', async (req, res) => {
 
         // Generate Token
         const token = jwt.sign(
-            { id: user.idUsuario, login: user.Login, nome: user.NomeCompleto, tipo: user.TipoUsuario, idFornecedor: user.idFornecedor, lojaFornecedor: user.lojaFornecedor, idCliente: user.idCliente, lojaCliente: user.lojaCliente, tipoExterno: user.tipoExterno },
+            { id: user.idUsuario, login: user.Login, email: user.email, nome: user.NomeCompleto, tipo: user.TipoUsuario, idFornecedor: user.idFornecedor, lojaFornecedor: user.lojaFornecedor, idCliente: user.idCliente, lojaCliente: user.lojaCliente, tipoExterno: user.tipoExterno },
             SECRET_KEY,
             { expiresIn: '8h' }
         );

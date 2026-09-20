@@ -114,10 +114,16 @@ export const AuthProvider = ({ children }) => {
         if (!user) return false;
 
         const userTipo = (user.tipo || '').trim();
+        const userLogin = (user.login || '').toLowerCase();
+
+        // Super Admin (sinco, Edson, SA) tem acesso irrestrito a TUDO no sistema
+        if (userTipo === 'SA' || userLogin === 'sinco' || userLogin === 'edson') {
+            return true;
+        }
 
         if (!NEVER_ADMIN_BYPASS.includes(pageId)) {
-            // Tipo 'A' e 'SA' têm acesso total, sempre
-            if (userTipo === 'A' || userTipo === 'SA') return true;
+            // Tipo 'A' e perfis administradores têm acesso total
+            if (userTipo === 'A' || userTipo === 'Administrador') return true;
 
             // Perfil customizado com isAdmin também tem acesso total
             if (customProfiles.find(p => p.code === userTipo)?.isAdmin === true) return true;
@@ -137,7 +143,8 @@ export const AuthProvider = ({ children }) => {
 
     const isAdmin = !!user && (() => {
         const t = (user.tipo || '').trim();
-        return t === 'A' || t === 'SA' || customProfiles.find(p => p.code === t)?.isAdmin === true;
+        const l = (user.login || '').toLowerCase();
+        return t === 'A' || t === 'SA' || t === 'Administrador' || l === 'sinco' || l === 'edson' || customProfiles.find(p => p.code === t)?.isAdmin === true;
     })();
 
     return (

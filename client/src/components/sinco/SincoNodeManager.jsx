@@ -36,7 +36,9 @@ import api, {
     updateSincoProdutoCliente,
     updateSincoRoteiro,
     createSincoRestricaoSz0,
-    searchSincoProdutos
+    searchSincoProdutos,
+    getClientes,
+    getProcessList
 } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -89,6 +91,74 @@ export default function SincoNodeManager({
         revMetalfisa: ''
     });
 
+    // Modais de Seleção no Protheus
+    const [showSearchMaterialModal, setShowSearchMaterialModal] = useState(false);
+    const [searchMaterialQuery, setSearchMaterialQuery] = useState('');
+    const [searchMaterialResults, setSearchMaterialResults] = useState([]);
+    const [searchingMaterial, setSearchingMaterial] = useState(false);
+    const [activeMaterialRowIndex, setActiveMaterialRowIndex] = useState(null);
+
+    const [showSearchClienteModal, setShowSearchClienteModal] = useState(false);
+    const [searchClienteQuery, setSearchClienteQuery] = useState('');
+    const [searchClienteResults, setSearchClienteResults] = useState([]);
+    const [searchingCliente, setSearchingCliente] = useState(false);
+    const [activeClienteRowIndex, setActiveClienteRowIndex] = useState(null);
+
+    // Recursos / Máquinas (SH1)
+    const [processList, setProcessList] = useState([]);
+    const [showSearchRecursoModal, setShowSearchRecursoModal] = useState(false);
+    const [activeRecursoRowIdx, setActiveRecursoRowIdx] = useState(null);
+    const [searchRecursoQuery, setSearchRecursoQuery] = useState('');
+
+    const handleSearchMaterial = async (q) => {
+        const query = (q !== undefined ? q : searchMaterialQuery).trim();
+        if (query.length < 2) return;
+        setSearchingMaterial(true);
+        try {
+            const res = await searchSincoProdutos(query);
+            setSearchMaterialResults(Array.isArray(res) ? res : []);
+        } catch (err) {
+            console.error('Erro ao buscar materiais:', err);
+            showMsg('Erro ao buscar materiais no Protheus', 'error');
+        } finally {
+            setSearchingMaterial(false);
+        }
+    };
+
+    const handleOpenSearchMaterial = (rowIdx, initialQuery = '') => {
+        setActiveMaterialRowIndex(rowIdx);
+        setSearchMaterialQuery(initialQuery);
+        setSearchMaterialResults([]);
+        setShowSearchMaterialModal(true);
+        if (initialQuery && initialQuery.length >= 2) {
+            handleSearchMaterial(initialQuery);
+        }
+    };
+
+    const handleSearchCliente = async (q) => {
+        const query = (q !== undefined ? q : searchClienteQuery).trim();
+        setSearchingCliente(true);
+        try {
+            const res = await getClientes(query);
+            setSearchClienteResults(Array.isArray(res) ? res : []);
+        } catch (err) {
+            console.error('Erro ao buscar clientes:', err);
+            showMsg('Erro ao buscar clientes no Protheus', 'error');
+        } finally {
+            setSearchingCliente(false);
+        }
+    };
+
+    const handleOpenSearchCliente = (rowIdx, initialQuery = '') => {
+        setActiveClienteRowIndex(rowIdx);
+        setSearchClienteQuery(initialQuery);
+        setSearchClienteResults([]);
+        setShowSearchClienteModal(true);
+        if (initialQuery) {
+            handleSearchCliente(initialQuery);
+        }
+    };
+
     const cleanCodigo = (codigo || '').replace(/\.[^/.]+$/, '').trim().toUpperCase();
 
     const showMsg = (msg, type = 'success') => {
@@ -96,9 +166,9 @@ export default function SincoNodeManager({
         setTimeout(() => setNotification(null), 4000);
     };
 
-    const carregarTudo = useCallback(async () => {
+    const carregarTudo = useCallback(async (silent = false) => {
         if (!cleanCodigo) return;
-        setLoading(true);
+        if (!silent) setLoading(true);
         try {
             const [prodRes, docsRes, opeRes, sz1Res, sz0Res, arvRes] = await Promise.allSettled([
                 getSincoProduto(cleanCodigo),
@@ -135,16 +205,21 @@ export default function SincoNodeManager({
 
             // Roteiro (SG2)
             if (opeRes.status === 'fulfilled' && Array.isArray(opeRes.value)) {
-                setRoteiro(opeRes.value);
-                setRoteiroOriginal(JSON.parse(JSON.stringify(opeRes.value)));
+                const mappedOps = opeRes.value.map(op => ({
+                    ...op,
+                    _original_operacao: String(op.operacao || '').trim().padStart(2, '0'),
+                    operacao: String(op.operacao || '').trim().padStart(2, '0')
+                }));
+                setRoteiro(mappedOps);
+                setRoteiroOriginal(JSON.parse(JSON.stringify(mappedOps)));
             } else {
                 setRoteiro([]);
                 setRoteiroOriginal([]);
             }
 
-            // Restrições (SZ0)
+            // Restrições (SZ0) - Status 'L' é considerado excluído/deletado
             if (sz0Res.status === 'fulfilled' && Array.isArray(sz0Res.value)) {
-                setRestricoesSz0(sz0Res.value);
+                setRestricoesSz0(sz0Res.value.filter(r => String(r.status || '').trim().toUpperCase() !== 'L'));
             } else {
                 setRestricoesSz0([]);
             }
@@ -153,9 +228,15 @@ export default function SincoNodeManager({
             console.error('Erro ao carregar dados do nó:', err);
             showMsg('Falha ao carregar alguns dados deste componente.', 'error');
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     }, [cleanCodigo]);
+
+    useEffect(() => {
+        getProcessList().then(res => {
+            if (Array.isArray(res)) setProcessList(res);
+        }).catch(err => console.error("Erro ao carregar lista de recursos:", err));
+    }, []);
 
     useEffect(() => {
         if (cleanCodigo) {
@@ -167,6 +248,7 @@ export default function SincoNodeManager({
     // 1. SALVAR MATERIAIS / ESTRUTURA (SG1)
     // ==========================================
     const handleAddMaterialRow = () => {
+        const newIdx = materiais.length;
         setMateriais(prev => [
             ...prev,
             {
@@ -180,40 +262,153 @@ export default function SincoNodeManager({
             }
         ]);
         setIsEditingMateriais(true);
+        handleOpenSearchMaterial(newIdx, '');
     };
 
     const handleSalvarMateriais = async () => {
-        const validos = materiais.filter(m => !m.deleted && m.componente && m.componente.trim());
-        if (validos.length === 0 && materiaisOriginal.length === 0) {
-            showMsg('Nenhum componente para salvar na estrutura.', 'warning');
-            return;
+        const formatDate = (val, fallback) => {
+            if (!val) return fallback;
+            const str = String(val).replace(/[-/]/g, '').trim();
+            if (str.length === 8) return str;
+            return fallback;
+        };
+
+        const estruturaMudancas = [];
+
+        // 1. Processar itens da tabela
+        for (const itemEdit of materiais) {
+            if (!itemEdit.componente || !itemEdit.componente.trim()) continue;
+            const comp = itemEdit.componente.trim().toUpperCase();
+            const qtdNum = Number(itemEdit.quantidade !== undefined ? itemEdit.quantidade : 1);
+
+            const itemOrig = materiaisOriginal.find(o => o.componente && o.componente.trim().toUpperCase() === comp);
+
+            if (!itemOrig) {
+                // Item novo
+                if (!itemEdit.deleted) {
+                    estruturaMudancas.push({
+                        G1_COD: cleanCodigo,
+                        G1_COMP: comp,
+                        componente: comp,
+                        G1_TRT: itemEdit.trt || "   ",
+                        G1_QUANT: qtdNum,
+                        quantidade: qtdNum,
+                        G1_PERDA: Number(itemEdit.perda || 0),
+                        G1_INI: formatDate(itemEdit.ini, "19000101"),
+                        G1_FIM: formatDate(itemEdit.fim, "20491231"),
+                        OPCAO: "INCLUIR"
+                    });
+                }
+            } else {
+                // Item já existia na estrutura original
+                if (itemEdit.deleted) {
+                    estruturaMudancas.push({
+                        G1_COD: cleanCodigo,
+                        G1_COMP: comp,
+                        componente: comp,
+                        G1_TRT: itemOrig.trt || "   ",
+                        G1_QUANT: Number(itemOrig.quantidade || 0),
+                        quantidade: Number(itemOrig.quantidade || 0),
+                        G1_PERDA: Number(itemOrig.perda || 0),
+                        G1_INI: formatDate(itemOrig.ini, "19000101"),
+                        G1_FIM: formatDate(itemOrig.fim, "20491231"),
+                        OPCAO: "EXCLUIR"
+                    });
+                } else if (qtdNum !== Number(itemOrig.quantidade || 0)) {
+                    // Quantidade alterada
+                    estruturaMudancas.push({
+                        G1_COD: cleanCodigo,
+                        G1_COMP: comp,
+                        componente: comp,
+                        G1_TRT: itemOrig.trt || "   ",
+                        G1_QUANT: qtdNum,
+                        quantidade: qtdNum,
+                        G1_PERDA: Number(itemOrig.perda || 0),
+                        G1_INI: formatDate(itemOrig.ini, "19000101"),
+                        G1_FIM: formatDate(itemOrig.fim, "20491231"),
+                        OPCAO: "ALTERAR"
+                    });
+                } else if (itemEdit.isNew) {
+                    estruturaMudancas.push({
+                        G1_COD: cleanCodigo,
+                        G1_COMP: comp,
+                        componente: comp,
+                        G1_TRT: itemEdit.trt || "   ",
+                        G1_QUANT: qtdNum,
+                        quantidade: qtdNum,
+                        G1_PERDA: Number(itemEdit.perda || 0),
+                        G1_INI: formatDate(itemEdit.ini, "19000101"),
+                        G1_FIM: formatDate(itemEdit.fim, "20491231"),
+                        OPCAO: "ALTERAR"
+                    });
+                }
+            }
         }
 
-        const estruturaPayload = validos.map(m => ({
-            componente: m.componente.trim().toUpperCase(),
-            quantidade: Number(m.quantidade || 1),
-            unidade: (m.unidade || 'UN').trim().toUpperCase(),
-            tipo: (m.tipo || 'MP').trim().toUpperCase(),
-            descricao: (m.descricao || '').trim()
-        }));
+        // 2. Processar itens que estavam no original mas foram excluídos/removidos
+        for (const itemOrig of materiaisOriginal) {
+            if (!itemOrig.componente) continue;
+            const comp = itemOrig.componente.trim().toUpperCase();
+            const exists = materiais.find(m => m.componente && m.componente.trim().toUpperCase() === comp);
+            if (!exists) {
+                estruturaMudancas.push({
+                    G1_COD: cleanCodigo,
+                    G1_COMP: comp,
+                    componente: comp,
+                    G1_TRT: itemOrig.trt || "   ",
+                    G1_QUANT: Number(itemOrig.quantidade || 0),
+                    quantidade: Number(itemOrig.quantidade || 0),
+                    G1_PERDA: Number(itemOrig.perda || 0),
+                    G1_INI: formatDate(itemOrig.ini, "19000101"),
+                    G1_FIM: formatDate(itemOrig.fim, "20491231"),
+                    OPCAO: "EXCLUIR"
+                });
+            }
+        }
+
+        // Se nenhuma mudança específica for detectada, sincronizar todos os válidos
+        let payloadEstrutura = estruturaMudancas;
+        if (payloadEstrutura.length === 0) {
+            const validos = materiais.filter(m => !m.deleted && m.componente && m.componente.trim());
+            if (validos.length === 0 && materiaisOriginal.length === 0) {
+                showMsg('Nenhum componente para salvar na estrutura.', 'warning');
+                return;
+            }
+            payloadEstrutura = validos.map(m => ({
+                G1_COD: cleanCodigo,
+                G1_COMP: m.componente.trim().toUpperCase(),
+                componente: m.componente.trim().toUpperCase(),
+                G1_TRT: m.trt || "   ",
+                G1_QUANT: Number(m.quantidade || 1),
+                quantidade: Number(m.quantidade || 1),
+                G1_PERDA: Number(m.perda || 0),
+                G1_INI: formatDate(m.ini, "19000101"),
+                G1_FIM: formatDate(m.fim, "20491231"),
+                OPCAO: materiaisOriginal.length === 0 ? "INCLUIR" : "ALTERAR"
+            }));
+        }
+
+        const noper = materiaisOriginal.length === 0 ? 3 : 4;
 
         setSaving(true);
         try {
             await updateSincoProductStructure({
-                noper: materiaisOriginal.length === 0 ? 3 : 4,
+                noper,
                 empresa: '01',
                 filial: '0101',
                 produto: cleanCodigo,
                 quantidade: 1,
-                estrutura: estruturaPayload
+                estrutura: payloadEstrutura
             });
             showMsg('Estrutura de materiais (SG1) salva com sucesso!', 'success');
             setIsEditingMateriais(false);
-            await carregarTudo();
-            if (onSuccessRefresh) onSuccessRefresh(cleanCodigo);
+            await carregarTudo(true);
+            if (onSuccessRefresh) onSuccessRefresh(cleanCodigo, 'materiais');
         } catch (err) {
             console.error('Erro ao salvar materiais:', err);
-            showMsg(err.response?.data?.error || err.message || 'Erro ao salvar estrutura', 'error');
+            const msg = err.response?.data?.details?.message || err.response?.data?.details || err.response?.data?.message || err.response?.data?.error || err.message || 'Erro ao salvar estrutura';
+            const strMsg = Array.isArray(msg) ? msg.join(' | ') : (typeof msg === 'object' ? JSON.stringify(msg) : msg);
+            showMsg('Erro ao salvar estrutura: ' + strMsg, 'error');
         } finally {
             setSaving(false);
         }
@@ -266,8 +461,8 @@ export default function SincoNodeManager({
             });
             showMsg('Vínculos de cliente (SZ1) salvos com sucesso!', 'success');
             setIsEditingSz1(false);
-            await carregarTudo();
-            if (onSuccessRefresh) onSuccessRefresh(cleanCodigo);
+            await carregarTudo(true);
+            if (onSuccessRefresh) onSuccessRefresh(cleanCodigo, 'sz1');
         } catch (err) {
             console.error('Erro ao salvar cliente SZ1:', err);
             showMsg(err.response?.data?.error || err.message || 'Erro ao salvar cliente', 'error');
@@ -280,7 +475,12 @@ export default function SincoNodeManager({
     // 3. SALVAR ROTEIRO (SG2)
     // ==========================================
     const handleAddOperacaoRow = () => {
-        const nextSeq = String((roteiro.filter(r => !r.deleted).length + 1) * 10).padStart(2, '0');
+        const activeSeqs = roteiro
+            .filter(r => !r.deleted)
+            .map(r => parseInt(r.operacao, 10))
+            .filter(n => !isNaN(n));
+        const maxSeq = activeSeqs.length > 0 ? Math.max(...activeSeqs) : 0;
+        const nextSeq = String(maxSeq + 10).padStart(2, '0');
         setRoteiro(prev => [
             ...prev,
             {
@@ -296,50 +496,196 @@ export default function SincoNodeManager({
     };
 
     const handleSalvarRoteiro = async () => {
-        const validos = roteiro.filter(r => !r.deleted && r.operacao && r.recurso);
-        if (validos.length === 0 && roteiroOriginal.length === 0) {
-            showMsg('Nenhuma operação para salvar no roteiro.', 'warning');
+        const activeOps = roteiro.filter(r => !r.deleted);
+        const isNovoRoteiro = roteiroOriginal.length === 0;
+
+        if (activeOps.length === 0) {
+            if (isNovoRoteiro) {
+                showMsg('Nenhuma operação preenchida para criar o roteiro.', 'warning');
+            } else {
+                showMsg('O Protheus exige pelo menos uma operação ativa no roteiro.', 'warning');
+            }
             return;
         }
 
-        const roteirosPayload = validos.map(op => ({
-            G2_OPERAC: String(op.operacao).trim().padStart(2, '0'),
-            G2_DESCRI: (op.descricao || '').substring(0, 30),
-            G2_RECURSO: (op.recurso || '').trim(),
-            G2_FERRAM: '',
-            G2_TPALOCF: '',
-            G2_SETUP: String(op.setup || '0'),
-            G2_FORMSTP: '',
-            G2_LOTEPAD: 1,
-            G2_TEMPAD: Number(op.tempo || 1),
-            G2_TPOPER: '1',
-            G2_TPSOBRE: '',
-            G2_TEMPSOB: '',
-            G2_CTRAB: '',
-            G2_TEMPEND: '',
-            G2_MAOOBRA: 1,
-            OPERACAO: op.isNew ? 'INCLUIR' : 'ALTERAR'
-        }));
+        for (const op of activeOps) {
+            if (!op.operacao || !String(op.operacao).trim()) {
+                showMsg('Todas as operações ativas devem possuir número de sequência.', 'warning');
+                return;
+            }
+            if (!op.recurso || !String(op.recurso).trim()) {
+                showMsg(`A operação ${op.operacao} não possui Recurso (Máquina) definido.`, 'warning');
+                return;
+            }
+        }
+
+        const seqs = activeOps.map(op => String(op.operacao).trim().padStart(2, '0'));
+        const uniqueSeqs = new Set(seqs);
+        if (uniqueSeqs.size !== seqs.length) {
+            showMsg('Existem operações com sequências repetidas. Corrija antes de salvar.', 'warning');
+            return;
+        }
+
+        const roteirosParaEnviar = [];
+
+        if (isNovoRoteiro) {
+            for (const op of activeOps) {
+                roteirosParaEnviar.push({
+                    G2_OPERAC: String(op.operacao).trim().padStart(2, '0'),
+                    G2_DESCRI: String(op.descricao || '').substring(0, 30),
+                    G2_RECURSO: String(op.recurso).trim(),
+                    G2_FERRAM: '',
+                    G2_TPALOCF: '',
+                    G2_SETUP: Number(op.setup || 0),
+                    G2_FORMSTP: '',
+                    G2_LOTEPAD: 1,
+                    G2_TEMPAD: Number(op.tempo || 1),
+                    G2_TPOPER: '1',
+                    G2_TPSOBRE: '',
+                    G2_TEMPSOB: '',
+                    G2_CTRAB: '',
+                    G2_TEMPEND: '',
+                    G2_MAOOBRA: 1,
+                    OPERACAO: 'INCLUIR'
+                });
+            }
+        } else {
+            for (const original of roteiroOriginal) {
+                const origSeq = String(original.operacao).trim().padStart(2, '0');
+                const editada = roteiro.find(op => 
+                    (op._original_operacao && String(op._original_operacao).trim().padStart(2, '0') === origSeq) ||
+                    (!op.isNew && String(op.operacao).trim().padStart(2, '0') === origSeq)
+                );
+
+                if (!editada || editada.deleted) {
+                    roteirosParaEnviar.push({
+                        G2_OPERAC: origSeq,
+                        G2_DESCRI: String(original.descricao || '').substring(0, 30),
+                        G2_RECURSO: String(original.recurso).trim(),
+                        G2_FERRAM: '',
+                        G2_TPALOCF: '',
+                        G2_SETUP: Number(original.setup || 0),
+                        G2_FORMSTP: '',
+                        G2_LOTEPAD: 1,
+                        G2_TEMPAD: Number(original.tempo || 1),
+                        G2_TPOPER: '1',
+                        G2_TPSOBRE: '',
+                        G2_TEMPSOB: '',
+                        G2_CTRAB: '',
+                        G2_TEMPEND: '',
+                        G2_MAOOBRA: 1,
+                        OPERACAO: 'EXCLUIR'
+                    });
+                } else if (String(editada.operacao).trim().padStart(2, '0') !== origSeq) {
+                    roteirosParaEnviar.push({
+                        G2_OPERAC: origSeq,
+                        G2_DESCRI: String(original.descricao || '').substring(0, 30),
+                        G2_RECURSO: String(original.recurso).trim(),
+                        G2_FERRAM: '',
+                        G2_TPALOCF: '',
+                        G2_SETUP: Number(original.setup || 0),
+                        G2_FORMSTP: '',
+                        G2_LOTEPAD: 1,
+                        G2_TEMPAD: Number(original.tempo || 1),
+                        G2_TPOPER: '1',
+                        G2_TPSOBRE: '',
+                        G2_TEMPSOB: '',
+                        G2_CTRAB: '',
+                        G2_TEMPEND: '',
+                        G2_MAOOBRA: 1,
+                        OPERACAO: 'EXCLUIR'
+                    });
+                    roteirosParaEnviar.push({
+                        G2_OPERAC: String(editada.operacao).trim().padStart(2, '0'),
+                        G2_DESCRI: String(editada.descricao || '').substring(0, 30),
+                        G2_RECURSO: String(editada.recurso).trim(),
+                        G2_FERRAM: '',
+                        G2_TPALOCF: '',
+                        G2_SETUP: Number(editada.setup || 0),
+                        G2_FORMSTP: '',
+                        G2_LOTEPAD: 1,
+                        G2_TEMPAD: Number(editada.tempo || 1),
+                        G2_TPOPER: '1',
+                        G2_TPSOBRE: '',
+                        G2_TEMPSOB: '',
+                        G2_CTRAB: '',
+                        G2_TEMPEND: '',
+                        G2_MAOOBRA: 1,
+                        OPERACAO: 'INCLUIR'
+                    });
+                } else {
+                    roteirosParaEnviar.push({
+                        G2_OPERAC: origSeq,
+                        G2_DESCRI: String(editada.descricao || '').substring(0, 30),
+                        G2_RECURSO: String(editada.recurso).trim(),
+                        G2_FERRAM: '',
+                        G2_TPALOCF: '',
+                        G2_SETUP: Number(editada.setup || 0),
+                        G2_FORMSTP: '',
+                        G2_LOTEPAD: 1,
+                        G2_TEMPAD: Number(editada.tempo || 1),
+                        G2_TPOPER: '1',
+                        G2_TPSOBRE: '',
+                        G2_TEMPSOB: '',
+                        G2_CTRAB: '',
+                        G2_TEMPEND: '',
+                        G2_MAOOBRA: 1,
+                        OPERACAO: 'ALTERAR'
+                    });
+                }
+            }
+
+            for (const op of roteiro) {
+                if (op.isNew && !op.deleted && op.operacao && op.recurso) {
+                    roteirosParaEnviar.push({
+                        G2_OPERAC: String(op.operacao).trim().padStart(2, '0'),
+                        G2_DESCRI: String(op.descricao || '').substring(0, 30),
+                        G2_RECURSO: String(op.recurso).trim(),
+                        G2_FERRAM: '',
+                        G2_TPALOCF: '',
+                        G2_SETUP: Number(op.setup || 0),
+                        G2_FORMSTP: '',
+                        G2_LOTEPAD: 1,
+                        G2_TEMPAD: Number(op.tempo || 1),
+                        G2_TPOPER: '1',
+                        G2_TPSOBRE: '',
+                        G2_TEMPSOB: '',
+                        G2_CTRAB: '',
+                        G2_TEMPEND: '',
+                        G2_MAOOBRA: 1,
+                        OPERACAO: 'INCLUIR'
+                    });
+                }
+            }
+        }
+
+        if (roteirosParaEnviar.length === 0) {
+            showMsg('Nenhuma modificação para salvar no roteiro.', 'warning');
+            setIsEditingRoteiro(false);
+            return;
+        }
 
         setSaving(true);
         try {
             await updateSincoRoteiro({
                 data: {
-                    NOPER: roteiroOriginal.length === 0 ? 3 : 4,
+                    NOPER: isNovoRoteiro ? 3 : 4,
                     EMPRESA: '01',
                     CFILANT: '0101',
                     G2_CODIGO: '01',
                     G2_PRODUTO: cleanCodigo,
-                    roteiros: roteirosPayload
+                    roteiros: roteirosParaEnviar
                 }
             });
             showMsg('Roteiro de operações (SG2) salvo com sucesso!', 'success');
             setIsEditingRoteiro(false);
-            await carregarTudo();
-            if (onSuccessRefresh) onSuccessRefresh(cleanCodigo);
+            await carregarTudo(true);
+            if (onSuccessRefresh) onSuccessRefresh(cleanCodigo, 'roteiro');
         } catch (err) {
             console.error('Erro ao salvar roteiro:', err);
-            showMsg(err.response?.data?.error || err.message || 'Erro ao salvar roteiro', 'error');
+            const msg = err.response?.data?.details?.message || err.response?.data?.details || err.response?.data?.error || err.message;
+            const strMsg = typeof msg === 'object' ? JSON.stringify(msg) : msg;
+            showMsg('Erro ao salvar roteiro: ' + strMsg, 'error');
         } finally {
             setSaving(false);
         }
@@ -356,16 +702,27 @@ export default function SincoNodeManager({
 
         setSaving(true);
         try {
+            const now = new Date();
+            const dtHoje = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+            const hrAgora = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
             await createSincoRestricaoSz0({
-                produto: cleanCodigo,
-                item: String(restricoesSz0.length + 1).padStart(3, '0'),
-                resumo: novoSz0.resumo.trim(),
-                restricao: novoSz0.restricao.trim(),
-                tipo_restricao: novoSz0.tipo_restricao,
-                cod_maquina: (novoSz0.cod_maquina || '').trim(),
-                status: novoSz0.status || 'P',
-                revMetalfisa: novoSz0.revMetalfisa || dadosGerais?.rev || '',
-                responsavel: user?.nome || user?.login || 'Engenharia'
+                data: {
+                    restricoes: [{
+                        EMPRESA: '01',
+                        CFILANT: '01',
+                        NOPER: 3,
+                        Z0_PRODUTO: cleanCodigo,
+                        Z0_ITEM: String(restricoesSz0.length + 1).padStart(3, '0'),
+                        Z0_STATUS: novoSz0.status || 'P',
+                        Z0_RESUMO: novoSz0.resumo.trim(),
+                        Z0_RESTRIC: novoSz0.restricao.trim(),
+                        Z0_RESPONS: (user?.nome || user?.login || 'ENGENHARIA').toUpperCase().substring(0, 15),
+                        Z0_DTULTAL: dtHoje,
+                        Z0_HRULTAL: hrAgora,
+                        Z0_XREVM: (novoSz0.revMetalfisa || dadosGerais?.rev || '').substring(0, 2)
+                    }]
+                }
             });
             showMsg('Restrição de engenharia (SZ0) salva com sucesso!', 'success');
             setShowNovoSz0(false);
@@ -377,11 +734,49 @@ export default function SincoNodeManager({
                 status: 'P',
                 revMetalfisa: ''
             });
-            await carregarTudo();
-            if (onSuccessRefresh) onSuccessRefresh(cleanCodigo);
+            await carregarTudo(true);
+            if (onSuccessRefresh) onSuccessRefresh(cleanCodigo, 'sz0');
         } catch (err) {
             console.error('Erro ao salvar restrição SZ0:', err);
             showMsg(err.response?.data?.error || err.message || 'Erro ao salvar restrição', 'error');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleLiberarSz0 = async (r) => {
+        if (!confirm(`Deseja excluir a restrição ${r.item}? O status será atualizado para Liberado (L) no Protheus e ela será considerada excluída.`)) return;
+
+        setSaving(true);
+        try {
+            const now = new Date();
+            const dtHoje = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+            const hrAgora = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+            await createSincoRestricaoSz0({
+                data: {
+                    restricoes: [{
+                        EMPRESA: '01',
+                        CFILANT: '01',
+                        NOPER: 4,
+                        Z0_PRODUTO: cleanCodigo,
+                        Z0_ITEM: String(r.item || '001').padStart(3, '0'),
+                        Z0_STATUS: 'L',
+                        Z0_RESUMO: r.resumo || 'LIBERADA',
+                        Z0_RESTRIC: r.restricao || 'LIBERADA',
+                        Z0_RESPONS: (user?.nome || user?.login || 'ENGENHARIA').toUpperCase().substring(0, 15),
+                        Z0_DTULTAL: dtHoje,
+                        Z0_HRULTAL: hrAgora,
+                        Z0_XREVM: (r.revisao || '').substring(0, 2)
+                    }]
+                }
+            });
+            showMsg('Restrição excluída com sucesso (status L no Protheus)!', 'success');
+            await carregarTudo(true);
+            if (onSuccessRefresh) onSuccessRefresh(cleanCodigo, 'sz0');
+        } catch (err) {
+            console.error('Erro ao excluir restrição SZ0:', err);
+            showMsg(err.response?.data?.error || err.message || 'Erro ao excluir restrição', 'error');
         } finally {
             setSaving(false);
         }
@@ -474,21 +869,31 @@ export default function SincoNodeManager({
                                             <tr key={idx} className={`transition-colors ${mat.deleted ? 'bg-red-50/50 opacity-40 line-through' : 'hover:bg-slate-50'}`}>
                                                 <td className="px-3 py-2 font-mono text-slate-500">{mat.nivel || `N${Number(nivel) + 1}`}</td>
                                                 <td className="px-3 py-1.5 font-mono font-bold text-slate-800">
-                                                    {mat.isNew ? (
-                                                        <input
-                                                            type="text"
-                                                            value={mat.componente || ''}
-                                                            onChange={e => {
-                                                                const val = e.target.value;
-                                                                setMateriais(prev => prev.map((m, i) => i === idx ? { ...m, componente: val } : m));
-                                                                setIsEditingMateriais(true);
-                                                            }}
-                                                            placeholder="Ex: MTA-1827"
-                                                            className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono uppercase focus:ring-1 focus:ring-emerald-500"
-                                                        />
-                                                    ) : (
-                                                        mat.componente
-                                                    )}
+                                                    <div className="flex items-center gap-1">
+                                                        {mat.isNew ? (
+                                                            <input
+                                                                type="text"
+                                                                value={mat.componente || ''}
+                                                                onChange={e => {
+                                                                    const val = e.target.value;
+                                                                    setMateriais(prev => prev.map((m, i) => i === idx ? { ...m, componente: val } : m));
+                                                                    setIsEditingMateriais(true);
+                                                                }}
+                                                                placeholder="Ex: MTA-1827"
+                                                                className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono uppercase focus:ring-1 focus:ring-emerald-500"
+                                                            />
+                                                        ) : (
+                                                            <span>{mat.componente}</span>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleOpenSearchMaterial(idx, mat.componente || '')}
+                                                            className="p-1 text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors shrink-0"
+                                                            title="Buscar e Selecionar Material no Protheus (SB1010)"
+                                                        >
+                                                            <Search size={12} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                                 <td className="px-3 py-1.5 text-slate-600">
                                                     {mat.isNew ? (
@@ -617,17 +1022,27 @@ export default function SincoNodeManager({
                                         clientesSz1.map((cli, idx) => (
                                             <tr key={idx} className={`transition-colors ${cli.deleted ? 'bg-red-50/50 opacity-40 line-through' : 'hover:bg-slate-50'}`}>
                                                 <td className="px-3 py-1.5 font-bold font-mono">
-                                                    <input
-                                                        type="text"
-                                                        value={cli.cliente || ''}
-                                                        onChange={e => {
-                                                            const val = e.target.value.toUpperCase();
-                                                            setClientesSz1(prev => prev.map((c, i) => i === idx ? { ...c, cliente: val } : c));
-                                                            setIsEditingSz1(true);
-                                                        }}
-                                                        placeholder="Ex: 000001"
-                                                        className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono uppercase focus:ring-1 focus:ring-blue-500"
-                                                    />
+                                                    <div className="flex items-center gap-1">
+                                                        <input
+                                                            type="text"
+                                                            value={cli.cliente || ''}
+                                                            onChange={e => {
+                                                                const val = e.target.value.toUpperCase();
+                                                                setClientesSz1(prev => prev.map((c, i) => i === idx ? { ...c, cliente: val } : c));
+                                                                setIsEditingSz1(true);
+                                                            }}
+                                                            placeholder="Ex: 000001"
+                                                            className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono uppercase focus:ring-1 focus:ring-blue-500"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleOpenSearchCliente(idx, cli.cliente || '')}
+                                                            className="p-1 text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition-colors shrink-0"
+                                                            title="Buscar e Selecionar Cliente no Protheus (SA1010)"
+                                                        >
+                                                            <Search size={12} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                                 <td className="px-3 py-1.5 font-mono">
                                                     <input
@@ -773,17 +1188,37 @@ export default function SincoNodeManager({
                                                     />
                                                 </td>
                                                 <td className="px-3 py-1.5 font-mono font-bold text-slate-800">
-                                                    <input
-                                                        type="text"
-                                                        value={op.recurso || ''}
-                                                        onChange={e => {
-                                                            const val = e.target.value.toUpperCase();
-                                                            setRoteiro(prev => prev.map((r, i) => i === idx ? { ...r, recurso: val } : r));
-                                                            setIsEditingRoteiro(true);
-                                                        }}
-                                                        placeholder="Ex: DOBRA01"
-                                                        className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono uppercase focus:ring-1 focus:ring-amber-500"
-                                                    />
+                                                    <div className="flex items-center gap-1">
+                                                        <input
+                                                            type="text"
+                                                            value={op.recurso || ''}
+                                                            onChange={e => {
+                                                                const val = e.target.value.toUpperCase();
+                                                                const matched = processList.find(p => p.codigo === val);
+                                                                setRoteiro(prev => prev.map((r, i) => i === idx ? {
+                                                                    ...r,
+                                                                    recurso: val,
+                                                                    descricao: matched && !r.descricao ? matched.descricao : r.descricao
+                                                                } : r));
+                                                                setIsEditingRoteiro(true);
+                                                            }}
+                                                            placeholder="Ex: DOBRA01"
+                                                            list="node-recursos-list"
+                                                            className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs font-mono uppercase focus:ring-1 focus:ring-amber-500"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setActiveRecursoRowIdx(idx);
+                                                                setSearchRecursoQuery('');
+                                                                setShowSearchRecursoModal(true);
+                                                            }}
+                                                            className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors cursor-pointer shrink-0"
+                                                            title="Buscar Recurso/Máquina"
+                                                        >
+                                                            <Search size={12} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                                 <td className="px-3 py-1.5 text-slate-600">
                                                     <input
@@ -842,6 +1277,11 @@ export default function SincoNodeManager({
                                     )}
                                 </tbody>
                             </table>
+                            <datalist id="node-recursos-list">
+                                {processList.map(p => (
+                                    <option key={p.codigo} value={p.codigo}>{p.codigo} — {p.descricao}</option>
+                                ))}
+                            </datalist>
                         </div>
                     </div>
                 )}
@@ -933,12 +1373,13 @@ export default function SincoNodeManager({
                                         <th className="px-3 py-2">Restrição Completa</th>
                                         <th className="px-3 py-2 w-24">Responsável</th>
                                         <th className="px-3 py-2 w-20 text-center">Status</th>
+                                        <th className="px-3 py-2 w-20 text-center">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {restricoesSz0.length === 0 ? (
                                         <tr>
-                                            <td colSpan={5} className="px-4 py-8 text-center text-slate-400 italic">
+                                            <td colSpan={6} className="px-4 py-8 text-center text-slate-400 italic">
                                                 Nenhuma restrição SZ0 cadastrada para este produto.
                                             </td>
                                         </tr>
@@ -951,10 +1392,23 @@ export default function SincoNodeManager({
                                                 <td className="px-3 py-2 text-slate-500 text-[11px]">{r.responsavel || 'Engenharia'}</td>
                                                 <td className="px-3 py-2 text-center">
                                                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                                        r.status === 'A' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                                                        r.status === 'A' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                                        r.status === 'L' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                        'bg-amber-50 text-amber-700 border-amber-200'
                                                     }`}>
-                                                        {r.status === 'A' ? 'Aprovado' : 'Pendente'}
+                                                        {r.status === 'A' ? 'Aprovado' : r.status === 'L' ? 'Liberado' : 'Pendente'}
                                                     </span>
+                                                </td>
+                                                <td className="px-3 py-2 text-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleLiberarSz0(r)}
+                                                        className="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded text-[10px] font-bold transition-colors cursor-pointer inline-flex items-center gap-1"
+                                                        title="Excluir restrição (Status L no Protheus)"
+                                                    >
+                                                        <Trash2 size={11} />
+                                                        <span>Excluir</span>
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))
@@ -1178,6 +1632,311 @@ export default function SincoNodeManager({
         </div>
     );
 
+    // Modais de Busca e Seleção do Protheus
+    const renderSearchModals = () => (
+        <>
+            {/* Modal de Busca de Material (Protheus SB1010) */}
+            {showSearchMaterialModal && (
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[75vh] max-h-[560px] border border-slate-200 animate-in fade-in zoom-in duration-150">
+                        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50 rounded-t-xl">
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                    <Search className="w-4 h-4 text-emerald-600" />
+                                    Selecionar Material / Insumo no Protheus
+                                </h3>
+                                <p className="text-[11px] text-slate-500">Busque por código ou descrição oficial na tabela SB1010.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowSearchMaterialModal(false)}
+                                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-md transition-colors cursor-pointer"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div className="p-3 border-b border-slate-100 bg-white">
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        value={searchMaterialQuery}
+                                        onChange={(e) => setSearchMaterialQuery(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleSearchMaterial();
+                                        }}
+                                        placeholder="Digite código ou descrição (ex: CHAPA, PARAFUSO, MTA...)"
+                                        className="w-full pl-9 pr-4 py-1.5 text-xs border border-slate-200 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                                        autoFocus
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => handleSearchMaterial()}
+                                    disabled={searchingMaterial || searchMaterialQuery.trim().length < 2}
+                                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    {searchingMaterial ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                                    Buscar
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-auto p-0">
+                            {searchingMaterial ? (
+                                <div className="flex flex-col items-center justify-center h-full text-xs text-slate-400 gap-2">
+                                    <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+                                    <span>Buscando materiais no Protheus...</span>
+                                </div>
+                            ) : searchMaterialResults.length === 0 ? (
+                                <div className="flex items-center justify-center h-full text-xs text-slate-400 italic p-6 text-center">
+                                    {searchMaterialQuery.length >= 2 ? "Nenhum material encontrado com este termo." : "Digite ao menos 2 caracteres e clique em Buscar."}
+                                </div>
+                            ) : (
+                                <table className="w-full text-left text-xs">
+                                    <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-[10px] uppercase font-bold text-slate-500">
+                                        <tr>
+                                            <th className="px-3 py-2">Código</th>
+                                            <th className="px-3 py-2">Descrição</th>
+                                            <th className="px-2 py-2 text-center">Tipo</th>
+                                            <th className="px-2 py-2 text-center">UN</th>
+                                            <th className="px-3 py-2 text-center">Ação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {searchMaterialResults.map((r, i) => (
+                                            <tr key={i} className="hover:bg-emerald-50/50 transition-colors">
+                                                <td className="px-3 py-2 font-mono font-bold text-slate-800">{r.codigo}</td>
+                                                <td className="px-3 py-2 text-slate-600 font-medium truncate max-w-[240px]" title={r.titulo}>{r.titulo}</td>
+                                                <td className="px-2 py-2 text-center text-slate-500 font-bold">{r.tipo}</td>
+                                                <td className="px-2 py-2 text-center text-slate-500 font-mono">{r.unidade}</td>
+                                                <td className="px-3 py-2 text-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (activeMaterialRowIndex !== null) {
+                                                                setMateriais(prev => prev.map((m, idx) => idx === activeMaterialRowIndex ? {
+                                                                    ...m,
+                                                                    componente: r.codigo,
+                                                                    descricao: r.titulo,
+                                                                    unidade: r.unidade || 'UN',
+                                                                    tipo: r.tipo || 'MP'
+                                                                } : m));
+                                                                setIsEditingMateriais(true);
+                                                            }
+                                                            setShowSearchMaterialModal(false);
+                                                        }}
+                                                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded shadow-2xs transition-colors cursor-pointer"
+                                                    >
+                                                        Selecionar
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Busca de Cliente (Protheus SA1010) */}
+            {showSearchClienteModal && (
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[75vh] max-h-[560px] border border-slate-200 animate-in fade-in zoom-in duration-150">
+                        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50 rounded-t-xl">
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                    <Building2 className="w-4 h-4 text-blue-600" />
+                                    Selecionar Cliente no Protheus
+                                </h3>
+                                <p className="text-[11px] text-slate-500">Busque por código, razão social ou CNPJ na tabela SA1010.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowSearchClienteModal(false)}
+                                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-md transition-colors cursor-pointer"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div className="p-3 border-b border-slate-100 bg-white">
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        value={searchClienteQuery}
+                                        onChange={(e) => setSearchClienteQuery(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleSearchCliente();
+                                        }}
+                                        placeholder="Digite o nome ou código do cliente..."
+                                        className="w-full pl-9 pr-4 py-1.5 text-xs border border-slate-200 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                                        autoFocus
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => handleSearchCliente()}
+                                    disabled={searchingCliente}
+                                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    {searchingCliente ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                                    Buscar
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-auto p-0">
+                            {searchingCliente ? (
+                                <div className="flex flex-col items-center justify-center h-full text-xs text-slate-400 gap-2">
+                                    <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                                    <span>Buscando clientes no Protheus...</span>
+                                </div>
+                            ) : searchClienteResults.length === 0 ? (
+                                <div className="flex items-center justify-center h-full text-xs text-slate-400 italic p-6 text-center">
+                                    {searchClienteQuery ? "Nenhum cliente encontrado." : "Digite um termo e clique em Buscar."}
+                                </div>
+                            ) : (
+                                <table className="w-full text-left text-xs">
+                                    <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-[10px] uppercase font-bold text-slate-500">
+                                        <tr>
+                                            <th className="px-3 py-2">Código</th>
+                                            <th className="px-2 py-2">Loja</th>
+                                            <th className="px-3 py-2">Razão Social / Nome</th>
+                                            <th className="px-3 py-2 text-center">Ação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {searchClienteResults.map((cli, i) => (
+                                            <tr key={i} className="hover:bg-blue-50/50 transition-colors">
+                                                <td className="px-3 py-2 font-mono font-bold text-slate-800">{cli.codigo || cli.A1_COD}</td>
+                                                <td className="px-2 py-2 font-mono text-slate-500">{cli.loja || cli.A1_LOJA || '0001'}</td>
+                                                <td className="px-3 py-2 text-slate-600 font-medium truncate max-w-[280px]">{cli.nome || cli.A1_NOME}</td>
+                                                <td className="px-3 py-2 text-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (activeClienteRowIndex !== null) {
+                                                                setClientesSz1(prev => prev.map((c, idx) => idx === activeClienteRowIndex ? {
+                                                                    ...c,
+                                                                    cliente: (cli.codigo || cli.A1_COD || '').trim(),
+                                                                    loja: (cli.loja || cli.A1_LOJA || '0001').trim(),
+                                                                    desc_cliente: (cli.nome || cli.A1_NOME || '').trim()
+                                                                } : c));
+                                                                setIsEditingSz1(true);
+                                                            }
+                                                            setShowSearchClienteModal(false);
+                                                        }}
+                                                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded shadow-2xs transition-colors cursor-pointer"
+                                                    >
+                                                        Selecionar
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Busca de Recurso / Máquina (Protheus SH1010) */}
+            {showSearchRecursoModal && (
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4" onClick={() => setShowSearchRecursoModal(false)}>
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col h-[75vh] max-h-[520px] border border-slate-200 animate-in fade-in zoom-in duration-150" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50 rounded-t-xl">
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                                    <Search className="w-4 h-4 text-amber-600" />
+                                    Selecionar Recurso / Máquina no Protheus
+                                </h3>
+                                <p className="text-[11px] text-slate-500">Selecione o centro de trabalho / máquina cadastrada (tabela SH1010).</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowSearchRecursoModal(false)}
+                                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-md transition-colors cursor-pointer"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div className="p-3 border-b border-slate-100 bg-white">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                <input
+                                    type="text"
+                                    value={searchRecursoQuery}
+                                    onChange={(e) => setSearchRecursoQuery(e.target.value)}
+                                    placeholder="Filtrar por código ou descrição da máquina..."
+                                    className="w-full pl-9 pr-4 py-1.5 text-xs border border-slate-200 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none"
+                                    autoFocus
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-auto p-0">
+                            {processList
+                                .filter(r => !searchRecursoQuery || r.codigo.toLowerCase().includes(searchRecursoQuery.toLowerCase()) || r.descricao.toLowerCase().includes(searchRecursoQuery.toLowerCase()))
+                                .length === 0 ? (
+                                <div className="flex items-center justify-center h-full text-xs text-slate-400 italic p-6 text-center">
+                                    Nenhum recurso encontrado com o termo informado.
+                                </div>
+                            ) : (
+                                <table className="w-full text-left text-xs">
+                                    <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-[10px] uppercase font-bold text-slate-500">
+                                        <tr>
+                                            <th className="px-3 py-2">Código</th>
+                                            <th className="px-3 py-2">Descrição / Máquina</th>
+                                            <th className="px-3 py-2 text-center">Ação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {processList
+                                            .filter(r => !searchRecursoQuery || r.codigo.toLowerCase().includes(searchRecursoQuery.toLowerCase()) || r.descricao.toLowerCase().includes(searchRecursoQuery.toLowerCase()))
+                                            .map((r, i) => (
+                                                <tr key={i} className="hover:bg-amber-50/50 transition-colors">
+                                                    <td className="px-3 py-2 font-mono font-bold text-slate-800">{r.codigo}</td>
+                                                    <td className="px-3 py-2 text-slate-600 font-medium truncate max-w-[260px]" title={r.descricao}>{r.descricao}</td>
+                                                    <td className="px-3 py-2 text-center">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (activeRecursoRowIdx !== null) {
+                                                                    setRoteiro(prev => prev.map((op, idx) => idx === activeRecursoRowIdx ? {
+                                                                        ...op,
+                                                                        recurso: r.codigo,
+                                                                        descricao: op.descricao || r.descricao
+                                                                    } : op));
+                                                                    setIsEditingRoteiro(true);
+                                                                }
+                                                                setShowSearchRecursoModal(false);
+                                                            }}
+                                                            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold rounded shadow-2xs transition-colors cursor-pointer"
+                                                        >
+                                                            Selecionar
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
+    );
+
     // ==========================================
     // 1. MODO ACCORDION (LINHA EXPANSÍVEL INLINE)
     // ==========================================
@@ -1187,6 +1946,7 @@ export default function SincoNodeManager({
                 {renderHeader()}
                 {renderTabsBar()}
                 {renderContent()}
+                {renderSearchModals()}
             </div>
         );
     }
@@ -1200,6 +1960,7 @@ export default function SincoNodeManager({
                 {renderHeader()}
                 {renderTabsBar()}
                 {renderContent()}
+                {renderSearchModals()}
             </div>
         );
     }
@@ -1213,6 +1974,7 @@ export default function SincoNodeManager({
                 {renderHeader()}
                 {renderTabsBar()}
                 {renderContent()}
+                {renderSearchModals()}
             </div>
         </div>
     );

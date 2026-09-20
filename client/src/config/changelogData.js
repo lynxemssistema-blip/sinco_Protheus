@@ -22,23 +22,50 @@ export const CHANGELOG_TYPES = [
 
 export const CHANGELOG_DATA = [
     {
+        id: '2026-09-16-itens-faturar-excel-filtros',
+        data: '16/09/2026',
+        dataIso: '2026-09-16',
+        versao: 'v2026.4.7',
+        modulo: 'comercial',
+        moduloLabel: 'Comercial & Faturamento',
+        tipo: 'nova_feature',
+        tipoLabel: 'Comercial, Faturamento & Excel MetalFisa',
+        badgeColor: 'emerald',
+        titulo: '📊 Exportação Excel Financeira Avançada (Padrão MetalFisa) & Atualização em Tempo Real com Filtros',
+        resumo: 'Aprimoramento abrangente do módulo de Itens a Faturar (/vendas/itens-faturar): gerador oficial de planilhas Excel formatadas no Padrão Corporativo MetalFisa com processamento em tempo real (modal animado com barra percentual e etapas), e novos botões dedicados de atualização imediata de dados com base nos filtros selecionados, tanto na listagem de itens quanto na aba de dados financeiros.',
+        destaques: [
+            'Exportação Excel no Padrão Oficial MetalFisa: Planilha multi-abas gerada via ExcelJS com identidade visual corporativa (Azul MetalFisa #1E3A5F, #2563EB, linhas zebradas e cabeçalhos escuros estilizados).',
+            'Dupla Visão na Planilha (Analítica & Consolidada): Aba 1 contendo todos os dados financeiros expandidos item a item (Cliente, Pedido, Item, OP, Código, Descrição, Entrega, Previsão Faturamento, PCP, Quantidades e Valores) e Aba 2 com Resumo Consolidado mensal automático usando fórmulas nativas do Excel (=SUM).',
+            'Processamento em Tempo Real com Feedback Visual: Modal animado com contagem de registros, porcentagem de conclusão e indicador de etapas em chunks assíncronos (120 linhas por bloco), garantindo fluidez e zero congelamento do navegador.',
+            'Botão "Atualizar Dados com Base nos Filtros": Integrado na barra de filtros principal de Itens a Faturar e no cabeçalho de ações com ícone de rotação (RefreshCw) e indicação de carregamento em andamento.',
+            'Atualização Direta na Aba de Dados Financeiros: Disponibilização de botão de atualização rápida no painel de filtros financeiros e botão expandido na barra de sub-ações ao lado do botão de exportação Excel.',
+            'Botão de Limpeza Rápida de Filtros: Ação contextual em 1 clique para resetar todos os filtros de busca e recarregar a lista limpa instantaneamente.',
+            'Persistência Inteligente de Estado: Filtros, modos de exibição e aba ativa mantidos automaticamente no armazenamento local (LocalStorage), preservando o contexto de análise do operador.'
+        ],
+        linkAcao: '/vendas/itens-faturar',
+        linkLabel: 'Acessar Itens a Faturar',
+        autor: 'Comercial & Faturamento'
+    },
+    {
         id: '2026-09-14-arvore-completa-sinco-multinivel',
         data: '14/09/2026',
         dataIso: '2026-09-14',
-        versao: 'v2026.4.5',
+        versao: 'v2026.4.6',
         modulo: 'sinco',
         moduloLabel: 'SINCO & Engenharia',
         tipo: 'nova_feature',
         tipoLabel: 'Engenharia SINCO & Estrutura Multinível',
         badgeColor: 'emerald',
         titulo: '🌳 Estrutura Completa em Árvore Multinível (N0 a N4+) & Gestão 360° em Qualquer Nível',
-        resumo: 'Nova aba dedicada "Estrutura em Árvore Completa" no Formulário de Engenharia SINCO com varredura hierárquica recursiva total da BOM (PostgreSQL CTE), 3 modos de visualização selecionáveis pelo usuário (Accordion, Drawer Lateral e Janela Modal 360°) e gestão direta de Materiais, Clientes, Roteiros e Restrições em qualquer nível selecionado.',
+        resumo: 'Aba avançada "Estrutura em Árvore Completa" no Formulário de Engenharia SINCO com explosão hierárquica recursiva total da BOM (PostgreSQL CTE), 3 modos de visualização selecionáveis (Accordion, Drawer Lateral e Modal 360°), gestão completa e sincronização bidirecional em tempo real de Materiais (SG1), Vínculos de Clientes (SZ1), Roteiros de Operações (SG2) com validação de recursos/máquinas e Restrições de Engenharia (SZ0) em qualquer subnível.',
         destaques: [
-            'Explosão Recursiva de Todos os Níveis: Varredura profunda automática via CTE SQL da estrutura do produto, exibindo a hierarquia completa de subconjuntos e matérias-primas (N0, N1, N2, N3, N4...) com badge de nível colorido e cálculo de quantidade acumulada.',
-            '3 Modos Visuais à Escolha do Usuário: Flexibilidade operacional permitindo alternar em 1 clique entre Linha Expansível (Accordion embutido na tabela), Painel Lateral Deslizante (Drawer) e Janela Modal Ampla 360°.',
-            'Gestão e Adição em Qualquer Nível: Painel unificado (SincoNodeManager) permitindo consultar, incluir e editar em qualquer componente da árvore: Árvore do Produto / Materiais (SG1), Produto Metalfisa/Cliente (SZ1), Roteiro de Fabricação / Operações (SG2) e Restrições de Engenharia (SZ0).',
-            'Sincronização e Gravação Oficial Protheus: Alterações e novos vínculos inseridos em qualquer subnível gravam diretamente no banco Protheus, mantendo paridade com as rotinas do ERP.',
-            'Produtividade e Filtros Rápidos: Busca textual instantânea nos nós da árvore, botões de Expandir Tudo / Recolher Tudo e indicação de status de validação técnica.'
+            'Explosão Recursiva de Todos os Níveis (N0 a N4+): Varredura profunda via CTE SQL da estrutura do produto, exibindo toda a hierarquia de conjuntos, subconjuntos e matérias-primas com badges de nível, quantitativos acumulados e indicação de tipos de item.',
+            '3 Modos Visuais de Gestão 360°: Alternância dinâmica em 1 clique entre Linha Expansível (Accordion embutido na tabela), Painel Lateral Deslizante (Drawer) e Janela Modal Ampla 360°.',
+            'Gestão e Edição de Roteiros SG2 em Qualquer Nó: Suporte completo para inclusão (NOPER 3), alteração (NOPER 4) e exclusão real (OPERACAO: EXCLUIR) de operações, com controle de sequência original e recálculo automático de tempos padrão.',
+            'Catálogo e Busca de Recursos/Máquinas (SH1010): Busca assistida com autocomplete e modal de seleção direta dos centros de trabalho e máquinas ativas do Protheus, com preenchimento automático das descrições operacionais.',
+            'Edição Pontual com Zero Recarregamento Global: As alterações em materiais, clientes, roteiros ou restrições não recarregam mais a página inteira nem fecham o nó em edição, atualizando em segundo plano unicamente a linha modificada e seus indicadores de validação.',
+            'Validação Técnica dos 4 Pilares: Verificação em lote em tempo real do status de cadastro no Protheus para BOM (SG1), Cliente (SZ1), Roteiro (SG2) e Restrições (SZ0) com ícones visuais instantâneos.',
+            'Gestão e Exclusão de Restrições SZ0 com Conformidade (Status "L"): Tratamento de restrições liberadas/inativas (status L) como excluídas no Protheus e na árvore, com incremento sequencial automático de itens para novas inclusões.'
         ],
         linkAcao: '/engenharia/sinco/formulario',
         linkLabel: 'Acessar Árvore no Formulário SINCO',

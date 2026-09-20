@@ -16,6 +16,10 @@ linux-deployment/
 *.log
 npm-debug.log*
 *.sql
+*.txt
+server/*.txt
+smart_plan_error.txt
+server/scratch_*.*
 server/smart_plan_error.txt
 server/output.txt
 server/sql_debug.txt
@@ -80,6 +84,7 @@ tmp/
 *.tmp
 prod_*.xlsx
 server/watchdog_state.json
+server/data/*_backup_*.json
 
 # Engineering / CAD files
 *.stl

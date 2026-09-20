@@ -1,0 +1,208 @@
+{
+  "titulo": "PROPOSTA TÉCNICA E COMERCIAL — EXPANSÃO MODULAR METALFISA",
+  "subtitulo": "Implantação dos Módulos Financeiro, Fiscal, DP, SST, RDO e Frotas com Integração Nativa Protheus e Inteligência Artificial",
+  "referencia": "PC-2026/MF-09",
+  "data_emissao": "Setembro de 2026",
+  "validade_dias": 30,
+  "fornecedor": {
+    "empresa": "LYNX EMS SISTEMA & CONSULTORIA",
+    "responsavel": "Equipe de Engenharia de Software e Soluções",
+    "contato": "edsonmanoel2012@gmail.com"
+  },
+  "cliente": {
+    "empresa": "METALFISA INDÚSTRIA METALÚRGICA LTDA.",
+    "representante": "Diretoria Executiva e Gestão de Operações"
+  },
+  "licenciamento": {
+    "modelo": "Usuários Ilimitados (Empresarial)",
+    "detalhes": "Sem limite de usuários, estações ou cobrança por assento (seat). Todos os colaboradores autorizados poderão acessar com base em perfis de permissão."
+  },
+  "infraestrutura": {
+    "servidor": "On-Premise / Servidor Local SINCO (192.168.1.77)",
+    "seguranca": "Privacidade total dos dados internos da empresa, processamento de alta velocidade na rede local e contingência assíncrona."
+  },
+  "modulos": [
+    {
+      "id": "financeiro",
+      "nome": "Módulo Financeiro & Controladoria Dinâmica",
+      "icone": "DollarSign",
+      "descricao": "Gestão financeira completa com foco em fluxo de caixa, apuração de custos por setor e auditoria preditiva via IA.",
+      "itens": [
+        {
+          "titulo": "Controle de Fluxo de Caixa Diário e Projetado",
+          "descricao": "Visão temporal interativa de D+0 a D+360 cruzando saldos bancários, carteira de pedidos Protheus (SC5/SC6), títulos a receber (SE1) e ordens de compra/contas a pagar (SC7/SE2)."
+        },
+        {
+          "titulo": "Conciliação Bancária Automatizada (OFX e CSV)",
+          "descricao": "Importação rápida de extratos bancários com conferência automática dos movimentos (SE5), geração facilitada de baixas e captura de tarifas e encargos."
+        },
+        {
+          "titulo": "DRE Gerencial Dinâmica por Projeto, Produto e Cliente",
+          "descricao": "Demonstração do Resultado em tempo real calculando Receita Bruta, Deduções, Custo dos Produtos Vendidos (CPV Real), Margem de Contribuição e EBITDA com drill-down por cliente e OP."
+        },
+        {
+          "titulo": "Agente AI Dinâmico Protheus (Auditor Contábil e Fiscal)",
+          "descricao": "Agente autônomo baseado em IA que monitora discrepâncias contábeis, divergências de parâmetros contábeis, títulos sem centro de custo e riscos de desvios orçamentários."
+        },
+        {
+          "titulo": "Apropriação de Custos por Setor e Processo Produtivo",
+          "descricao": "Apuração dos custos reais de fabricação por centro de trabalho (Corte Laser, Dobra CNC, Solda, Caldeiraria, Pintura e Montagem), alimentado pelos tempos das OPs."
+        }
+      ]
+    },
+    {
+      "id": "fiscal",
+      "nome": "Módulo Fiscal & Gestão de Suprimentos",
+      "icone": "FileCheck",
+      "descricao": "Recebimento inteligente de NFs, confronto 3-Way Matching e controle rigoroso de saldos de fornecedores e estoques de terceiros.",
+      "itens": [
+        {
+          "titulo": "Recebimento de NF-e e Confronto Triplo Automático (3-Way Matching)",
+          "descricao": "Cruzamento automático do XML da nota fiscal do fornecedor com o Pedido de Compra do Protheus (SC7) e o recebimento físico do almoxarifado, validando impostos antes da escrituração."
+        },
+        {
+          "titulo": "Painel de Saldo Aberto em Fornecedores",
+          "descricao": "Acompanhamento em tempo real de saldos físicos e financeiros pendentes por fornecedor, com histórico de pontualidade de entrega (OTIF)."
+        },
+        {
+          "titulo": "Provisão de Compras e Entregas Escalonadas",
+          "descricao": "Gestão de compras de matéria-prima (chapas, bobinas, perfis) com entregas programadas parceladas, integrado ao planejamento de consumo do PCP."
+        },
+        {
+          "titulo": "Saldo Fiscal por Processo, Almoxarifado, Projetos e Clientes",
+          "descricao": "Controle de saldo de materiais em poder de terceiros (galvanização, tratamento térmico, pintura) e matérias-primas consignadas por clientes ou projetos."
+        }
+      ]
+    },
+    {
+      "id": "dp",
+      "nome": "Módulo Departamento Pessoal & Custos de Mão de Obra",
+      "icone": "Users",
+      "descricao": "Integração com relógio de ponto eletrônico, folha Protheus e cálculo matemático do custo hora-homem real por centro de custo.",
+      "itens": [
+        {
+          "titulo": "Integração Direta com Relógio e Cartão de Ponto (Portaria 671/MTE)",
+          "descricao": "Conexão a coletores homologados e importação de arquivos AFD/AFDT, com tratamento ágil de espelho de ponto, atestados médicos e apontamentos de ausências."
+        },
+        {
+          "titulo": "Folha de Pagamento Automatizada e Integrada ao Protheus",
+          "descricao": "Geração de prévias detalhadas da folha, horas extras (50%, 100%, noturno), adicionais legais e conexão direta com as tabelas de acumuladores do Protheus (SRA/SRD)."
+        },
+        {
+          "titulo": "Ponto de Equilíbrio Operacional, Fixo e Rateios por Setor",
+          "descricao": "Cálculo matemático da tarifa hora-homem real (salário base + encargos sociais patronais + provisões de 13º/férias + benefícios + rateio de despesas de apoio corporativo)."
+        },
+        {
+          "titulo": "Gestão de Banco de Horas e Acordos Extraordinários",
+          "descricao": "Controle de saldos de compensação de jornada com alertas de proximidade do vencimento legal e módulo seguro para gestão de bonificações extraordinárias."
+        }
+      ]
+    },
+    {
+      "id": "sst",
+      "nome": "Módulo SST (Saúde e Segurança do Trabalho)",
+      "icone": "ShieldCheck",
+      "descricao": "Gestão 100% digital de EPIs, controle rigoroso de ASOs e automação de dossiês documentais para liberação de equipes externas.",
+      "itens": [
+        {
+          "titulo": "Gestão Digital de EPIs (NR-06)",
+          "descricao": "Ficha eletrônica de entrega de EPI com assinatura digital/biométrica, consulta automática de validade de C.A. no MTE e alerta de tempo de reposição preventiva."
+        },
+        {
+          "titulo": "Controle de Validade de Materiais de Reposição e Inspeções Críticas",
+          "descricao": "Cronograma de recargas e testes hidrostáticos de extintores, mangueiras de hidrante, cinturões paraquedista e trava-quedas (NR-35)."
+        },
+        {
+          "titulo": "Gestão e Matriz de Documentação Ocupacional (ASO, Treinamentos, NRs)",
+          "descricao": "Prontuário unificado com controle de validade de ASOs e matriz de capacitações obrigatórias (NR-10, NR-11, NR-12, NR-33, NR-35)."
+        },
+        {
+          "titulo": "Gerador Automático de Dossiês para Serviços Externos",
+          "descricao": "Compilação instantânea em 1 clique do pacote completo em PDF (ASO + Ficha de EPI + Certificados de NR + Registro) para liberação na portaria de clientes."
+        }
+      ]
+    },
+    {
+      "id": "rdo",
+      "nome": "Módulo RDO (Relatório Diário de Obra & Serviços Externos)",
+      "icone": "ClipboardList",
+      "descricao": "Acompanhamento de avanço físico de montagens externas, controle de clima e diário fotográfico georreferenciado.",
+      "itens": [
+        {
+          "titulo": "Evolução Diária de Processos e Avanço Físico de Montagem",
+          "descricao": "Apontamento do percentual de execução física das montagens em campo confrontado com o cronograma mestre de engenharia."
+        },
+        {
+          "titulo": "Apontamento de Condições Climáticas, Efetivo e Interferências",
+          "descricao": "Registro diário de efetivo em campo, equipamentos mobilizados, impacto de chuvas/ventos e livro de ocorrências/interferências do cliente."
+        },
+        {
+          "titulo": "Diário Fotográfico com Georreferenciamento e Emissão de Medição",
+          "descricao": "Registro fotográfico direto do celular com data, hora e GPS marcados, gerando relatório executivo de medição com assinatura digital."
+        }
+      ]
+    },
+    {
+      "id": "veiculos",
+      "nome": "Módulo de Frotas & Veículos",
+      "icone": "Truck",
+      "descricao": "Controle de abastecimento, média de consumo (km/l), manutenções preventivas e checklist de saída com condutores.",
+      "itens": [
+        {
+          "titulo": "Controle de Abastecimento e Eficiência de Combustível",
+          "descricao": "Lançamento de cupons de abastecimento, odômetro, litragem e cálculo automático da média de consumo (km/l) com alerta de desvios anômalos."
+        },
+        {
+          "titulo": "Manutenção Preventiva, Corretiva e Gestão de Pneus",
+          "descricao": "Plano de revisões programadas por quilometragem ou tempo (óleo, filtros, freios, suspensão, tacógrafo) e histórico de ordens de serviço de oficinas."
+        },
+        {
+          "titulo": "Controle de Deslocamentos, Checklist de Saída e Condutores",
+          "descricao": "Checklist digital de inspeção pré-viagem (faróis, estepe, lataria), controle de motorista responsável e monitoramento da validade da CNH."
+        }
+      ]
+    }
+  ],
+  "investimento": {
+    "implantacao": [
+      {
+        "parcela": "1ª Parcela (Entrada)",
+        "vencimento": "À vista na assinatura formal da proposta ",
+        "valor": 8000,
+        "valor_formatado": "R$ 8.000,00"
+      },
+      {
+        "parcela": "2ª Parcela",
+        "vencimento": "10 de Novembro de 2026 (10/11/2026)",
+        "valor": 8000,
+        "valor_formatado": "R$ 8.000,00"
+      },
+      {
+        "parcela": "3ª Parcela",
+        "vencimento": "10 de Dezembro de 2026 (10/12/2026)",
+        "valor": 8000,
+        "valor_formatado": "R$ 8.000,00"
+      }
+    ],
+    "total_implantacao": 24000,
+    "total_implantacao_formatado": "R$ 24.000,00",
+    "mensalidade": {
+      "ano1": {
+        "periodo": "10/02/2027 a 10/02/2028 (Primeiro Ano)",
+        "base_calculo": "0,5 (meio) Salário Mínimo Nacional vigente por mês",
+        "primeiro_vencimento": "10/01/2027"
+      },
+      "ano2_em_diante": {
+        "periodo": "A partir de 10/06/2027 (Evolução Perpétua)",
+        "base_calculo": "2 (dois  Salários Mínimos Nacionais vigentes por mês",
+        "regra_reajuste": "Reajuste anual atrelado automaticamente à variação oficial do Salário Mínimo Nacional, sem indexação por índices inflacionários voláteis."
+      }
+    }
+  },
+  "homologacao": {
+    "ambiente": "Homologação assistida em Base de Testes do Protheus antes da virada em produção",
+    "pontos_integracao": "Tabelas SE1, SE2, SE5, SF1, SF2, SD1, SD2, SC7, SRA, SRD via banco de dados e APIs TLPP",
+    "ponto_eletronico": "Suporte a coletores Portaria 671 / MTE e arquivos AFD/AFDT padrão"
+  },
+  "observacoes_gerais": "1. Ambiente Operacional: Todas as rotinas e tabelas desenvolvidas operam diretamente no servidor local SINCO (192.168.1.77), garantindo alta disponibilidade, velocidade e total soberania dos dados da Metalfisa.\n2. Homologação Assistida: As entregas de cada módulo serão precedidas por validação conjunta em base de testes do Protheus, mitigando qualquer impacto às rotinas produtivas correntes.\n3. Suporte Contínuo e Garantia: A sustentação técnica mensal contempla atendimento prioritário, ajustes adaptativos, evolução do ecossistema e conformidade com novas portarias e legislações vigentes.\n4. Propriedade Intelectual e Licenciamento: O código-fonte customizado e as parametrizações implementadas são de uso irrestrito da Metalfisa, sem cobrança de custos adicionais por novas estações de trabalho ou volume de usuários.\n5. API's de integração com o Protheus não fazem parte do escopo da Lynx."
+}

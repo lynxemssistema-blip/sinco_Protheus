@@ -3,7 +3,7 @@ import { CheckCircle2, Clock, Factory, AlertTriangle, Check, Settings, Loader2 }
 import { io } from 'socket.io-client';
 import api from '../services/api';
 import { toast } from 'react-toastify';
-import logo from '../assets/metalfisa-logo.png';
+import logo from '../assets/lynx-ems-logo.jpg';
 
 // Auxiliar para formatação segura de data sem timezone offset (PCP)
 const formatPcpDate = (dateVal) => {
@@ -220,10 +220,10 @@ export default function TVDashboard() {
             {/* TV Header */}
             <header className="bg-slate-900 border-b border-slate-800 px-8 py-4 flex items-center justify-between shrink-0 shadow-2xl z-10">
                 <div className="flex items-center gap-6">
-                    <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800/80 flex flex-col items-center justify-center shadow-inner select-none">
-                        <img src={logo} alt="Metalfisa Logo" className="h-10 w-auto object-contain" />
-                        <span className="text-[8px] font-black tracking-widest text-slate-500 uppercase mt-0.5">
-                            by Lynx
+                    <div className="bg-slate-950/80 p-1.5 rounded-xl border border-slate-800/80 flex flex-col items-center justify-center shadow-inner select-none">
+                        <img src={logo} alt="Lynx EMS Sistemas" className="h-10 w-10 rounded-lg object-cover" />
+                        <span className="text-[8px] font-black tracking-widest text-slate-400 uppercase mt-0.5">
+                            Lynx EMS
                         </span>
                     </div>
                     <div>

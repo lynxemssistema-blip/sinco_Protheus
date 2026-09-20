@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LogOut, ChevronLeft, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, HelpCircle, Search, Key } from 'lucide-react';
+import { LogOut, ChevronLeft, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, HelpCircle, Search, Key, FileText } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useHelp } from '../contexts/HelpContext';
 import { getCompanySettings } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
-import logo from '../assets/metalfisa-logo.png';
+import logo from '../assets/lynx-ems-logo.jpg';
 import ChangePasswordModal from './ChangePasswordModal';
 import './Sidebar.css';
 
@@ -52,6 +52,18 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
     const [isCollapsed, setIsCollapsed] = useState(window.innerWidth < 1100 && window.innerWidth >= 768); 
     const [searchTerm, setSearchTerm] = useState('');
     const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+    
+    // Acesso exclusivo Superadmin Lynx
+    const userEmail = (user?.email || '').toLowerCase().trim();
+    const userLogin = (user?.login || '').toLowerCase().trim();
+    const userTipo = (user?.tipo || user?.TipoUsuario || '').toUpperCase().trim();
+    const isSuperAdminLynx = 
+        userLogin === 'superadmin' || 
+        userLogin === 'edson' ||
+        userTipo === 'SA' ||
+        user?.id === 37 ||
+        userEmail === 'edsonmanoel2012@gmail.com' || 
+        userLogin === 'edsonmanoel2012@gmail.com';
 
     // Helper to toggle sidebar size
     const toggleSidebarSize = () => {
@@ -147,12 +159,17 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
 
     // Helper to check visibility (default true if config is empty/loading or key missing)
     const isVisible = (itemId) => {
+        const userTipo = (user?.tipo || '').trim();
+        const userLogin = (user?.login || '').toLowerCase();
+
+        // Super Admin (sinco, Edson, SA) tem visibilidade total de todos os links e páginas
+        if (userTipo === 'SA' || userLogin === 'sinco' || userLogin === 'edson') return true;
+
         // Company-level menu config: if explicitly hidden, hide it
         if (isConfigLoaded && Object.keys(visibleItems).length > 0) {
             if (visibleItems[itemId] === false) return false;
         }
 
-        const userTipo = (user?.tipo || '').trim();
         // Clients can always see the client portal
         if (userTipo === 'E' || user?.tipoExterno === 'cliente') {
             return itemId === 'canal_cliente';
@@ -187,12 +204,17 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                         {!isCollapsed && (
                             <div>
                                 <div className="flex items-center gap-3">
-                                    <div className="bg-white p-1.5 rounded-lg shadow-sm">
-                                        <img src={logo} alt="Metalfisa" className="h-6 w-auto object-contain" />
+                                    <div className="bg-slate-800 p-1 rounded-lg border border-slate-700 shadow-sm">
+                                        <img src={logo} alt="Lynx EMS Sistemas" className="h-7 w-7 rounded object-cover" />
                                     </div>
-                                    <h1 className="text-xl font-bold tracking-wider text-white uppercase font-mono mt-1">
-                                        SINCO/METALFISA
-                                    </h1>
+                                    <div>
+                                        <h1 className="text-base font-black tracking-wider text-white uppercase font-mono leading-tight">
+                                            SINCO SUITE
+                                        </h1>
+                                        <span className="text-[9px] text-blue-400 font-bold uppercase tracking-widest block">
+                                            Lynx EMS
+                                        </span>
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-2 mt-2">
                                     <div className="h-1.5 w-1.5 rounded-none bg-green-500 animate-pulse"></div>
@@ -302,6 +324,22 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
 
                 {/* Footer User Profile */}
                 <div className="tech-footer">
+                    {/* Botão Exclusivo Superadmin Lynx */}
+                    {isSuperAdminLynx && (
+                        <Link
+                            to="/admin/proposta-comercial"
+                            title="Proposta Comercial Lynx (Exclusivo Superadmin)"
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 mb-2 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 transition-all group ${
+                                isCollapsed ? 'justify-center px-2' : ''
+                            }`}
+                        >
+                            <FileText className="h-4 w-4 flex-shrink-0 text-amber-400" />
+                            {!isCollapsed && (
+                                <span className="text-xs font-bold truncate">Proposta Comercial</span>
+                            )}
+                        </Link>
+                    )}
+
                     {/* Help Button */}
                     <button
                         onClick={toggleHelp}

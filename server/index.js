@@ -21,6 +21,14 @@ const whatsappAiAgent = require('./services/whatsappAiAgent');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Global process error handlers to prevent crashes from transient socket terminations
+process.on('uncaughtException', (err) => {
+    console.error('⚠️ [PROCESS UNCAUGHT EXCEPTION]:', err.message);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('⚠️ [PROCESS UNHANDLED REJECTION]:', reason);
+});
+
 const fs = require('fs');
 const https = require('https');
 
@@ -242,6 +250,9 @@ app.use('/api/pcpmetal', require('./routes/pcpmetal'));
 // Hermes AI Agent Routes
 app.use('/api/hermes', require('./routes/hermes'));
 
+// SINCO ERP Nativo (Módulo independente do Protheus)
+app.use('/api/erp', require('./routes/erp'));
+
 
 console.log('🔄 [DEBUG] Montando rota /api/producao...');
 app.use('/api/producao', require('./routes/producao'));
@@ -268,6 +279,7 @@ app.use('/api/engineering-releases', require('./routes/engineering_releases'));
 app.use('/api/product-status', require('./routes/product_status'));
 app.use('/api/pcp-releases', require('./routes/pcp_releases'));
 app.use('/api/engineering-controls', require('./routes/engineering_controls'));
+app.use('/api/proposta-comercial', require('./routes/propostaComercial'));
 app.use('/api/engineering-timesheets', require('./routes/engineering_timesheets'));
 app.use('/api/almoxarifado', require('./routes/almoxarifado'));
 console.log('✅ [DEBUG] Rotas de Materiais montadas.');

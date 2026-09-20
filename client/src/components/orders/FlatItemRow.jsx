@@ -480,11 +480,19 @@ const FlatItemRow = ({
                         <td key={col.key} className="px-4 py-2 text-center text-xs min-w-[100px]">
                             {(() => {
                                 const hasOP = !!item.op_num || !!item.op_protheus;
-                                const opQtd = parseFloat(item.op_qtd || 0);
-                                const saldoProd = parseFloat(item.saldo_produzido || 0);
                                 if (!hasOP) return <span className="text-gray-400">-</span>;
-                                if (opQtd <= 0) return <span className="text-gray-500">0%</span>;
-                                const pct = Math.min(100, Math.max(0, (saldoProd / opQtd) * 100));
+                                
+                                const directPct = item.evolucao_pct !== undefined ? item.evolucao_pct : item.evolucao_op;
+                                let pct = 0;
+                                if (directPct !== undefined && directPct !== null) {
+                                    pct = Math.min(100, Math.max(0, Number(directPct) || 0));
+                                } else {
+                                    const opQtd = parseFloat(item.op_qtd || 0);
+                                    const saldoProd = parseFloat(item.saldo_produzido || 0);
+                                    if (opQtd <= 0) return <span className="text-gray-500">0%</span>;
+                                    pct = Math.min(100, Math.max(0, (saldoProd / opQtd) * 100));
+                                }
+                                
                                 return (
                                     <div className="flex flex-col items-center justify-center gap-1 min-w-[60px]">
                                         <span className={`font-bold ${pct >= 100 ? 'text-green-600' : pct > 0 ? 'text-blue-600' : 'text-gray-500'}`}>{pct.toFixed(0)}%</span>
@@ -512,6 +520,9 @@ const areEqual = (prev, next) => {
         prev.item.pcp_delivery_forecast_qtd === next.item.pcp_delivery_forecast_qtd &&
         prev.item.data_prevista_faturamento === next.item.data_prevista_faturamento &&
         prev.item.op_num === next.item.op_num &&
+        prev.item.evolucao_pct === next.item.evolucao_pct &&
+        prev.item.evolucao_op === next.item.evolucao_op &&
+        prev.item.saldo_produzido === next.item.saldo_produzido &&
         prev.item.qtd_faturar === next.item.qtd_faturar &&
         prev.item.romaneios === next.item.romaneios &&
         prev.item.is_priority === next.item.is_priority &&

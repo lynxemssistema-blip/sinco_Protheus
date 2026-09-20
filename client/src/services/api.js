@@ -37,11 +37,9 @@ api.interceptors.response.use(
 
         // Determina se é falha de autenticação (sessão expirada / token inválido):
         //   • 401 → sempre é falha de auth
-        //   • 403 sem corpo RBAC → servidor antigo retornando 403 para token inválido
-        //     (retro-compatibilidade). RBAC sempre retorna { error: "...negado..." }.
+        //   • 403 → é proibição/autorização (RBAC), a menos que explicitamente retorne code TOKEN_EXPIRED ou TOKEN_INVALID
         const isRbacDenial = status === 403 &&
-            data && typeof data === 'object' && data.error &&
-            (data.error.includes('negado') || data.error.includes('permissão'));
+            data?.code !== 'TOKEN_EXPIRED' && data?.code !== 'TOKEN_INVALID';
 
         const isAuthFailure = status === 401 || (status === 403 && !isRbacDenial);
 
@@ -797,6 +795,11 @@ export const setProductStatusBatch = (codigos, estado, usuario, acao = 'MARCACAO
 export const getRecursosAjusteApontamento = () => api.get('/producao/ajuste-apontamento/recursos').then(res => res.data);
 export const previewAjusteApontamento = (payload) => api.post('/producao/ajuste-apontamento/preview', payload).then(res => res.data);
 export const executarAjusteApontamento = (payload) => api.post('/producao/ajuste-apontamento/executar', payload).then(res => res.data);
+
+// Proposta Comercial Lynx / Metalfisa (Exclusivo Superadmin)
+export const getPropostaComercial = () => api.get('/proposta-comercial').then(res => res.data);
+export const savePropostaComercial = (data) => api.put('/proposta-comercial', data).then(res => res.data);
+export const exportPropostaWord = () => api.post('/proposta-comercial/export-word', {}, { responseType: 'blob' }).then(res => res.data);
 
 export { api };
 export default api;

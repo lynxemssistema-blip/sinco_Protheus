@@ -45,6 +45,8 @@ export const FilterProvider = ({ children }) => {
         initFilterState('@metalfisa:orderFilters', {
             cliente: '',
             pedido: '',
+            item: '',
+            op: '',
             produto: '',
             pedcli: '',
             refCliente: '',

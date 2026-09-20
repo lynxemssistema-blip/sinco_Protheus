@@ -40,7 +40,16 @@ const getDisplayOp = (op, itemNumber) => {
     return cleanOp;
 };
 
-const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, qtdTotal, isEdit, hasOp, canGenerateOp, hideOpSwitch }) => (
+const getFractionLetter = (index) => {
+    if (index < 26) {
+        return String.fromCharCode(65 + index); // 'A', 'B', 'C' ... 'Z'
+    }
+    const firstChar = String.fromCharCode(65 + Math.floor(index / 26) - 1);
+    const secondChar = String.fromCharCode(65 + (index % 26));
+    return `${firstChar}${secondChar}`;
+};
+
+const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, qtdTotal, isEdit, canGenerateOp, hideOpSwitch, nextFractionLetter }) => (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Data Entrega *</label>
@@ -64,8 +73,7 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
                     )}
                 </div>
                 <input type="number" step="0.01" min="0.01" required placeholder="0.00"
-                    disabled={hasOp}
-                    className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none ${hasOp ? 'bg-gray-200 border-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gray-50 border-gray-200'}`}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                     value={value.quantidade_pcp}
                     onChange={e => onChange(p => ({ ...p, quantidade_pcp: e.target.value }))} />
             </div>
@@ -98,17 +106,17 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
         </div>
         <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Lote</label>
-            <input type="text" placeholder="Ex: L-2026-001"
+            <input type="text" placeholder={nextFractionLetter ? `Ex: Lote ${nextFractionLetter}` : "Ex: L-2026-001"}
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                 value={value.lote}
                 onChange={e => onChange(p => ({ ...p, lote: e.target.value }))} />
         </div>
         <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Número do Lote</label>
-            <input type="text" placeholder="Ex: 001"
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+            <input type="text" placeholder={nextFractionLetter || "Ex: AA"}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none uppercase font-mono"
                 value={value.numero_lote}
-                onChange={e => onChange(p => ({ ...p, numero_lote: e.target.value }))} />
+                onChange={e => onChange(p => ({ ...p, numero_lote: e.target.value.toUpperCase() }))} />
         </div>
         <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Observação</label>
@@ -133,26 +141,26 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
         )}
 
         {!hideOpSwitch && (
-            <div className={`p-3 rounded-lg border flex items-center justify-between opacity-80 ${canGenerateOp ? 'bg-indigo-50 border-indigo-100' : 'bg-red-50 border-red-100'}`}>
+            <div className={`p-3 rounded-lg border flex items-center justify-between ${canGenerateOp ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-100'}`}>
                 <div>
-                    <div className={`text-sm font-semibold ${canGenerateOp ? 'text-indigo-900' : 'text-red-900'}`}>Gerar OP Protheus</div>
-                    <div className={`text-xs ${canGenerateOp ? 'text-indigo-700' : 'text-red-700'}`}>
+                    <div className={`text-sm font-semibold ${canGenerateOp ? 'text-blue-900' : 'text-red-900'}`}>Gerar Ordem de Produção (OP)</div>
+                    <div className={`text-xs ${canGenerateOp ? 'text-blue-700' : 'text-red-700'}`}>
                         {canGenerateOp 
-                            ? "Emitir Ordem Prod. automaticamente para a fábrica." 
+                            ? (nextFractionLetter ? `Emitir Ordem de Produção Fração (Lote ${nextFractionLetter}) no ERP.` : "Emitir Ordem de Produção no ERP (Banco Novo MySQL).") 
                             : "Bloqueado: Item(ns) não liberados para PCP."}
                     </div>
                 </div>
                 <label className={`relative flex items-center ${canGenerateOp ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
                     <input type="checkbox" className="sr-only peer" checked={canGenerateOp && value.gerar_op_protheus} disabled={!canGenerateOp} 
                         onChange={(e) => onChange(p => ({ ...p, gerar_op_protheus: e.target.checked }))} />
-                    <div className={`w-9 h-5 peer-focus:outline-none rounded-full peer after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all ${canGenerateOp && value.gerar_op_protheus ? 'bg-indigo-600 after:translate-x-full' : 'bg-gray-300'}`}></div>
+                    <div className={`w-9 h-5 peer-focus:outline-none rounded-full peer after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all ${canGenerateOp && value.gerar_op_protheus ? 'bg-blue-600 after:translate-x-full' : 'bg-gray-300'}`}></div>
                 </label>
             </div>
         )}
 
         <div className="flex gap-2 mt-1">
             <button type="submit" disabled={saving}
-                className={`flex-1 disabled:opacity-50 text-white font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 ${isEdit ? 'bg-amber-500 hover:bg-amber-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                className={`flex-1 disabled:opacity-50 text-white font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 ${isEdit ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700 shadow-sm'}`}>
                 {saving ? 'Salvando...' : <><Save className="h-4 w-4" /> {isEdit ? 'Salvar Alterações' : 'Adicionar'}</>}
             </button>
             {isEdit && onCancel && (
@@ -184,12 +192,6 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
         if (!t) return { valid: false, reason: 'Inválido' };
         if (String(t?.status_tipo_item || '').trim() !== 'PCP') return { valid: false, reason: 'Não liberado (PCP)' };
         if (parseFloat(t.qtd_faturar || 0) <= 0) return { valid: false, reason: 'Já 100% faturado' };
-        
-        const hasOp = !!(t.op_num && String(t.op_num).trim() !== '-' && String(t.op_num).trim() !== '');
-        const qtdSaldo = parseFloat(t.qtd_faturar ?? t.visual_qtd ?? t.quantidade ?? 0);
-        const qtdOp = parseFloat(t.op_qtd || 0);
-        
-        if (hasOp && qtdOp >= qtdSaldo && qtdSaldo > 0) return { valid: false, reason: 'Sem saldo para OP' };
         return { valid: true, reason: '' };
     };
 
@@ -198,11 +200,11 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
 
     const pedido = isBatch ? 'Lote' : (item?.pedido || item?.pedido_id);
     const itemNum = isBatch ? `${targetItems.length} Itens` : item?.item;
-    const qtdTotal = isBatch ? 0 : parseFloat(item?.qtd_faturar ?? item?.visual_qtd ?? item?.quantidade ?? 0);
+    const qtdTotal = isBatch ? 0 : parseFloat(item?.quantidade_original ?? item?.c6_qtdven ?? item?.qtd_faturar ?? item?.visual_qtd ?? item?.quantidade ?? 0);
     const qtdTotalStr = isBatch ? '-' : qtdTotal.toLocaleString('pt-BR');
 
     const qtdProgramada = programacoes.reduce((s, p) => s + parseFloat(p.quantidade_pcp || 0), 0);
-    const qtdDisponivel = qtdTotal - qtdProgramada;
+    const qtdDisponivel = Math.max(0, qtdTotal - qtdProgramada);
     const pctProgramado = qtdTotal > 0 ? Math.min(100, (qtdProgramada / qtdTotal) * 100) : 0;
 
     // Disponível para edição (exclui a prog sendo editada)
@@ -397,19 +399,23 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
         }
         const novaQtd = parseFloat(formData.quantidade_pcp);
         if (novaQtd <= 0) { toast.warning('Quantidade deve ser maior que zero.'); return; }
-        if (qtdTotal > 0 && qtdProgramada + novaQtd > qtdTotal) {
+        if (qtdTotal > 0 && qtdProgramada + novaQtd > qtdTotal + 0.01) {
             toast.error(`Quantidade excede o disponível. Disponível: ${qtdDisponivel.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}`);
             return;
         }
         setSaving(true);
         try {
-            const hasOp = !!(item.op_num && String(item.op_num).trim() !== '-' && String(item.op_num).trim() !== '');
+            const existingCount = (programacoes || []).length;
+            const nextLetter = formData.numero_lote && /^[A-Z]{1,2}$/i.test(String(formData.numero_lote).trim())
+                ? String(formData.numero_lote).trim().toUpperCase()
+                : getFractionLetter(existingCount);
             
             const qtdFinal = parseFloat(formData.quantidade_pcp);
-            let opGerada = hasOp ? getFullOpNumber(item.op_num_completa || item.op_num, itemNum) : null;
+            let opGerada = null;
+            let targetItem = itemNum;
 
-            // 1. PRIMEIRO: Cria a OP no Protheus (se marcado e ainda não possuir OP)
-            if (canGenerateOp && formData.gerar_op_protheus && !hasOp) {
+            // 1. PRIMEIRO: Cria a OP no ERP com sufixo de lote (se marcado)
+            if (canGenerateOp && formData.gerar_op_protheus) {
                 const protheusItems = [{
                     filial: item.filial || '01',
                     produto: item.codigo,
@@ -418,28 +424,38 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                     datprf: formData.data_entrega_pcp.replace(/-/g, ''),
                     obs: formData.observacao || '',
                     pedido: pedido,
-                    itempv: itemNum
+                    itempv: itemNum,
+                    lote_sufixo: nextLetter
                 }];
                 console.log(`🚀 [PROTHEUS SINGLE] Enviando JSON:`, JSON.stringify({ items: protheusItems }, null, 2));
                 
                 try {
                     const protheusRes = await api.post('/protheus/ordem-producao/incluir', { items: protheusItems });
-                    if (protheusRes.data?.generated_ops?.[0]?.op_num) {
-                        opGerada = getFullOpNumber(protheusRes.data.generated_ops[0].op_num, itemNum);
+                    const genOp = protheusRes.data?.generated_ops?.[0];
+                    if (genOp?.op_num) {
+                        opGerada = genOp.op_num;
                     } else if (protheusRes.data?.op_number) {
-                        opGerada = getFullOpNumber(protheusRes.data.op_number, itemNum);
+                        opGerada = protheusRes.data.op_number;
+                    }
+                    if (genOp?.item) {
+                        targetItem = genOp.item;
                     }
                 } catch (opErr) {
                     const errData = opErr.response?.data;
-                    const errMsg = errData?.details || errData?.error || opErr.message || 'Erro no Protheus';
-                    toast.error(`A criação da OP no Protheus falhou: ${errMsg}`, { autoClose: 8000 });
-                    throw new Error(`Falha ao gerar OP no Protheus: ${errMsg}`);
+                    const errMsg = errData?.details || errData?.error || opErr.message || 'Erro ao gerar OP';
+                    toast.error(`A criação da OP falhou: ${errMsg}`, { autoClose: 8000 });
+                    throw new Error(`Falha ao gerar OP no ERP: ${errMsg}`);
                 }
+            } else if (item.op_num && String(item.op_num).trim() !== '-' && String(item.op_num).trim() !== '') {
+                opGerada = getFullOpNumber(item.op_num_completa || item.op_num, itemNum);
             }
             
-            // 2. DEPOIS: Salva a previsão de Data PCP e Quantidade (já com a OP vinculada)
+            // 2. DEPOIS: Salva a previsão de Data PCP e Quantidade (já com a OP e Lote vinculados)
+            const isFracionadoItem = targetItem !== itemNum;
+            const fractionSuffix = isFracionadoItem ? targetItem.substring(itemNum.length) : nextLetter;
             await api.post('/pedidos/pcp-forecasts', {
-                pedido, item: itemNum,
+                pedido, 
+                item: targetItem,
                 data_entrega_pcp: formData.data_entrega_pcp,
                 quantidade_pcp: qtdFinal,
                 usuario: user?.nome || user?.name || user?.login || 'Usuário',
@@ -447,11 +463,11 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                 numero_serie: formData.numero_serie || null,
                 serie_cliente: formData.serie_cliente || null,
                 serie_metalfisa: formData.serie_metalfisa || null,
-                lote: formData.lote || null,
-                numero_lote: formData.numero_lote || null,
-                qtd_total_item: qtdTotal > 0 ? qtdTotal : undefined,
+                lote: formData.lote || `Lote ${fractionSuffix}`,
+                numero_lote: formData.numero_lote || fractionSuffix,
+                qtd_total_item: isFracionadoItem ? undefined : (qtdTotal > 0 ? qtdTotal : undefined),
                 op_protheus: opGerada,
-                sobrescrever_existente: formData.sobrescrever_existente
+                sobrescrever_existente: true
             });
 
             toast.success('Programação adicionada com sucesso!');
@@ -528,10 +544,10 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                         opAtualizada = getFullOpNumber(resp.data.op_number, item.item);
                     }
                 } catch (err) {
-                    console.error("❌ [ERRO API PROTHEUS/EDICAO] Detalhes:", err.response?.data || err);
-                    const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao gerar OP no Protheus.';
-                    toast.error(`Falha ao gerar O.P. Protheus: ${errMsg}`, { autoClose: 8000 });
-                    throw new Error(`Falha ao gerar OP no Protheus: ${errMsg}`);
+                    console.error("❌ [ERRO API OP/EDICAO] Detalhes:", err.response?.data || err);
+                    const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao gerar OP no ERP.';
+                    toast.error(`Falha ao gerar O.P.: ${errMsg}`, { autoClose: 8000 });
+                    throw new Error(`Falha ao gerar OP no ERP: ${errMsg}`);
                 }
             }
 
@@ -604,33 +620,33 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
                 {/* Header */}
-                <div className="bg-indigo-600 px-6 py-4 flex items-center justify-between text-white shrink-0">
+                <div className="bg-blue-600 px-6 py-4 flex items-center justify-between text-white shrink-0 shadow-sm">
                     <div className="flex items-center gap-3">
-                        <Calendar className="h-6 w-6" />
+                        <Calendar className="h-6 w-6 text-blue-100" />
                         <div>
                             <h2 className="text-lg font-bold">{isBatch ? 'Programação Lote PCP' : 'Programações de Entrega PCP'}</h2>
-                            <p className="text-indigo-100 text-xs">
+                            <p className="text-blue-100 text-xs">
                                 {isBatch ? `${targetItems.length} Itens Múltiplos Selecionados` : `Pedido ${pedido} · Item ${itemNum} · ${item.codigo} — ${item.descricao}`}
                             </p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-indigo-500 rounded-full transition-colors">
+                    <button onClick={onClose} className="p-2 hover:bg-blue-500 rounded-full transition-colors">
                         <X className="h-5 w-5" />
                     </button>
                 </div>
 
                 {/* Progresso (Somente Individual) */}
                 {!isBatch && (
-                    <div className="px-6 py-3 bg-indigo-50 border-b border-indigo-100 shrink-0">
-                        <div className="flex items-center justify-between text-xs text-indigo-700 font-medium mb-1">
+                    <div className="px-6 py-3 bg-blue-50 border-b border-blue-100 shrink-0">
+                        <div className="flex items-center justify-between text-xs text-blue-700 font-medium mb-1">
                             <span>Total programado: <strong>{qtdProgramada.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</strong> / {qtdTotalStr}</span>
                             <span className={qtdDisponivel < 0 ? 'text-red-600 font-bold' : qtdDisponivel === 0 ? 'text-emerald-600 font-bold' : ''}>
                                 {qtdDisponivel === 0 ? 'Totalmente programado' : `Disponível: `}
                                 {qtdDisponivel !== 0 && <strong>{qtdDisponivel.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}</strong>}
                             </span>
                         </div>
-                        <div className="w-full bg-indigo-200 rounded-full h-2">
-                            <div className={`h-2 rounded-full transition-all ${pctProgramado >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                        <div className="w-full bg-blue-200 rounded-full h-2">
+                            <div className={`h-2 rounded-full transition-all ${pctProgramado >= 100 ? 'bg-emerald-500' : 'bg-blue-600'}`}
                                 style={{ width: `${pctProgramado}%` }} />
                         </div>
                     </div>
@@ -642,7 +658,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                         <div className="w-full md:w-80 shrink-0 border-r border-gray-100 flex flex-col relative overflow-hidden">
                             <div className="p-5 overflow-y-auto flex-1">
                                 <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2 pb-1 border-b mb-3">
-                                    <Plus className="h-4 w-4 text-indigo-600" /> Nova Programação
+                                    <Plus className="h-4 w-4 text-blue-600" /> Nova Programação
                                 </h3>
                                 <ProgForm
                                     value={formData}

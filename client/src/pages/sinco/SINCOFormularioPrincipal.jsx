@@ -4,7 +4,8 @@ import {
     FileSignature, Plus, X, Pencil, Edit3, CheckCircle, AlertTriangle, XCircle, Trash2, 
     Sparkles, UploadCloud, FolderInput, Paperclip, Maximize2, Minimize2, Loader2,
     Network, Layers, Package, ExternalLink, Eye, Filter, Wrench, Building2, 
-    Printer, FileSpreadsheet, CheckCircle2, ChevronRight, ChevronDown, FolderOpen
+    Printer, FileSpreadsheet, CheckCircle2, ChevronRight, ChevronDown, FolderOpen,
+    Info, ShieldAlert
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
@@ -71,6 +72,8 @@ export default function SINCOFormularioPrincipal() {
     const [savingSz0, setSavingSz0] = useState(false);
     const [editandoRestricao, setEditandoRestricao] = useState(null); // null = nova, objeto = edição
     const [novaRestricao, setNovaRestricao] = useState({ resumo: '', restricao: '', responsavel: '', revMetalfisa: '', status: 'P' });
+    // Modal de Regra de Negócio SZ1 (Duplicidade / Conflito Protheus)
+    const [modalRegraSz1, setModalRegraSz1] = useState(null);
     // Edição de Árvore (BOM)
     const [isEditingArvore, setIsEditingArvore] = useState(false);
     const [isEditingDadosGerais, setIsEditingDadosGerais] = useState(false);
@@ -432,7 +435,7 @@ export default function SINCOFormularioPrincipal() {
             setRestricoes(Array.isArray(rR) ? rR : []);
             const rOMapped = Array.isArray(rO) ? rO.map(o => ({...o, _original_operacao: o.operacao})) : [];
             setOperacoes(rOMapped);
-            setRestricoesSz0(Array.isArray(rSz0) ? rSz0 : []);
+            setRestricoesSz0((Array.isArray(rSz0) ? rSz0 : []).filter(r => r.status !== 'L'));
             setArvoreCompleta(Array.isArray(rACompleta) ? rACompleta : []);
             
             // Verifica se tem PDF de desenho
@@ -671,7 +674,7 @@ export default function SINCOFormularioPrincipal() {
             setEditandoRestricao(null);
             setNovaRestricao({ resumo: '', restricao: '', responsavel: '', revMetalfisa: '', status: 'P' });
             const rSz0 = await getSincoRestricoesSz0(produto);
-            setRestricoesSz0(Array.isArray(rSz0) ? rSz0 : []);
+            setRestricoesSz0((Array.isArray(rSz0) ? rSz0 : []).filter(r => r.status !== 'L'));
             showToast('Restrição SZ0 salva com sucesso!', 'success');
         } catch (err) {
             console.error('Erro ao salvar restrição SZ0:', err.response?.data || err);
@@ -684,23 +687,28 @@ export default function SINCOFormularioPrincipal() {
     };
 
     const handleDeletarRestricaoSz0 = async (r) => {
-        if (!confirm(`Tem certeza que deseja excluir a restrição ${r.item}?`)) return;
+        if (!confirm(`Deseja excluir a restrição ${r.item}?`)) return;
         
+        const now = new Date();
+        const dtHoje = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const hrAgora = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const produto = dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
+
         const payload = {
             data: {
                 restricoes: [{
                     EMPRESA: '01',
                     CFILANT: '01',
-                    NOPER: 5,
-                    Z0_PRODUTO: dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase(),
-                    Z0_ITEM: r.item,
-                    Z0_STATUS: r.status,
-                    Z0_RESUMO: r.resumo,
-                    Z0_RESTRIC: r.restricao,
-                    Z0_RESPONS: r.responsavel,
-                    Z0_DTULTAL: r.dt_ultima_alt || '',
-                    Z0_HRULTAL: r.hr_ultima_alt || '',
-                    Z0_XREVM: r.revisao || ''
+                    NOPER: 4, // NOPER 4 com status 'L' (Liberada/Excluída), evitando erro 500 do Protheus
+                    Z0_PRODUTO: produto,
+                    Z0_ITEM: String(r.item || '001').padStart(3, '0'),
+                    Z0_STATUS: 'L',
+                    Z0_RESUMO: r.resumo || 'LIBERADA',
+                    Z0_RESTRIC: r.restricao || 'LIBERADA',
+                    Z0_RESPONS: (user?.nome || user?.login || 'ENGENHARIA').toUpperCase().substring(0, 15),
+                    Z0_DTULTAL: dtHoje,
+                    Z0_HRULTAL: hrAgora,
+                    Z0_XREVM: (r.revisao || '').substring(0, 2)
                 }]
             }
         };
@@ -709,14 +717,14 @@ export default function SINCOFormularioPrincipal() {
         try {
             await createSincoRestricaoSz0(payload);
             showToast('Restrição excluída com sucesso.', 'success');
-            const produto = dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
             const rSz0 = await getSincoRestricoesSz0(produto);
-            setRestricoesSz0(Array.isArray(rSz0) ? rSz0 : []);
+            setRestricoesSz0((Array.isArray(rSz0) ? rSz0 : []).filter(r => r.status !== 'L'));
+            if (handleRevalidarArvore) handleRevalidarArvore(produto, 'sz0');
         } catch (err) {
             console.error('Erro ao excluir restrição SZ0:', err.response?.data || err);
             const msg = err.response?.data?.details?.message || err.response?.data?.details || err.response?.data?.error || err.response?.data?.message || err.message;
             const strMsg = typeof msg === 'object' ? JSON.stringify(msg) : msg;
-            showToast('Erro do Protheus ao excluir: ' + strMsg, 'error');
+            showToast('Erro do Protheus ao processar restrição: ' + strMsg, 'error');
         } finally {
             setLoadingSz0(false);
         }
@@ -862,8 +870,12 @@ export default function SINCOFormularioPrincipal() {
         try {
             await updateSincoProductStructure(payload);
             showToast('Estrutura atualizada com sucesso no Protheus!', 'success');
-            // Recarrega os dados do ERP
-            await carregarProtheus(produtoPai);
+            // Recarrega apenas a estrutura e valida pontualmente sem piscar telas
+            const rA = await getSincoArvore(produtoPai);
+            setArvore(Array.isArray(rA) ? rA : []);
+            setEditedArvore(Array.isArray(rA) ? JSON.parse(JSON.stringify(rA)) : []);
+            setIsEditingArvore(false);
+            handleRevalidarArvore(produtoPai, 'materiais');
         } catch (err) {
             console.error('Erro ao salvar estrutura (BOM):', err.response?.data || err);
             const msg = err.response?.data?.details?.message || err.response?.data?.details || err.response?.data?.error || err.message;
@@ -877,6 +889,19 @@ export default function SINCOFormularioPrincipal() {
     const handleSalvarOperacoes = async () => {
         if (!temArquivo) return;
         const produtoPai = dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
+
+        const activeOps = editedOperacoes.filter(op => !op.deleted);
+        if (operacoes.length > 0 && activeOps.length === 0) {
+            showToast('O Protheus exige pelo menos uma operação ativa no roteiro.', 'warning');
+            return;
+        }
+
+        // Validação de duplicidade de sequência
+        const seqs = activeOps.map(op => String(op.operacao || '').trim().padStart(2, '0'));
+        if (new Set(seqs).size !== seqs.length) {
+            showToast('Existem operações com a mesma sequência no roteiro. O Protheus rejeita duplicidade.', 'error');
+            return;
+        }
 
         // Se operacoes.length == 0 => Inclusão de roteiro (NOPER = 3)
         // Se operacoes.length > 0 => Alteração de roteiro (NOPER = 4)
@@ -897,7 +922,7 @@ export default function SINCOFormularioPrincipal() {
                     G2_RECURSO: (original.recurso || '').trim(),
                     G2_FERRAM: "",
                     G2_TPALOCF: "",
-                    G2_SETUP: original.setup !== undefined && original.setup !== '' ? String(original.setup) : "",
+                    G2_SETUP: Number(original.setup || 0),
                     G2_FORMSTP: "",
                     G2_LOTEPAD: 1,
                     G2_TEMPAD: Number(original.tempo || 1),
@@ -917,7 +942,7 @@ export default function SINCOFormularioPrincipal() {
                     G2_RECURSO: (original.recurso || '').trim(),
                     G2_FERRAM: "",
                     G2_TPALOCF: "",
-                    G2_SETUP: original.setup !== undefined && original.setup !== '' ? String(original.setup) : "",
+                    G2_SETUP: Number(original.setup || 0),
                     G2_FORMSTP: "",
                     G2_LOTEPAD: 1,
                     G2_TEMPAD: Number(original.tempo || 1),
@@ -935,7 +960,7 @@ export default function SINCOFormularioPrincipal() {
                     G2_RECURSO: (editada.recurso || '').trim(),
                     G2_FERRAM: "",
                     G2_TPALOCF: "",
-                    G2_SETUP: editada.setup !== undefined && editada.setup !== '' ? String(editada.setup) : "",
+                    G2_SETUP: Number(editada.setup || 0),
                     G2_FORMSTP: "",
                     G2_LOTEPAD: 1,
                     G2_TEMPAD: Number(editada.tempo || 1),
@@ -955,7 +980,7 @@ export default function SINCOFormularioPrincipal() {
                     G2_RECURSO: (editada.recurso || '').trim(),
                     G2_FERRAM: "",
                     G2_TPALOCF: "",
-                    G2_SETUP: editada.setup !== undefined && editada.setup !== '' ? String(editada.setup) : "",
+                    G2_SETUP: Number(editada.setup || 0),
                     G2_FORMSTP: "",
                     G2_LOTEPAD: 1,
                     G2_TEMPAD: Number(editada.tempo || 1),
@@ -981,7 +1006,7 @@ export default function SINCOFormularioPrincipal() {
                     G2_RECURSO: (op.recurso || '').trim(),
                     G2_FERRAM: "",
                     G2_TPALOCF: "",
-                    G2_SETUP: op.setup !== undefined && op.setup !== '' ? String(op.setup) : "",
+                    G2_SETUP: Number(op.setup || 0),
                     G2_FORMSTP: "",
                     G2_LOTEPAD: 1,
                     G2_TEMPAD: Number(op.tempo || 1),
@@ -1004,7 +1029,7 @@ export default function SINCOFormularioPrincipal() {
 
         const payload = {
             data: {
-                NOPER: noper,
+                NOPER: Number(noper),
                 EMPRESA: "01",
                 CFILANT: "0101",
                 G2_CODIGO: "01",
@@ -1017,7 +1042,13 @@ export default function SINCOFormularioPrincipal() {
         try {
             await updateSincoRoteiro(payload);
             showToast('Roteiro atualizado com sucesso no Protheus!', 'success');
-            await carregarProtheus(produtoPai);
+            // Recarrega apenas operações pontualmente sem recarregar a tela inteira
+            const rO = await getSincoOperacoes(produtoPai);
+            const rOMapped = Array.isArray(rO) ? rO.map(o => ({...o, _original_operacao: o.operacao})) : [];
+            setOperacoes(rOMapped);
+            setEditedOperacoes(JSON.parse(JSON.stringify(rOMapped)));
+            setIsEditingOperacoes(false);
+            handleRevalidarArvore(produtoPai, 'roteiro');
         } catch (err) {
             console.error('❌ Falha ao salvar Roteiro:', err.response?.data || err);
             const msg = err.response?.data?.details?.message || err.response?.data?.details || err.response?.data?.error || err.message;
@@ -1081,16 +1112,15 @@ export default function SINCOFormularioPrincipal() {
             if (r.isNew || !r.recno) {
                 insercoes.push(formatItem(r));
             } else {
-                const index = editedRestricoes.indexOf(r);
-                const original = restricoes[index];
+                const original = restricoes.find(o => String(o.recno) === String(r.recno)) || {};
                 
                 // Como agora temos o RECNO como ID absoluto da linha, 
                 // qualquer edição (seja chave ou secundária) é enviada como NOPER=4 (Alteração)
-                if (String(original.revisao).trim().toUpperCase() !== String(r.revisao).trim().toUpperCase() || 
-                    String(original.cod_cliente).trim().toUpperCase() !== String(r.cod_cliente).trim().toUpperCase() ||
-                    String(original.desc_cliente).trim().toUpperCase() !== String(r.desc_cliente).trim().toUpperCase() || 
-                    String(original.cliente).trim().toUpperCase() !== String(r.cliente).trim().toUpperCase() || 
-                    String(original.loja).trim().toUpperCase() !== String(r.loja).trim().toUpperCase()) {
+                if (String(original.revisao || '').trim().toUpperCase() !== String(r.revisao || '').trim().toUpperCase() || 
+                    String(original.cod_cliente || '').trim().toUpperCase() !== String(r.cod_cliente || '').trim().toUpperCase() ||
+                    String(original.desc_cliente || '').trim().toUpperCase() !== String(r.desc_cliente || '').trim().toUpperCase() || 
+                    String(original.cliente || '').trim().toUpperCase() !== String(r.cliente || '').trim().toUpperCase() || 
+                    String(original.loja || '').trim().toUpperCase() !== String(r.loja || '').trim().toUpperCase()) {
                     
                     alteracoes.push(formatItem(r));
                 }
@@ -1119,11 +1149,17 @@ export default function SINCOFormularioPrincipal() {
             const res = await getSincoRestricoes(produto);
             setRestricoes(Array.isArray(res) ? res : []);
             setIsEditingRestricoes(false);
+            handleRevalidarArvore(produto, 'sz1');
         } catch (err) {
             console.error('Erro ao salvar Produtos x Cliente SZ1:', err.response?.data || err);
-            const msg = err.response?.data?.details?.message || err.response?.data?.details || err.response?.data?.error || err.message;
-            const strMsg = typeof msg === 'object' ? JSON.stringify(msg) : msg;
-            showToast('Erro ao salvar Produtos x Cliente: ' + strMsg, 'error');
+            const resData = err.response?.data;
+            if (resData?.isBusinessRule) {
+                setModalRegraSz1(resData);
+            } else {
+                const msg = resData?.details?.message || resData?.message || resData?.details || resData?.error || err.message;
+                const strMsg = typeof msg === 'object' ? (Array.isArray(msg) ? msg.join('; ') : JSON.stringify(msg)) : msg;
+                showToast('Erro ao salvar Produtos x Cliente: ' + strMsg, 'error');
+            }
         } finally {
             setSavingRestricoes(false);
         }
@@ -1133,11 +1169,43 @@ export default function SINCOFormularioPrincipal() {
     const listOperacoes = isEditingOperacoes ? editedOperacoes : operacoes;
     const listRestricoes = isEditingRestricoes ? editedRestricoes : restricoes;
 
-    // Revalidação sob demanda da árvore completa
-    const handleRevalidarArvore = useCallback(async () => {
+    // Revalidação da árvore completa (global ou pontual por nó)
+    const handleRevalidarArvore = useCallback(async (changedCodigo = null, changeType = null) => {
         if (!temArquivo) return;
         const codLimpo = dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
         try {
+            // Se for uma atualização pontual de uma linha alterada:
+            if (typeof changedCodigo === 'string' && changedCodigo.trim()) {
+                const targetCode = changedCodigo.trim().toUpperCase();
+                // 1. Atualiza o status de validação apenas dessa linha sem mexer no restante da página
+                try {
+                    const res = await api.post('/sinco/validar-estruturas', { components: [targetCode] });
+                    if (res.data && res.data[targetCode]) {
+                        setTreeValidationStatus(prev => ({
+                            ...prev,
+                            [targetCode]: res.data[targetCode]
+                        }));
+                    }
+                } catch (err) {
+                    console.warn('Erro ao validar status pontual da linha:', err);
+                }
+
+                // 2. Atualiza a hierarquia da árvore em segundo plano APENAS se a alteração foi de materiais (SG1)
+                // Para Roteiro (SG2), Clientes (SZ1) e Restrições (SZ0), a árvore hierárquica não muda!
+                if (!changeType || changeType === 'materiais') {
+                    try {
+                        const comp = await getSincoArvoreCompleta(codLimpo);
+                        if (Array.isArray(comp)) {
+                            setArvoreCompleta(comp);
+                        }
+                    } catch (err) {
+                        console.warn('Erro ao atualizar dados da árvore em background:', err);
+                    }
+                }
+                return;
+            }
+
+            // Recarregamento global manual (apenas se clicar no botão "Atualizar" do topo)
             setLoadingArvoreCompleta(true);
             const comp = await getSincoArvoreCompleta(codLimpo);
             if (Array.isArray(comp)) setArvoreCompleta(comp);
@@ -1222,12 +1290,18 @@ export default function SINCOFormularioPrincipal() {
         }
 
         const fetchValidation = async () => {
-            setLoadingTreeValidation(true);
+            const hasExisting = Object.keys(treeValidationStatus).length > 0;
+            if (!hasExisting) {
+                setLoadingTreeValidation(true);
+            }
             try {
                 const components = [...new Set(rowsArvore.map(r => r.codigoLimpo).filter(Boolean))];
                 if (components.length > 0) {
                     const res = await api.post('/sinco/validar-estruturas', { components });
-                    setTreeValidationStatus(res.data || {});
+                    setTreeValidationStatus(prev => ({
+                        ...prev,
+                        ...(res.data || {})
+                    }));
                 }
             } catch (err) {
                 console.error("Erro ao validar estruturas da árvore:", err);
@@ -1237,7 +1311,7 @@ export default function SINCOFormularioPrincipal() {
         };
 
         fetchValidation();
-    }, [rowsArvore]);
+    }, [rowsArvore.length, temArquivo, dados.arquivo]);
 
     const handleOpenNode = (node) => {
         if (treeViewMode === 'accordion') {
@@ -2910,7 +2984,7 @@ export default function SINCOFormularioPrincipal() {
                                             };
 
                                             return (
-                                                <React.Fragment key={rIdx}>
+                                                <React.Fragment key={r.caminho_hierarquico || `${r.codigoLimpo}_${r.nivel}_${rIdx}`}>
                                                     <tr className={`transition-colors group ${
                                                         isExpanded ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-blue-50/40'
                                                     }`}>
@@ -3016,29 +3090,6 @@ export default function SINCOFormularioPrincipal() {
                                                                     <Edit3 size={11} />
                                                                     <span className="hidden sm:inline">Formulário</span>
                                                                 </button>
-
-                                                                {/* 4. Cadastrar no Protheus se não cadastrado */}
-                                                                {(!vStatus || !vStatus.materiais) && (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => {
-                                                                            setItemParaCriarProduto({
-                                                                                b1_xcode: r.codigoLimpo,
-                                                                                b1_xcoddes: r.codigoLimpo,
-                                                                                titulo: r.descricao || '',
-                                                                                uom: r.unidade || 'PC',
-                                                                                tipo: r.tipo || 'PI',
-                                                                                peso: ''
-                                                                            });
-                                                                            setModalCriarProdutoOpen(true);
-                                                                        }}
-                                                                        className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded transition-colors cursor-pointer"
-                                                                        title={`Cadastrar ${r.codigoLimpo} no Protheus`}
-                                                                    >
-                                                                        <Sparkles size={14} />
-                                                                    </button>
-                                                                )}
-
                                                             </div>
                                                         </td>
 
@@ -3532,6 +3583,165 @@ export default function SINCOFormularioPrincipal() {
                     setModalCriarProdutoOpen(true);
                 }}
             />
+
+            {/* Modal de Aviso de Regra de Negócio Protheus (SZ1 - Produto x Cliente) */}
+            {modalRegraSz1 && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+                    <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+                        {/* Header com destaque de regra */}
+                        <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4 flex items-center justify-between text-white shadow-sm">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-white/20 rounded-lg">
+                                    <AlertTriangle className="w-6 h-6 text-white" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-base font-bold tracking-tight">Regra de Negócio Protheus (Tabela SZ1)</h3>
+                                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-amber-700/60 text-white rounded-full">
+                                            Validação TOTVS
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-amber-100 mt-0.5">
+                                        Conflito de Amarração Produto x Desenho do Cliente
+                                    </p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => setModalRegraSz1(null)}
+                                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Corpo com explicação pedagógica */}
+                        <div className="p-6 overflow-y-auto space-y-4 text-sm text-slate-700">
+                            {/* 1. Alerta de Conflito Identificado */}
+                            <div className="bg-amber-50/80 border border-amber-200 rounded-lg p-3.5 flex flex-col gap-2">
+                                <div className="flex items-start gap-2">
+                                    <Info className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                                    <span className="font-semibold text-amber-950 text-xs uppercase tracking-wide">
+                                        Vínculo já existente na base de dados
+                                    </span>
+                                </div>
+                                <p className="text-xs text-amber-900 font-medium leading-relaxed">
+                                    {modalRegraSz1.message}
+                                </p>
+                            </div>
+
+                            {/* 2. Comparativo Visual dos Itens */}
+                            {modalRegraSz1.conflito && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+                                            O que você tentou vincular agora
+                                        </span>
+                                        <div className="space-y-1 text-xs">
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Produto Atual:</span>
+                                                <span className="font-mono font-bold text-slate-800">{modalRegraSz1.conflito.produto_atual}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Cód. Cliente (Desenho):</span>
+                                                <span className="font-mono font-bold text-amber-700">{modalRegraSz1.conflito.cod_cliente}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Revisão:</span>
+                                                <span className="font-mono font-bold text-amber-700">{modalRegraSz1.conflito.revisao}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Cliente:</span>
+                                                <span className="font-mono text-slate-700">{modalRegraSz1.conflito.cliente}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-amber-50/50 border border-amber-200 rounded-lg p-3">
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800">
+                                                Onde este desenho já está amarrado
+                                            </span>
+                                            <span className="text-[10px] font-mono text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
+                                                RECNO #{modalRegraSz1.conflito.recno}
+                                            </span>
+                                        </div>
+                                        <div className="space-y-1 text-xs">
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Produto Vinculado:</span>
+                                                <span className="font-mono font-bold text-red-600">{modalRegraSz1.conflito.produto_existente}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Descrição:</span>
+                                                <span className="font-medium text-slate-700 truncate max-w-[140px]" title={modalRegraSz1.conflito.desc_produto_existente}>
+                                                    {modalRegraSz1.conflito.desc_produto_existente}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Cliente / Razão:</span>
+                                                <span className="font-medium text-slate-700 truncate max-w-[140px]" title={modalRegraSz1.conflito.nome_cliente}>
+                                                    {modalRegraSz1.conflito.nome_cliente}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 3. Por que isso acontece? (Explicação da Regra) */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+                                <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                                    <ShieldAlert className="w-3.5 h-3.5 text-slate-500" />
+                                    Por que o Protheus não permite essa gravação?
+                                </span>
+                                <p className="leading-relaxed">
+                                    {modalRegraSz1.motivo}
+                                </p>
+                            </div>
+
+                            {/* 4. Soluções Disponíveis */}
+                            <div className="space-y-2">
+                                <span className="text-xs font-bold uppercase tracking-wider text-slate-700 block">
+                                    Como você pode resolver:
+                                </span>
+                                <div className="space-y-1.5 text-xs text-slate-700">
+                                    {modalRegraSz1.solucoes && modalRegraSz1.solucoes.map((sol, idx) => (
+                                        <div key={idx} className="flex items-start gap-2 bg-slate-50 p-2 rounded border border-slate-100">
+                                            <span className="font-bold text-amber-600">{idx + 1}.</span>
+                                            <span className="leading-relaxed">{sol.replace(/^[0-9]+\.\s*/, '')}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer com botões de ação */}
+                        <div className="bg-slate-50 px-6 py-3.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setModalRegraSz1(null)}
+                                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-semibold rounded-md shadow-xs transition-colors cursor-pointer"
+                            >
+                                Voltar e Corrigir Formulário
+                            </button>
+
+                            {modalRegraSz1.conflito?.produto_existente && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const codConflitante = modalRegraSz1.conflito.produto_existente;
+                                        setModalRegraSz1(null);
+                                        handleCarregarNoFormulario(codConflitante);
+                                    }}
+                                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white text-xs font-semibold rounded-md shadow-xs transition-colors flex items-center gap-2 cursor-pointer"
+                                >
+                                    <span>Abrir Produto Conflitante ({modalRegraSz1.conflito.produto_existente})</span>
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </div>
     );
