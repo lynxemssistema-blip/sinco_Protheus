@@ -757,34 +757,64 @@ router.get('/vertical-pendencias', async (req, res) => {
   }
 });
 
+// Helpers de normalização e comparação para Apontamento Vertical e Roteiros
+const normNumStr = (val, padLen = 0) => {
+  if (val === null || val === undefined) return '';
+  const s = String(val).trim();
+  const clean = s.replace(/^0+/, '');
+  if (!clean) return padLen > 0 ? '0'.padStart(padLen, '0') : '0';
+  return padLen > 0 ? clean.padStart(padLen, '0') : clean;
+};
+
+const matchOpItemSeq = (aOp, aItem, aSeq, bOp, bItem, bSeq) => {
+  const opA = normNumStr(aOp, 6);
+  const opB = normNumStr(bOp, 6);
+  const itemA = normNumStr(aItem, 2);
+  const itemB = normNumStr(bItem, 2);
+  const seqA = normNumStr(aSeq, 3);
+  const seqB = normNumStr(bSeq, 3);
+  return opA === opB && itemA === itemB && seqA === seqB;
+};
+
+const matchOpCode = (codeA, codeB) => {
+  if (!codeA || !codeB) return false;
+  const sa = String(codeA).trim();
+  const sb = String(codeB).trim();
+  if (sa === sb) return true;
+  return normNumStr(sa) === normNumStr(sb);
+};
+
 // GET /api/producao/vertical/:operacao - Buscar fila de produção por Recurso (máquina/setor)
 router.get('/vertical/:operacao', async (req, res) => {
   try {
     let { operacao } = req.params;
     operacao = String(operacao).split('-')[0].trim();
+    const isAllResources = !operacao || operacao.toUpperCase() === 'TODOS' || operacao.toUpperCase() === 'ALL' || operacao === '*';
     const { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate, plan_fim_de, plan_fim_ate, status, sort_key, sort_dir } = req.query;
 
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.min(   parseInt(req.query.limit) || 200, 1000);
     const offset = (page - 1) * limit;
 
-    console.log(`🏭 [VERTICAL] ${operacao} | page=${page} limit=${limit}`, { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate });
+    console.log(`🏭 [VERTICAL] ${operacao} (isAll=${isAllResources}) | page=${page} limit=${limit}`, { op, pedido, produto, cliente, plan_inicio_de, plan_inicio_ate });
 
     const getInactiveFilter = await getInactiveOrdersFilter();
 
     // PRE-FILTER BY DATE: get OP list from MySQL planning table
     let opFilterFromMySQL = null;
     if (plan_inicio_de || plan_inicio_ate || plan_fim_de || plan_fim_ate) {
-      let mysqlQuery = `SELECT DISTINCT op_numero FROM app_production_planning WHERE recurso_codigo = ?`;
-      const mysqlParams = [operacao];
+      let mysqlQuery = `SELECT DISTINCT op_numero FROM app_production_planning WHERE 1=1`;
+      const mysqlParams = [];
+      if (!isAllResources) {
+        mysqlQuery += ` AND recurso_codigo = ?`;
+        mysqlParams.push(operacao);
+      }
       if (plan_inicio_de) { mysqlQuery += ` AND data_planejada_inicio >= ?`; mysqlParams.push(`${plan_inicio_de} 00:00:00`); }
       if (plan_inicio_ate) { mysqlQuery += ` AND data_planejada_inicio <= ?`; mysqlParams.push(`${plan_inicio_ate} 23:59:59`); }
       if (plan_fim_de)    { mysqlQuery += ` AND data_planejada_fim >= ?`;    mysqlParams.push(`${plan_fim_de} 00:00:00`); }
       if (plan_fim_ate)   { mysqlQuery += ` AND data_planejada_fim <= ?`;    mysqlParams.push(`${plan_fim_ate} 23:59:59`); }
       const [plannedOps] = await mysqlPool.query(mysqlQuery, mysqlParams);
       if (plannedOps.length === 0) {
-        // Nenhum planejamento no período para este recurso — não bloquear.
-        // Exibe todas as OPs do Protheus sem restrição de data local.
         console.log(`ℹ️ [VERTICAL] Sem dados em app_production_planning para ${operacao} no período. Exibindo todas as OPs do Protheus.`);
         opFilterFromMySQL = null;
       } else {
@@ -797,14 +827,23 @@ router.get('/vertical/:operacao', async (req, res) => {
     const produtosDoRecurso = [];
 
     try {
-      const sgResult = await db.query(`
+      const sgQuery = isAllResources ? `
+        SELECT TRIM(g2.g2_produto) AS produto, TRIM(g2.g2_operac) AS operacao_codigo,
+               TRIM(g2.g2_recurso) AS recurso_codigo, TRIM(h1.h1_descri) AS operacao_desc
+        FROM public.sg2010 g2
+        LEFT JOIN public.sh1010 h1
+          ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso) AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
+        WHERE COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
+        LIMIT 5000
+      ` : `
         SELECT TRIM(g2.g2_produto) AS produto, TRIM(g2.g2_operac) AS operacao_codigo,
                TRIM(g2.g2_recurso) AS recurso_codigo, TRIM(h1.h1_descri) AS operacao_desc
         FROM public.sg2010 g2
         LEFT JOIN public.sh1010 h1
           ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso) AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
         WHERE TRIM(g2.g2_recurso) = $1 AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
-      `, [operacao]);
+      `;
+      const sgResult = await db.query(sgQuery, isAllResources ? [] : [operacao]);
 
       sgResult.rows.forEach(r => {
         if (!routingMap[r.produto]) { routingMap[r.produto] = []; produtosDoRecurso.push(r.produto); }
@@ -816,7 +855,13 @@ router.get('/vertical/:operacao', async (req, res) => {
 
     // Complementar routingMap com dados do MySQL (erp_roteiros_operacoes e erp_ordens_producao_operacoes)
     try {
-      const [myRoutes] = await mysqlPool.query(`
+      const myRouteQuery = isAllResources ? `
+        SELECT codigo_produto as produto, operacao_seq as operacao_codigo, codigo_recurso as recurso_codigo, descricao_operacao as operacao_desc
+        FROM erp_roteiros_operacoes
+        UNION
+        SELECT DISTINCT produto_codigo as produto, operacao_seq as operacao_codigo, codigo_recurso as recurso_codigo, descricao_operacao as operacao_desc
+        FROM erp_ordens_producao_operacoes
+      ` : `
         SELECT codigo_produto as produto, operacao_seq as operacao_codigo, codigo_recurso as recurso_codigo, descricao_operacao as operacao_desc
         FROM erp_roteiros_operacoes
         WHERE codigo_recurso = ?
@@ -824,7 +869,8 @@ router.get('/vertical/:operacao', async (req, res) => {
         SELECT DISTINCT produto_codigo as produto, operacao_seq as operacao_codigo, codigo_recurso as recurso_codigo, descricao_operacao as operacao_desc
         FROM erp_ordens_producao_operacoes
         WHERE codigo_recurso = ?
-      `, [operacao, operacao]);
+      `;
+      const [myRoutes] = await mysqlPool.query(myRouteQuery, isAllResources ? [] : [operacao, operacao]);
       myRoutes.forEach(r => {
         const prod = String(r.produto).trim();
         if (!routingMap[prod]) { routingMap[prod] = []; produtosDoRecurso.push(prod); }
@@ -848,8 +894,8 @@ router.get('/vertical/:operacao', async (req, res) => {
     // -----------------------------------------------------------------
     let mysqlOpsList = [];
     try {
-      let myConditions = [`o.codigo_recurso = ?`];
-      let myParams = [operacao];
+      let myConditions = isAllResources ? [`1=1`] : [`o.codigo_recurso = ?`];
+      let myParams = isAllResources ? [] : [operacao];
 
       if (op) {
         const cleanOp = String(op).trim();
@@ -1003,8 +1049,8 @@ router.get('/vertical/:operacao', async (req, res) => {
     let skipPgSearch = false;
 
     let sc2Conditions = [`COALESCE(c2.d_e_l_e_t_, '') = ''`];
-    let sc2Params = [operacao]; // $1 = recurso (used in INNER JOIN below)
-    let sc2Count = 2;
+    let sc2Params = isAllResources ? [] : [operacao]; // $1 = recurso (used in INNER JOIN below if filtered)
+    let sc2Count = isAllResources ? 1 : 2;
 
     const inactiveSql = getInactiveFilter(`COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),''))`);
     if (inactiveSql) sc2Conditions.push(inactiveSql.replace(/^\s*AND\s+/i, ''));
@@ -1114,7 +1160,7 @@ router.get('/vertical/:operacao', async (req, res) => {
         FROM public.sc2010 c2
         INNER JOIN public.sg2010 g2_r
           ON TRIM(g2_r.g2_produto) = TRIM(c2.c2_produto)
-          AND TRIM(g2_r.g2_recurso) = $1
+          ${isAllResources ? '' : 'AND TRIM(g2_r.g2_recurso) = $1'}
           AND COALESCE(g2_r.d_e_l_e_t_, '') IN ('', ' ')
         LEFT JOIN public.sc2010 root_op
           ON root_op.c2_num = c2.c2_num AND root_op.c2_item = c2.c2_item
@@ -1180,9 +1226,22 @@ router.get('/vertical/:operacao', async (req, res) => {
       return res.json({ data: [], pagination: { page, limit, hasMore: false, total: 0 } });
     }
 
-    // Enrichment: MySQL planning + appointments
-    const opCodes = [...new Set(opsList.map(o => o.op))];
-    const opCodOperacoes = [...new Set(opsList.map(o => o.operacao_codigo).filter(Boolean))];
+    // Enrichment: MySQL planning + appointments (variantes de zero à esquerda para match garantido)
+    const opCodes = [...new Set(opsList.flatMap(o => {
+      const opStr = String(o.op || '').trim();
+      const rawNum = String(parseInt(opStr, 10) || opStr);
+      const pad6 = opStr.padStart(6, '0');
+      return [opStr, rawNum, pad6];
+    }).filter(Boolean))];
+
+    const opCodOperacoes = [...new Set(opsList.flatMap(o => {
+      const code = String(o.operacao_codigo || '').trim();
+      const rawNum = String(parseInt(code, 10) || code);
+      const pad2 = code.padStart(2, '0');
+      const pad4 = code.padStart(4, '0');
+      return [code, rawNum, pad2, pad4];
+    }).filter(Boolean))];
+
     const opPlaceholders = opCodes.map(() => '?').join(',');
     const opOperacPlaceholders = opCodOperacoes.map(() => '?').join(',');
 
@@ -1342,16 +1401,16 @@ router.get('/vertical/:operacao', async (req, res) => {
       }
     }
 
-    // Merge final
+    // Merge final com correspondência normalizada
     const enrichedList = opsList.map(opRow => {
       const fullOpNum = `${opRow.op}${opRow.item_op}${opRow.sequen_op}`;
       const p = plans.find(plan =>
-        plan.op_numero === opRow.op && plan.op_item === opRow.item_op &&
-        plan.op_sequencia === opRow.sequen_op && plan.operacao_codigo === opRow.operacao_codigo
+        matchOpItemSeq(plan.op_numero, plan.op_item, plan.op_sequencia, opRow.op, opRow.item_op, opRow.sequen_op) &&
+        matchOpCode(plan.operacao_codigo, opRow.operacao_codigo)
       );
       const a = appointments.find(appt =>
-        appt.op_numero === opRow.op && appt.op_item === opRow.item_op &&
-        appt.op_sequencia === opRow.sequen_op && appt.operacao_codigo === opRow.operacao_codigo
+        matchOpItemSeq(appt.op_numero, appt.op_item, appt.op_sequencia, opRow.op, opRow.item_op, opRow.sequen_op) &&
+        matchOpCode(appt.operacao_codigo, opRow.operacao_codigo)
       );
       const qtd_planejada = parseFloat(opRow.qtd_op) || 0;
       const qtd_apontada  = a ? (parseFloat(a.total_produzido) || 0) : 0;
@@ -1389,7 +1448,10 @@ router.get('/vertical/:operacao', async (req, res) => {
         op_anterior: (() => {
           const prevOp = prevOpMap[`${opRow.op}_${opRow.item_op}_${opRow.sequen_op}`];
           if (!prevOp) return null;
-          const pa = adjacentAppointments.find(a => a.op_numero === opRow.op && a.op_item === opRow.item_op && a.operacao_codigo === prevOp.operacao_codigo);
+          const pa = adjacentAppointments.find(a => 
+            matchOpItemSeq(a.op_numero, a.op_item, a.op_sequencia, opRow.op, opRow.item_op, opRow.sequen_op) &&
+            matchOpCode(a.operacao_codigo, prevOp.operacao_codigo)
+          );
           const qtd_pl = parseFloat(opRow.qtd_op) || 0;
           const qtd_ap = pa ? (parseFloat(pa.total_produzido) || 0) : 0;
           const st = qtd_ap >= qtd_pl && qtd_pl > 0 ? 'CONCLUIDO' : qtd_ap > 0 ? 'PARCIAL' : 'PENDENTE';
@@ -1403,7 +1465,10 @@ router.get('/vertical/:operacao', async (req, res) => {
         op_proxima: (() => {
           const nextOp = nextOpMap[`${opRow.op}_${opRow.item_op}_${opRow.sequen_op}`];
           if (!nextOp) return null;
-          const na = adjacentAppointments.find(a => a.op_numero === opRow.op && a.op_item === opRow.item_op && a.operacao_codigo === nextOp.operacao_codigo);
+          const na = adjacentAppointments.find(a => 
+            matchOpItemSeq(a.op_numero, a.op_item, a.op_sequencia, opRow.op, opRow.item_op, opRow.sequen_op) &&
+            matchOpCode(a.operacao_codigo, nextOp.operacao_codigo)
+          );
           const qtd_pl = parseFloat(opRow.qtd_op) || 0;
           const qtd_ap = na ? (parseFloat(na.total_produzido) || 0) : 0;
           const st = qtd_ap >= qtd_pl && qtd_pl > 0 ? 'CONCLUIDO' : qtd_ap > 0 ? 'PARCIAL' : 'PENDENTE';
@@ -1900,26 +1965,34 @@ router.get('/op-roteiro-saldo', async (req, res) => {
       }
     }
 
-    // 3. Buscar apontamentos no MySQL
+    // 3. Buscar apontamentos no MySQL com variantes de preenchimento de zeros
     const opCodOperacoes = operacoes.map(o => o.operacao_codigo);
-    const placeholders = opCodOperacoes.map(() => '?').join(',');
-    
+    const opVariants = [...new Set([op.trim(), op.trim().padStart(6, '0'), String(parseInt(op.trim(), 10) || op.trim())])];
+    const itemVariants = [...new Set([item.trim(), item.trim().padStart(2, '0'), String(parseInt(item.trim(), 10) || item.trim())])];
+    const seqVariants = [...new Set([(sequencia || '001').trim(), (sequencia || '001').trim().padStart(3, '0')])];
+    const opCodVariants = [...new Set(opCodOperacoes.flatMap(c => [c, String(parseInt(c, 10) || c), c.padStart(2, '0')]))];
+
+    const opInPH = opVariants.map(() => '?').join(',');
+    const itemInPH = itemVariants.map(() => '?').join(',');
+    const seqInPH = seqVariants.map(() => '?').join(',');
+    const codeInPH = opCodVariants.map(() => '?').join(',');
+
     let appointments = [];
-    if (opCodOperacoes.length > 0) {
+    if (opCodVariants.length > 0) {
       const [aRows] = await mysqlPool.query(`
         SELECT operacao_codigo, SUM(quantidade) as total_produzido
         FROM app_production_appointments
-        WHERE op_numero = ? AND op_item = ? AND op_sequencia = ?
-        AND operacao_codigo IN (${placeholders})
+        WHERE op_numero IN (${opInPH}) AND op_item IN (${itemInPH}) AND op_sequencia IN (${seqInPH})
+        AND operacao_codigo IN (${codeInPH})
         AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
         GROUP BY operacao_codigo
-      `, [op.trim().padStart(6, '0'), item.trim(), (sequencia || '001').trim(), ...opCodOperacoes]);
+      `, [...opVariants, ...itemVariants, ...seqVariants, ...opCodVariants]);
       appointments = aRows;
     }
 
     // 4. Mapear resposta
     const resultado = operacoes.map(opRow => {
-      const appt = appointments.find(a => a.operacao_codigo === opRow.operacao_codigo);
+      const appt = appointments.find(a => matchOpCode(a.operacao_codigo, opRow.operacao_codigo));
       const produzido = appt ? Number(appt.total_produzido) : 0;
       const saldo = Math.max(0, qtd_op - produzido);
       

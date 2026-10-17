@@ -9,7 +9,7 @@
  */
 
 import ExcelJS from 'exceljs';
-import jsPDFLib from 'jspdf';
+import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import {
     getCompany,
@@ -22,7 +22,25 @@ import {
 } from './companyBranding';
 import { downloadBlob } from '../utils/downloadHelper';
 
-const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
+/**
+ * Invoca o plugin jspdf-autotable de forma universal e resiliente
+ * (suporta tanto default export, named export autoTable ou método no protótipo doc.autoTable)
+ */
+const applyAutoTable = (doc, options) => {
+    if (typeof autoTable === 'function') {
+        return autoTable(doc, options);
+    }
+    if (autoTable && typeof autoTable.default === 'function') {
+        return autoTable.default(doc, options);
+    }
+    if (autoTable && typeof autoTable.autoTable === 'function') {
+        return autoTable.autoTable(doc, options);
+    }
+    if (typeof doc.autoTable === 'function') {
+        return doc.autoTable(options);
+    }
+    throw new Error('Plugin jspdf-autotable não pôde ser invocado.');
+};
 
 // ── PALETA CORPORATIVA LYNXEMS (Compliance Anti-Purple Ban) ──────────────────
 const LYNX_THEME = {
@@ -458,7 +476,7 @@ export const ReportGeneratorService = {
             };
         });
 
-        autoTable(doc, {
+        applyAutoTable(doc, {
             head: [tableHeaders],
             body: tableRows,
             startY: lineY + 3,

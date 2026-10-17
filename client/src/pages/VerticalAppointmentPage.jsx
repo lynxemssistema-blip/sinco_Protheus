@@ -435,7 +435,7 @@ export default function VerticalAppointmentPage() {
     const loadData = async (showLoader = true, targetPage = page, append = false, customBatchSize = batchSize) => {
         if (!selectedOp) return null;
 
-        const hasFilter = filters.op || filters.pedido || filters.produto || filters.cliente || filters.plan_inicio_ate;
+        const hasFilter = Boolean(selectedOp || filters.op || filters.pedido || filters.produto || filters.cliente || filters.plan_inicio_ate);
         if (!hasFilter) {
             setData([]);
             setWasSearched(false);
@@ -495,12 +495,8 @@ export default function VerticalAppointmentPage() {
     };
 
     const handleSearch = () => {
-        if (!selectedOp) {
-            toast.warning('Selecione um Recurso antes de buscar.');
-            return;
-        }
-        if (!filters.op && !filters.pedido && !filters.produto && !filters.cliente && !filters.plan_inicio_ate) {
-            toast.warning('Informe ao menos um filtro (OP, Pedido, Cliente, Produto ou Período) para buscar.');
+        if (!selectedOp && !filters.op && !filters.pedido && !filters.produto && !filters.cliente && !filters.plan_inicio_ate) {
+            toast.warning('Selecione um Recurso ou informe ao menos um filtro (OP, Pedido, Cliente, Produto ou Período) para buscar.');
             return;
         }
         setPage(1);
@@ -654,16 +650,16 @@ export default function VerticalAppointmentPage() {
 
     const buildOpObj = (row) => ({
         op: row.op,
-        item_op: row.item_op,
-        sequen: row.sequen_op,
+        item_op: row.item_op || '01',
+        sequen: row.sequen_op || '001',
         operacao: row.operacao_codigo,
         operacao_coluna: row.operacao_codigo,
-        recurso: row.operacao_codigo,
+        recurso: row.recurso_codigo || row.operacao_codigo,
         cod_produto_op: row.produto,
         desc_produto: row.desc_produto,
         desc_operacao: row.operacao_desc || row.operacao_codigo,
         qtd_planejada_op: parseFloat(row.qtd_op) || 0,
-        qtd_produzida_real: row.qtd_apontada || 0,
+        qtd_produzida_real: parseFloat(row.qtd_apontada) || 0,
         pedido: row.pedido,
         item_pedido: row.item_pedido,
         cliente: row.cliente || row.nome_cliente,
@@ -682,8 +678,8 @@ export default function VerticalAppointmentPage() {
     };
 
     const handleAppointmentSave = async (dataPayload) => {
-        // API chamada movida para dentro do Modal
         setAppointingOp(null);
+        toast.success('Lista de produção atualizada!');
         loadData(false);
     };
 
@@ -838,6 +834,7 @@ export default function VerticalAppointmentPage() {
                                 onChange={(e) => setSelectedOp(e.target.value)}
                             >
                                 <option value="">-- Selecione o Recurso --</option>
+                                <option value="TODOS">🌐 Todos os Recursos (Filtro por OP / Pedido)</option>
                                 {operations.map((op, index) => (
                                     <option
                                         key={op.codigo || index}

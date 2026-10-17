@@ -26,24 +26,26 @@ export const downloadBlob = (blob, fileName, mimeType = null) => {
 
     const url = window.URL.createObjectURL(effectiveBlob);
     const a = document.createElement('a');
-    a.style.position = 'fixed';
-    a.style.left = '-9999px';
-    a.style.top = '-9999px';
-    a.style.opacity = '0';
+    a.style.display = 'none';
     a.href = url;
     a.setAttribute('download', finalFileName);
     a.download = finalFileName;
+    a.rel = 'noopener noreferrer';
     
     // Append to body to ensure Chromium respects the download attribute
     document.body.appendChild(a);
     
-    // Dispara o clique usando MouseEvent para máxima compatibilidade
-    const clickEvent = new MouseEvent('click', {
-        view: window,
-        bubbles: true,
-        cancelable: true
-    });
-    a.dispatchEvent(clickEvent);
+    // Dispara clique direto nativo (evita que o Chromium trate como download automático suspeito)
+    try {
+        a.click();
+    } catch (e) {
+        const clickEvent = new MouseEvent('click', {
+            view: window,
+            bubbles: true,
+            cancelable: true
+        });
+        a.dispatchEvent(clickEvent);
+    }
     
     // Retemos a URL por 60 segundos antes de limpar para garantir
     // que o Chromium tenha tempo hábil de receber o arquivo e registrar a extensão.

@@ -11,8 +11,36 @@ import {
     ArrowDownToLine, Tag, DollarSign, Scale, X, Database, Sparkles, 
     Clock, Building2, ShieldCheck, ChevronLeft, ChevronRight, Hash,
     Eye, ExternalLink, Box, FileText, Check, Camera, Image, Paperclip,
-    FileCode, Upload, Download, Trash2, Edit2, ZoomIn
+    FileCode, Upload, Download, Trash2, Edit2, ZoomIn, Palette
 } from 'lucide-react';
+
+// Badge visual para codificação de cores de aço / matérias-primas (Sólida ou Bicolor 50/50)
+export function ProductColorBadge({ cor, showLabel = true, size = 'sm' }) {
+    if (!cor || !cor.cor_primaria) return null;
+    const isBicolor = cor.cor_tipo === 'bicolor' && cor.cor_secundaria;
+    const bgStyle = isBicolor
+        ? { background: `linear-gradient(90deg, ${cor.cor_primaria} 50%, ${cor.cor_secundaria} 50%)` }
+        : { backgroundColor: cor.cor_primaria };
+
+    const sizeClass = size === 'xs' ? 'w-3 h-3' : size === 'lg' ? 'w-5 h-5' : 'w-3.5 h-3.5';
+
+    return (
+        <span
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-50 border border-slate-200 text-slate-800 shadow-2xs shrink-0"
+            title={`${cor.cor_codigo || ''} - ${cor.cor_significado || ''}${isBicolor ? ' (Bicolor)' : ''}`}
+        >
+            <span
+                className={`${sizeClass} rounded-full border border-gray-400 shadow-inner shrink-0`}
+                style={bgStyle}
+            />
+            {showLabel && (
+                <span className="font-mono font-bold text-[11px] text-slate-700">
+                    {cor.cor_codigo}
+                </span>
+            )}
+        </span>
+    );
+}
 
 export default function ErpProdutosPage() {
     const [produtos, setProdutos] = useState([]);
@@ -81,8 +109,26 @@ export default function ErpProdutosPage() {
         desenho_tipo: '',
         b1_xrevm: '0',
         b1_xproc1: '',
-        b1_xrevc: '0'
+        b1_xrevc: '0',
+        cor_id: '' // Padrão: VAZIO (Nenhum material tem cor por padrão)
     });
+
+    // Gestão de Cores de Aço / Matérias-Primas (Placa de Codificação)
+    const [coresList, setCoresList] = useState([]);
+    const [colorFilter, setColorFilter] = useState('');
+    const [isColorManagerOpen, setIsColorManagerOpen] = useState(false);
+    const [editingColor, setEditingColor] = useState(null);
+    const [colorFormData, setColorFormData] = useState({
+        codigo: '',
+        significado: '',
+        tipo_cor: 'solida',
+        cor_primaria: '#FFFFFF',
+        cor_secundaria: '#DC2626',
+        descricao: ''
+    });
+    const [colorSaving, setColorSaving] = useState(false);
+    const [colorModalError, setColorModalError] = useState(null);
+    const [colorModalSuccess, setColorModalSuccess] = useState(null);
 
     // Helper para converter string decimal (com vírgula ou ponto) em float seguro
     const parseDecimal = (val) => {
@@ -184,8 +230,12 @@ export default function ErpProdutosPage() {
     const loadData = async () => {
         setLoading(true);
         try {
+            let url = `/erp/produtos?search=${encodeURIComponent(debouncedSearch)}&tipo=${encodeURIComponent(tipoFilter)}&limit=${limit}&offset=${page * limit}`;
+            if (colorFilter) {
+                url += `&cor_id=${encodeURIComponent(colorFilter)}`;
+            }
             const [prodRes, statsRes] = await Promise.all([
-                api.get(`/erp/produtos?search=${encodeURIComponent(debouncedSearch)}&tipo=${encodeURIComponent(tipoFilter)}&limit=${limit}&offset=${page * limit}`),
+                api.get(url),
                 api.get('/erp/stats')
             ]);
             setProdutos(prodRes.data || []);
@@ -197,10 +247,20 @@ export default function ErpProdutosPage() {
         }
     };
 
+    const loadCores = async () => {
+        try {
+            const res = await api.get('/erp/produtos/cores');
+            setCoresList(res.data || []);
+        } catch (err) {
+            console.warn('Falha ao carregar lista de cores de aço:', err);
+        }
+    };
+
     useEffect(() => {
         loadData();
         fetchCadastrosBasicos();
-    }, [debouncedSearch, tipoFilter, page]);
+        loadCores();
+    }, [debouncedSearch, tipoFilter, colorFilter, page]);
 
     // Cadastros Básicos (Prefixos, Tipos, Unidades e Armazéns)
     const [cadastrosBasicos, setCadastrosBasicos] = useState({
@@ -302,6 +362,69 @@ export default function ErpProdutosPage() {
         });
     };
 
+    // Handlers para Gestão de Cores de Aço
+    const handleSaveColor = async (e) => {
+        e?.preventDefault();
+        if (!colorFormData.codigo || !colorFormData.significado || !colorFormData.cor_primaria) {
+            setColorModalError('Código (ex: SAE 1020), Significado e Cor Primária são obrigatórios.');
+            return;
+        }
+        setColorSaving(true);
+        setColorModalError(null);
+        setColorModalSuccess(null);
+        try {
+            if (editingColor) {
+                await api.put(`/erp/produtos/cores/${editingColor}`, colorFormData);
+                setColorModalSuccess(`Cor ${colorFormData.codigo} atualizada com sucesso!`);
+            } else {
+                await api.post('/erp/produtos/cores', colorFormData);
+                setColorModalSuccess(`Cor ${colorFormData.codigo} cadastrada com sucesso!`);
+            }
+            await loadCores();
+            await loadData();
+            setTimeout(() => {
+                setEditingColor(null);
+                setColorFormData({
+                    codigo: '',
+                    significado: '',
+                    tipo_cor: 'solida',
+                    cor_primaria: '#FFFFFF',
+                    cor_secundaria: '#DC2626',
+                    descricao: ''
+                });
+                setColorModalSuccess(null);
+            }, 800);
+        } catch (err) {
+            setColorModalError(err.response?.data?.error || err.message);
+        } finally {
+            setColorSaving(false);
+        }
+    };
+
+    const handleDeleteColor = async (id, codigo) => {
+        if (!window.confirm(`Tem certeza que deseja excluir a cor "${codigo}"? Quaisquer produtos vinculados voltarão ao padrão (sem cor).`)) {
+            return;
+        }
+        try {
+            await api.delete(`/erp/produtos/cores/${id}`);
+            await loadCores();
+            await loadData();
+            if (editingColor === id) {
+                setEditingColor(null);
+                setColorFormData({
+                    codigo: '',
+                    significado: '',
+                    tipo_cor: 'solida',
+                    cor_primaria: '#FFFFFF',
+                    cor_secundaria: '#DC2626',
+                    descricao: ''
+                });
+            }
+        } catch (err) {
+            alert('Erro ao excluir cor: ' + (err.response?.data?.error || err.message));
+        }
+    };
+
     // Ao abrir o modal para criação de novo produto
     const handleOpenCreateModal = () => {
         setIsEditing(false);
@@ -325,7 +448,8 @@ export default function ErpProdutosPage() {
             desenho_tipo: '',
             b1_xrevm: '0',
             b1_xproc1: '',
-            b1_xrevc: '0'
+            b1_xrevc: '0',
+            cor_id: '' // Padrão: VAZIO (Nenhum material tem cor por padrão)
         });
         setModalError(null);
         setModalSuccess(null);
@@ -358,7 +482,8 @@ export default function ErpProdutosPage() {
             desenho_tipo: p.desenho_tipo || '',
             b1_xrevm: p.b1_xrevm !== undefined && p.b1_xrevm !== null && String(p.b1_xrevm).trim() !== '' ? String(p.b1_xrevm) : '0',
             b1_xproc1: p.b1_xproc1 || '',
-            b1_xrevc: p.b1_xrevc !== undefined && p.b1_xrevc !== null && String(p.b1_xrevc).trim() !== '' ? String(p.b1_xrevc) : '0'
+            b1_xrevc: p.b1_xrevc !== undefined && p.b1_xrevc !== null && String(p.b1_xrevc).trim() !== '' ? String(p.b1_xrevc) : '0',
+            cor_id: p.cor_id ? String(p.cor_id) : ''
         });
         setModalError(null);
         setModalSuccess(null);
@@ -383,7 +508,8 @@ export default function ErpProdutosPage() {
             peso_bruto: parseDecimal(formData.peso_bruto),
             custo_standard: parseDecimal(formData.custo_standard),
             preco_venda: parseDecimal(formData.preco_venda),
-            lead_time_dias: parseInt(formData.lead_time_dias, 10) || 0
+            lead_time_dias: parseInt(formData.lead_time_dias, 10) || 0,
+            cor_id: formData.cor_id ? parseInt(formData.cor_id, 10) : null
         };
 
         try {
@@ -401,7 +527,8 @@ export default function ErpProdutosPage() {
                     codigo: '', descricao: '', tipo: 'PA', unidade_medida: 'UN',
                     ncm: '', armazem_padrao: '01', origem: '0', peso_liquido: '', peso_bruto: '',
                     custo_standard: '', preco_venda: '', lead_time_dias: '5', status: 'ativo',
-                    foto_url: '', desenho_url: '', desenho_nome: '', desenho_tipo: ''
+                    foto_url: '', desenho_url: '', desenho_nome: '', desenho_tipo: '',
+                    b1_xrevm: '0', b1_xproc1: '', b1_xrevc: '0', cor_id: ''
                 });
                 loadData();
             }, 1000);
@@ -443,6 +570,33 @@ export default function ErpProdutosPage() {
                         onExportPdf={handleExportPdf}
                         disabled={loading || produtos.length === 0}
                     />
+
+                    <button
+                        onClick={() => {
+                            setIsColorManagerOpen(true);
+                            setEditingColor(null);
+                            setColorFormData({
+                                codigo: '',
+                                significado: '',
+                                tipo_cor: 'solida',
+                                cor_primaria: '#FFFFFF',
+                                cor_secundaria: '#DC2626',
+                                descricao: ''
+                            });
+                            setColorModalError(null);
+                            setColorModalSuccess(null);
+                        }}
+                        className="inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-sm font-semibold transition shadow-xs cursor-pointer"
+                        title="Gerenciar Tabela de Cores de Aço / Matérias-Primas"
+                    >
+                        <Palette className="w-4 h-4 text-indigo-600" />
+                        <span>Cores de Aço</span>
+                        {coresList.length > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                {coresList.length}
+                            </span>
+                        )}
+                    </button>
 
                     <button
                         onClick={handleOpenCreateModal}
@@ -564,6 +718,20 @@ export default function ErpProdutosPage() {
                     <option value="ME">ME - Mercadoria p/ Revenda</option>
                     <option value="GG">GG - Gastos Gerais</option>
                 </select>
+                <select
+                    value={colorFilter}
+                    onChange={(e) => { setColorFilter(e.target.value); setPage(0); }}
+                    className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    title="Filtrar por Cor de Aço (Placa de Codificação)"
+                >
+                    <option value="">Todas as Cores</option>
+                    <option value="sem_cor">⚪ Sem cor de aço</option>
+                    {coresList.map(c => (
+                        <option key={c.id} value={c.id}>
+                            {c.codigo} - {c.significado}
+                        </option>
+                    ))}
+                </select>
             </div>
 
             {/* Products Table Container */}
@@ -577,6 +745,7 @@ export default function ErpProdutosPage() {
                                 <th className="py-3 px-3">Ref. Cliente</th>
                                 <th className="py-3 px-3 text-center">Rev. Cli.</th>
                                 <th className="py-3 px-4">Descrição (B1_DESC)</th>
+                                <th className="py-3 px-3 text-center">Cor Aço</th>
                                 <th className="py-3 px-4">Tipo</th>
                                 <th className="py-3 px-4">U.M.</th>
                                 <th className="py-3 px-4">Armazém</th>
@@ -590,14 +759,14 @@ export default function ErpProdutosPage() {
                         <tbody className="divide-y divide-gray-100">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="13" className="py-12 text-center text-gray-500">
+                                    <td colSpan="14" className="py-12 text-center text-gray-500">
                                         <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
                                         Carregando cadastro de produtos do Protheus...
                                     </td>
                                 </tr>
                             ) : produtos.length === 0 ? (
                                 <tr>
-                                    <td colSpan="13" className="py-12 text-center text-gray-500">
+                                    <td colSpan="14" className="py-12 text-center text-gray-500">
                                         Nenhum produto encontrado com os filtros informados.
                                     </td>
                                 </tr>
@@ -675,6 +844,23 @@ export default function ErpProdutosPage() {
                                         </td>
                                         <td className="py-3.5 px-4 font-medium text-gray-900">
                                             {p.descricao}
+                                        </td>
+                                        <td className="py-3.5 px-3 text-center">
+                                            {p.cor_primaria ? (
+                                                <ProductColorBadge
+                                                    cor={{
+                                                        cor_codigo: p.cor_codigo,
+                                                        cor_significado: p.cor_significado,
+                                                        cor_tipo: p.cor_tipo,
+                                                        cor_primaria: p.cor_primaria,
+                                                        cor_secundaria: p.cor_secundaria
+                                                    }}
+                                                    showLabel={true}
+                                                    size="sm"
+                                                />
+                                            ) : (
+                                                <span className="text-gray-300 font-mono text-xs" title="Nenhuma cor vinculada (Padrão)">-</span>
+                                            )}
                                         </td>
                                         <td className="py-3.5 px-4">
                                             <button
@@ -1069,6 +1255,70 @@ export default function ErpProdutosPage() {
                                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                     <span className="text-[10px] text-gray-400 mt-0.5 block">Padrão: 0</span>
+                                </div>
+                            </div>
+
+                            {/* CODIFICAÇÃO DE COR DO AÇO / MATÉRIA-PRIMA (PLACA DE IDENTIFICAÇÃO) */}
+                            <div className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                        <Palette className="w-4 h-4 text-indigo-600" />
+                                        Codificação de Cor (Aço / Matéria-Prima)
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsColorManagerOpen(true);
+                                            setEditingColor(null);
+                                        }}
+                                        className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                                    >
+                                        <Plus className="w-3 h-3" /> Gerenciar Tabela de Cores
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                                    <div className="sm:col-span-2">
+                                        <select
+                                            value={formData.cor_id || ''}
+                                            onChange={(e) => setFormData(prev => ({ ...prev, cor_id: e.target.value }))}
+                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="">Nenhum (Sem cor de aço - Padrão)</option>
+                                            {coresList.map(c => (
+                                                <option key={c.id} value={c.id}>
+                                                    {c.codigo} - {c.significado} ({c.tipo_cor === 'bicolor' ? 'Bicolor' : 'Sólida'})
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <span className="text-[11px] text-gray-500 mt-1 block">
+                                            Por padrão nenhum material possui cor. Selecione apenas para itens com codificação física de topo de barra.
+                                        </span>
+                                    </div>
+
+                                    <div className="flex items-center justify-center p-2.5 bg-white rounded-lg border border-gray-200 min-h-[46px]">
+                                        {formData.cor_id ? (() => {
+                                            const sel = coresList.find(c => String(c.id) === String(formData.cor_id));
+                                            if (!sel) return <span className="text-xs text-gray-400">Sem cor selecionada</span>;
+                                            return (
+                                                <div className="flex items-center gap-2.5">
+                                                    <span
+                                                        className="w-6 h-6 rounded-full border border-gray-400 shadow-inner shrink-0"
+                                                        style={sel.tipo_cor === 'bicolor' && sel.cor_secundaria
+                                                            ? { background: `linear-gradient(90deg, ${sel.cor_primaria} 50%, ${sel.cor_secundaria} 50%)` }
+                                                            : { backgroundColor: sel.cor_primaria }
+                                                        }
+                                                    />
+                                                    <div className="text-left">
+                                                        <p className="text-xs font-bold text-gray-900 leading-tight">{sel.codigo}</p>
+                                                        <p className="text-[10px] text-gray-500 truncate max-w-[130px]">{sel.significado}</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })() : (
+                                            <span className="text-xs text-gray-400 italic">⚪ Sem cor associada</span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
@@ -1656,6 +1906,425 @@ export default function ErpProdutosPage() {
                                     Abrir Tela Completa de Engenharia
                                 </Link>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Gestão de Cores de Aço (Placa de Codificação Industrial) */}
+            {isColorManagerOpen && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-4xl overflow-hidden my-6 flex flex-col max-h-[92vh]">
+                        {/* Header do Modal */}
+                        <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 to-indigo-50/50 border-b border-gray-200 flex items-center justify-between gap-4 shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-indigo-100 text-indigo-700 rounded-xl">
+                                    <Palette className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h2 className="text-lg font-bold text-gray-900">
+                                            Placa de Codificação de Aço & Matérias-Primas
+                                        </h2>
+                                        <span className="px-2 py-0.5 text-xs font-bold rounded-full bg-indigo-100 text-indigo-800">
+                                            Almoxarifado & Produção
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-gray-500 mt-0.5">
+                                        Identificação visual de barras de aço por cor sólida ou bicolor (dividida 50/50). Isolado por empresa.
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsColorManagerOpen(false);
+                                    setEditingColor(null);
+                                }}
+                                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Corpo com scroll */}
+                        <div className="p-4 sm:p-6 overflow-y-auto space-y-6">
+                            {/* Alertas */}
+                            {colorModalError && (
+                                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
+                                    <AlertCircle className="w-4 h-4 shrink-0" />
+                                    <span>{colorModalError}</span>
+                                </div>
+                            )}
+                            {colorModalSuccess && (
+                                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-xs flex items-center gap-2">
+                                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                                    <span>{colorModalSuccess}</span>
+                                </div>
+                            )}
+
+                            {/* Formulário de Nova / Edição de Cor */}
+                            <form onSubmit={handleSaveColor} className="bg-slate-50 p-4 sm:p-5 rounded-xl border border-slate-200 space-y-4">
+                                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                                        <Sparkles className="w-4 h-4 text-indigo-600" />
+                                        {editingColor ? `Editar Cor (${colorFormData.codigo})` : 'Cadastrar Nova Cor de Aço'}
+                                    </h3>
+                                    {editingColor && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setEditingColor(null);
+                                                setColorFormData({
+                                                    codigo: '',
+                                                    significado: '',
+                                                    tipo_cor: 'solida',
+                                                    cor_primaria: '#FFFFFF',
+                                                    cor_secundaria: '#DC2626',
+                                                    descricao: ''
+                                                });
+                                                setColorModalError(null);
+                                                setColorModalSuccess(null);
+                                            }}
+                                            className="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                                        >
+                                            Cancelar Edição
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {/* Coluna 1 & 2: Campos de dados */}
+                                    <div className="md:col-span-2 space-y-3">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                                                    Código / Norma do Aço *
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    required
+                                                    placeholder="Ex: SAE 1020, SAE 4340, AISI 304"
+                                                    value={colorFormData.codigo}
+                                                    onChange={(e) => setColorFormData(prev => ({ ...prev, codigo: e.target.value.toUpperCase() }))}
+                                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                />
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                                                    Significado / Descrição *
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    required
+                                                    placeholder="Ex: Aço SAE 1020, Inox AISI 304"
+                                                    value={colorFormData.significado}
+                                                    onChange={(e) => setColorFormData(prev => ({ ...prev, significado: e.target.value }))}
+                                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Tipo de Cor: Sólida vs Bicolor */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                                                Padrão de Pintura
+                                            </label>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setColorFormData(prev => ({ ...prev, tipo_cor: 'solida' }))}
+                                                    className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center justify-center gap-2 ${
+                                                        colorFormData.tipo_cor === 'solida'
+                                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                                            : 'bg-white text-slate-700 border-gray-300 hover:bg-slate-100'
+                                                    }`}
+                                                >
+                                                    <span className="w-3 h-3 rounded-full bg-indigo-400 border border-white shrink-0"></span>
+                                                    <span>Cor Sólida (1 Cor Única)</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setColorFormData(prev => ({ ...prev, tipo_cor: 'bicolor' }))}
+                                                    className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold border transition cursor-pointer flex items-center justify-center gap-2 ${
+                                                        colorFormData.tipo_cor === 'bicolor'
+                                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                                            : 'bg-white text-slate-700 border-gray-300 hover:bg-slate-100'
+                                                    }`}
+                                                >
+                                                    <span
+                                                        className="w-3 h-3 rounded-full border border-white shrink-0"
+                                                        style={{ background: 'linear-gradient(90deg, #16A34A 50%, #DC2626 50%)' }}
+                                                    ></span>
+                                                    <span>Bicolor (2 Cores - 50% Dividido)</span>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Seletores de Cor */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                                            {/* Cor 1 */}
+                                            <div className="bg-white p-3 rounded-lg border border-gray-200 space-y-2">
+                                                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                                    Cor Primária (Esquerda / Total)
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="color"
+                                                        value={colorFormData.cor_primaria}
+                                                        onChange={(e) => setColorFormData(prev => ({ ...prev, cor_primaria: e.target.value.toUpperCase() }))}
+                                                        className="w-9 h-9 p-0.5 rounded cursor-pointer border border-gray-300"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        value={colorFormData.cor_primaria}
+                                                        onChange={(e) => setColorFormData(prev => ({ ...prev, cor_primaria: e.target.value.toUpperCase() }))}
+                                                        className="w-24 bg-gray-50 border border-gray-300 rounded px-2 py-1 text-xs font-mono font-bold text-gray-900"
+                                                    />
+                                                </div>
+                                                {/* Paleta rápida de aços */}
+                                                <div className="flex flex-wrap gap-1 pt-1">
+                                                    {[
+                                                        { label: 'Branco', hex: '#FFFFFF' },
+                                                        { label: 'Vermelho', hex: '#DC2626' },
+                                                        { label: 'Verde', hex: '#16A34A' },
+                                                        { label: 'Verde Escuro', hex: '#15803D' },
+                                                        { label: 'Azul', hex: '#2563EB' },
+                                                        { label: 'Amarelo', hex: '#EAB308' },
+                                                        { label: 'Laranja', hex: '#EA580C' },
+                                                        { label: 'Ciano', hex: '#06B6D4' },
+                                                        { label: 'Preto', hex: '#1E293B' },
+                                                    ].map(p => (
+                                                        <button
+                                                            key={p.hex}
+                                                            type="button"
+                                                            title={p.label}
+                                                            onClick={() => setColorFormData(prev => ({ ...prev, cor_primaria: p.hex }))}
+                                                            className="w-4 h-4 rounded-full border border-gray-400 shadow-2xs hover:scale-125 transition-transform cursor-pointer"
+                                                            style={{ backgroundColor: p.hex }}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Cor 2 (Se Bicolor) */}
+                                            <div className={`p-3 rounded-lg border space-y-2 transition ${
+                                                colorFormData.tipo_cor === 'bicolor'
+                                                    ? 'bg-white border-gray-200'
+                                                    : 'bg-gray-100/60 border-dashed border-gray-200 opacity-50 pointer-events-none'
+                                            }`}>
+                                                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                                    Cor Secundária (Direita)
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="color"
+                                                        value={colorFormData.cor_secundaria || '#DC2626'}
+                                                        onChange={(e) => setColorFormData(prev => ({ ...prev, cor_secundaria: e.target.value.toUpperCase() }))}
+                                                        className="w-9 h-9 p-0.5 rounded cursor-pointer border border-gray-300"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        value={colorFormData.cor_secundaria || '#DC2626'}
+                                                        onChange={(e) => setColorFormData(prev => ({ ...prev, cor_secundaria: e.target.value.toUpperCase() }))}
+                                                        className="w-24 bg-gray-50 border border-gray-300 rounded px-2 py-1 text-xs font-mono font-bold text-gray-900"
+                                                    />
+                                                </div>
+                                                {/* Paleta rápida de aços */}
+                                                <div className="flex flex-wrap gap-1 pt-1">
+                                                    {[
+                                                        { label: 'Branco', hex: '#FFFFFF' },
+                                                        { label: 'Vermelho', hex: '#DC2626' },
+                                                        { label: 'Verde', hex: '#16A34A' },
+                                                        { label: 'Verde Escuro', hex: '#15803D' },
+                                                        { label: 'Azul', hex: '#2563EB' },
+                                                        { label: 'Amarelo', hex: '#EAB308' },
+                                                        { label: 'Laranja', hex: '#EA580C' },
+                                                        { label: 'Ciano', hex: '#06B6D4' },
+                                                        { label: 'Preto', hex: '#1E293B' },
+                                                    ].map(p => (
+                                                        <button
+                                                            key={p.hex}
+                                                            type="button"
+                                                            title={p.label}
+                                                            onClick={() => setColorFormData(prev => ({ ...prev, cor_secundaria: p.hex }))}
+                                                            className="w-4 h-4 rounded-full border border-gray-400 shadow-2xs hover:scale-125 transition-transform cursor-pointer"
+                                                            style={{ backgroundColor: p.hex }}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Coluna 3: Preview visual ao vivo do topo da barra de aço */}
+                                    <div className="bg-white p-4 rounded-xl border border-gray-200 flex flex-col items-center justify-center text-center shadow-inner">
+                                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                            Topo da Barra de Aço
+                                        </span>
+
+                                        <div
+                                            className="w-20 h-20 rounded-full border-4 border-slate-700/80 shadow-lg relative overflow-hidden transition-all flex items-center justify-center"
+                                            style={colorFormData.tipo_cor === 'bicolor' && colorFormData.cor_secundaria
+                                                ? { background: `linear-gradient(90deg, ${colorFormData.cor_primaria} 50%, ${colorFormData.cor_secundaria} 50%)` }
+                                                : { backgroundColor: colorFormData.cor_primaria }
+                                            }
+                                        >
+                                            {/* Brilho metálico sutil */}
+                                            <div className="absolute inset-0 bg-gradient-to-tr from-black/20 via-transparent to-white/30 pointer-events-none rounded-full" />
+                                        </div>
+
+                                        <div className="mt-3">
+                                            <span className="font-mono font-bold text-sm text-gray-900 block">
+                                                {colorFormData.codigo || 'SAE XXXX'}
+                                            </span>
+                                            <span className="text-xs text-gray-500 block truncate max-w-[160px]">
+                                                {colorFormData.significado || 'Significado do Aço'}
+                                            </span>
+                                            <span className="inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700">
+                                                {colorFormData.tipo_cor === 'bicolor' ? 'Bicolor 50/50' : 'Sólida'}
+                                            </span>
+                                        </div>
+
+                                        <button
+                                            type="submit"
+                                            disabled={colorSaving}
+                                            className="mt-4 w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                                        >
+                                            {colorSaving ? (
+                                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                            ) : (
+                                                <Check className="w-3.5 h-3.5" />
+                                            )}
+                                            <span>{editingColor ? 'Atualizar Cor' : 'Gravar Nova Cor'}</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+
+                            {/* Tabela de Cores Cadastradas */}
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                                        <span>Cores Registradas nesta Empresa</span>
+                                        <span className="px-2 py-0.2 rounded-full text-xs font-bold bg-slate-100 text-slate-700">
+                                            {coresList.length}
+                                        </span>
+                                    </h3>
+                                    <span className="text-xs text-gray-500">
+                                        Dica: Por padrão nenhum material tem cor até ser explicitamente associado.
+                                    </span>
+                                </div>
+
+                                <div className="border border-gray-200 rounded-xl overflow-hidden bg-white">
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-slate-50 border-b border-gray-200 text-slate-600 font-bold uppercase tracking-wider">
+                                            <tr>
+                                                <th className="py-2.5 px-3 text-center">Amostra</th>
+                                                <th className="py-2.5 px-3">Código</th>
+                                                <th className="py-2.5 px-4">Significado / Aplicação</th>
+                                                <th className="py-2.5 px-3 text-center">Tipo</th>
+                                                <th className="py-2.5 px-3">Hex</th>
+                                                <th className="py-2.5 px-3 text-center">Ações</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100 font-sans">
+                                            {coresList.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="6" className="py-8 text-center text-gray-400">
+                                                        Nenhuma cor cadastrada ainda para esta empresa.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                coresList.map(c => {
+                                                    const isBi = c.tipo_cor === 'bicolor' && c.cor_secundaria;
+                                                    return (
+                                                        <tr key={c.id} className="hover:bg-slate-50 transition">
+                                                            <td className="py-2.5 px-3 text-center">
+                                                                <span
+                                                                    className="inline-block w-6 h-6 rounded-full border border-gray-400 shadow-inner align-middle"
+                                                                    style={isBi
+                                                                        ? { background: `linear-gradient(90deg, ${c.cor_primaria} 50%, ${c.cor_secundaria} 50%)` }
+                                                                        : { backgroundColor: c.cor_primaria }
+                                                                    }
+                                                                />
+                                                            </td>
+                                                            <td className="py-2.5 px-3 font-mono font-bold text-gray-900">
+                                                                {c.codigo}
+                                                            </td>
+                                                            <td className="py-2.5 px-4 text-gray-800 font-medium">
+                                                                {c.significado}
+                                                            </td>
+                                                            <td className="py-2.5 px-3 text-center">
+                                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                                    isBi
+                                                                        ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                                                        : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                                                }`}>
+                                                                    {isBi ? 'Bicolor' : 'Sólida'}
+                                                                </span>
+                                                            </td>
+                                                            <td className="py-2.5 px-3 font-mono text-[11px] text-gray-500">
+                                                                {c.cor_primaria}{isBi ? ` / ${c.cor_secundaria}` : ''}
+                                                            </td>
+                                                            <td className="py-2.5 px-3 text-center">
+                                                                <div className="flex items-center justify-center gap-1.5">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setEditingColor(c.id);
+                                                                            setColorFormData({
+                                                                                codigo: c.codigo,
+                                                                                significado: c.significado,
+                                                                                tipo_cor: c.tipo_cor || 'solida',
+                                                                                cor_primaria: c.cor_primaria || '#FFFFFF',
+                                                                                cor_secundaria: c.cor_secundaria || '#DC2626',
+                                                                                descricao: c.descricao || ''
+                                                                            });
+                                                                            setColorModalError(null);
+                                                                            setColorModalSuccess(null);
+                                                                        }}
+                                                                        className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition cursor-pointer"
+                                                                        title="Editar cor"
+                                                                    >
+                                                                        <Edit2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleDeleteColor(c.id, c.codigo)}
+                                                                        className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition cursor-pointer"
+                                                                        title="Excluir cor"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Rodapé do Modal */}
+                        <div className="p-4 bg-slate-50 border-t border-gray-200 flex items-center justify-between">
+                            <span className="text-xs text-gray-500">
+                                Padrão visual alinhado com a norma e placa física de identificação industrial.
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsColorManagerOpen(false);
+                                    setEditingColor(null);
+                                }}
+                                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg text-xs font-bold transition cursor-pointer"
+                            >
+                                Fechar
+                            </button>
                         </div>
                     </div>
                 </div>

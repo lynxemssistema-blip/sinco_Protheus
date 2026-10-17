@@ -2957,13 +2957,23 @@ router.post('/appoint', async (req, res) => {
         }
 
         if (qtdPlanejada > 0) {
-            const [appRows] = await connection.execute(
+            const opVariants = [...new Set([String(op_numero).trim(), String(op_numero).trim().padStart(6, '0'), String(parseInt(op_numero, 10) || op_numero)])];
+            const itemVariants = [...new Set([String(op_item).trim(), String(op_item).trim().padStart(2, '0')])];
+            const seqVariants = [...new Set([String(op_sequencia || '001').trim(), String(op_sequencia || '001').trim().padStart(3, '0')])];
+            const codeVariants = [...new Set([String(operacao_codigo).trim(), String(operacao_codigo).trim().padStart(2, '0'), String(parseInt(operacao_codigo, 10) || operacao_codigo)])];
+
+            const opPH = opVariants.map(() => '?').join(',');
+            const itemPH = itemVariants.map(() => '?').join(',');
+            const seqPH = seqVariants.map(() => '?').join(',');
+            const codePH = codeVariants.map(() => '?').join(',');
+
+            const [appRows] = await connection.query(
                 `SELECT SUM(quantidade) AS total FROM app_production_appointments
-                 WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?
+                 WHERE op_numero IN (${opPH}) AND op_item IN (${itemPH}) AND op_sequencia IN (${seqPH}) AND operacao_codigo IN (${codePH})
                  AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')`,
-                 [op_numero, op_item, op_sequencia, operacao_codigo]
+                 [...opVariants, ...itemVariants, ...seqVariants, ...codeVariants]
             );
-            const produzido = Number(appRows[0].total) || 0;
+            const produzido = Number(appRows[0]?.total) || 0;
             if (produzido + qtyNum > qtdPlanejada + 0.001) {
                 await connection.rollback();
                 return res.status(400).json({

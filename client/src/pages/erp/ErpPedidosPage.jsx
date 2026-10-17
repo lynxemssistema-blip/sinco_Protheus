@@ -1,13 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { useDebounce } from '../../hooks/useDebounce';
+import { useAuth } from '../../contexts/AuthContext';
+import { toast } from 'react-toastify';
 import { 
     ShoppingCart, Plus, Search, RefreshCw, Layers, CheckCircle2, AlertCircle, 
     Trash2, Calendar, User, DollarSign, Eye, X, Building2, Package, Edit2, 
     Lock, Save, Check, Filter, Tag, SlidersHorizontal, ArrowUpDown, ChevronLeft, 
-    ChevronRight, ChevronDown, RotateCcw, Sparkles, Clock, Truck, Copy, FileText, MessageSquare 
+    ChevronRight, ChevronDown, RotateCcw, Sparkles, Clock, Truck, Copy, FileText, MessageSquare,
+    Folder, FolderOpen, FileSpreadsheet, Download, Settings, Printer, BookOpen
 } from 'lucide-react';
 import { Button, IconButton } from '../../components/ui';
+import {
+    generateSingleOrderPdf,
+    generateSingleOrderExcel,
+    generateAllOrdersPdf,
+    generateAllOrdersExcel
+} from '../../services/erpOrderReportService';
 
 const STATUS_META = {
     orcamento: { label: 'Orçamento', cls: 'bg-amber-50 text-amber-800 border border-amber-200' },
@@ -216,6 +225,31 @@ export default function ErpPedidosPage() {
     const [pedidoClienteDraft, setPedidoClienteDraft] = useState('');
     const [uploadingAnexos, setUploadingAnexos] = useState(false);
     const [changingStatus, setChangingStatus] = useState(false);
+
+    const { isAdmin, isSuperAdmin } = useAuth();
+    const canManageConfig = isAdmin || isSuperAdmin;
+
+    // Relatórios e Exportação Geral
+    const [isReportMenuOpen, setIsReportMenuOpen] = useState(false);
+    const [exportingReport, setExportingReport] = useState(false);
+
+    // Configurações de Pastas no Servidor (Multi-Tenant)
+    const [configPasta, setConfigPasta] = useState({
+        diretorio_raiz_pedidos: '',
+        padrao_subpasta: '{NUMERO_PEDIDO}',
+        criar_pasta_automatica: false
+    });
+    const [configPastaDraft, setConfigPastaDraft] = useState({
+        diretorio_raiz_pedidos: '',
+        padrao_subpasta: '{NUMERO_PEDIDO}',
+        criar_pasta_automatica: false
+    });
+    const [isConfigPastaModalOpen, setIsConfigPastaModalOpen] = useState(false);
+    const [savingConfigPasta, setSavingConfigPasta] = useState(false);
+
+    // Edição rápida de pasta de pedido no modal de detalhes
+    const [editingPastaServidor, setEditingPastaServidor] = useState(false);
+    const [pastaServidorDraft, setPastaServidorDraft] = useState('');
 
     const syncPedidoInList = (numero, patch) =>
         setPedidos(prev => prev.map(p => (p.numero_pedido === numero ? { ...p, ...patch } : p)));
@@ -894,14 +928,162 @@ export default function ErpPedidosPage() {
         }
     };
 
+    const loadConfigPasta = async () => {
+        try {
+            const res = await api.get('/erp/pedidos/config-pasta');
+            if (res.data) {
+                setConfigPasta(res.data);
+                setConfigPastaDraft(res.data);
+            }
+        } catch (err) {
+            console.error('Erro ao carregar configuração de pasta:', err);
+        }
+    };
+
+    useEffect(() => {
+        loadConfigPasta();
+    }, []);
+
+    const handleSaveConfigPasta = async () => {
+        setSavingConfigPasta(true);
+        try {
+            const res = await api.put('/erp/pedidos/config-pasta', configPastaDraft);
+            setConfigPasta(res.data.config || configPastaDraft);
+            setIsConfigPastaModalOpen(false);
+            toast.success(res.data.message || 'Configurações de pasta salvas com sucesso!');
+        } catch (err) {
+            toast.error('Erro ao salvar configuração de pasta: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setSavingConfigPasta(false);
+        }
+    };
+
+    const handleAbrirPasta = async (numeroPedido, pasta) => {
+        let caminho = (pasta || '').trim();
+        if (!caminho && configPasta?.diretorio_raiz_pedidos) {
+            const sep = configPasta.diretorio_raiz_pedidos.includes('/') ? '/' : '\\';
+            const base = configPasta.diretorio_raiz_pedidos.replace(/[/\\]+$/, '');
+            caminho = `${base}${sep}${numeroPedido}`;
+        }
+        if (!caminho) {
+            toast.warning(`Pasta do pedido ${numeroPedido} não configurada. Defina o diretório no ícone ⚙️.`);
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(caminho);
+        } catch (_) {}
+
+        // Dispara protocolo registrado no Windows para abertura direta no Explorer
+        window.location.href = `sinco-folder://${encodeURIComponent(caminho)}`;
+
+        // Aciona backend se o servidor estiver na mesma máquina/rede
+        try {
+            await api.post('/erp/pedidos/abrir-pasta', { caminho, criarSeNaoExistir: true });
+            toast.success(`Abrindo pasta no Explorer: ${caminho}`);
+        } catch (e) {
+            toast.info(`Caminho copiado para o Explorer: ${caminho}`);
+        }
+    };
+
+    const handleSavePastaPedido = async () => {
+        const numero = viewOrderModal?.pedido?.numero_pedido;
+        if (!numero) return;
+        try {
+            await api.put(`/erp/pedidos/${numero}`, { pasta_servidor: pastaServidorDraft });
+            setViewOrderModal(prev => ({
+                ...prev,
+                pedido: { ...prev.pedido, pasta_servidor: pastaServidorDraft }
+            }));
+            syncPedidoInList(numero, { pasta_servidor: pastaServidorDraft });
+            setEditingPastaServidor(false);
+            toast.success('Pasta do pedido atualizada com sucesso!');
+        } catch (err) {
+            toast.error('Erro ao salvar pasta do pedido: ' + (err.response?.data?.error || err.message));
+        }
+    };
+
+    const handleExportSingle = async (pedido, formato, options = {}) => {
+        if (!pedido?.numero_pedido) return;
+        setExportingReport(true);
+        toast.info(`Gerando ${formato.toUpperCase()} do pedido ${pedido.numero_pedido}...`);
+        try {
+            let pedidoCompleto = pedido;
+            let itensPedido = [];
+            let anexosPedido = [];
+
+            if (viewOrderModal && viewOrderModal.pedido?.numero_pedido === pedido.numero_pedido) {
+                pedidoCompleto = viewOrderModal.pedido;
+                itensPedido = viewOrderModal.itens || [];
+                anexosPedido = viewOrderModal.anexos || [];
+            } else {
+                const res = await api.get(`/erp/pedidos/${pedido.numero_pedido}`);
+                pedidoCompleto = res.data.pedido || pedido;
+                itensPedido = res.data.itens || [];
+                anexosPedido = res.data.anexos || [];
+            }
+
+            if (formato === 'pdf') {
+                await generateSingleOrderPdf(pedidoCompleto, itensPedido, {
+                    ...options,
+                    anexos: anexosPedido
+                });
+                toast.success(`PDF do pedido ${pedido.numero_pedido} gerado com sucesso!`);
+            } else if (formato === 'excel') {
+                await generateSingleOrderExcel(pedidoCompleto, itensPedido, options);
+                toast.success(`Excel do pedido ${pedido.numero_pedido} gerado com sucesso!`);
+            }
+        } catch (err) {
+            console.error('Erro ao gerar relatório individual:', err);
+            toast.error('Erro ao gerar relatório: ' + (err.message || 'Falha no processamento'));
+        } finally {
+            setExportingReport(false);
+        }
+    };
+
+    const handleExportAll = async (formato, tipo = 'detalhado') => {
+        setExportingReport(true);
+        setIsReportMenuOpen(false);
+        const lista = pedidos || [];
+        if (lista.length === 0) {
+            toast.warning('Nenhum pedido listado para exportação.');
+            setExportingReport(false);
+            return;
+        }
+
+        toast.info(`Gerando relatório geral em ${formato.toUpperCase()} (${tipo})...`);
+        try {
+            if (formato === 'pdf') {
+                await generateAllOrdersPdf(lista, { tipo });
+                toast.success('Relatório geral em PDF gerado com sucesso!');
+            } else if (formato === 'excel') {
+                let itensRelatorio = [];
+                if (tipo === 'detalhado') {
+                    const numeros = lista.map(p => p.numero_pedido).join(',');
+                    const res = await api.get(`/erp/pedidos-itens-relatorio?numeros=${encodeURIComponent(numeros)}`);
+                    itensRelatorio = res.data || [];
+                }
+                await generateAllOrdersExcel(lista, { tipo }, itensRelatorio);
+                toast.success(`Relatório geral em Excel (${tipo}) gerado com sucesso!`);
+            }
+        } catch (err) {
+            console.error('Erro ao gerar relatório geral:', err);
+            toast.error('Erro ao gerar relatório: ' + (err.message || 'Falha'));
+        } finally {
+            setExportingReport(false);
+        }
+    };
+
     const handleViewOrder = async (numeroPedido) => {
         setEditingItemId(null);
         setItemActionMsg(null);
         setEditingHeader(false);
         setObsEditItemId(null);
+        setEditingPastaServidor(false);
         try {
             const res = await api.get(`/erp/pedidos/${numeroPedido}`);
             setViewOrderModal(res.data);
+            setPastaServidorDraft(res.data?.pedido?.pasta_servidor || '');
         } catch (err) {
             alert('Erro ao carregar detalhes do pedido: ' + (err.response?.data?.error || err.message));
         }
@@ -929,6 +1111,91 @@ export default function ErpPedidosPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* Botão Dropdown Relatórios Gerais */}
+                    <div className="relative">
+                        <Button
+                            onClick={() => setIsReportMenuOpen(prev => !prev)}
+                            variant="light"
+                            size="md"
+                            icon={Download}
+                            disabled={exportingReport}
+                            className="border border-gray-300 text-gray-700 hover:bg-gray-50 flex items-center gap-1.5"
+                        >
+                            <span>Relatórios</span>
+                            <ChevronDown className="w-3.5 h-3.5 text-gray-500" />
+                        </Button>
+
+                        {isReportMenuOpen && (
+                            <>
+                                <div 
+                                    className="fixed inset-0 z-30" 
+                                    onClick={() => setIsReportMenuOpen(false)} 
+                                />
+                                <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-200 py-1.5 z-40 text-xs animate-fadeIn">
+                                    <div className="px-3 py-1.5 font-bold text-gray-500 uppercase tracking-wider text-[10px] border-b border-gray-100">
+                                        Exportar Todos ({pedidos.length} pedidos)
+                                    </div>
+                                    <button
+                                        onClick={() => handleExportAll('pdf', 'resumido')}
+                                        className="w-full text-left px-3 py-2 hover:bg-blue-50 text-gray-700 hover:text-blue-700 flex items-center gap-2.5 transition cursor-pointer"
+                                    >
+                                        <FileText className="w-4 h-4 text-red-600 shrink-0" />
+                                        <div>
+                                            <div className="font-semibold">PDF Geral (Resumido)</div>
+                                            <div className="text-[11px] text-gray-400">Lista sintética dos pedidos</div>
+                                        </div>
+                                    </button>
+                                    <button
+                                        onClick={() => handleExportAll('pdf', 'detalhado')}
+                                        className="w-full text-left px-3 py-2 hover:bg-blue-50 text-gray-700 hover:text-blue-700 flex items-center gap-2.5 transition cursor-pointer"
+                                    >
+                                        <Printer className="w-4 h-4 text-red-700 shrink-0" />
+                                        <div>
+                                            <div className="font-semibold">PDF Geral (Detalhado)</div>
+                                            <div className="text-[11px] text-gray-400">Cabeçalho com totais e resumo</div>
+                                        </div>
+                                    </button>
+                                    <div className="my-1 border-t border-gray-100" />
+                                    <button
+                                        onClick={() => handleExportAll('excel', 'resumido')}
+                                        className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 flex items-center gap-2.5 transition cursor-pointer"
+                                    >
+                                        <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                                        <div>
+                                            <div className="font-semibold">Excel Geral (Resumido)</div>
+                                            <div className="text-[11px] text-gray-400">1 linha por pedido com soma</div>
+                                        </div>
+                                    </button>
+                                    <button
+                                        onClick={() => handleExportAll('excel', 'detalhado')}
+                                        className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 flex items-center gap-2.5 transition cursor-pointer"
+                                    >
+                                        <FileSpreadsheet className="w-4 h-4 text-emerald-700 shrink-0" />
+                                        <div>
+                                            <div className="font-semibold">Excel Analítico Flat</div>
+                                            <div className="text-[11px] text-gray-400">1 linha por item (ideal p/ BI)</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Botão de Configuração de Pastas (Admin) */}
+                    {canManageConfig && (
+                        <IconButton
+                            onClick={() => {
+                                setConfigPastaDraft(configPasta);
+                                setIsConfigPastaModalOpen(true);
+                            }}
+                            icon={Settings}
+                            title="Configurar pasta de pedidos no servidor (Admin)"
+                            variant="light"
+                            size="md"
+                            className="border border-gray-300 text-gray-600 hover:text-gray-900"
+                        />
+                    )}
+
                     <Button
                         onClick={handleOpenCreateModal}
                         variant="primary"
@@ -1239,7 +1506,7 @@ export default function ErpPedidosPage() {
                                                     <th className="py-2.5 px-4 text-right">Valor Total</th>
                                                     <th className="py-2.5 px-4">Cond. Pagto</th>
                                                     <th className="py-2.5 px-4">Status</th>
-                                                    <th className="py-2.5 px-4 text-right">Ações</th>
+                                                    <th className="py-2.5 px-4 text-right min-w-[140px]">Ações</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100">
@@ -1291,16 +1558,48 @@ export default function ErpPedidosPage() {
                                                             <StatusBadge status={p.status} />
                                                         </td>
                                                         <td className="py-3 px-4 text-right">
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleViewOrder(p.numero_pedido);
-                                                                }}
-                                                                className="p-1.5 text-gray-500 group-hover:text-blue-600 hover:bg-blue-100/50 rounded-lg transition"
-                                                                title="Ver e Editar Itens do Pedido"
-                                                            >
-                                                                <Eye className="w-4 h-4" />
-                                                            </button>
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleAbrirPasta(p.numero_pedido, p.pasta_servidor);
+                                                                    }}
+                                                                    className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition cursor-pointer"
+                                                                    title={p.pasta_servidor ? `Abrir pasta no Explorer: ${p.pasta_servidor}` : `Abrir pasta do pedido ${p.numero_pedido}`}
+                                                                >
+                                                                    <Folder className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleExportSingle(p, 'pdf');
+                                                                    }}
+                                                                    className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                                                                    title="Exportar Pedido em PDF"
+                                                                >
+                                                                    <FileText className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleExportSingle(p, 'excel');
+                                                                    }}
+                                                                    className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                                                                    title="Exportar Pedido em Excel (.xlsx)"
+                                                                >
+                                                                    <FileSpreadsheet className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleViewOrder(p.numero_pedido);
+                                                                    }}
+                                                                    className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                                                                    title="Ver e Editar Itens do Pedido"
+                                                                >
+                                                                    <Eye className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -1327,7 +1626,7 @@ export default function ErpPedidosPage() {
                                     <th className="py-3 px-4 text-right">Valor Total</th>
                                     <th className="py-3 px-4">Cond. Pagto</th>
                                     <th className="py-3 px-4">Status</th>
-                                    <th className="py-3 px-4 text-right">Ações</th>
+                                    <th className="py-3 px-4 text-right min-w-[140px]">Ações</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -1378,16 +1677,48 @@ export default function ErpPedidosPage() {
                                             )}
                                         </td>
                                         <td className="py-3.5 px-4 text-right">
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleViewOrder(p.numero_pedido);
-                                                }}
-                                                className="p-1.5 text-gray-500 group-hover:text-blue-600 hover:bg-blue-100/50 rounded-lg transition"
-                                                title="Ver e Editar Itens do Pedido"
-                                            >
-                                                <Eye className="w-4 h-4" />
-                                            </button>
+                                            <div className="flex items-center justify-end gap-1">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleAbrirPasta(p.numero_pedido, p.pasta_servidor);
+                                                    }}
+                                                    className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition cursor-pointer"
+                                                    title={p.pasta_servidor ? `Abrir pasta no Explorer: ${p.pasta_servidor}` : `Abrir pasta do pedido ${p.numero_pedido}`}
+                                                >
+                                                    <Folder className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleExportSingle(p, 'pdf');
+                                                    }}
+                                                    className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                                                    title="Exportar Pedido em PDF"
+                                                >
+                                                    <FileText className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleExportSingle(p, 'excel');
+                                                    }}
+                                                    className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                                                    title="Exportar Pedido em Excel (.xlsx)"
+                                                >
+                                                    <FileSpreadsheet className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleViewOrder(p.numero_pedido);
+                                                    }}
+                                                    className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                                                    title="Ver e Editar Itens do Pedido"
+                                                >
+                                                    <Eye className="w-4 h-4" />
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -2002,6 +2333,96 @@ export default function ErpPedidosPage() {
                         </div>
                         </div>
                         )}
+                        {/* Barra de Exportação e Pasta no Servidor */}
+                        <div className="px-6 py-2.5 bg-slate-50 border-b border-gray-200 shrink-0 flex flex-wrap items-center justify-between gap-3 text-xs">
+                            {/* Pasta no Servidor */}
+                            <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+                                <Folder className="w-4 h-4 text-amber-600 shrink-0" />
+                                <span className="font-bold text-gray-700">Pasta no Servidor:</span>
+                                {editingPastaServidor ? (
+                                    <div className="flex items-center gap-1.5 flex-1 max-w-md">
+                                        <input
+                                            type="text"
+                                            value={pastaServidorDraft}
+                                            onChange={(e) => setPastaServidorDraft(e.target.value)}
+                                            placeholder="Ex: \\servidor\pedidos\000003"
+                                            className="w-full px-2 py-1 border border-blue-400 rounded bg-white font-mono text-[11px]"
+                                        />
+                                        <button
+                                            onClick={handleSavePastaPedido}
+                                            className="px-2 py-1 bg-emerald-600 text-white rounded font-bold hover:bg-emerald-700 cursor-pointer"
+                                            title="Salvar Pasta"
+                                        >
+                                            <Save className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                            onClick={() => setEditingPastaServidor(false)}
+                                            className="px-2 py-1 text-gray-500 hover:bg-gray-200 rounded cursor-pointer"
+                                            title="Cancelar"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1.5 truncate">
+                                        <span className="font-mono text-[11px] text-gray-600 bg-white border border-gray-200 px-2 py-0.5 rounded truncate max-w-xs" title={viewOrderModal.pedido?.pasta_servidor || 'Usando padrão configurado'}>
+                                            {viewOrderModal.pedido?.pasta_servidor || (configPasta.diretorio_raiz_pedidos ? `${configPasta.diretorio_raiz_pedidos.replace(/[/\\]+$/, '')}\\${viewOrderModal.pedido?.numero_pedido}` : 'Não configurada')}
+                                        </span>
+                                        <button
+                                            onClick={() => handleAbrirPasta(viewOrderModal.pedido?.numero_pedido, viewOrderModal.pedido?.pasta_servidor)}
+                                            className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded font-bold transition shadow-2xs cursor-pointer"
+                                            title="Abrir no Windows Explorer"
+                                        >
+                                            <FolderOpen className="w-3.5 h-3.5" />
+                                            <span>Abrir no Explorer</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setPastaServidorDraft(viewOrderModal.pedido?.pasta_servidor || '');
+                                                setEditingPastaServidor(true);
+                                            }}
+                                            className="p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-200 transition cursor-pointer"
+                                            title="Editar caminho da pasta"
+                                        >
+                                            <Edit2 className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Botões de Ação de Relatório do Pedido */}
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    onClick={() => handleExportSingle(viewOrderModal.pedido, 'pdf')}
+                                    disabled={exportingReport}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-red-50 text-red-700 border border-red-200 rounded-lg font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
+                                    title="Exportar Pedido em PDF"
+                                >
+                                    <FileText className="w-3.5 h-3.5 text-red-600" />
+                                    <span>PDF Pedido</span>
+                                </button>
+
+                                <button
+                                    onClick={() => handleExportSingle(viewOrderModal.pedido, 'pdf', { includeAttachments: true })}
+                                    disabled={exportingReport}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
+                                    title="Caderno Completo: Pedido + Todos os Anexos Técnicos mesclados em um único PDF"
+                                >
+                                    <BookOpen className="w-3.5 h-3.5" />
+                                    <span>Caderno Completo</span>
+                                </button>
+
+                                <button
+                                    onClick={() => handleExportSingle(viewOrderModal.pedido, 'excel')}
+                                    disabled={exportingReport}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg font-bold transition shadow-2xs cursor-pointer disabled:opacity-50"
+                                    title="Exportar Pedido para Planilha Excel (.xlsx)"
+                                >
+                                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Excel (.xlsx)</span>
+                                </button>
+                            </div>
+                        </div>
 
                         {/* Status do Pedido + Anexos */}
                         <div className="px-6 py-2.5 border-b border-gray-200 shrink-0 text-xs space-y-2">
@@ -3271,6 +3692,115 @@ export default function ErpPedidosPage() {
                                     Fechar
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* MODAL CONFIGURAÇÃO DE PASTA NO SERVIDOR (ADMIN) */}
+            {isConfigPastaModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-xs overflow-hidden animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-slate-50">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-2 bg-blue-100 text-blue-700 rounded-lg">
+                                    <FolderOpen className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-gray-900 text-base">Diretório de Pedidos no Servidor</h3>
+                                    <p className="text-xs text-gray-500">Configuração de rede e abertura direta no Windows Explorer</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setIsConfigPastaModalOpen(false)}
+                                className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4 text-xs">
+                            <label className="block">
+                                <span className="font-bold text-gray-700 block mb-1">
+                                    Diretório Raiz dos Pedidos (Caminho UNC da Rede ou Unidade Mapeada)
+                                </span>
+                                <input
+                                    type="text"
+                                    value={configPastaDraft.diretorio_raiz_pedidos || ''}
+                                    onChange={(e) => setConfigPastaDraft(c => ({ ...c, diretorio_raiz_pedidos: e.target.value }))}
+                                    placeholder="Ex: \\servidor\pedidos ou Z:\pedidos"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                />
+                                <span className="text-[11px] text-gray-500 mt-1 block">
+                                    Ao criar ou consultar um pedido, o sistema usará este caminho como base.
+                                </span>
+                            </label>
+
+                            <label className="block">
+                                <span className="font-bold text-gray-700 block mb-1">
+                                    Padrão de Nome da Subpasta
+                                </span>
+                                <input
+                                    type="text"
+                                    value={configPastaDraft.padrao_subpasta || '{NUMERO_PEDIDO}'}
+                                    onChange={(e) => setConfigPastaDraft(c => ({ ...c, padrao_subpasta: e.target.value }))}
+                                    placeholder="{NUMERO_PEDIDO}"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                />
+                                <span className="text-[11px] text-gray-500 mt-1 block">
+                                    Use a tag <code className="bg-gray-100 px-1 py-0.5 rounded text-blue-700 font-bold">&#123;NUMERO_PEDIDO&#125;</code> para preenchimento dinâmico.
+                                </span>
+                            </label>
+
+                            <label className="flex items-center gap-2.5 p-3 rounded-lg bg-slate-50 border border-slate-200 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={!!configPastaDraft.criar_pasta_automatica}
+                                    onChange={(e) => setConfigPastaDraft(c => ({ ...c, criar_pasta_automatica: e.target.checked }))}
+                                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                />
+                                <div>
+                                    <div className="font-bold text-gray-800">Criar pasta física automaticamente no disco</div>
+                                    <div className="text-[11px] text-gray-500">Gera a pasta do pedido assim que for cadastrado ou acessado</div>
+                                </div>
+                            </label>
+
+                            {/* Dica do Protocolo sinco-folder:// */}
+                            <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl space-y-2">
+                                <div className="flex items-center gap-2 text-blue-900 font-bold">
+                                    <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                                    <span>Integração Windows Explorer (Protocolo sinco-folder://)</span>
+                                </div>
+                                <p className="text-blue-800 text-[11px] leading-relaxed">
+                                    Para abrir as pastas diretamente no Windows Explorer através de qualquer navegador, instale o protocolo do SINCO no seu computador (basta executar uma única vez por máquina).
+                                </p>
+                                <a
+                                    href="/registrar-protocolo-sinco.reg"
+                                    download="registrar-protocolo-sinco.reg"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition shadow-xs cursor-pointer"
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                    Baixar Registro do Windows (.REG)
+                                </a>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-2 px-6 py-4 bg-gray-50 border-t border-gray-200">
+                            <Button
+                                onClick={() => setIsConfigPastaModalOpen(false)}
+                                variant="light"
+                                size="sm"
+                            >
+                                Cancelar
+                            </Button>
+                            <Button
+                                onClick={handleSaveConfigPasta}
+                                variant="primary"
+                                size="sm"
+                                icon={Save}
+                                disabled={savingConfigPasta}
+                            >
+                                {savingConfigPasta ? 'Salvando...' : 'Salvar Configurações'}
+                            </Button>
                         </div>
                     </div>
                 </div>

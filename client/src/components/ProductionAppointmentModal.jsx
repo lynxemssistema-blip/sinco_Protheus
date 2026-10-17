@@ -1,14 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Save, Clock, X, CheckSquare, ChevronRight, CheckCircle, AlertTriangle, History, ChevronDown, ChevronUp, Play, Pause, Square, RotateCcw } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { useAuth } from '../contexts/AuthContext';
 import { getAppointmentHistory, getCompanySettings, getOpRoteiroSaldo, saveAppointment } from '../services/api';
 import { useTimer } from '../contexts/TimerContext';
+
+// Helper de comparação segura de códigos de operação / recursos (string, int, com/sem zeros)
+const isSameOp = (a, b) => {
+    if (a === null || a === undefined || b === null || b === undefined) return false;
+    const sa = String(a).trim();
+    const sb = String(b).trim();
+    if (sa === sb) return true;
+    const cleanA = sa.replace(/^0+/, '');
+    const cleanB = sb.replace(/^0+/, '');
+    if (cleanA && cleanA === cleanB) return true;
+    const na = parseInt(sa, 10);
+    const nb = parseInt(sb, 10);
+    return !isNaN(na) && !isNaN(nb) && na === nb;
+};
 
 export default function ProductionAppointmentModal({ op, onClose, onSave, onSaved }) {
     const { user, hasPermission } = useAuth();
     const { timers, startTimer, pauseTimer, restartTimer, getElapsedTime } = useTimer();
     const timerId = `${op.op}_${op.item_op || '01'}_${op.sequen || '001'}_${op.operacao}`;
     const globalTimer = timers[timerId] || null;
+
+    // Saldo padrão da OP (calculado no topo para escopo consistente)
+    const fallbackBalance = Math.max(0, (Number(op.qtd_planejada_op) || 0) - (Number(op.qtd_produzida_real) || 0));
 
     // Default to current time range
     const now = new Date();
@@ -32,7 +50,6 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
     const isSubmittingRef = useRef(false);
 
     const [loadingOps, setLoadingOps] = useState(true);
-
     const [loading, setLoading] = useState(false);
     const [history, setHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(true);
@@ -96,7 +113,7 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
         setLoadingHistory(true);
         try {
             const data = await getAppointmentHistory(
-                op.op, op.item_op, op.sequen, op.operacao
+                op.op, op.item_op || '01', op.sequen || '001', op.operacao
             );
             setHistory(data || []);
         } catch (err) {
@@ -109,10 +126,9 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
     const loadRouteOps = async () => {
         setLoadingOps(true);
         try {
-            const codProduto = op.cod_produto_op || op.produto; // Handle different property names from parent
+            const codProduto = op.cod_produto_op || op.produto;
             
             // Pre-fill the current operation with fallback balance initially
-            const fallbackBalance = Math.max(0, (Number(op.qtd_planejada_op) || 0) - (Number(op.qtd_produzida_real) || 0));
             setQuantities({ [op.operacao]: fallbackBalance > 0 ? fallbackBalance : '' });
 
             if (!codProduto) {
@@ -121,26 +137,28 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
                 return;
             }
             
-            const ops = await getOpRoteiroSaldo(op.op, op.item_op, op.sequen, codProduto);
+            const ops = await getOpRoteiroSaldo(op.op, op.item_op || '01', op.sequen || '001', codProduto);
             
-            // Find current operation index (op.operacao might be '01' or 'MO0010')
-            const currentIndex = ops.findIndex(o => 
-                String(o.operacao_codigo).trim() === String(op.operacao).trim() || 
-                String(o.recurso_codigo).trim() === String(op.operacao).trim()
-            );
-            
-            // Se encontrar, corta a lista até ela. Se não encontrar, mostra tudo.
-            const visibleOps = currentIndex >= 0 ? ops.slice(0, currentIndex + 1) : ops;
-            
-            setRouteOperations(visibleOps);
+            if (Array.isArray(ops) && ops.length > 0) {
+                // Find current operation index (match by operation code or resource code)
+                const currentIndex = ops.findIndex(o => 
+                    isSameOp(o.operacao_codigo, op.operacao) || 
+                    isSameOp(o.recurso_codigo, op.operacao) ||
+                    isSameOp(o.recurso_codigo, op.recurso)
+                );
+                
+                // Se encontrar, corta a lista até ela. Se não encontrar, mostra tudo.
+                const visibleOps = currentIndex >= 0 ? ops.slice(0, currentIndex + 1) : ops;
+                
+                setRouteOperations(visibleOps);
 
-            // Auto-fill all quantities with the available balance (saldo)
-            const initialQuantities = {};
-            visibleOps.forEach(row => {
-                initialQuantities[row.operacao_codigo] = row.saldo > 0 ? row.saldo : '';
-            });
-            setQuantities(initialQuantities);
-            
+                // Auto-fill all quantities with the available balance (saldo)
+                const initialQuantities = {};
+                visibleOps.forEach(row => {
+                    initialQuantities[row.operacao_codigo] = row.saldo > 0 ? row.saldo : '';
+                });
+                setQuantities(initialQuantities);
+            }
         } catch (err) {
             console.error('Erro ao buscar roteiro:', err);
         } finally {
@@ -152,16 +170,14 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
         setQuantities(prev => {
             const nextState = { ...prev, [opCode]: value };
             
-            // Auto-preenchimento: Se a operação alterada for a ATUAL, 
-            // propaga o valor para todas as operações anteriores
-            if (Number(opCode) === Number(op.operacao)) {
+            // Auto-preenchimento inteligente: se a operação alterada for a ATUAL,
+            // propaga a quantidade para todas as etapas anteriores respeitando seus respectivos saldos
+            if (isSameOp(opCode, op.operacao)) {
                 const numValue = Number(value);
                 
                 routeOperations.forEach(row => {
-                    if (Number(row.operacao_codigo) !== Number(op.operacao)) {
-                        // Respeita o limite do saldo da operação anterior
-                        const maxAllowed = row.saldo;
-                        
+                    if (!isSameOp(row.operacao_codigo, op.operacao)) {
+                        const maxAllowed = Number(row.saldo) || 0;
                         if (value === '') {
                             nextState[row.operacao_codigo] = '';
                         } else if (!isNaN(numValue) && maxAllowed > 0) {
@@ -183,7 +199,7 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
 
         for (const row of routeOperations) {
             const val = Number(quantities[row.operacao_codigo] || 0);
-            if (val > row.saldo) return true;
+            if (val > (Number(row.saldo) || 0)) return true;
         }
         return false;
     };
@@ -201,18 +217,17 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
         if (loading || isSubmittingRef.current) return;
 
         if (isExceedingBalance()) {
-            return; // Validação visual já deve impedir
+            toast.warning('A quantidade informada excede o saldo da operação.');
+            return;
         }
 
         if (getTotalQuantity() <= 0) {
-            alert("Preencha a quantidade em pelo menos uma operação.");
+            toast.warning('Preencha a quantidade em pelo menos uma operação.');
             return;
         }
 
         isSubmittingRef.current = true;
-        
-        // Sumir com o modal imediatamente da tela do usuário
-        onClose();
+        setLoading(true);
 
         try {
             const start = `${formData.data_inicio} ${formData.hora_inicio}:00`;
@@ -229,18 +244,19 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
             
             const savedPayloads = [];
 
-            // Dispara salvar para cada operacao escolhida sequencialmente no background
+            // Dispara salvar para cada operacao escolhida sequencialmente
             for (const opRow of opsToSave) {
                 const userName = user?.nome || user?.login || 'Desconhecido';
-                const finalUserName = userName;
+                const isAuto = routeOperations.length > 0 && !isSameOp(opRow.operacao_codigo, op.operacao);
+                const finalUserName = isAuto ? `${userName} (Baixa Auto)` : userName;
 
                 const payload = {
                     op_numero: op.op,
-                    op_item: op.item_op,
-                    op_sequencia: op.sequen,
+                    op_item: op.item_op || '01',
+                    op_sequencia: op.sequen || '001',
                     operacao_codigo: opRow.operacao_codigo,
                     usuario: finalUserName,
-                    quantidade: quantities[opRow.operacao_codigo],
+                    quantidade: Number(quantities[opRow.operacao_codigo]),
                     data_inicio: start,
                     data_fim: end,
                     observacao: formData.observacao,
@@ -251,25 +267,23 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
                 savedPayloads.push(payload);
             }
 
-            // Notifica o componente pai sobre a conclusão do salvamento para atualizar a listagem
+            toast.success(`Apontamento realizado com sucesso! (${savedPayloads.length} ${savedPayloads.length > 1 ? 'operações' : 'operação'})`);
             const callback = onSave || onSaved;
             if (savedPayloads.length > 0 && typeof callback === 'function') {
                 callback(savedPayloads);
             }
+            onClose();
         } catch (error) {
-            // Como o modal já sumiu, lidamos com erros em background
+            isSubmittingRef.current = false;
+            setLoading(false);
             if (error.response?.status === 409) {
-                console.warn('Backend bloqueou submissão duplicada (Double Click).');
+                toast.warning('Apontamento duplicado detectado nos últimos 10 segundos.');
             } else {
-                const errorMsg = 'Erro ao salvar apontamento no background: ' + (error.response?.data?.error || error.response?.data?.message || error.message);
-                console.error(errorMsg);
-                alert(errorMsg);
+                const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message;
+                toast.error(`Erro ao salvar apontamento: ${errorMsg}`);
             }
         }
     };
-
-    // If route ops loading fails or is missing, use current OP fallback for balances
-    const fallbackBalance = Math.max(0, (Number(op.qtd_planejada_op) || 0) - (Number(op.qtd_produzida_real) || 0));
 
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

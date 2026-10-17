@@ -5,7 +5,7 @@ import {
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
     Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck, Award, Smartphone, AlertOctagon, Sparkles, Cpu,
-    Tag, Scale, Hash, Flame, Shield, Clock
+    Tag, Scale, Hash, Flame, Shield, Clock, Palette
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -28,7 +28,8 @@ export const MENU_GROUPS = [
             { id: 'cadastro_prefixos', label: 'Prefixos (Famílias)', path: '/cadastros/basicos?tab=prefixos', icon: Hash },
             { id: 'cadastro_tipos', label: 'Tipos de Produto', path: '/cadastros/basicos?tab=tipos', icon: Tag },
             { id: 'cadastro_unidades', label: 'Unidades de Medida', path: '/cadastros/basicos?tab=unidades', icon: Scale },
-            { id: 'cadastro_armazens', label: 'Armazéns / Locais', path: '/cadastros/basicos?tab=armazens', icon: Building2 }
+            { id: 'cadastro_armazens', label: 'Armazéns / Locais', path: '/cadastros/basicos?tab=armazens', icon: Building2 },
+            { id: 'cadastro_cores_aco', label: 'Codificação de Aço (Cores)', path: '/cadastros/basicos?tab=cores', icon: Palette }
         ]
     },
     {
@@ -47,7 +48,6 @@ export const MENU_GROUPS = [
         id: 'engenharia',
         label: 'Engenharia',
         items: [
-            { id: 'eng_pedidos', label: 'Painel de Itens (Engenharia)', path: '/engenharia/pedidos', icon: Layers },
             { id: 'produtos', label: 'Catálogo de Produtos', path: '/produtos', icon: Package },
             { id: 'bom', label: 'Gerador de BOM', path: '/bom-generator', icon: Database },
 
@@ -63,9 +63,7 @@ export const MENU_GROUPS = [
         label: 'PCP Geral',
         items: [
             { id: 'visao_fabrica', label: 'Visão Global (Fábrica)', path: '/pcp/visao-fabrica', icon: Factory },
-            { id: 'visao_producao', label: 'Visão de Produção', path: '/visao-producao', icon: Target },
             { id: 'curva_s_pedido', label: 'Curva S (Pedido)', path: '/pcp/curva-s', icon: TrendingUp },
-            { id: 'planejamento_gantt', label: 'Planejamento Gantt', path: '/planejamento-gantt', icon: Calendar },
             { id: 'pcp_apontamento_vertical', label: 'Apontamento Vertical', path: '/pcp/apontamento-vertical', icon: ListOrdered },
             { id: 'extrato_op', label: 'Tempo das OP', path: '/pcp/extrato-op', icon: History },
             { id: 'onde_usado', label: 'Onde é Usado', path: '/pcp/onde-usado', icon: Network },

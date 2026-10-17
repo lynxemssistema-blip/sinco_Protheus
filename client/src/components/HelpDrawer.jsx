@@ -106,7 +106,16 @@ export default function HelpDrawer() {
     React.useEffect(() => {
         const onClickOutside = (e) => {
             if (isOpen && !isPinned && drawerRef.current && !drawerRef.current.contains(e.target)) {
-                closeHelp();
+                // Se o clique foi dentro de um modal ativo (para permitir interação com o modal enquanto consulta a ajuda), não fecha a ajuda imediatamente
+                const clickedInsideModal = e.target.closest && (
+                    e.target.closest('[role="dialog"]:not(.help-drawer-element)') ||
+                    e.target.closest('.fixed.inset-0:not(.help-backdrop) > div') ||
+                    e.target.closest('.fixed.inset-0:not(.help-backdrop) > form') ||
+                    e.target.closest('.modal-content')
+                );
+                if (!clickedInsideModal) {
+                    closeHelp();
+                }
             }
         };
         if (isOpen && !isPinned) {
@@ -167,7 +176,7 @@ export default function HelpDrawer() {
         <>
             {/* Backdrop */}
             <div
-                className={`fixed inset-0 bg-black/20 backdrop-blur-[2px] z-[998] transition-opacity duration-300 ${(isOpen && !isPinned) ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                className={`fixed inset-0 bg-black/20 backdrop-blur-[2px] help-backdrop z-[40] md:z-[40] transition-opacity duration-300 ${(isOpen && !isPinned) ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
                 aria-hidden="true"
                 onClick={closeHelp}
             />
@@ -178,7 +187,7 @@ export default function HelpDrawer() {
                 role="dialog"
                 aria-modal="true"
                 aria-label="Central de Ajuda"
-                className={`fixed right-0 top-0 h-full w-full max-w-[420px] bg-white shadow-2xl z-[999] flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+                className={`fixed right-0 top-0 h-full w-full max-w-[420px] bg-white shadow-2xl z-[999] flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] help-drawer-element ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
             >
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-900 text-white flex-shrink-0">

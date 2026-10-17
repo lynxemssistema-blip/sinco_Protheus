@@ -201,3 +201,39 @@ body {
 .animate-zoomIn {
     animation: zoomIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
+
+/* ─── Ajuste Global de Modais e Overlays com a Ajuda Contextual ────────── */
+:root {
+  --help-drawer-width: 0px;
+}
+
+@media (min-width: 768px) {
+  html.help-drawer-open {
+    --help-drawer-width: 420px;
+  }
+
+  /* No desktop, o backdrop da ajuda contextual fica atrás de modais para permitir interação simultânea */
+  .help-backdrop {
+    z-index: 40 !important;
+  }
+
+  /* Todos os modais e overlays do sistema ajustam sua margem direita para a área visível restante */
+  html.help-drawer-open .fixed.inset-0:not(.help-backdrop):not(.help-drawer-element):not(.email-blocker-modal):not(.help-ignore-drawer) {
+    right: var(--help-drawer-width, 420px) !important;
+    transition: right 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  /* Ajusta os cards/conteúdos de modais para nunca transbordarem sob a gaveta lateral de ajuda */
+  html.help-drawer-open .fixed.inset-0:not(.help-backdrop):not(.help-drawer-element):not(.email-blocker-modal):not(.help-ignore-drawer) > div,
+  html.help-drawer-open .fixed.inset-0:not(.help-backdrop):not(.help-drawer-element):not(.email-blocker-modal):not(.help-ignore-drawer) > form {
+    max-width: min(calc(100vw - var(--help-drawer-width, 420px) - 2rem), 100%) !important;
+    transition: max-width 0.3s cubic-bezier(0.32, 0.72, 0, 1), transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}
+
+@media (max-width: 767px) {
+  .help-backdrop {
+    z-index: 998 !important;
+  }
+}
+

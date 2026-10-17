@@ -52,8 +52,6 @@ const ProductionAnalytics = React.lazy(() => import('./pages/ProductionAnalytics
 const ProductionMatrixPage = React.lazy(() => import('./pages/ProductionMatrixPage'));
 const BOMAppointmentPage   = React.lazy(() => import('./pages/BOMAppointmentPage'));
 const VerticalAppointmentPage = React.lazy(() => import('./pages/VerticalAppointmentPage'));
-const EngineeringOrdersPage = React.lazy(() => import('./pages/EngineeringOrdersPage'));
-const ProductionGanttPlanning = React.lazy(() => import('./pages/ProductionGanttPlanning'));
 const StockBalances = React.lazy(() => import('./pages/StockBalances'));
 const PurchaseRequests = React.lazy(() => import('./pages/PurchaseRequests'));
 const PurchaseOrdersWithClientPO = React.lazy(() => import('./pages/PurchaseOrdersWithClientPO'));
@@ -392,6 +390,11 @@ function App() {
                                                 <CadastrosBasicosPage />
                                             </Layout>
                                         } />
+                                        <Route path="/cadastros/cores-aco" element={
+                                            <Layout fullWidth={true}>
+                                                <CadastrosBasicosPage />
+                                            </Layout>
+                                        } />
                                         <Route path="/erp/pedidos" element={
                                             <Layout fullWidth={true}>
                                                 <ErpPedidosPage />
@@ -453,11 +456,6 @@ function App() {
                                         <Route path="/rh/offboarding" element={
                                             <Layout fullWidth={true}>
                                                 <OffboardingRH />
-                                            </Layout>
-                                        } />
-                                        <Route path="/engenharia/pedidos" element={
-                                            <Layout fullWidth={true}>
-                                                <EngineeringOrdersPage />
                                             </Layout>
                                         } />
                                         <Route path="/engenharia/relatorio-liberacao" element={
@@ -556,11 +554,6 @@ function App() {
                                             </Layout>
                                         } />
                                         <Route path="/pcp/conferencia" element={<Navigate to="/visao-geral" replace />} />
-                                        <Route path="/visao-producao" element={
-                                            <Layout>
-                                                <ProductionAnalytics />
-                                            </Layout>
-                                        } />
                                         <Route path="/pcp/analytics" element={
                                             <Layout fullWidth={true}>
                                                 <ProductionAnalytics />
@@ -570,11 +563,6 @@ function App() {
                                         <Route path="/analytics/evolucao" element={
                                             <Layout fullWidth={true}>
                                                 <ProductionEvolution />
-                                            </Layout>
-                                        } />
-                                        <Route path="/planejamento-gantt" element={
-                                            <Layout>
-                                                <ProductionGanttPlanning />
                                             </Layout>
                                         } />
                                         <Route path="/configuracoes" element={

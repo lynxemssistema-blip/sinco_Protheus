@@ -414,13 +414,105 @@ router.get('/produtos/grupos', async (req, res) => {
     }
 });
 
+// 2.9 CORES DE PRODUTOS (Codificação de Aço / Matérias-Primas)
+router.get('/produtos/cores', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        const [rows] = await mysql.query(
+            'SELECT * FROM erp_produtos_cores WHERE IdEmpresa = ? AND ativo = 1 ORDER BY codigo ASC',
+            [tenantId]
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro em GET /api/erp/produtos/cores:', err);
+        res.status(500).json({ error: 'Erro ao buscar cores de produtos', detail: err.message });
+    }
+});
+
+router.post('/produtos/cores', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        const { codigo, significado, tipo_cor = 'solida', cor_primaria, cor_secundaria, descricao } = req.body;
+        if (!codigo || !significado || !cor_primaria) {
+            return res.status(400).json({ error: 'Código, significado e cor primária são obrigatórios.' });
+        }
+        const [result] = await mysql.query(`
+            INSERT INTO erp_produtos_cores (IdEmpresa, codigo, significado, tipo_cor, cor_primaria, cor_secundaria, descricao, ativo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        `, [
+            tenantId,
+            codigo.trim().toUpperCase(),
+            significado.trim(),
+            tipo_cor === 'bicolor' ? 'bicolor' : 'solida',
+            cor_primaria.trim(),
+            tipo_cor === 'bicolor' && cor_secundaria ? cor_secundaria.trim() : null,
+            descricao ? descricao.trim() : null
+        ]);
+        res.status(201).json({ id: result.insertId, message: 'Cor cadastrada com sucesso!' });
+    } catch (err) {
+        console.error('Erro em POST /api/erp/produtos/cores:', err);
+        res.status(500).json({ error: 'Erro ao cadastrar cor', detail: err.message });
+    }
+});
+
+router.put('/produtos/cores/:id', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        const { id } = req.params;
+        const { codigo, significado, tipo_cor = 'solida', cor_primaria, cor_secundaria, descricao, ativo = 1 } = req.body;
+        await mysql.query(`
+            UPDATE erp_produtos_cores SET
+                codigo = COALESCE(?, codigo),
+                significado = COALESCE(?, significado),
+                tipo_cor = ?,
+                cor_primaria = COALESCE(?, cor_primaria),
+                cor_secundaria = ?,
+                descricao = ?,
+                ativo = ?
+            WHERE id = ? AND IdEmpresa = ?
+        `, [
+            codigo ? codigo.trim().toUpperCase() : null,
+            significado ? significado.trim() : null,
+            tipo_cor === 'bicolor' ? 'bicolor' : 'solida',
+            cor_primaria ? cor_primaria.trim() : null,
+            tipo_cor === 'bicolor' && cor_secundaria ? cor_secundaria.trim() : null,
+            descricao !== undefined ? (descricao ? descricao.trim() : null) : null,
+            ativo !== undefined ? (ativo ? 1 : 0) : 1,
+            parseInt(id, 10),
+            tenantId
+        ]);
+        res.json({ message: 'Cor atualizada com sucesso!' });
+    } catch (err) {
+        console.error('Erro em PUT /api/erp/produtos/cores/:id:', err);
+        res.status(500).json({ error: 'Erro ao atualizar cor', detail: err.message });
+    }
+});
+
+router.delete('/produtos/cores/:id', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        const { id } = req.params;
+        await mysql.query('UPDATE erp_produtos SET cor_id = NULL WHERE cor_id = ? AND IdEmpresa = ?', [id, tenantId]);
+        await mysql.query('DELETE FROM erp_produtos_cores WHERE id = ? AND IdEmpresa = ?', [id, tenantId]);
+        res.json({ message: 'Cor excluída e desvinculada dos produtos com sucesso!' });
+    } catch (err) {
+        console.error('Erro em DELETE /api/erp/produtos/cores/:id:', err);
+        res.status(500).json({ error: 'Erro ao excluir cor', detail: err.message });
+    }
+});
+
 // 3. PRODUTOS: Listar com busca e paginação
 router.get('/produtos', async (req, res) => {
     try {
         const tenantId = getTenantId(req);
-        const { search = '', tipo = '', limit = 50, offset = 0 } = req.query;
+        const { search = '', tipo = '', cor_id = '', limit = 50, offset = 0 } = req.query;
         let query = `
             SELECT p.*, 
+                   c.codigo as cor_codigo,
+                   c.significado as cor_significado,
+                   c.tipo_cor as cor_tipo,
+                   c.cor_primaria,
+                   c.cor_secundaria,
                    EXISTS(
                        SELECT 1 FROM erp_estruturas_bom 
                        WHERE produto_pai_codigo = p.codigo 
@@ -428,6 +520,7 @@ router.get('/produtos', async (req, res) => {
                        LIMIT 1
                    ) as tem_estrutura
             FROM erp_produtos p
+            LEFT JOIN erp_produtos_cores c ON (p.cor_id = c.id)
             WHERE 1=1
         `;
         const params = [];
@@ -437,10 +530,19 @@ router.get('/produtos', async (req, res) => {
             params.push(tenantId);
         }
 
+        if (cor_id) {
+            if (cor_id === 'sem_cor') {
+                query += ' AND p.cor_id IS NULL';
+            } else {
+                query += ' AND p.cor_id = ?';
+                params.push(parseInt(cor_id, 10));
+            }
+        }
+
         if (search) {
             const term = `%${search}%`;
-            query += ' AND (p.codigo LIKE ? OR p.descricao LIKE ? OR p.ncm LIKE ? OR p.b1_xproc1 LIKE ? OR p.b1_xrevm LIKE ? OR p.b1_xrevc LIKE ?)';
-            params.push(term, term, term, term, term, term);
+            query += ' AND (p.codigo LIKE ? OR p.descricao LIKE ? OR p.ncm LIKE ? OR p.b1_xproc1 LIKE ? OR p.b1_xrevm LIKE ? OR p.b1_xrevc LIKE ? OR c.codigo LIKE ? OR c.significado LIKE ?)';
+            params.push(term, term, term, term, term, term, term, term);
         }
         if (tipo) {
             query += ' AND UPPER(TRIM(p.tipo)) = UPPER(TRIM(?))';
@@ -485,13 +587,14 @@ router.post('/produtos', async (req, res) => {
             armazem_padrao = '01', peso_liquido = 0, peso_bruto = 0,
             custo_standard = 0, preco_venda = 0, lead_time_dias = 0,
             foto_url = null, desenho_url = null, desenho_nome = null, desenho_tipo = null,
-            b1_xrevm = '0', b1_xproc1 = '', b1_xrevc = '0'
+            b1_xrevm = '0', b1_xproc1 = '', b1_xrevc = '0', cor_id = null
         } = req.body;
 
         const codLimpo = codigo.trim().toUpperCase();
         const revProd = String(b1_xrevm || '0').trim();
         const desCli = String(b1_xproc1 || '').trim();
         const revCli = String(b1_xrevc || '0').trim();
+        const corId = (cor_id !== undefined && cor_id !== '' && cor_id !== null) ? parseInt(cor_id, 10) : null;
 
         // Verificar duplicidade no escopo da empresa
         const [existente] = await mysql.query('SELECT id FROM erp_produtos WHERE IdEmpresa = ? AND codigo = ?', [tenantId, codLimpo]);
@@ -505,14 +608,14 @@ router.post('/produtos', async (req, res) => {
             INSERT INTO erp_produtos (
                 codigo, descricao, tipo, unidade_medida, ncm, armazem_padrao,
                 peso_liquido, peso_bruto, custo_standard, preco_venda, lead_time_dias,
-                foto_url, desenho_url, desenho_nome, desenho_tipo, b1_xrevm, b1_xproc1, b1_xrevc, IdEmpresa
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                foto_url, desenho_url, desenho_nome, desenho_tipo, b1_xrevm, b1_xproc1, b1_xrevc, IdEmpresa, cor_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             codLimpo, descricao.trim(), tipo, unidade_medida, ncm,
             armazem_padrao, parseNum(peso_liquido), parseNum(peso_bruto), parseNum(custo_standard),
             parseNum(preco_venda), parseInt(lead_time_dias, 10) || 0,
             foto_url || null, desenho.desenho_url, desenho.desenho_nome, desenho.desenho_tipo,
-            revProd, desCli, revCli, tenantId
+            revProd, desCli, revCli, tenantId, corId
         ]);
 
         // Sincroniza também no espelho Protheus sb1010
@@ -578,7 +681,7 @@ router.put('/produtos/:codigo', async (req, res) => {
             descricao, tipo, unidade_medida, ncm, armazem_padrao,
             peso_liquido, peso_bruto, custo_standard, preco_venda, lead_time_dias,
             foto_url, desenho_url, desenho_nome, desenho_tipo, status,
-            b1_xrevm, b1_xproc1, b1_xrevc
+            b1_xrevm, b1_xproc1, b1_xrevc, cor_id
         } = req.body;
 
         const parseNum = (v) => {
@@ -591,6 +694,8 @@ router.put('/produtos/:codigo', async (req, res) => {
         const revProd = b1_xrevm !== undefined ? String(b1_xrevm || '0').trim() : null;
         const desCli = b1_xproc1 !== undefined ? String(b1_xproc1 || '').trim() : null;
         const revCli = b1_xrevc !== undefined ? String(b1_xrevc || '0').trim() : null;
+        const corIdProvided = cor_id !== undefined;
+        const corIdVal = corIdProvided ? (cor_id ? parseInt(cor_id, 10) : null) : null;
 
         const desenho = await syncDesenhoDoc(codLimpo, desenho_url, desenho_nome, desenho_tipo);
         if (!desenho.desenho_url) {
@@ -622,7 +727,8 @@ router.put('/produtos/:codigo', async (req, res) => {
                 status = COALESCE(?, status),
                 b1_xrevm = COALESCE(?, b1_xrevm),
                 b1_xproc1 = COALESCE(?, b1_xproc1),
-                b1_xrevc = COALESCE(?, b1_xrevc)
+                b1_xrevc = COALESCE(?, b1_xrevc),
+                cor_id = CASE WHEN ? = 1 THEN ? ELSE cor_id END
             WHERE (codigo = ? OR id = ?) AND IdEmpresa = ?
         `, [
             descricao ? descricao.trim() : null,
@@ -643,6 +749,8 @@ router.put('/produtos/:codigo', async (req, res) => {
             revProd,
             desCli,
             revCli,
+            corIdProvided ? 1 : 0,
+            corIdVal,
             codLimpo,
             isNaN(parseInt(codLimpo, 10)) ? -1 : parseInt(codLimpo, 10),
             tenantId
@@ -668,7 +776,8 @@ router.put('/produtos/:codigo', async (req, res) => {
                     status = COALESCE(?, status),
                     b1_xrevm = COALESCE(?, b1_xrevm),
                     b1_xproc1 = COALESCE(?, b1_xproc1),
-                    b1_xrevc = COALESCE(?, b1_xrevc)
+                    b1_xrevc = COALESCE(?, b1_xrevc),
+                    cor_id = CASE WHEN ? = 1 THEN ? ELSE cor_id END
                 WHERE codigo = ? OR id = ?
             `, [
                 descricao ? descricao.trim() : null,
@@ -689,6 +798,8 @@ router.put('/produtos/:codigo', async (req, res) => {
                 revProd,
                 desCli,
                 revCli,
+                corIdProvided ? 1 : 0,
+                corIdVal,
                 codLimpo,
                 isNaN(parseInt(codLimpo, 10)) ? -1 : parseInt(codLimpo, 10)
             ]);
@@ -1103,6 +1214,136 @@ router.get('/pedidos/proximo-numero', async (req, res) => {
     }
 });
 
+// 6.9 CONFIGURAÇÃO DA PASTA PADRÃO DE PEDIDOS NO SERVIDOR (Multi-Tenant)
+router.get('/pedidos/config-pasta', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        const [rows] = await mysql.query(
+            'SELECT diretorio_raiz_pedidos, padrao_subpasta, criar_pasta_automatica FROM erp_config_pedidos WHERE IdEmpresa = ?',
+            [tenantId]
+        );
+        res.json(rows[0] || {
+            diretorio_raiz_pedidos: '',
+            padrao_subpasta: '{NUMERO_PEDIDO}',
+            criar_pasta_automatica: 1
+        });
+    } catch (err) {
+        console.error('Erro em GET /api/erp/pedidos/config-pasta:', err);
+        res.status(500).json({ error: 'Erro ao buscar configuração da pasta de pedidos' });
+    }
+});
+
+router.put('/pedidos/config-pasta', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        const { diretorio_raiz_pedidos, padrao_subpasta, criar_pasta_automatica } = req.body;
+        
+        await mysql.query(`
+            INSERT INTO erp_config_pedidos (IdEmpresa, diretorio_raiz_pedidos, padrao_subpasta, criar_pasta_automatica)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                diretorio_raiz_pedidos = VALUES(diretorio_raiz_pedidos),
+                padrao_subpasta = VALUES(padrao_subpasta),
+                criar_pasta_automatica = VALUES(criar_pasta_automatica),
+                updated_at = NOW()
+        `, [
+            tenantId,
+            String(diretorio_raiz_pedidos || '').trim(),
+            String(padrao_subpasta || '{NUMERO_PEDIDO}').trim(),
+            criar_pasta_automatica ? 1 : 0
+        ]);
+
+        res.json({
+            success: true,
+            message: 'Configuração da pasta de pedidos salva com sucesso!',
+            config: {
+                diretorio_raiz_pedidos: String(diretorio_raiz_pedidos || '').trim(),
+                padrao_subpasta: String(padrao_subpasta || '{NUMERO_PEDIDO}').trim(),
+                criar_pasta_automatica: criar_pasta_automatica ? 1 : 0
+            }
+        });
+    } catch (err) {
+        console.error('Erro em PUT /api/erp/pedidos/config-pasta:', err);
+        res.status(500).json({ error: 'Erro ao salvar configuração da pasta de pedidos', detail: err.message });
+    }
+});
+
+// ABRIR / CRIAR PASTA DO PEDIDO NO SERVIDOR
+router.post('/pedidos/abrir-pasta', async (req, res) => {
+    try {
+        const { caminho, criarSeNaoExistir = true } = req.body;
+        if (!caminho || !String(caminho).trim()) {
+            return res.status(400).json({ error: 'Caminho da pasta não informado.' });
+        }
+        const cleanPath = String(caminho).trim();
+        let openedLocally = false;
+        let created = false;
+
+        // Se o servidor estiver rodando no Windows, tenta abrir diretamente o explorer
+        if (process.platform === 'win32') {
+            try {
+                if (criarSeNaoExistir && !fs.existsSync(cleanPath)) {
+                    fs.mkdirSync(cleanPath, { recursive: true });
+                    created = true;
+                }
+                const { spawn } = require('child_process');
+                const proc = spawn('explorer.exe', [cleanPath], { detached: true, stdio: 'ignore' });
+                proc.unref();
+                openedLocally = true;
+            } catch (errLocal) {
+                console.warn('[AbrirPasta] Tentativa local via spawn falhou:', errLocal.message);
+            }
+        }
+
+        res.json({
+            success: true,
+            caminho: cleanPath,
+            openedLocally,
+            created
+        });
+    } catch (err) {
+        console.error('Erro em POST /api/erp/pedidos/abrir-pasta:', err);
+        res.status(500).json({ error: 'Erro ao processar abertura de pasta', detail: err.message });
+    }
+});
+
+// 7.0 RELATÓRIO GERAL: Itens detalhados de múltiplos pedidos (para exportação em lote)
+router.get('/pedidos-itens-relatorio', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const { numeros } = req.query; // ex: "000001,000002,000003"
+        let where = 'WHERE 1=1';
+        const params = [];
+        if (tenantId) {
+            where += ' AND i.IdEmpresa = ?';
+            params.push(tenantId);
+        }
+        if (numeros) {
+            const list = String(numeros).split(',').map(n => n.trim()).filter(Boolean);
+            if (list.length > 0) {
+                where += ` AND i.pedido_numero IN (${list.map(() => '?').join(',')})`;
+                params.push(...list);
+            }
+        }
+
+        const [rows] = await mysql.query(`
+            SELECT i.id, i.pedido_numero, i.item_seq, i.produto_codigo, i.quantidade, i.preco_unitario,
+                   COALESCE(NULLIF(i.valor_total, 0), (i.quantidade * i.preco_unitario)) as valor_total,
+                   i.data_entrega_prevista, i.observacao, i.numero_op_gerada,
+                   pr.descricao as produto_descricao, pr.unidade_medida
+            FROM erp_pedidos_itens i
+            LEFT JOIN erp_produtos pr ON (i.produto_codigo = pr.codigo ${tenantId ? 'AND pr.IdEmpresa = i.IdEmpresa' : ''})
+            ${where}
+            ORDER BY i.pedido_numero DESC, CAST(i.item_seq AS UNSIGNED) ASC
+        `, params);
+
+        res.json(rows);
+    } catch (err) {
+        console.error('Erro em GET /api/erp/pedidos-itens-relatorio:', err);
+        res.status(500).json({ error: 'Erro ao buscar itens para relatório', detail: err.message });
+    }
+});
+
 // 7. PEDIDOS DE VENDA: Listar com cliente e totais (Otimizado: CTE + Agregação sem subqueries correlacionadas)
 router.get('/pedidos', async (req, res) => {
     try {
@@ -1137,6 +1378,7 @@ router.get('/pedidos', async (req, res) => {
             WITH top_pedidos AS (
                 SELECT p.id, p.numero_pedido, p.cliente_codigo, p.data_emissao, p.condicao_pagamento,
                        p.valor_total, p.peso_total, p.tipo_frete, p.transportadora, p.status, p.observacoes, p.created_at, p.pedido_cliente,
+                       p.pasta_servidor,
                        c.razao_social as cliente_nome, c.nome_fantasia as cliente_fantasia
                 FROM erp_pedidos_venda p
                 LEFT JOIN erp_clientes c ON (p.cliente_codigo = c.codigo ${tenantId ? 'AND c.IdEmpresa = p.IdEmpresa' : ''})
@@ -1157,6 +1399,7 @@ router.get('/pedidos', async (req, res) => {
             SELECT p.id, p.numero_pedido, p.cliente_codigo, p.data_emissao, p.condicao_pagamento,
                    COALESCE(NULLIF(p.valor_total, 0), it.valor_calculado, 0) as valor_total,
                    p.peso_total, p.tipo_frete, p.transportadora, p.status, p.observacoes, p.created_at, p.pedido_cliente,
+                   p.pasta_servidor,
                    p.cliente_nome, p.cliente_fantasia,
                    COALESCE(it.total_itens, 0) as total_itens,
                    it.data_entrega_prevista,
@@ -1199,9 +1442,9 @@ router.put('/pedidos/:numero', async (req, res) => {
     try {
         const tenantId = getTenantId(req);
         const { numero } = req.params;
-        const { data_emissao, condicao_pagamento, tipo_frete, transportadora, observacoes } = req.body;
+        const { data_emissao, condicao_pagamento, tipo_frete, transportadora, observacoes, pasta_servidor } = req.body;
 
-        let findSql = 'SELECT id, status FROM erp_pedidos_venda WHERE numero_pedido = ?';
+        let findSql = 'SELECT id, status, pasta_servidor FROM erp_pedidos_venda WHERE numero_pedido = ?';
         const findParams = [numero];
         if (tenantId) {
             findSql += ' AND IdEmpresa = ?';
@@ -1222,14 +1465,17 @@ router.put('/pedidos/:numero', async (req, res) => {
         await mysql.query(
             `UPDATE erp_pedidos_venda
              SET data_emissao = COALESCE(?, data_emissao), condicao_pagamento = ?, tipo_frete = ?,
-                 transportadora = ?, observacoes = ?
+                 transportadora = ?, observacoes = ?,
+                 pasta_servidor = ?
              WHERE id = ?`,
             [emissao, String(condicao_pagamento || '').trim(), frete,
-             String(transportadora || '').trim(), String(observacoes || '').trim() || null, found[0].id]
+             String(transportadora || '').trim(), String(observacoes || '').trim() || null,
+             pasta_servidor !== undefined ? (String(pasta_servidor || '').trim() || null) : found[0].pasta_servidor,
+             found[0].id]
         );
 
         const [[pedido]] = await mysql.query(
-            'SELECT data_emissao, condicao_pagamento, tipo_frete, transportadora, observacoes FROM erp_pedidos_venda WHERE id = ?',
+            'SELECT data_emissao, condicao_pagamento, tipo_frete, transportadora, observacoes, pasta_servidor FROM erp_pedidos_venda WHERE id = ?',
             [found[0].id]
         );
         res.json({ success: true, message: 'Cabeçalho do pedido atualizado!', pedido });
@@ -1240,7 +1486,7 @@ router.put('/pedidos/:numero', async (req, res) => {
 });
 
 async function findPedidoHeader(tenantId, numero, conn = mysql) {
-    let sql = 'SELECT id, numero_pedido, status, cliente_codigo, pedido_cliente, IdEmpresa FROM erp_pedidos_venda WHERE numero_pedido = ?';
+    let sql = 'SELECT id, numero_pedido, status, cliente_codigo, pedido_cliente, pasta_servidor, IdEmpresa FROM erp_pedidos_venda WHERE numero_pedido = ?';
     const params = [numero];
     if (tenantId) {
         sql += ' AND IdEmpresa = ?';
@@ -1438,7 +1684,7 @@ router.get('/pedidos/:numero', async (req, res) => {
                        FROM erp_pedidos_itens 
                        WHERE pedido_numero = p.numero_pedido ${tenantId ? 'AND IdEmpresa = p.IdEmpresa' : ''}
                    ), 0) as valor_total,
-                   p.peso_total, p.tipo_frete, p.transportadora, p.status, p.observacoes, p.created_at, p.pedido_cliente, p.IdEmpresa,
+                   p.peso_total, p.tipo_frete, p.transportadora, p.status, p.observacoes, p.created_at, p.pedido_cliente, p.pasta_servidor, p.IdEmpresa,
                    c.razao_social as cliente_nome, c.cnpj_cpf, c.cidade, c.uf, c.telefone, c.email, c.logo_url as cliente_logo
             FROM erp_pedidos_venda p
             LEFT JOIN erp_clientes c ON (p.cliente_codigo = c.codigo ${tenantId ? 'AND c.IdEmpresa = p.IdEmpresa' : ''})
@@ -1931,12 +2177,25 @@ router.post('/pedidos', async (req, res) => {
 
         valorTotal = parseFloat(valorTotal.toFixed(2));
 
+        // Calcular ou obter pasta no servidor para o pedido
+        let pastaServidor = cabecalho.pasta_servidor ? String(cabecalho.pasta_servidor).trim() : null;
+        if (!pastaServidor) {
+            const [[cfgPasta]] = await conn.query('SELECT diretorio_raiz_pedidos, padrao_subpasta, criar_pasta_automatica FROM erp_config_pedidos WHERE IdEmpresa = ?', [tenantId]);
+            if (cfgPasta?.diretorio_raiz_pedidos) {
+                const raiz = cfgPasta.diretorio_raiz_pedidos.replace(/[\/\\]+$/, '');
+                pastaServidor = `${raiz}\\${numPedido}`;
+                if (cfgPasta.criar_pasta_automatica && process.platform === 'win32') {
+                    try { fs.mkdirSync(pastaServidor, { recursive: true }); } catch (_) {}
+                }
+            }
+        }
+
         // Inserir Cabeçalho com IdEmpresa
         await conn.query(`
             INSERT INTO erp_pedidos_venda (
                 numero_pedido, cliente_codigo, data_emissao, condicao_pagamento,
-                valor_total, peso_total, tipo_frete, transportadora, status, observacoes, IdEmpresa
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'orcamento', ?, ?)
+                valor_total, peso_total, tipo_frete, transportadora, status, observacoes, pasta_servidor, IdEmpresa
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'orcamento', ?, ?, ?)
         `, [
             numPedido,
             cabecalho.cliente_codigo.trim(),
@@ -1947,6 +2206,7 @@ router.post('/pedidos', async (req, res) => {
             cabecalho.tipo_frete || 'FOB',
             cabecalho.transportadora || '',
             cabecalho.observacoes || '',
+            pastaServidor,
             tenantId
         ]);
 

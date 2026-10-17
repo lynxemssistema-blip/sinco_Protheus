@@ -77,6 +77,29 @@ export function HelpProvider({ children }) {
         fetchHelpData();
     }, [fetchHelpData]);
 
+    // Sincroniza estado visual global do HelpDrawer (classes CSS e variáveis de largura)
+    // para permitir que todos os modais e painéis da aplicação se ajustem automaticamente
+    useEffect(() => {
+        const updateDrawerCssState = () => {
+            const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
+            if (isOpen && isDesktop) {
+                document.documentElement.classList.add('help-drawer-open');
+                document.documentElement.style.setProperty('--help-drawer-width', '420px');
+            } else {
+                document.documentElement.classList.remove('help-drawer-open');
+                document.documentElement.style.setProperty('--help-drawer-width', '0px');
+            }
+        };
+
+        updateDrawerCssState();
+        window.addEventListener('resize', updateDrawerCssState);
+        return () => {
+            window.removeEventListener('resize', updateDrawerCssState);
+            document.documentElement.classList.remove('help-drawer-open');
+            document.documentElement.style.setProperty('--help-drawer-width', '0px');
+        };
+    }, [isOpen]);
+
     const openHelp = useCallback((path = null) => {
         setForcedPath(path);
         setIsOpen(true);
