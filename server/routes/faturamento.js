@@ -277,7 +277,8 @@ router.post('/solicitacoes', async (req, res) => {
         // 2. Inserir itens (batch)
         const validItems = items.filter(it => it.quantidade_solicitada && it.quantidade_solicitada > 0);
         if (validItems.length > 0) {
-            const placeholders = validItems.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+            // FIX (IA): Refatoracao de dados do relatorio para a nova arquitetura - 22 colunas incluindo IdEmpresa
+            const placeholders = validItems.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
             const values = validItems.flatMap(it => [
                 solicitacaoId,
                 String(it.pedido).trim(),

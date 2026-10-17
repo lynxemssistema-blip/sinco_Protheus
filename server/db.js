@@ -320,16 +320,75 @@ function replacePgEncode(sql) {
     return result;
 }
 
+// FIX (IA): Refatoracao de dados do relatorio para a nova arquitetura - Transpila json_agg removendo ORDER BY interno incompativel com MariaDB
+function replacePgJsonAgg(sql) {
+    let res = sql;
+    let idx = 0;
+    const token = 'json_agg(';
+
+    while (idx < res.length) {
+        const lower = res.toLowerCase();
+        const found = lower.indexOf(token, idx);
+        if (found === -1) break;
+
+        if (found > 0 && /[a-zA-Z0-9_]/.test(res[found - 1])) {
+            idx = found + token.length;
+            continue;
+        }
+
+        const openParen = found + token.length - 1;
+        const closeParen = findMatchingParen(res, openParen);
+        if (closeParen === -1) break;
+
+        let argsContent = res.slice(openParen + 1, closeParen).trim();
+        
+        // Remove ORDER BY no primeiro nível de argumentos do json_agg
+        let subDepth = 0;
+        let inQuote = false;
+        let quoteChar = '';
+        let orderByIdx = -1;
+        for (let j = 0; j < argsContent.length - 8; j++) {
+            const c = argsContent[j];
+            if (inQuote) {
+                if (c === quoteChar && argsContent[j - 1] !== '\\') inQuote = false;
+            } else {
+                if (c === "'" || c === '"') {
+                    inQuote = true;
+                    quoteChar = c;
+                } else if (c === '(') {
+                    subDepth++;
+                } else if (c === ')') {
+                    subDepth--;
+                } else if (subDepth === 0 && /^order\s+by\b/i.test(argsContent.slice(j))) {
+                    orderByIdx = j;
+                    break;
+                }
+            }
+        }
+
+        if (orderByIdx !== -1) {
+            argsContent = argsContent.slice(0, orderByIdx).trim();
+        }
+
+        const replacement = `JSON_ARRAYAGG(${argsContent})`;
+        res = res.slice(0, found) + replacement + res.slice(closeParen + 1);
+        idx = found + replacement.length;
+    }
+
+    return res;
+}
+
 function translatePgToMysql(sql, params = []) {
     let newSql = String(sql || '');
     let newParams = Array.isArray(params) ? [...params] : [];
 
     // 1. Session no-ops: queries que apenas definem variáveis de sessão específicas do Postgres
     const trimmed = newSql.trim();
-    if (/^SET\s+(?:statement_timeout|work_mem|client_encoding|search_path)\b/i.test(trimmed)) {
+    // FIX (IA): Refatoracao de dados do relatorio para a nova arquitetura - Suporte a SET LOCAL statement_timeout
+    if (/^SET\s+(?:LOCAL\s+)?(?:statement_timeout|work_mem|client_encoding|search_path|time\s*zone)\b/i.test(trimmed)) {
         // Se a query inteira consiste apenas de comandos SET do PG
         const isOnlyPgSets = trimmed.split(';').map(s => s.trim()).filter(Boolean)
-            .every(s => /^SET\s+(?:statement_timeout|work_mem|client_encoding|search_path)\b/i.test(s));
+            .every(s => /^SET\s+(?:LOCAL\s+)?(?:statement_timeout|work_mem|client_encoding|search_path|time\s*zone)\b/i.test(s));
         if (isOnlyPgSets) {
             return { sql: 'SELECT 1', params: [], isNoop: true };
         }
@@ -374,6 +433,10 @@ function translatePgToMysql(sql, params = []) {
             return `GROUP_CONCAT(${distinct}${expr.trim()}${orderPart} SEPARATOR ${delim})`;
         }
     );
+
+    // FIX (IA): Refatoracao de dados do relatorio para a nova arquitetura - json_build_object e json_agg -> JSON_OBJECT e JSON_ARRAYAGG
+    newSql = newSql.replace(/\bjson_build_object\s*\(/gi, 'JSON_OBJECT(');
+    newSql = replacePgJsonAgg(newSql);
 
     // BUGFIX (IA): Tratamento seguro de consultas à pg_stat_activity (diagnóstico PG) para evitar erro de tabela inexistente no MySQL
     if (newSql.toLowerCase().includes('pg_stat_activity')) {

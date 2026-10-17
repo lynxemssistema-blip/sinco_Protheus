@@ -75,12 +75,12 @@ export default function NovasFuncionalidades() {
 
                 <div className="max-w-6xl mx-auto relative z-10">
                     <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
-                        <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-full text-xs font-semibold text-amber-300 border border-white/20">
-                            <Calendar className="w-4 h-4" />
-                            Marco Oficial de Entrega: 09/09/2026
+                        <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-full text-xs font-semibold text-emerald-300 border border-white/20">
+                            <Sparkles className="w-4 h-4" />
+                            {CHANGELOG_DATA.length > 0 ? 'Registro de Novidades' : 'Fase de Pré-Lançamento'}
                         </div>
                         <span className="text-xs text-slate-300 font-medium">
-                            Versão Atual: <strong className="text-white">{CHANGELOG_DATA[0]?.versao || 'v2026.4.7'}</strong>
+                            Versão Atual: <strong className="text-white">{CHANGELOG_DATA[0]?.versao || 'v1.0.0'}</strong>
                         </span>
                     </div>
 
@@ -88,8 +88,9 @@ export default function NovasFuncionalidades() {
                         Novas Funcionalidades do App
                     </h1>
                     <p className="text-slate-200 text-sm sm:text-base max-w-3xl leading-relaxed">
-                        Registro oficial de todas as implementações, inovações e melhorias incorporadas ao Portal Lynx
-                        a partir da data de entrega do sistema (<strong>09/09/2026</strong>).
+                        {CHANGELOG_DATA.length > 0
+                            ? 'Registro oficial de todas as implementações, inovações e melhorias incorporadas ao Portal Lynx.'
+                            : 'Canal oficial de registro das novas funcionalidades, implementações e melhorias do SINCO PROTHEUS. As novidades e notas de versão serão publicadas aqui conforme as atualizações forem liberadas.'}
                     </p>
 
                     {/* Quick Stats */}
@@ -100,7 +101,7 @@ export default function NovasFuncionalidades() {
                             </div>
                             <div>
                                 <p className="text-xs text-slate-300 font-medium">Marco Inicial</p>
-                                <p className="text-sm font-bold text-white">09/09/2026</p>
+                                <p className="text-sm font-bold text-white">{CHANGELOG_DATA.length > 0 ? (CHANGELOG_DATA[CHANGELOG_DATA.length - 1]?.data || '09/09/2026') : 'Lançamento Oficial'}</p>
                             </div>
                         </div>
 
@@ -120,7 +121,7 @@ export default function NovasFuncionalidades() {
                             </div>
                             <div>
                                 <p className="text-xs text-slate-300 font-medium">Status de Evolução</p>
-                                <p className="text-sm font-bold text-white">Suporte Contínuo Ativo</p>
+                                <p className="text-sm font-bold text-white">{CHANGELOG_DATA.length > 0 ? 'Suporte Contínuo Ativo' : 'Pré-Lançamento / Homologação'}</p>
                             </div>
                         </div>
                     </div>
@@ -129,45 +130,57 @@ export default function NovasFuncionalidades() {
 
             {/* Main Content Area */}
             <div className="max-w-6xl mx-auto px-4 sm:px-8 mt-8">
-                {/* Search & Filter Bar */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-8">
-                    <div className="flex flex-col md:flex-row gap-4">
-                        {/* Search Input */}
-                        <div className="relative flex-1">
-                            <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
-                            <input
-                                type="text"
-                                placeholder="Buscar por recurso, palavra-chave, módulo ou melhoria..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#425750] transition-all"
-                            />
-                        </div>
+                {/* Search & Filter Bar (Exibe apenas se houver itens) */}
+                {CHANGELOG_DATA.length > 0 && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-8">
+                        <div className="flex flex-col md:flex-row gap-4">
+                            {/* Search Input */}
+                            <div className="relative flex-1">
+                                <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Buscar por recurso, palavra-chave, módulo ou melhoria..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#425750] transition-all"
+                                />
+                            </div>
 
-                        {/* Filter by Module */}
-                        <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
-                            <Filter className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                            <div className="flex gap-1.5 flex-nowrap">
-                                {CHANGELOG_MODULES.map(mod => (
-                                    <button
-                                        key={mod.id}
-                                        onClick={() => setSelectedModule(mod.id)}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                                            selectedModule === mod.id
-                                                ? 'bg-[#425750] text-white shadow-sm'
-                                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                                        }`}
-                                    >
-                                        {mod.label}
-                                    </button>
-                                ))}
+                            {/* Filter by Module */}
+                            <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
+                                <Filter className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                                <div className="flex gap-1.5 flex-nowrap">
+                                    {CHANGELOG_MODULES.map(mod => (
+                                        <button
+                                            key={mod.id}
+                                            onClick={() => setSelectedModule(mod.id)}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                                                selectedModule === mod.id
+                                                    ? 'bg-[#425750] text-white shadow-sm'
+                                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                            }`}
+                                        >
+                                            {mod.label}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                )}
 
                 {/* Timeline Results */}
-                {filteredItems.length === 0 ? (
+                {CHANGELOG_DATA.length === 0 ? (
+                    <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 shadow-sm max-w-2xl mx-auto my-6">
+                        <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-emerald-100 text-emerald-600 shadow-sm">
+                            <Sparkles className="w-8 h-8" />
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-800 mb-2">Ambiente de Pré-Lançamento</h3>
+                        <p className="text-sm text-slate-600 leading-relaxed max-w-lg mx-auto">
+                            O aplicativo ainda não foi lançado oficialmente. Assim que a primeira versão for disponibilizada aos usuários, você poderá acompanhar aqui todo o histórico de novas funcionalidades, melhorias e notas de versão.
+                        </p>
+                    </div>
+                ) : filteredItems.length === 0 ? (
                     <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 shadow-sm">
                         <Info className="w-12 h-12 text-slate-400 mx-auto mb-3" />
                         <h3 className="text-base font-bold text-slate-700 mb-1">Nenhum recurso encontrado</h3>
