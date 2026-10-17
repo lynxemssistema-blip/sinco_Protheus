@@ -2879,17 +2879,27 @@ router.post('/appoint', async (req, res) => {
             return res.status(400).json({ error: 'Quantidade deve ser maior que zero.' });
         }
 
+        const opVariants = [...new Set([String(op_numero).trim(), String(op_numero).trim().padStart(6, '0'), String(parseInt(op_numero, 10) || op_numero)])];
+        const itemVariants = [...new Set([String(op_item).trim(), String(op_item).trim().padStart(2, '0')])];
+        const seqVariants = [...new Set([String(op_sequencia || '001').trim(), String(op_sequencia || '001').trim().padStart(3, '0')])];
+        const codeVariants = [...new Set([String(operacao_codigo).trim(), String(operacao_codigo).trim().padStart(2, '0'), String(parseInt(operacao_codigo, 10) || operacao_codigo)])];
+
+        const opPH = opVariants.map(() => '?').join(',');
+        const itemPH = itemVariants.map(() => '?').join(',');
+        const seqPH = seqVariants.map(() => '?').join(',');
+        const codePH = codeVariants.map(() => '?').join(',');
+
         connection = await mysqlPool.getConnection();
         await connection.beginTransaction();
 
         // --- PREVENÇÃO CONTRA DUPLO CLIQUE (DOUBLE SUBMIT) ---
         // Verifica se já existe um apontamento idêntico nos últimos 10 segundos
-        const [recentApps] = await connection.execute(`
+        const [recentApps] = await connection.query(`
             SELECT id FROM app_production_appointments
-            WHERE op_numero=? AND op_item=? AND op_sequencia=? AND operacao_codigo=?
-            AND usuario=? AND quantidade=? AND data_inicio=? AND data_fim=?
+            WHERE op_numero IN (${opPH}) AND op_item IN (${itemPH}) AND op_sequencia IN (${seqPH}) AND operacao_codigo IN (${codePH})
+            AND usuario=? AND quantidade=?
             AND created_at >= NOW() - INTERVAL 10 SECOND
-        `, [op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim]);
+        `, [...opVariants, ...itemVariants, ...seqVariants, ...codeVariants, usuario, quantidade]);
 
         if (recentApps.length > 0) {
             await connection.rollback();
@@ -2927,15 +2937,15 @@ router.post('/appoint', async (req, res) => {
             // Postgres timeout ou indisponível
         }
 
-        // Fallback MySQL para validação de saldo (OPs criadas localmente)
+        // Fallback MySQL para validação de saldo com Lock Pessimista (FOR UPDATE)
         if (qtdPlanejada <= 0) {
             try {
                 const [mySc] = await connection.query(
                     `SELECT CAST(c2_quant AS DECIMAL(15,4)) AS qtd_planejada
                      FROM sc2010
-                     WHERE TRIM(c2_num) = ? AND TRIM(c2_item) = ? AND TRIM(c2_sequen) = ?
-                     LIMIT 1`,
-                    [op_numero, op_item, op_sequencia]
+                     WHERE TRIM(c2_num) IN (${opPH}) AND TRIM(c2_item) IN (${itemPH}) AND TRIM(c2_sequen) IN (${seqPH})
+                     LIMIT 1 FOR UPDATE`,
+                    [...opVariants, ...itemVariants, ...seqVariants]
                 );
                 if (mySc?.length > 0 && Number(mySc[0].qtd_planejada) > 0) {
                     qtdPlanejada = Number(mySc[0].qtd_planejada);
@@ -2944,7 +2954,7 @@ router.post('/appoint', async (req, res) => {
                         `SELECT CAST(quantidade_planejada AS DECIMAL(15,4)) AS qtd_planejada
                          FROM erp_ordens_producao
                          WHERE numero_op LIKE ?
-                         LIMIT 1`,
+                         LIMIT 1 FOR UPDATE`,
                         [`${op_numero}%${op_item}%`]
                     );
                     if (myErp?.length > 0 && Number(myErp[0].qtd_planejada) > 0) {
@@ -2957,20 +2967,11 @@ router.post('/appoint', async (req, res) => {
         }
 
         if (qtdPlanejada > 0) {
-            const opVariants = [...new Set([String(op_numero).trim(), String(op_numero).trim().padStart(6, '0'), String(parseInt(op_numero, 10) || op_numero)])];
-            const itemVariants = [...new Set([String(op_item).trim(), String(op_item).trim().padStart(2, '0')])];
-            const seqVariants = [...new Set([String(op_sequencia || '001').trim(), String(op_sequencia || '001').trim().padStart(3, '0')])];
-            const codeVariants = [...new Set([String(operacao_codigo).trim(), String(operacao_codigo).trim().padStart(2, '0'), String(parseInt(operacao_codigo, 10) || operacao_codigo)])];
-
-            const opPH = opVariants.map(() => '?').join(',');
-            const itemPH = itemVariants.map(() => '?').join(',');
-            const seqPH = seqVariants.map(() => '?').join(',');
-            const codePH = codeVariants.map(() => '?').join(',');
-
             const [appRows] = await connection.query(
                 `SELECT SUM(quantidade) AS total FROM app_production_appointments
                  WHERE op_numero IN (${opPH}) AND op_item IN (${itemPH}) AND op_sequencia IN (${seqPH}) AND operacao_codigo IN (${codePH})
-                 AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')`,
+                 AND conferencia_status NOT IN ('CANCELADO', 'DIVERGENTE')
+                 FOR UPDATE`,
                  [...opVariants, ...itemVariants, ...seqVariants, ...codeVariants]
             );
             const produzido = Number(appRows[0]?.total) || 0;

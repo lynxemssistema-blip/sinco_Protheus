@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-10-17T16:46:16.738Z",
+  "resumo": {
+    "total": 9,
+    "sucesso": 9,
+    "falha": 0,
+    "alerta": 0
+  },
+  "relatoriosTestados": [
+    {
+      "relatorio": "Planejamento de Vendas",
+      "arquivo": "planejamento_vendas_tenantA.xlsx",
+      "tamanho": 87012,
+      "linhas": 57,
+      "ok": true
+    },
+    {
+      "relatorio": "Master Sheet Faturamento (JSON Dataset)",
+      "arquivo": "master_sheet_data.json",
+      "itens": 179,
+      "ok": true
+    },
+    {
+      "relatorio": "Relatório Produção",
+      "arquivo": "relatorio_producao.xlsx",
+      "tamanho": 7470,
+      "linhas": 8,
+      "ok": true
+    },
+    {
+      "relatorio": "Vendas Sem Financeiro",
+      "arquivo": "planejamento_vendas_sem_financeiro.xlsx",
+      "ok": true
+    }
+  ],
+  "achados": []
+}

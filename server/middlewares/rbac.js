@@ -22,7 +22,11 @@ const requirePermission = (pageId, action = 'view') => {
             }
 
             // Consultar configurações da empresa para Perfis Customizados isAdmin
-            const [companyRows] = await mysqlPool.query('SELECT general_config FROM app_company_settings LIMIT 1');
+            const tenantId = req.tenantId || user.IdEmpresa || 1;
+            const [companyRows] = await mysqlPool.query(
+                'SELECT general_config FROM app_company_settings WHERE IdEmpresa = ? OR (IdEmpresa IS NULL AND ? = 1) LIMIT 1',
+                [tenantId, tenantId]
+            );
             if (companyRows.length > 0) {
                 try {
                     let gc = companyRows[0].general_config;

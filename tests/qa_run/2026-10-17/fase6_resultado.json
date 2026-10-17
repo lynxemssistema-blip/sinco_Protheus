@@ -1,0 +1,146 @@
+{
+  "timestamp": "2026-10-17T16:33:18.397Z",
+  "resumo": {
+    "totalEndpoints": 10,
+    "aprovados": 9,
+    "reprovados": 1,
+    "mediaGeralP50Ms": 105,
+    "mediaGeralP95Ms": 163
+  },
+  "benchmarks": [
+    {
+      "nome": "Dashboard de Faturamento",
+      "endpoint": "/api/faturamento/dashboard",
+      "status": 200,
+      "amostras": 10,
+      "min": 176.57,
+      "max": 221.56,
+      "avg": 200.06,
+      "p50": 198,
+      "p95": 221.56,
+      "aprovado": true
+    },
+    {
+      "nome": "Previsão de Faturamento",
+      "endpoint": "/api/reports/sales-planning/faturamento-data?limit=50",
+      "status": 200,
+      "amostras": 10,
+      "min": 237.95,
+      "max": 472.49,
+      "avg": 271.43,
+      "p50": 250.27,
+      "p95": 472.49,
+      "aprovado": true
+    },
+    {
+      "nome": "Carteira de Pedidos (SC5/SC6)",
+      "endpoint": "/api/pedidos?limit=50",
+      "status": 200,
+      "amostras": 10,
+      "min": 130.43,
+      "max": 151.82,
+      "avg": 142.57,
+      "p50": 142.8,
+      "p95": 151.82,
+      "aprovado": true
+    },
+    {
+      "nome": "Fila de OPs Ativas (SC2/SC6)",
+      "endpoint": "/api/production/fcs-ops",
+      "status": 200,
+      "amostras": 10,
+      "min": 101.38,
+      "max": 120.04,
+      "avg": 111.33,
+      "p50": 112.08,
+      "p95": 120.04,
+      "aprovado": true
+    },
+    {
+      "nome": "Explosão BOM Multinível (SG1)",
+      "endpoint": "/api/erp/estruturas/QA-SS-100",
+      "status": 200,
+      "amostras": 10,
+      "min": 51.92,
+      "max": 68.46,
+      "avg": 60.12,
+      "p50": 60.72,
+      "p95": 68.46,
+      "aprovado": true
+    },
+    {
+      "nome": "Setores Fabris (PCP)",
+      "endpoint": "/api/pcp-setores",
+      "status": 200,
+      "amostras": 10,
+      "min": 54.08,
+      "max": 78.53,
+      "avg": 63.38,
+      "p50": 64.41,
+      "p95": 78.53,
+      "aprovado": true
+    },
+    {
+      "nome": "Qualidade / RNCs (SGQ)",
+      "endpoint": "/api/sgq/rncs",
+      "status": 200,
+      "amostras": 10,
+      "min": 52.45,
+      "max": 72.08,
+      "avg": 61.88,
+      "p50": 62.91,
+      "p95": 72.08,
+      "aprovado": true
+    },
+    {
+      "nome": "Romaneios de Logística",
+      "endpoint": "/api/romaneios",
+      "status": 200,
+      "amostras": 10,
+      "min": 54.51,
+      "max": 78.03,
+      "avg": 65.75,
+      "p50": 66.26,
+      "p95": 78.03,
+      "aprovado": true
+    },
+    {
+      "nome": "Dashboard Financeiro",
+      "endpoint": "/api/financeiro/dashboard",
+      "status": 200,
+      "amostras": 10,
+      "min": 51.02,
+      "max": 97.15,
+      "avg": 68.66,
+      "p50": 62.68,
+      "p95": 97.15,
+      "aprovado": true
+    },
+    {
+      "nome": "Cadastro de Clientes (SA1)",
+      "endpoint": "/api/clients",
+      "status": 404,
+      "amostras": 10,
+      "min": 26.44,
+      "max": 265.28,
+      "avg": 57.66,
+      "p50": 34.64,
+      "p95": 265.28,
+      "aprovado": false
+    }
+  ],
+  "analiseRobustez": {
+    "concorrenciaApontamento": {
+      "status": "Vulnerável a Race Condition",
+      "detalhe": "Identificado em ACHADO-F3-001: SELECT SUM(quantidade) em production.js:2970 sem FOR UPDATE permite apontamentos simultâneos excederem a quantidade planejada."
+    },
+    "agendamentosCrons": {
+      "status": "Não isolado para Multi-Tenant / Risco de Duplicação",
+      "detalhe": "Crons em server/index.js (0 15 * * * e 0 6,15 * * *) utilizam WHERE id = 1 fixo e não possuem lock distribuído para clusters/múltiplas instâncias."
+    },
+    "falhaIntegracaoExterna": {
+      "status": "Resiliente / Degradado com Sucesso",
+      "detalhe": "APIs Protheus (192.168.1.60) e Firebird estão devidamente isoladas com timeouts e fallbacks, sem travar o Express nem causar tela branca."
+    }
+  }
+}

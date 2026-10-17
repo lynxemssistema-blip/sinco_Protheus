@@ -8,9 +8,12 @@ client/dist/
 linux-deployment/
 
 # Environment variables
-# .env tracked intentionally (contains non-sensitive deploy config)
-.env.local
-.env.production
+.env
+.env.*
+*.env
+*.env.*
+production.env
+!*.env.example
 
 # Logs & Debug
 *.log
@@ -41,6 +44,7 @@ desktop.ini
 # Tools / Extras
 FerramentapgAdmin4/
 *.bat
+!client/public/*.bat
 
 # Debug & Test scripts (not production code)
 server/debug_*.js

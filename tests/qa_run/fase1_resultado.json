@@ -1,0 +1,256 @@
+{
+  "fase": "FASE 1 — Regressão da sanitização",
+  "executadoEm": "2026-10-17T15:51:55.958Z",
+  "testes": [
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Módulo VMI principal (com token)",
+      "endpoint": "/api/vmi",
+      "esperado": 404,
+      "obtido": 404,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Endpoint não encontrado."
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Módulo VMI principal (sem token)",
+      "endpoint": "/api/vmi",
+      "esperado": "401 ou 404",
+      "obtido": 401,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Token não fornecido",
+        "code": "TOKEN_MISSING"
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Módulo VMI Pedidos (com token)",
+      "endpoint": "/api/vmi-pedidos",
+      "esperado": 404,
+      "obtido": 404,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Endpoint não encontrado."
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Módulo VMI Pedidos (sem token)",
+      "endpoint": "/api/vmi-pedidos",
+      "esperado": "401 ou 404",
+      "obtido": 401,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Token não fornecido",
+        "code": "TOKEN_MISSING"
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Módulo VMI Críticos (com token)",
+      "endpoint": "/api/vmi-criticos",
+      "esperado": 404,
+      "obtido": 404,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Endpoint não encontrado."
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Módulo VMI Críticos (sem token)",
+      "endpoint": "/api/vmi-criticos",
+      "esperado": "401 ou 404",
+      "obtido": 401,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Token não fornecido",
+        "code": "TOKEN_MISSING"
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Módulo WabTec principal (com token)",
+      "endpoint": "/api/wabtec",
+      "esperado": 404,
+      "obtido": 404,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Endpoint não encontrado."
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Módulo WabTec principal (sem token)",
+      "endpoint": "/api/wabtec",
+      "esperado": "401 ou 404",
+      "obtido": 401,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Token não fornecido",
+        "code": "TOKEN_MISSING"
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Módulo WabTec Datas (com token)",
+      "endpoint": "/api/wabtec-datas",
+      "esperado": 404,
+      "obtido": 404,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Endpoint não encontrado."
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Módulo WabTec Datas (sem token)",
+      "endpoint": "/api/wabtec-datas",
+      "esperado": "401 ou 404",
+      "obtido": 401,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Token não fornecido",
+        "code": "TOKEN_MISSING"
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Módulo Engetron (com token)",
+      "endpoint": "/api/engetron",
+      "esperado": 404,
+      "obtido": 404,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Endpoint não encontrado."
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Módulo Engetron (sem token)",
+      "endpoint": "/api/engetron",
+      "esperado": "401 ou 404",
+      "obtido": 401,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Token não fornecido",
+        "code": "TOKEN_MISSING"
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Relatório Excel VMI Bicromatização (com token)",
+      "endpoint": "/api/reports/vmi-bicromatizacao/excel",
+      "esperado": 404,
+      "obtido": 404,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Endpoint não encontrado."
+      }
+    },
+    {
+      "categoria": "Rotas Removidas",
+      "item": "Relatório Excel VMI Bicromatização (sem token)",
+      "endpoint": "/api/reports/vmi-bicromatizacao/excel",
+      "esperado": "401 ou 404",
+      "obtido": 401,
+      "status": "APROVADO",
+      "evidencia": {
+        "error": "Token não fornecido",
+        "code": "TOKEN_MISSING"
+      }
+    },
+    {
+      "categoria": "Varredura de Resquícios",
+      "item": "Chamadas do Front-End para APIs removidas",
+      "esperado": 0,
+      "obtido": 0,
+      "status": "APROVADO",
+      "evidencia": []
+    },
+    {
+      "categoria": "Varredura de Resquícios",
+      "item": "Menções textuais residuais (Landing Page / Relatório de Entrega / Placeholders)",
+      "esperado": "Mapeado para Dúvida de Regra",
+      "obtido": "22 ocorrências",
+      "status": "MAPEADO_DUVIDA_REGRA",
+      "evidencia": [
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:200 -> // Normalização da Revisão da WabTec",
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:400 -> // Fluxo exclusivo WabTec: estritamente fixo para WabTec",
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:403 -> setClienteNome('WABTEC BRASIL');",
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:471 -> // Ação: Reverter para a descrição original da planilha WabTec",
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:476 -> toast.info('Descrição revertida para o original da planilha WabTec.');",
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:491 -> cliente_nome: isCadastroSinco ? clienteNome.trim() : (item?.cliente_nome || 'WAB",
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:507 -> cliente_nome: isCadastroSinco ? clienteNome.trim() : (item?.cliente_nome || 'WAB",
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:573 -> cliente_nome: isCadastroSinco ? clienteNome.trim() : (item.cliente_nome || 'WABT",
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:630 -> {item.badge || 'BOM WabTec'}",
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:650 -> {/* Card Origem: Solid Edge vs WabTec */}",
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:784 -> /* Card Origem WabTec (100% INTACTO E EXCLUSIVO WABTEC) */",
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:789 -> Desenho {item.cliente_nome ? item.cliente_nome : 'WabTec'} (Origem)",
+        "src/components/sinco/CriarProdutoProtheusModal.jsx:1002 -> title=\"Restaurar a descrição original da planilha WabTec\"",
+        "src/config/helpContent.js:20 -> 'Filtros por Módulo: Utilize os botões superiores para filtrar entregas por área",
+        "src/pages/RelatorioEntrega.jsx:92 -> label: 'Gestão de Contratos WabTec (PPAPs & Escopo) e Engetron',",
+        "src/pages/RelatorioEntrega.jsx:95 -> desc: 'Suíte dedicada a contratos de alta complexidade técnica: gestão dos 18 el",
+        "src/pages/RelatorioEntrega.jsx:98 -> destaques: ['PPAPs WabTec Níveis 1-5', 'Matriz de Escopo & ECN', 'Painel & OTD E",
+        "src/pages/RelatorioEntrega.jsx:375 -> nome: 'WabTec — PPAPs, Escopo de Fornecimento & Forecast',",
+        "src/pages/RelatorioEntrega.jsx:377 -> desc: 'Módulo dedicado ao contrato WabTec: acompanhamento detalhado do escopo de",
+        "src/pages/RelatorioEntrega.jsx:384 -> nome: 'Engetron — Painel de Demandas & Cumprimento de OTD',",
+        "src/pages/RelatorioEntrega.jsx:386 -> desc: 'Painel gerencial de acompanhamento de demandas e entregas do contrato Eng",
+        "src/pages/reunioes/NovaReservaModal.jsx:424 -> placeholder=\"Ex: Alinhamento de Projeto Wabtec, Reunião de Diretoria...\""
+      ]
+    },
+    {
+      "categoria": "Engenharia / Produto Protheus",
+      "item": "Consulta de desenho inexistente (autônomo, sem chamar Protheus real)",
+      "endpoint": "/api/produto-protheus/consultar-desenho",
+      "esperado": {
+        "existe": false
+      },
+      "obtido": {
+        "existe": false,
+        "desenho": "QA-DESENHO-INEXISTENTE-999",
+        "mensagem": "Desenho não encontrado no Protheus (SB1010 / SZ1010)"
+      },
+      "status": "APROVADO"
+    },
+    {
+      "categoria": "Pedidos de Venda",
+      "item": "Remoção do botão Prev-Bicromatização da tela de pedidos",
+      "esperado": "Ausente",
+      "obtido": "Ausente",
+      "status": "APROVADO"
+    },
+    {
+      "categoria": "Apontamento de Produção",
+      "item": "Ausência de disparos automáticos de WhatsApp no apontamento",
+      "esperado": "Nenhum disparo",
+      "obtido": "Nenhum disparo",
+      "status": "APROVADO"
+    },
+    {
+      "categoria": "Apontamento de Produção",
+      "item": "Tratamento de variações de numeração da OP (6175 x 006175, item 1 x 01)",
+      "esperado": "Ativa com opVariants",
+      "obtido": "Ativa",
+      "status": "APROVADO"
+    },
+    {
+      "categoria": "Apontamento de Produção",
+      "item": "Bloqueio de apontamento excedente ao saldo",
+      "esperado": "Bloqueio ativo com HTTP 400",
+      "obtido": "Bloqueio ativo",
+      "status": "APROVADO"
+    },
+    {
+      "categoria": "Tabelas Órfãs e Arquitetura",
+      "item": "Verificação de compartilhamento de banco com SincoMetalfisa-externo",
+      "esperado": "Bancos distintos",
+      "obtido": "Host: metalfisa.mysql.uhserver.com | DB: metalfisa",
+      "status": "APROVADO",
+      "recomendacao": "Como SincoMetalfisa-externo aponta para metalfisa.mysql.uhserver.com (UOL Host) e o SINCO aponta para Hostinger (u494795077_SINCO), as tabelas app_*vmi* e app_wabtec_* no banco Hostinger são candidatas a DROP após backup."
+    }
+  ]
+}

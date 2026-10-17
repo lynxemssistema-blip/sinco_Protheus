@@ -220,17 +220,7 @@ router.get('/production/pdf', async (req, res) => {
     res.status(503).json({ error: 'PDF generation temporarily unavailable - Excel export is available' });
 });
 
-// ALIAS FOR XLSX (Frontend calls 'xlsx', Backend implemented 'excel')
-router.get('/production/xlsx', async (req, res) => {
-    // Redirect logic or just copy-paste handler? 
-    // Express requires re-registering the handler or calling it. 
-    // We will just Register the SAME handler function to avoid duplication? 
-    // For simplicity in this tool, I'll just redirect or re-implement.
-    // Actually, let's just use re-use the handler if I could, but I can't easily extract it here alone.
-    // I'll just redirect to the excel route? No, better to simply Map the route.
-    req.url = '/production/excel';
-    req.app.handle(req, res);
-});
+
 
 // GET /api/reports/production/excel - Generate Excel
 router.get(['/production/excel', '/production/xlsx'], async (req, res) => {

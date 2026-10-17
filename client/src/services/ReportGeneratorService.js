@@ -290,7 +290,8 @@ export const ReportGeneratorService = {
                 } else if (col.format === 'date') {
                     cell.value = formatValue(rawVal, 'date');
                 } else {
-                    cell.value = rawVal !== null && rawVal !== undefined ? rawVal : '—';
+                    const strVal = rawVal !== null && rawVal !== undefined ? String(rawVal) : '—';
+                    cell.value = strVal.replace(/^([=+\-@])/, "'$1");
                 }
 
                 cell.font = { name: 'Calibri', size: 9.5, color: { argb: LYNX_THEME.textDark } };

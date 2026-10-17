@@ -7,7 +7,7 @@
 
 // Conjunto inicial de tabelas essenciais com suporte a multi-tenant
 const tenantTablesSet = new Set([
-    'sc5010', 'sc6010', 'sc2010', 'sb1010', 'sb2010', 'sa1010', 'sa2010',
+    'sc5010', 'sc6010', 'sc2010', 'sb1010', 'sb2010', 'sa1010', 'sa2010', 'sz1010',
     'sg2010', 'sg1010', 'sd1010', 'sd2010', 'sf1010', 'sf2010', 'sc7010',
     'sc1010', 'sh1010', 'se1010', 'se2010', 'sed010', 'ct1010', 'ct2010',
     'pcp_setores', 'pcp_setor_recursos', 'pcp_setor_responsaveis', 'pcp_recursos',

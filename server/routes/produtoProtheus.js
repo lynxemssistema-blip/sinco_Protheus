@@ -267,14 +267,15 @@ router.post('/vincular-produto-existente', async (req, res) => {
                 const [recRows] = await db.query(`SELECT COALESCE(MAX(r_e_c_n_o_), 0) + 1 AS next_rec FROM sz1010`);
                 const nextRec = recRows[0]?.next_rec || 1;
                 const descFinal = String(titulo || descSb1 || cliente_nome || 'PRODUTO').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 30);
+                const tenantEmpresa = req.tenantId || req.user?.IdEmpresa || 1;
                 await db.query(`
                     INSERT INTO sz1010 (z1_filial, z1_cliente, z1_loja, z1_nomecli, z1_produto, z1_codcli, z1_desccli, z1_revisao, r_e_c_n_o_, d_e_l_e_t_, IdEmpresa)
-                    VALUES ('0101', ?, ?, ?, ?, ?, ?, ?, ?, '', 1)
+                    VALUES ('0101', ?, ?, ?, ?, ?, ?, ?, ?, '', ?)
                     ON DUPLICATE KEY UPDATE
                         z1_codcli = VALUES(z1_codcli),
                         z1_desccli = VALUES(z1_desccli),
                         z1_revisao = VALUES(z1_revisao)
-                `, [codCliFinal, lojaCliFinal, cliente_nome || '', codProtheus, codDesenho, descFinal, rev || '00', nextRec]);
+                `, [codCliFinal, lojaCliFinal, cliente_nome || '', codProtheus, codDesenho, descFinal, rev || '00', nextRec, tenantEmpresa]);
                 sz1Status = 'Vínculo gravado com sucesso no SINCO';
             } catch (mSzErr) {
                 console.warn('[Vincular Existente] Aviso sz1010 MySQL:', mSzErr.message);
@@ -437,14 +438,15 @@ router.post('/criar-produto-protheus', async (req, res) => {
                 try {
                     const [recRows] = await db.query(`SELECT COALESCE(MAX(r_e_c_n_o_), 0) + 1 AS next_rec FROM sz1010`);
                     const nextRec = recRows[0]?.next_rec || 1;
+                    const tenantEmpresa = req.tenantId || req.user?.IdEmpresa || 1;
                     await db.query(`
                         INSERT INTO sz1010 (z1_filial, z1_cliente, z1_loja, z1_nomecli, z1_produto, z1_codcli, z1_desccli, z1_revisao, r_e_c_n_o_, d_e_l_e_t_, IdEmpresa)
-                        VALUES ('0101', ?, ?, ?, ?, ?, ?, ?, ?, '', 1)
+                        VALUES ('0101', ?, ?, ?, ?, ?, ?, ?, ?, '', ?)
                         ON DUPLICATE KEY UPDATE
                             z1_codcli = VALUES(z1_codcli),
                             z1_desccli = VALUES(z1_desccli),
                             z1_revisao = VALUES(z1_revisao)
-                    `, [codCliFinal, lojaCliFinal, nomeCliFinal, codigoGerado, codDesHigienizado, descCurtada, revWabtec, nextRec]);
+                    `, [codCliFinal, lojaCliFinal, nomeCliFinal, codigoGerado, codDesHigienizado, descCurtada, revWabtec, nextRec, tenantEmpresa]);
                     sz1Criado = true;
                 } catch (sz1Err) {
                     console.warn('[SINCO Criar Produto] Aviso sz1010:', sz1Err.message);

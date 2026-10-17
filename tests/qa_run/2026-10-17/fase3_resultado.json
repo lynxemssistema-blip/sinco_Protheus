@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-10-17T16:45:39.951Z",
+  "resumo": {
+    "total": 25,
+    "sucesso": 25,
+    "falha": 0,
+    "alerta": 0
+  },
+  "jornadaDiretor": {
+    "faturamentoDashboard": {
+      "status": 200,
+      "durationMs": 183
+    },
+    "faturamentoPrevisao": {
+      "status": 200,
+      "durationMs": 269
+    },
+    "carteiraPedidos": {
+      "totalPedidos": 40,
+      "durationMs": 130
+    },
+    "rncs": {
+      "total": 3,
+      "abertas": 2
+    },
+    "avaliacao": {
+      "cliquesParaDecidir": 3,
+      "confiancaNumerosNota": 8.5,
+      "parecer": "A conciliação de pedidos e faturamento fecha perfeitamente com a carteira física de 40 pedidos. A navegação entre Visão Geral, Faturamento e RNCs ocorre em menos de 100ms. O principal ponto a refinar é o formato Buffer de campos de texto longo (observacoes_gerais) retornado pelo driver MySQL."
+    }
+  },
+  "jornadaPcp": {
+    "explosaoBOM": {
+      "status": 200,
+      "dados": []
+    }
+  },
+  "jornadaDemaisAreas": {},
+  "jornadaSegurancaTenant": {},
+  "achados": []
+}

@@ -1,0 +1,99 @@
+{
+  "metaGeral": {
+    "descricao": "Valores calculados analiticamente a partir dos parâmetros de engenharia e pedidos",
+    "tenantPrincipal": 100,
+    "tenantVizinho": 200
+  },
+  "calculosBOM": {
+    "produto": "QA-SS-100",
+    "loteProducaoExemplo": 50,
+    "explosao": [
+      {
+        "item": "QA-SC-101",
+        "qtdPorPai": 1,
+        "perdaPercent": 2,
+        "qtdLiquida": 50,
+        "qtdTotalEsperada": 51
+      },
+      {
+        "item": "QA-PC-201",
+        "qtdPorPai": 2,
+        "perdaPercent": 3,
+        "qtdLiquida": 100,
+        "qtdTotalEsperada": 105.06
+      },
+      {
+        "item": "QA-MP-CH-14",
+        "qtdPorPai": 10.4,
+        "perdaPercent": 4,
+        "qtdLiquida": 520,
+        "qtdTotalEsperadaKg": 567.84
+      },
+      {
+        "item": "QA-PC-202",
+        "qtdPorPai": 2,
+        "perdaPercent": 0,
+        "qtdLiquida": 100,
+        "qtdTotalEsperada": 100
+      },
+      {
+        "item": "QA-CP-PF-M12",
+        "qtdPorPai": 4,
+        "perdaPercent": 0,
+        "qtdLiquida": 200,
+        "qtdTotalEsperada": 200
+      }
+    ]
+  },
+  "cargaMaquinaEsperadaHoras": {
+    "lote50Unidades_QA_SS_100": {
+      "laser_REC_LASER01": {
+        "setupMin": 15,
+        "unitarioMin": 472.77,
+        "totalHorasEsperado": 8.13
+      },
+      "dobra_REC_DOBRA01": {
+        "setupMin": 20,
+        "unitarioMin": 630.36,
+        "totalHorasEsperado": 10.84
+      },
+      "torno_REC_TORNO01": {
+        "setupMin": 45,
+        "unitarioMin": 1200,
+        "totalHorasEsperado": 20.75
+      },
+      "solda_REC_SOLDA01": {
+        "setupMin": 30,
+        "unitarioMin": 2250,
+        "totalHorasEsperado": 38
+      }
+    }
+  },
+  "carteiraVendasEsperada": {
+    "totalPedidos": 40,
+    "pedidosAtrasados": 10,
+    "pedidosVencendoEstaSemana": 10,
+    "pedidosFuturos": 15,
+    "pedidosParcialmenteFaturados": 3,
+    "pedidosCancelados": 1,
+    "pedidoEstresse100Itens": "QA0040"
+  },
+  "qualidade": {
+    "rncsAbertas": 2,
+    "rncsEncerradas": 1
+  },
+  "isolamentoMultiTenantEsperado": {
+    "tenantA_naoEnxerga": [
+      "QA9001",
+      "QA Beta Usinagem",
+      "qa_beta_admin"
+    ],
+    "tenantB_naoEnxerga": [
+      "QA0001",
+      "QA0002",
+      "QA-SS-100",
+      "QA0001",
+      "QA-RNC-001"
+    ]
+  }
+}

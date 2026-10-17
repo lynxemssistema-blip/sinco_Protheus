@@ -9,4 +9,4 @@ Windows Registry Editor Version 5.00
 [HKEY_CURRENT_USER\Software\Classes\sinco-folder\shell\open]
 
 [HKEY_CURRENT_USER\Software\Classes\sinco-folder\shell\open\command]
-@="\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -NoProfile -WindowStyle Hidden -Command \"$u = '%1'; $p = [System.Uri]::UnescapeDataString($u.Substring(15)); if ($p.EndsWith('/')) { $p = $p.Substring(0, $p.Length - 1) }; Start-Process explorer.exe $p\""
+@="cmd.exe /c \"\"%LOCALAPPDATA%\\SINCO\\open-sinco-folder.cmd\" \"%1\"\""
