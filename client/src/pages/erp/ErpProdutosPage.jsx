@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import api, { getEstruturaProduto } from '../../services/api';
 import StockModal from '../../components/StockModal';
 import { useDebounce } from '../../hooks/useDebounce';
+// FEAT (IA): Motor Relatorios Lynxems
+import { ReportGeneratorService } from '../../services/ReportGeneratorService';
+import ReportExportButtons from '../../components/ReportExportButtons';
 import { 
     Package, Plus, Search, RefreshCw, Layers, CheckCircle2, AlertCircle, 
     ArrowDownToLine, Tag, DollarSign, Scale, X, Database, Sparkles, 
@@ -257,6 +260,48 @@ export default function ErpProdutosPage() {
         }
     };
 
+    // FEAT (IA): Motor Relatorios Lynxems - Handlers de Exportação Excel e PDF
+    const handleExportExcel = async () => {
+        await ReportGeneratorService.exportExcel({
+            title: 'Catálogo de Produtos e Materiais',
+            subtitle: tipoFilter ? `Filtro de Tipo: ${tipoFilter}` : 'Todos os Tipos Protheus (PA, PI, MP)',
+            columns: [
+                { header: 'Código', key: 'codigo', width: 18, align: 'center' },
+                { header: 'Descrição', key: 'descricao', width: 38 },
+                { header: 'Tipo', key: 'tipo', width: 10, align: 'center' },
+                { header: 'U.M.', key: 'unidade_medida', width: 10, align: 'center' },
+                { header: 'Armazém', key: 'armazem_padrao', width: 12, align: 'center' },
+                { header: 'NCM', key: 'ncm', width: 16, align: 'center' },
+                { header: 'Peso Líq. (kg)', key: 'peso_liquido', width: 15, align: 'right', format: 'decimal' },
+                { header: 'Preço Venda', key: 'preco_venda', width: 16, align: 'right', format: 'currency' },
+                { header: 'Status', key: 'status', width: 12, align: 'center' }
+            ],
+            data: produtos,
+            filename: `produtos_protheus_${new Date().toISOString().slice(0, 10)}`
+        });
+    };
+
+    const handleExportPdf = async () => {
+        await ReportGeneratorService.exportPdf({
+            title: 'Catálogo de Produtos e Materiais',
+            subtitle: tipoFilter ? `Filtro de Tipo: ${tipoFilter}` : 'Todos os Tipos Protheus (PA, PI, MP)',
+            columns: [
+                { header: 'Código', key: 'codigo', width: 22, align: 'center' },
+                { header: 'Descrição', key: 'descricao', width: 50 },
+                { header: 'Tipo', key: 'tipo', width: 10, align: 'center' },
+                { header: 'U.M.', key: 'unidade_medida', width: 10, align: 'center' },
+                { header: 'Armazém', key: 'armazem_padrao', width: 12, align: 'center' },
+                { header: 'NCM', key: 'ncm', width: 16, align: 'center' },
+                { header: 'Peso Líq. (kg)', key: 'peso_liquido', width: 18, align: 'right', format: 'decimal' },
+                { header: 'Preço Venda', key: 'preco_venda', width: 18, align: 'right', format: 'currency' },
+                { header: 'Status', key: 'status', width: 14, align: 'center' }
+            ],
+            data: produtos,
+            orientation: 'landscape',
+            filename: `produtos_protheus_${new Date().toISOString().slice(0, 10)}`
+        });
+    };
+
     // Ao abrir o modal para criação de novo produto
     const handleOpenCreateModal = () => {
         setIsEditing(false);
@@ -392,6 +437,13 @@ export default function ErpProdutosPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* FEAT (IA): Motor Relatorios Lynxems - Botões de Exportação */}
+                    <ReportExportButtons
+                        onExportExcel={handleExportExcel}
+                        onExportPdf={handleExportPdf}
+                        disabled={loading || produtos.length === 0}
+                    />
+
                     <button
                         onClick={handleOpenCreateModal}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition shadow-sm"

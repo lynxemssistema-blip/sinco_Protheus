@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import api from '../../services/api';
 import { useDebounce } from '../../hooks/useDebounce';
+// FEAT (IA): Motor Relatorios Lynxems
+import { ReportGeneratorService } from '../../services/ReportGeneratorService';
+import ReportExportButtons from '../../components/ReportExportButtons';
 import {
     Users, Plus, Search, RefreshCw, CheckCircle2, AlertCircle,
     Building2, Phone, Mail, MapPin, CreditCard, ShieldAlert,
@@ -586,6 +589,70 @@ export default function ErpClientesPage() {
         return c.status === statusFilter;
     });
 
+    // FEAT (IA): Motor Relatorios Lynxems
+    const handleExportExcel = async () => {
+        const columns = [
+            { header: 'Código', key: 'codigo', width: 12, align: 'center' },
+            { header: 'Loja', key: 'loja', width: 8, align: 'center' },
+            { header: 'Razão Social', key: 'razao_social', width: 35, align: 'left' },
+            { header: 'Nome Fantasia', key: 'nome_fantasia', width: 25, align: 'left' },
+            { header: 'CNPJ / CPF', key: 'cnpj_cpf', width: 20, align: 'center' },
+            { header: 'Cidade / UF', key: 'cidade_uf', width: 22, align: 'left' },
+            { header: 'Telefone', key: 'telefone', width: 18, align: 'center' },
+            { header: 'E-mail', key: 'email', width: 28, align: 'left' },
+            { header: 'Status', key: 'status', width: 12, align: 'center' }
+        ];
+
+        const data = filteredClientes.map(c => ({
+            codigo: c.codigo || '-',
+            loja: c.loja || '01',
+            razao_social: c.razao_social || '-',
+            nome_fantasia: c.nome_fantasia || '-',
+            cnpj_cpf: formatarDocumento(c.cnpj_cpf, c.tipo_pessoa) || c.cnpj_cpf || '-',
+            cidade_uf: `${c.cidade || '-'}/${c.uf || '-'}`,
+            telefone: formatarTelefone(c.telefone) || c.telefone || '-',
+            email: c.email || '-',
+            status: (c.status || 'ativo').toUpperCase()
+        }));
+
+        await ReportGeneratorService.exportExcel({
+            title: 'Relatório Cadastral de Clientes',
+            subtitle: `Base de Clientes ERP - Total: ${data.length} registro(s)`,
+            columns,
+            data,
+            fileName: `relatorio_clientes_${new Date().toISOString().slice(0, 10)}.xlsx`
+        });
+    };
+
+    const handleExportPdf = async () => {
+        const columns = [
+            { header: 'Código', key: 'codigo', width: 15, align: 'center' },
+            { header: 'Razão Social', key: 'razao_social', width: 45, align: 'left' },
+            { header: 'CNPJ / CPF', key: 'cnpj_cpf', width: 25, align: 'center' },
+            { header: 'Cidade/UF', key: 'cidade_uf', width: 25, align: 'left' },
+            { header: 'Telefone', key: 'telefone', width: 22, align: 'center' },
+            { header: 'Status', key: 'status', width: 15, align: 'center' }
+        ];
+
+        const data = filteredClientes.map(c => ({
+            codigo: c.codigo || '-',
+            razao_social: c.razao_social || '-',
+            cnpj_cpf: formatarDocumento(c.cnpj_cpf, c.tipo_pessoa) || c.cnpj_cpf || '-',
+            cidade_uf: `${c.cidade || '-'}/${c.uf || '-'}`,
+            telefone: formatarTelefone(c.telefone) || c.telefone || '-',
+            status: (c.status || 'ativo').toUpperCase()
+        }));
+
+        await ReportGeneratorService.exportPdf({
+            title: 'Relatório Cadastral de Clientes',
+            subtitle: `Base de Clientes ERP - Total: ${data.length} cliente(s)`,
+            columns,
+            data,
+            orientation: 'landscape',
+            fileName: `relatorio_clientes_${new Date().toISOString().slice(0, 10)}.pdf`
+        });
+    };
+
     return (
         <div className="space-y-4 p-2 md:p-4 font-sans text-gray-900">
             {/* Top Bar Header Container */}
@@ -607,7 +674,13 @@ export default function ErpClientesPage() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                    {/* FEAT (IA): Motor Relatorios Lynxems */}
+                    <ReportExportButtons
+                        onExportExcel={handleExportExcel}
+                        onExportPdf={handleExportPdf}
+                        disabled={loading || filteredClientes.length === 0}
+                    />
                     <button
                         onClick={() => handleOpenModal()}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition shadow-sm"
