@@ -2063,7 +2063,7 @@ router.get('/checklist/:op/:item_op/:sequen_op', async (req, res) => {
             const structureResult = await db.query(
                 `SELECT 
                      TRIM(g1.g1_comp) as codigo,
-                     CAST(g1.g1_quant AS NUMERIC) as qtd_necessaria
+                     CAST(g1.g1_quant AS DECIMAL(15,4)) as qtd_necessaria
                  FROM public.sg1010 g1
                  WHERE TRIM(g1.g1_cod) = $1
                    AND COALESCE(g1.d_e_l_e_t_, '') IN ('', ' ')`,
@@ -2085,7 +2085,7 @@ router.get('/checklist/:op/:item_op/:sequen_op', async (req, res) => {
         } else {
             // Se não existe salvo, buscar a estrutura do produto na OP do Protheus
             const formattedOp = op.padStart(6, '0');
-            const opResult = await db.query(
+            let opResult = await db.query(
                 `SELECT TRIM(c2_produto) as produto, c2_quant::numeric as qtd_op 
                  FROM public.sc2010 
                  WHERE TRIM(c2_num) = $1 AND TRIM(c2_item) = $2 AND TRIM(c2_sequen) = $3 
@@ -2093,6 +2093,32 @@ router.get('/checklist/:op/:item_op/:sequen_op', async (req, res) => {
                  LIMIT 1`,
                 [formattedOp, item_op, sequen_op]
             );
+
+            // Fallback: se não encontrou com sequen_op exato ou padStart, tenta sem padStart ou apenas por OP/item
+            if (opResult.rows.length === 0) {
+                opResult = await db.query(
+                    `SELECT TRIM(c2_produto) as produto, c2_quant::numeric as qtd_op 
+                     FROM public.sc2010 
+                     WHERE (TRIM(c2_num) = $1 OR TRIM(c2_num) = $2) AND TRIM(c2_item) = $3
+                       AND COALESCE(d_e_l_e_t_, '') IN ('', ' ') 
+                     LIMIT 1`,
+                    [formattedOp, op.trim(), item_op]
+                );
+            }
+
+            // Fallback secundário: tabela erp_ordens_producao
+            if (opResult.rows.length === 0) {
+                const [erpRows] = await mysqlPool.query(
+                    `SELECT produto_codigo as produto, quantidade_planejada as qtd_op 
+                     FROM erp_ordens_producao 
+                     WHERE numero_op = ? OR numero_op = ? 
+                     LIMIT 1`,
+                    [formattedOp, op.trim()]
+                );
+                if (erpRows && erpRows.length > 0) {
+                    opResult.rows = erpRows;
+                }
+            }
 
             if (opResult.rows.length === 0) {
                 return res.json(null);
@@ -2105,7 +2131,7 @@ router.get('/checklist/:op/:item_op/:sequen_op', async (req, res) => {
                 `SELECT 
                      TRIM(g1.g1_comp) as codigo,
                      TRIM(b1.b1_desc) as descricao,
-                     CAST(g1.g1_quant AS NUMERIC) as qtd_necessaria
+                     CAST(g1.g1_quant AS DECIMAL(15,4)) as qtd_necessaria
                  FROM public.sg1010 g1
                  LEFT JOIN public.sb1010 b1 ON TRIM(b1.b1_cod) = TRIM(g1.g1_comp) 
                      AND COALESCE(b1.d_e_l_e_t_, '') IN ('', ' ')

@@ -3140,33 +3140,6 @@ export const HELP_CONTENT = {
     ]
   },
 
-  // ── Planejamento Estratégico (Smart Planner) ────────────────────────────────────────────────
-  '/pcp/planejador-avancado': {
-    category: 'PCP',
-    categoryColor: '#4f46e5',
-    title: 'Planejamento Estratégico (Smart Planner)',
-    icon: 'GitMerge',
-    image: '/help-images/pcp_planejador.png',
-    description: 'Ferramenta para definição sequencial e encadeada de ordens de produção (Cascata Automática) focada em visibilidade de longo prazo.',
-    imageCaption: 'Módulo do Smart Planner configurando a cascata automática e o encadeamento de datas das operações de uma OP.',
-    steps: [
-      'Visualização: Utilize a barra de busca para localizar um Pedido de Venda ou OP. A OP será agrupada por recursos.',
-      'Ordenação de Filas: Utilize as setas na primeira coluna para reordenar a sequência de recursos conforme sua estratégia de produção. Esta ordem será salva no banco para as próximas sessões.',
-      'Dias Previstos: Na coluna "Dias Prev.", informe quantos dias aquele recurso especificamente levará.',
-      'Cascata Automática: Clique no botão "Cascata Auto" no cabeçalho da OP e defina se o cálculo deve iniciar a partir da "Data de Início" (somando os dias previstos) ou "Data de Entrega" (regredindo os dias para descobrir quando começar).',
-      'Salvamento Pontual ou Lote: Use o botão verde "Salvar OP" para registrar apenas aquela ordem, ou o "Salvar Alterações" no topo da página caso altere mais de uma OP simultaneamente.'
-    ],
-    tips: [
-      'A função "Cascata Auto" ignora finais de semana (Sábados e Domingos) no cálculo, para gerar previsões de dias úteis reais.',
-      'A sua ordenação preferida da fila (setas de arrastar) sempre volta restaurada ao abrir a OP no futuro.',
-      'A "Data Fim" da operação X será automaticamente usada como a "Data Início" da próxima operação Y na cascata.'
-    ],
-    links: [
-      { path: '/pcp/apontamento-vertical', label: 'Apontamento Vertical' },
-      { path: '/controle-producao', label: 'Controle de Produção' }
-    ]
-  },
-
   // ── PCP Refinado - Capacidade de Recursos ──────────────────────────────────
   '/pcp-refinado/capacidade': {
     category: 'PCP Refinado',

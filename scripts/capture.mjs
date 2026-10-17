@@ -41,7 +41,6 @@ async function captureScreenshots() {
     const pagesToCapture = [
         { route: '/pcp/visao-fabrica', file: 'pcp_visao_fabrica.png' },
         { route: '/controle-producao', file: 'controle_producao.png' },
-        { route: '/pcp/planejador-avancado', file: 'pcp_planejador.png' },
         { route: '/producao-matrix', file: 'producao_matrix.png' },
         { route: '/pcp-refinado/capacidade', file: 'pcp_capacidade.png' }
     ];

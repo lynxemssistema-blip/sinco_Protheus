@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../services/mysqlService');
 const { tenantMiddleware } = require('../middlewares/tenantMiddleware');
 const mailService = require('../services/mailService');
+const { formatarDataPtBr } = require('../services/salasLembreteScheduler');
 
 // Middleware de isolamento multi-tenant
 router.use(tenantMiddleware);
@@ -11,7 +12,12 @@ router.use(tenantMiddleware);
 const getTenantId = (req) => req.tenantId || req.user?.IdEmpresa || 1;
 
 // Helper para gerar e-mail HTML executivo de convocação de reunião
-function gerarHtmlConvocacao({ titulo, pauta, salaNome, localizacao, dataFormatada, horaInicio, horaFim, organizadorNome, organizadorEmail, participantesNomes, recursos }) {
+function gerarHtmlConvocacao({ titulo, pauta, salaNome, localizacao, dataFormatada, horaInicio, horaFim, organizadorNome, organizadorEmail, participantesNomes, recursos, isReenvio = false }) {
+    const badgeTexto = isReenvio ? 'Reenvio de Convocação' : 'Convocação de Reunião';
+    const subTexto = isReenvio 
+        ? 'Reiteramos a convocação para você participar desta reunião corporativa.' 
+        : 'Você foi convocado(a) para participar desta reunião corporativa.';
+
     return `
     <!DOCTYPE html>
     <html lang="pt-BR">
@@ -21,9 +27,9 @@ function gerarHtmlConvocacao({ titulo, pauta, salaNome, localizacao, dataFormata
             body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #F1F5F9; margin: 0; padding: 24px; color: #1E293B; }
             .container { max-width: 600px; margin: 0 auto; background: #FFFFFF; border-radius: 16px; overflow: hidden; border: 1px solid #CBD5E1; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); }
             .header { background: linear-gradient(135deg, #1E3A5F 0%, #0F172A 100%); padding: 32px 28px; text-align: left; color: #FFFFFF; }
-            .header-badge { display: inline-block; background: rgba(251, 191, 36, 0.15); border: 1px solid rgba(251, 191, 36, 0.3); color: #F59E0B; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 10px; rounded-full; border-radius: 9999px; margin-bottom: 12px; }
+            .header-badge { display: inline-block; background: rgba(251, 191, 36, 0.15); border: 1px solid rgba(251, 191, 36, 0.3); color: #F59E0B; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 12px; border-radius: 9999px; margin-bottom: 12px; }
             .header-title { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.3; }
-            .header-sub { margin: 8px 0 0 0; font-size: 13px; color: #94A3B8; }
+            .header-sub { margin: 8px 0 0 0; font-size: 13.5px; color: #94A3B8; }
             .content { padding: 28px; }
             .info-grid { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
             .info-row { display: flex; margin-bottom: 12px; font-size: 14px; }
@@ -41,9 +47,9 @@ function gerarHtmlConvocacao({ titulo, pauta, salaNome, localizacao, dataFormata
     <body>
         <div class="container">
             <div class="header">
-                <span class="header-badge">Convocação de Reunião</span>
+                <span class="header-badge">${badgeTexto}</span>
                 <h1 class="header-title">${titulo}</h1>
-                <p class="header-sub">Você foi convocado(a) para participar desta reunião corporativa.</p>
+                <p class="header-sub">${subTexto}</p>
             </div>
             <div class="content">
                 <div class="info-grid">
@@ -362,7 +368,7 @@ router.get('/reservas', async (req, res) => {
 
         const [reservas] = await db.query(query, params);
 
-        // Anexar lista de participantes detalhada para renderização na interface
+        // Anexar lista de participantes e lembretes agendados para renderização na interface
         if (reservas.length > 0) {
             const reservaIds = reservas.map(r => r.id);
             const [partRows] = await db.query(`
@@ -373,14 +379,27 @@ router.get('/reservas', async (req, res) => {
                 WHERE rp.reserva_id IN (?)
             `, [reservaIds]);
 
+            const [lembRows] = await db.query(`
+                SELECT id, reserva_id, tipo_lembrete, antecedencia_minutos, canal, data_hora_agendada, enviado, status
+                FROM reservas_lembretes_agendados
+                WHERE reserva_id IN (?)
+            `, [reservaIds]);
+
             const mapParticipantes = {};
             partRows.forEach(p => {
                 if (!mapParticipantes[p.reserva_id]) mapParticipantes[p.reserva_id] = [];
                 mapParticipantes[p.reserva_id].push(p);
             });
 
+            const mapLembretes = {};
+            lembRows.forEach(l => {
+                if (!mapLembretes[l.reserva_id]) mapLembretes[l.reserva_id] = [];
+                mapLembretes[l.reserva_id].push(l);
+            });
+
             reservas.forEach(r => {
                 r.participantes = mapParticipantes[r.id] || [];
+                r.lembretes = mapLembretes[r.id] || [];
             });
         }
 
@@ -432,10 +451,18 @@ router.get('/reservas/:id', async (req, res) => {
             ORDER BY h.created_at DESC
         `, [id]);
 
+        const [lembretes] = await db.query(`
+            SELECT id, tipo_lembrete, antecedencia_minutos, canal, data_hora_agendada, enviado, status
+            FROM reservas_lembretes_agendados
+            WHERE reserva_id = ?
+            ORDER BY antecedencia_minutos DESC
+        `, [id]);
+
         res.json({
             reserva,
             participantes,
-            historico
+            historico,
+            lembretes
         });
     } catch (err) {
         console.error('Erro ao buscar detalhes da reserva:', err);
@@ -447,7 +474,11 @@ router.get('/reservas/:id', async (req, res) => {
 router.post('/reservas', async (req, res) => {
     try {
         const tenantId = getTenantId(req);
-        const { sala_id, titulo, pauta, data_reserva, hora_inicio, hora_fim, participantes, recursos_solicitados, notificar_email = true } = req.body;
+        const { 
+            sala_id, titulo, pauta, data_reserva, hora_inicio, hora_fim, 
+            participantes, recursos_solicitados, notificar_email = true,
+            lembretes_agendados = []
+        } = req.body;
         const organizador_id = req.user.id || req.user.idUsuario;
 
         if (!sala_id || !titulo || !data_reserva || !hora_inicio || !hora_fim) {
@@ -531,6 +562,27 @@ router.post('/reservas', async (req, res) => {
             }
         }
 
+        // Inserir lembretes agendados automáticos (1 dia antes, 3h antes, 1h antes, etc.)
+        if (Array.isArray(lembretes_agendados) && lembretes_agendados.length > 0) {
+            try {
+                const dtInicioMs = new Date(data_hora_inicio.replace(' ', 'T')).getTime();
+                for (const lemb of lembretes_agendados) {
+                    const minutos = parseInt(lemb.minutos, 10);
+                    if (minutos && minutos > 0) {
+                        const dtAgendada = new Date(dtInicioMs - minutos * 60000);
+                        const pad = (n) => String(n).padStart(2, '0');
+                        const dtAgendadaStr = `${dtAgendada.getFullYear()}-${pad(dtAgendada.getMonth() + 1)}-${pad(dtAgendada.getDate())} ${pad(dtAgendada.getHours())}:${pad(dtAgendada.getMinutes())}:${pad(dtAgendada.getSeconds())}`;
+                        await db.query(`
+                            INSERT INTO reservas_lembretes_agendados (IdEmpresa, reserva_id, tipo_lembrete, antecedencia_minutos, canal, data_hora_agendada, status)
+                            VALUES (?, ?, ?, ?, ?, ?, 'pendente')
+                        `, [tenantId, reservaId, lemb.tipo || `${minutos}m`, minutos, lemb.canal || 'ambos', dtAgendadaStr]);
+                    }
+                }
+            } catch (errLemb) {
+                console.error('⚠️ [Salas Reunião] Erro ao cadastrar lembretes agendados:', errLemb.message);
+            }
+        }
+
         // Registrar auditoria
         await db.query(`
             INSERT INTO reservas_historico (IdEmpresa, reserva_id, usuario_id, acao, descricao)
@@ -567,12 +619,9 @@ router.post('/reservas', async (req, res) => {
                 }
 
                 if (listaEmails.length > 0) {
-                    // Formatar data em pt-BR
-                    let dataFmt = data_reserva;
-                    try {
-                        const [y, m, d] = data_reserva.split('-');
-                        dataFmt = `${d}/${m}/${y}`;
-                    } catch (e) {}
+                    const dataFmt = formatarDataPtBr(data_reserva);
+                    const horaIniFmt = String(hora_inicio).slice(0, 5);
+                    const horaFimFmt = String(hora_fim).slice(0, 5);
 
                     const html = gerarHtmlConvocacao({
                         titulo: titulo.trim(),
@@ -580,25 +629,22 @@ router.post('/reservas', async (req, res) => {
                         salaNome: salaInfo.nome,
                         localizacao: salaInfo.localizacao,
                         dataFormatada: dataFmt,
-                        horaInicio,
-                        horaFim,
+                        horaInicio: horaIniFmt,
+                        horaFim: horaFimFmt,
                         organizadorNome: organizador.NomeCompleto,
                         organizadorEmail: organizador.email,
                         participantesNomes: nomesParticipantes.join(', '),
-                        recursos: recursos_solicitados
+                        recursos: recursos_solicitados,
+                        isReenvio: false
                     });
 
-                    // Disparo assíncrono seguro
-                    mailService.sendMail({
+                    // Disparo com envio garantido
+                    await mailService.sendMail({
                         to: listaEmails,
-                        subject: `[Convocação] ${titulo.trim()} • ${salaInfo.nome} (${dataFmt} ${horaInicio})`,
+                        subject: `[Convocação] ${titulo.trim()} • ${salaInfo.nome} (${dataFmt} às ${horaIniFmt})`,
                         html
-                    }).then(() => {
-                        console.log(`✅ [Salas Reunião] Convocação enviada com sucesso para: ${listaEmails.join(', ')}`);
-                    }).catch(errEmail => {
-                        console.error('⚠️ [Salas Reunião] Erro ao enviar convocações por e-mail:', errEmail.message);
                     });
-
+                    console.log(`✅ [Salas Reunião] Convocação enviada com sucesso para: ${listaEmails.join(', ')}`);
                     emailsEnviados = listaEmails.length;
                 }
             } catch (errEmail) {
@@ -623,7 +669,10 @@ router.put('/reservas/:id', async (req, res) => {
     try {
         const tenantId = getTenantId(req);
         const { id } = req.params;
-        const { sala_id, titulo, pauta, data_reserva, hora_inicio, hora_fim, participantes, recursos_solicitados } = req.body;
+        const { 
+            sala_id, titulo, pauta, data_reserva, hora_inicio, hora_fim, 
+            participantes, recursos_solicitados, lembretes_agendados 
+        } = req.body;
         const usuario_id = req.user.id || req.user.idUsuario;
 
         const [existenteRows] = await db.query(
@@ -699,6 +748,28 @@ router.put('/reservas/:id', async (req, res) => {
                         VALUES (?, ?, ?)
                     `, [tenantId, id, usrId]);
                 }
+            }
+        }
+
+        // Atualizar lembretes agendados
+        if (Array.isArray(lembretes_agendados)) {
+            try {
+                await db.query(`DELETE FROM reservas_lembretes_agendados WHERE reserva_id = ? AND enviado = 0`, [id]);
+                const dtInicioMs = new Date(data_hora_inicio.replace(' ', 'T')).getTime();
+                for (const lemb of lembretes_agendados) {
+                    const minutos = parseInt(lemb.minutos, 10);
+                    if (minutos && minutos > 0) {
+                        const dtAgendada = new Date(dtInicioMs - minutos * 60000);
+                        const pad = (n) => String(n).padStart(2, '0');
+                        const dtAgendadaStr = `${dtAgendada.getFullYear()}-${pad(dtAgendada.getMonth() + 1)}-${pad(dtAgendada.getDate())} ${pad(dtAgendada.getHours())}:${pad(dtAgendada.getMinutes())}:${pad(dtAgendada.getSeconds())}`;
+                        await db.query(`
+                            INSERT INTO reservas_lembretes_agendados (IdEmpresa, reserva_id, tipo_lembrete, antecedencia_minutos, canal, data_hora_agendada, status)
+                            VALUES (?, ?, ?, ?, ?, ?, 'pendente')
+                        `, [tenantId, id, lemb.tipo || `${minutos}m`, minutos, lemb.canal || 'ambos', dtAgendadaStr]);
+                    }
+                }
+            } catch (errLemb) {
+                console.error('⚠️ [Salas Reunião] Erro ao atualizar lembretes agendados:', errLemb.message);
             }
         }
 
@@ -783,6 +854,13 @@ router.post('/reservas/:id/cancelar', async (req, res) => {
             WHERE id = ? AND (IdEmpresa = ? OR (IdEmpresa IS NULL AND ? = 1))
         `, [motivoFinal, usuario_id, id, tenantId, tenantId]);
 
+        // Cancelar lembretes agendados pendentes
+        await db.query(`
+            UPDATE reservas_lembretes_agendados
+            SET status = 'cancelado'
+            WHERE reserva_id = ? AND enviado = 0
+        `, [id]);
+
         await db.query(`
             INSERT INTO reservas_historico (IdEmpresa, reserva_id, usuario_id, acao, descricao)
             VALUES (?, ?, ?, 'cancelamento', ?)
@@ -795,7 +873,7 @@ router.post('/reservas/:id/cancelar', async (req, res) => {
     }
 });
 
-// POST /api/salas-reuniao/reservas/:id/enviar-convite-email - Disparo manual de convite
+// POST /api/salas-reuniao/reservas/:id/enviar-convite-email - Disparo manual de convite / reenvio
 router.post('/reservas/:id/enviar-convite-email', async (req, res) => {
     try {
         const tenantId = getTenantId(req);
@@ -832,11 +910,9 @@ router.post('/reservas/:id/enviar-convite-email', async (req, res) => {
             return res.status(400).json({ error: 'Nenhum e-mail de participante cadastrado para esta reunião.' });
         }
 
-        let dataFmt = r.data_reserva;
-        try {
-            const [y, m, d] = String(r.data_reserva).split('T')[0].split('-');
-            dataFmt = `${d}/${m}/${y}`;
-        } catch (e) {}
+        const dataFmt = formatarDataPtBr(r.data_reserva);
+        const horaIniFmt = String(r.hora_inicio).slice(0, 5);
+        const horaFimFmt = String(r.hora_fim).slice(0, 5);
 
         const html = gerarHtmlConvocacao({
             titulo: r.titulo,
@@ -844,17 +920,18 @@ router.post('/reservas/:id/enviar-convite-email', async (req, res) => {
             salaNome: r.sala_nome,
             localizacao: r.sala_localizacao,
             dataFormatada: dataFmt,
-            horaInicio: String(r.hora_inicio).slice(0, 5),
-            horaFim: String(r.hora_fim).slice(0, 5),
+            horaInicio: horaIniFmt,
+            horaFim: horaFimFmt,
             organizadorNome: r.organizador_nome,
             organizadorEmail: r.organizador_email,
             participantesNomes: partRows.map(p => p.NomeCompleto).join(', '),
-            recursos: r.recursos_solicitados
+            recursos: r.recursos_solicitados,
+            isReenvio: true
         });
 
         await mailService.sendMail({
             to: emails,
-            subject: `[Reenvio Convocação] ${r.titulo} • ${r.sala_nome} (${dataFmt})`,
+            subject: `[Reenvio Convocação] ${r.titulo} • ${r.sala_nome} (${dataFmt} às ${horaIniFmt})`,
             html
         });
 

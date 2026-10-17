@@ -670,6 +670,10 @@ server.listen(PORT, '0.0.0.0', () => {
     // Sincroniza dados nativos do ERP para compatibilidade com rotas Protheus (SC5, SC6, SA1, SB1)
     const { syncErpToProtheus } = require('./scripts/sync_erp_to_protheus');
     syncErpToProtheus().catch(e => console.warn('⚠️ [SYNC] Falha ao sincronizar ERP -> Protheus:', e.message));
+
+    // Inicia agendador de lembretes automáticos de reuniões (E-mail e WhatsApp)
+    const { iniciarSchedulerLembretes } = require('./services/salasLembreteScheduler');
+    iniciarSchedulerLembretes();
 });
 
 function printRoutes(app) {

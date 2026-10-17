@@ -408,6 +408,8 @@ function translatePgToMysql(sql, params = []) {
 
     // 4. Remoção de casts de tipo do Postgres (ex: ::varchar[], ::numeric(18,2), :: numeric, ::timestamp)
     newSql = newSql.replace(/::\s*[a-zA-Z0-9_]+(?:\([0-9, ]+\))?(?:\[\])?/g, '');
+    newSql = newSql.replace(/\bAS\s+numeric(?!\s*\()/gi, 'AS DECIMAL(15,4)');
+    newSql = newSql.replace(/\bAS\s+text\b/gi, 'AS CHAR(255)');
 
     // 5. Substituição de operadores de busca e funções de string
     newSql = newSql.replace(/\bWITH\s+(?!RECURSIVE\b)/gi, 'WITH RECURSIVE ');

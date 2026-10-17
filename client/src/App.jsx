@@ -102,7 +102,6 @@ const FluxoCaixa = React.lazy(() => import('./pages/financeiro/FluxoCaixa'));
 const EngineeringReleaseReport = React.lazy(() => import('./pages/EngineeringReleaseReport'));
 const PlanejamentoEstruturaRouting = React.lazy(() => import('./pages/pcp/PlanejamentoEstruturaRouting'));
 const EngineeringControlReport = React.lazy(() => import('./pages/EngineeringControlReport'));
-const PlanejamentoAvancado = React.lazy(() => import('./pages/pcp/PlanejamentoAvancado'));
 const SetoresCadastro = React.lazy(() => import('./pages/pcp/SetoresCadastro'));
 const RecursosCadastro = React.lazy(() => import('./pages/pcp/RecursosCadastro'));
 const SetoresRecursos = React.lazy(() => import('./pages/pcp/SetoresRecursos'));
@@ -531,11 +530,6 @@ function App() {
                                         <Route path="/controle-producao" element={
                                             <Layout fullWidth={true}>
                                                 <ProductionControl />
-                                            </Layout>
-                                        } />
-                                        <Route path="/pcp/planejador-avancado" element={
-                                            <Layout fullWidth={true}>
-                                                <PlanejamentoAvancado />
                                             </Layout>
                                         } />
                                         <Route path="/producao-matrix" element={
