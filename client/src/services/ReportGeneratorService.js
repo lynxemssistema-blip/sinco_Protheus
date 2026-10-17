@@ -20,6 +20,7 @@ import {
     getCompanyContactLine,
     getCompanyLogoBase64
 } from './companyBranding';
+import { downloadBlob } from '../utils/downloadHelper';
 
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 
@@ -147,15 +148,18 @@ export const ReportGeneratorService = {
      * @param {string} [options.sheetName] - Nome da aba (default: 'Relatório')
      * @param {Object} [options.company] - Override opcional de empresa
      */
-    async exportExcel({
-        title = 'Relatório Geral',
-        subtitle = '',
-        columns = [],
-        data = [],
-        filename = 'relatorio_lynxems',
-        sheetName = 'Dados',
-        company: explicitCompany = null
-    }) {
+    async exportExcel(options = {}) {
+        const {
+            title = 'Relatório Geral',
+            subtitle = '',
+            columns = [],
+            data = [],
+            filename = null,
+            fileName = null,
+            sheetName = 'Dados',
+            company: explicitCompany = null
+        } = options;
+
         if (!columns || columns.length === 0) {
             throw new Error('É necessário fornecer ao menos uma coluna para gerar o relatório Excel.');
         }
@@ -316,20 +320,18 @@ export const ReportGeneratorService = {
         footerCell.alignment = { vertical: 'middle', horizontal: 'center' };
         worksheet.getRow(footerRowIdx).height = 20;
 
-        // Dispara o download nativo do arquivo no navegador
+        // Dispara o download nativo do arquivo no navegador com garantia de extensão .xlsx
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const cleanName = filename.replace(/[^a-zA-Z0-9_-]/g, '_');
-        a.download = `${cleanName}.xlsx`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
+        const rawFilename = filename || fileName || 'relatorio_lynxems';
+        const nameWithoutExt = String(rawFilename).trim()
+            .replace(/\.xlsx$/i, '')
+            .replace(/\.pdf$/i, '');
+        const cleanName = nameWithoutExt.replace(/[\/\\:*?"<>|]/g, '_');
+        const finalFilename = `${cleanName}.xlsx`;
+        downloadBlob(blob, finalFilename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
-        return { success: true, filename: `${cleanName}.xlsx`, recordsCount: data.length };
+        return { success: true, filename: finalFilename, recordsCount: data.length };
     },
 
     // FEAT (IA): Motor Relatorios Lynxems - Gerador PDF com Cabeçalho Multi-Tenant e Rodapé Lynxems
@@ -345,15 +347,18 @@ export const ReportGeneratorService = {
      * @param {string} [options.orientation] - 'portrait' ou 'landscape' (auto-detect se omitido)
      * @param {Object} [options.company] - Override opcional de empresa
      */
-    async exportPdf({
-        title = 'Relatório Geral',
-        subtitle = '',
-        columns = [],
-        data = [],
-        filename = 'relatorio_lynxems',
-        orientation = null,
-        company: explicitCompany = null
-    }) {
+    async exportPdf(options = {}) {
+        const {
+            title = 'Relatório Geral',
+            subtitle = '',
+            columns = [],
+            data = [],
+            filename = null,
+            fileName = null,
+            orientation = null,
+            company: explicitCompany = null
+        } = options;
+
         if (!columns || columns.length === 0) {
             throw new Error('É necessário fornecer ao menos uma coluna para gerar o relatório PDF.');
         }
@@ -522,11 +527,17 @@ export const ReportGeneratorService = {
             doc.text(`Página ${i} de ${totalPages}`, pageWidth - marginRight, footerLineY + 5, { align: 'right' });
         }
 
-        // Salva e descarrega o arquivo PDF no navegador
-        const cleanName = filename.replace(/[^a-zA-Z0-9_-]/g, '_');
-        doc.save(`${cleanName}.pdf`);
+        // Salva e descarrega o arquivo PDF no navegador com garantia de extensão .pdf
+        const rawFilename = filename || fileName || 'relatorio_lynxems';
+        const nameWithoutExt = String(rawFilename).trim()
+            .replace(/\.xlsx$/i, '')
+            .replace(/\.pdf$/i, '');
+        const cleanName = nameWithoutExt.replace(/[\/\\:*?"<>|]/g, '_');
+        const finalFilename = `${cleanName}.pdf`;
+        const pdfBlob = doc.output('blob');
+        downloadBlob(pdfBlob, finalFilename, 'application/pdf');
 
-        return { success: true, filename: `${cleanName}.pdf`, recordsCount: data.length, totalPages };
+        return { success: true, filename: finalFilename, recordsCount: data.length, totalPages };
     }
 };
 

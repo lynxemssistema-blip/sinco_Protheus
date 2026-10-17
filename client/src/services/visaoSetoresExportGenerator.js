@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs';
 import { logoBase64 } from './metalfisaLogoBase64.js';
 import { toast } from 'react-toastify';
 import { getCompanyShortName } from './companyBranding';
+import { downloadBlob } from '../utils/downloadHelper';
 
 // ─── Helpers de Formatação ───────────────────────────────────────────────────
 
@@ -723,17 +724,11 @@ export const exportVisaoSetoresExcel = async (rawSetoresData, filters = {}) => {
             });
         });
 
-        // Gera o buffer e dispara o download no navegador
+        // Gera o buffer e dispara o download no navegador com garantia de extensão .xlsx
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Direcionamento_Setores_Lynx_${new Date().toISOString().split('T')[0]}.xlsx`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
+        const fileName = `Direcionamento_Setores_Lynx_${new Date().toISOString().split('T')[0]}.xlsx`;
+        downloadBlob(blob, fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
         toast.success('Planilha Excel gerada com sucesso!');
 

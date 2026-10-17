@@ -29,6 +29,7 @@ import { useFilters } from '../contexts/FilterContext';
 import { generateOrderPDF } from '../services/orderPdfGenerator';
 import { toast } from 'react-toastify';
 import { BillingForecastInput } from './orders/BillingForecastInput';
+import { downloadBlob } from '../utils/downloadHelper';
 
 // Sub-components
 import OrderFiltersBar from './orders/OrderFiltersBar';
@@ -1248,16 +1249,9 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                 throw new Error(errMsg);
             }
             const blob = await response.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            const a = document.createElement('a');
             const now = new Date();
             const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
-            a.href = blobUrl;
-            a.download = `Planejamento_Carga_${stamp}.xlsx`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(blobUrl);
+            downloadBlob(blob, `Planejamento_Carga_${stamp}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         } catch (err) {
             console.error('[Excel] Erro ao gerar:', err);
             alert(`Erro ao gerar Excel: ${err.message}`);
@@ -1283,16 +1277,9 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                 throw new Error(errMsg);
             }
             const blob = await response.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            const a = document.createElement('a');
             const now = new Date();
             const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
-            a.href = blobUrl;
-            a.download = `Relatorio_Bicromatizacao_VMI_${stamp}.xlsx`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(blobUrl);
+            downloadBlob(blob, `Relatorio_Bicromatizacao_VMI_${stamp}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
             toast.success('Relatório de Bicromatização baixado com sucesso!');
         } catch (err) {
             console.error('[Bicromatização] Erro ao gerar:', err);

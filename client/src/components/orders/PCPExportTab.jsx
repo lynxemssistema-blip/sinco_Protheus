@@ -7,6 +7,7 @@ import {
 import { useFilters } from '../../contexts/FilterContext';
 import { useHelp } from '../../contexts/HelpContext';
 import DocsModal from '../DocsModal';
+import { downloadBlob } from '../../utils/downloadHelper';
 
 // Use a relative path for the API to ensure it works in both dev and production
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,18 +143,9 @@ const PCPExportTab = () => {
             const blob = new Blob([response.data], {
                 type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
             const now = new Date();
             const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
-            a.href = url;
-            a.download = `lista_materiais_${stamp}.xlsx`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(() => {
-                URL.revokeObjectURL(url);
-            }, 30000);
+            downloadBlob(blob, `lista_materiais_${stamp}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         } catch (err) {
             alert('Erro ao gerar exportação. Verifique o console.');
             console.error('[PCPExportTab] Erro export:', err);

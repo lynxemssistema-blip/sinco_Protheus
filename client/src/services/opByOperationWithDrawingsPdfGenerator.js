@@ -3,6 +3,7 @@ const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import api from './api';
 import { generateOPByOperationPdf } from './opByOperationPdfGenerator';
+import { downloadBlob } from '../utils/downloadHelper';
 
 /**
  * Generates the "Capa OP" using the normal Pedido de Venda format,
@@ -250,15 +251,9 @@ export const generateOPByOperationWithDrawingsPdf = async (mirrorData, userName 
         }
 
         const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
         const opSuffix = includeStockStudy ? '_Estoque_Desenhos.pdf' : '_Desenhos.pdf';
-        a.download = `OP_${mirrorData.pedido?.pedido || 'OP'}${opSuffix}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        const fileName = `OP_${mirrorData.pedido?.pedido || 'OP'}${opSuffix}`;
+        downloadBlob(blob, fileName, 'application/pdf');
 
     } catch (error) {
         console.error('[opByOperationWithDrawingsPdfGenerator] Erro fatal na geração do PDF com desenhos:', error);
