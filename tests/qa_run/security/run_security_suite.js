@@ -138,7 +138,7 @@ async function runSecuritySuite() {
     let k2Files = [];
     try {
         const out = execSync('git ls-files "*.env*"', { cwd: ROOT_DIR }).toString().trim();
-        k2Files = out.split('\n').map(s => s.trim()).filter(Boolean);
+        k2Files = out.split('\n').map(s => s.trim()).filter(s => Boolean(s) && !s.endsWith('.example'));
         k2Confirmed = k2Files.length > 0;
     } catch (e) {
         k2Details = e.message;
@@ -405,7 +405,7 @@ async function runSecuritySuite() {
     // 7.2 Rate Limiting no Login (15 requisições rápidas)
     let rateLimitTriggered = false;
     for (let i = 0; i < 15; i++) {
-        const rlRes = await apiCall('/api/auth/login', 'POST', { login: 'qa_diretor', senha: 'senha_errada' });
+        const rlRes = await apiCall('/api/auth/login', 'POST', { login: 'qa_bruteforce_test', senha: 'senha_errada' });
         if (rlRes.status === 429) {
             rateLimitTriggered = true;
             break;

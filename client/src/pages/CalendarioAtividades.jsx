@@ -1365,9 +1365,9 @@ export default function CalendarioAtividades() {
                                                                     {msg.tipo_midia === 'image' && msg.midia_url ? (
                                                                         <div className="flex flex-col gap-1.5 mt-1">
                                                                             <img
-                                                                                src={`/uploads/whatsapp/${msg.midia_url}`}
+                                                                                src={`/uploads/whatsapp/${msg.midia_url}${localStorage.getItem('token') || localStorage.getItem('@Lynx:token') ? `?token=${localStorage.getItem('token') || localStorage.getItem('@Lynx:token')}` : ''}`}
                                                                                 alt="Mídia recebida"
-                                                                                onClick={() => setLightboxImage(`/uploads/whatsapp/${msg.midia_url}`)}
+                                                                                onClick={() => setLightboxImage(`/uploads/whatsapp/${msg.midia_url}${localStorage.getItem('token') || localStorage.getItem('@Lynx:token') ? `?token=${localStorage.getItem('token') || localStorage.getItem('@Lynx:token')}` : ''}`)}
                                                                                 className="max-w-full max-h-60 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-all border border-slate-700 shadow"
                                                                             />
                                                                             {msg.mensagem && msg.mensagem !== '[Imagem]' && msg.mensagem !== '[Mídia ou Mensagem Vazia]' && (

@@ -14,8 +14,22 @@ if (!SECRET_KEY) {
     process.exit(1);
 }
 
+const rateLimit = require('express-rate-limit');
+
+// Rate limiting para proteção contra ataques de força bruta no login (por IP e Usuário)
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // Janela de 15 minutos
+    max: 10, // Máximo de 10 tentativas incorretas por IP e Usuário
+    keyGenerator: (req) => `${req.ip}_${(req.body.login || '').trim().toLowerCase()}`,
+    skipSuccessfulRequests: true,
+    validate: { keyGeneratorIpFallback: false },
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Muitas tentativas de login com erro para este usuário. Tente novamente após 15 minutos.' }
+});
+
 // Login Route
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
     const login = (req.body.login || '').trim();
     const senha = (req.body.senha || '').trim();
 

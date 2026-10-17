@@ -3,6 +3,8 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const compression = require('compression');
 const cors = require('cors');
+const helmet = require('helmet');
+const jwt = require('jsonwebtoken');
 const pedidosRouter = require('./routes/pedidos');
 const corteRouter = require('./routes/corte');
 const { authenticateToken } = require('./routes/auth');
@@ -106,6 +108,12 @@ io.on('connection', (socket) => {
         console.log(`🔴 [Socket.io] Cliente desconectado: ${socket.id}`);
     });
 });
+// Proteção de Cabeçalhos HTTP (Helmet)
+app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' }
+}));
 
 app.use(cors({
     origin: function (origin, callback) {
@@ -421,6 +429,42 @@ app.use('/api/webhook', require('./routes/webhook_suporte'));
 
 // System Errors Tracking
 app.use('/api/system-errors', require('./routes/systemErrors'));
+
+// Uploads Security Middleware — validação de autenticação para arquivos estáticos
+const uploadAuthMiddleware = (req, res, next) => {
+    let token = null;
+
+    // 1. Authorization: Bearer <token>
+    const authHeader = req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+    }
+
+    // 2. Query param ?token=<token>
+    if (!token && req.query && req.query.token) {
+        token = req.query.token;
+    }
+
+    // 3. Cookie (se presente)
+    if (!token && req.headers.cookie) {
+        const match = req.headers.cookie.match(/(?:^|;\s*)(?:token|sinco_token)=([^;]+)/);
+        if (match) token = match[1];
+    }
+
+    if (!token) {
+        return res.status(401).json({ error: 'Acesso negado. Autenticação obrigatória para acessar uploads.' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'sinco_secret_key_prod_2026');
+        req.user = decoded;
+        next();
+    } catch (err) {
+        return res.status(403).json({ error: 'Token inválido ou expirado para download de uploads.' });
+    }
+};
+
+app.use('/uploads', uploadAuthMiddleware);
 
 // Aviso System — Static uploads (images, audio, files)
 app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos'), { maxAge: '7d' }));

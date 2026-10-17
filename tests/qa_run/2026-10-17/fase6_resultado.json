@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-10-17T16:33:18.397Z",
+  "timestamp": "2026-10-17T17:01:39.806Z",
   "resumo": {
     "totalEndpoints": 10,
     "aprovados": 9,
     "reprovados": 1,
     "mediaGeralP50Ms": 105,
-    "mediaGeralP95Ms": 163
+    "mediaGeralP95Ms": 122
   },
   "benchmarks": [
     {
@@ -13,11 +13,11 @@
       "endpoint": "/api/faturamento/dashboard",
       "status": 200,
       "amostras": 10,
-      "min": 176.57,
-      "max": 221.56,
-      "avg": 200.06,
-      "p50": 198,
-      "p95": 221.56,
+      "min": 185.92,
+      "max": 222.71,
+      "avg": 201.22,
+      "p50": 197.99,
+      "p95": 222.71,
       "aprovado": true
     },
     {
@@ -25,11 +25,11 @@
       "endpoint": "/api/reports/sales-planning/faturamento-data?limit=50",
       "status": 200,
       "amostras": 10,
-      "min": 237.95,
-      "max": 472.49,
-      "avg": 271.43,
-      "p50": 250.27,
-      "p95": 472.49,
+      "min": 240.33,
+      "max": 258.05,
+      "avg": 248.55,
+      "p50": 245.53,
+      "p95": 258.05,
       "aprovado": true
     },
     {
@@ -37,11 +37,11 @@
       "endpoint": "/api/pedidos?limit=50",
       "status": 200,
       "amostras": 10,
-      "min": 130.43,
-      "max": 151.82,
-      "avg": 142.57,
-      "p50": 142.8,
-      "p95": 151.82,
+      "min": 129.35,
+      "max": 164.76,
+      "avg": 148.14,
+      "p50": 145.08,
+      "p95": 164.76,
       "aprovado": true
     },
     {
@@ -49,11 +49,11 @@
       "endpoint": "/api/production/fcs-ops",
       "status": 200,
       "amostras": 10,
-      "min": 101.38,
-      "max": 120.04,
-      "avg": 111.33,
-      "p50": 112.08,
-      "p95": 120.04,
+      "min": 103.54,
+      "max": 117.62,
+      "avg": 109.64,
+      "p50": 109.02,
+      "p95": 117.62,
       "aprovado": true
     },
     {
@@ -61,11 +61,11 @@
       "endpoint": "/api/erp/estruturas/QA-SS-100",
       "status": 200,
       "amostras": 10,
-      "min": 51.92,
-      "max": 68.46,
-      "avg": 60.12,
-      "p50": 60.72,
-      "p95": 68.46,
+      "min": 50.86,
+      "max": 71.93,
+      "avg": 60.4,
+      "p50": 61.88,
+      "p95": 71.93,
       "aprovado": true
     },
     {
@@ -73,11 +73,11 @@
       "endpoint": "/api/pcp-setores",
       "status": 200,
       "amostras": 10,
-      "min": 54.08,
-      "max": 78.53,
-      "avg": 63.38,
-      "p50": 64.41,
-      "p95": 78.53,
+      "min": 53.19,
+      "max": 69.56,
+      "avg": 61.27,
+      "p50": 62.14,
+      "p95": 69.56,
       "aprovado": true
     },
     {
@@ -85,11 +85,11 @@
       "endpoint": "/api/sgq/rncs",
       "status": 200,
       "amostras": 10,
-      "min": 52.45,
-      "max": 72.08,
-      "avg": 61.88,
-      "p50": 62.91,
-      "p95": 72.08,
+      "min": 58.82,
+      "max": 67.14,
+      "avg": 62.48,
+      "p50": 62.45,
+      "p95": 67.14,
       "aprovado": true
     },
     {
@@ -97,11 +97,11 @@
       "endpoint": "/api/romaneios",
       "status": 200,
       "amostras": 10,
-      "min": 54.51,
-      "max": 78.03,
-      "avg": 65.75,
-      "p50": 66.26,
-      "p95": 78.03,
+      "min": 50.89,
+      "max": 94.43,
+      "avg": 65.5,
+      "p50": 64.84,
+      "p95": 94.43,
       "aprovado": true
     },
     {
@@ -109,11 +109,11 @@
       "endpoint": "/api/financeiro/dashboard",
       "status": 200,
       "amostras": 10,
-      "min": 51.02,
-      "max": 97.15,
-      "avg": 68.66,
-      "p50": 62.68,
-      "p95": 97.15,
+      "min": 50.31,
+      "max": 83.92,
+      "avg": 63.28,
+      "p50": 64.13,
+      "p95": 83.92,
       "aprovado": true
     },
     {
@@ -121,11 +121,11 @@
       "endpoint": "/api/clients",
       "status": 404,
       "amostras": 10,
-      "min": 26.44,
-      "max": 265.28,
-      "avg": 57.66,
-      "p50": 34.64,
-      "p95": 265.28,
+      "min": 28.81,
+      "max": 65.13,
+      "avg": 34.8,
+      "p50": 32.01,
+      "p95": 65.13,
       "aprovado": false
     }
   ],

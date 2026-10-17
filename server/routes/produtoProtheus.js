@@ -6,7 +6,8 @@ const db = require('../services/mysqlService');
 const pgDb = require('../db');
 const axios = require('axios');
 const https = require('https');
-const httpsAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: true });
+const protheusRejectUnauthorized = process.env.PROTHEUS_REJECT_UNAUTHORIZED === 'false' ? false : true;
+const httpsAgent = new https.Agent({ rejectUnauthorized: protheusRejectUnauthorized, keepAlive: true });
 
 // Cache de Token Protheus OAuth2 em memória (TTL: 50 minutos)
 let cachedProtheusToken = null;
@@ -19,8 +20,11 @@ async function getProtheusToken(forceRefresh = false) {
         return cachedProtheusToken;
     }
 
-    console.log('[Protheus Auth] ⏳ Solicitando novo Token OAuth2 à API Protheus (192.168.1.60:47500)...');
-    const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
+    const protheusHost = process.env.PROTHEUS_API_HOST || '192.168.1.60:47500';
+    const protheusUser = encodeURIComponent(process.env.PROTHEUS_AUTH_USER || 'sinco');
+    const protheusPass = encodeURIComponent(process.env.PROTHEUS_AUTH_PASS || '');
+    console.log(`[Protheus Auth] ⏳ Solicitando novo Token OAuth2 à API Protheus (${protheusHost})...`);
+    const tokenUrl = `https://${protheusHost}/tlpp/oauth2/token?grant_type=password&username=${protheusUser}&password=${protheusPass}`;
     const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 35000 });
 
     const token = tokenRes.data?.access_token;

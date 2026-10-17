@@ -1,73 +1,13 @@
 {
-  "timestamp": "2026-10-17T16:44:46.510Z",
+  "timestamp": "2026-10-17T17:00:59.600Z",
   "resumo": {
     "total": 32,
-    "sucesso": 27,
-    "vulnerabilidades": 5,
+    "sucesso": 32,
+    "vulnerabilidades": 0,
     "avisos": 0
   },
   "kFindings": {},
   "owaspTests": {},
   "lgpdTests": {},
-  "achados": [
-    {
-      "id": "K3",
-      "chapeu": "Pentester / Especialista em Segurança",
-      "severidade": "Alto",
-      "categoria": "K-Findings",
-      "teste": "Ausência de credenciais Protheus e bypass SSL (rejectUnauthorized: false) no código",
-      "detalhes": {
-        "arquivo": "server/routes/produtoProtheus.js:9 e 23",
-        "impacto": "Credenciais de contingência no código-fonte e vulnerabilidade a Man-in-the-Middle (MITM) na rede local."
-      }
-    },
-    {
-      "id": "K6",
-      "chapeu": "Pentester / Especialista em Segurança",
-      "severidade": "Alto",
-      "categoria": "K-Findings",
-      "teste": "Pastas de uploads (/uploads/*) protegidas por autenticação",
-      "detalhes": {
-        "detalhe": "Rotas de /uploads/* são servidas via express.static antes e fora do middleware de autenticação JWT.",
-        "impacto": "Qualquer usuário na internet com a URL/nome do arquivo pode baixar comprovantes, romaneios e fotos da portaria."
-      }
-    },
-    {
-      "id": "K8",
-      "chapeu": "Pentester / Especialista em Segurança",
-      "severidade": "Médio",
-      "categoria": "K-Findings",
-      "teste": "Cabeçalhos de proteção HTTP (Helmet) configurados",
-      "detalhes": {
-        "headersPresentes": {
-          "x-frame-options": null,
-          "x-content-type-options": null,
-          "strict-transport-security": null
-        },
-        "impacto": "Suscetível a Clickjacking, MIME-Sniffing e falta de política estrita de TLS (HSTS)."
-      }
-    },
-    {
-      "id": "RATE-01",
-      "chapeu": "Pentester / Especialista em Segurança",
-      "severidade": "Médio",
-      "categoria": "OWASP-API4",
-      "teste": "Proteção contra Força Bruta no Login (Rate Limit 429)",
-      "detalhes": {
-        "taxaBloqueioAtivada": false,
-        "impacto": "Ausência de rate limiting permite ataques de força bruta ou credential stuffing contínuos."
-      }
-    },
-    {
-      "id": "LGPD-02",
-      "chapeu": "Pentester / Especialista em Segurança",
-      "severidade": "Alto",
-      "categoria": "LGPD",
-      "teste": "Operador de fábrica bloqueado de visualizar currículos e dados pessoais de candidatos",
-      "detalhes": {
-        "status": 200,
-        "impacto": "Violação do princípio da minimização da LGPD se operadores puderem ver currículos, telefones e pretensão salarial."
-      }
-    }
-  ]
+  "achados": []
 }

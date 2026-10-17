@@ -6,6 +6,7 @@ const path = require('path');
 const db = require('../services/mysqlService');
 const pdfParse = require('pdf-parse');
 const { GoogleGenAI } = require('@google/genai');
+const { requirePermission } = require('../middlewares/rbac');
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, '../uploads/rh_curriculos');
@@ -100,7 +101,7 @@ router.put('/vagas/:id', async (req, res) => {
 });
 
 // GET /api/rh/curriculos
-router.get('/curriculos', async (req, res) => {
+router.get('/curriculos', requirePermission('rh', 'view'), async (req, res) => {
     try {
         const [rows] = await db.query(`
             SELECT 
@@ -131,7 +132,7 @@ router.get('/curriculos', async (req, res) => {
 });
 
 // POST /api/rh/upload
-router.post('/upload', upload.single('curriculo'), async (req, res) => {
+router.post('/upload', requirePermission('rh', 'create'), upload.single('curriculo'), async (req, res) => {
     try {
         const { cargo_id, vaga_id, nome_candidato, email, telefone } = req.body;
         const file = req.file;
@@ -301,7 +302,7 @@ router.post('/upload', upload.single('curriculo'), async (req, res) => {
 });
 
 // PUT /api/rh/curriculos/:id/vaga
-router.put('/curriculos/:id/vaga', async (req, res) => {
+router.put('/curriculos/:id/vaga', requirePermission('rh', 'edit'), async (req, res) => {
     try {
         const { vaga_id } = req.body;
         await db.query('UPDATE app_rh_curriculos SET vaga_id = ? WHERE id = ?', [vaga_id || null, req.params.id]);
@@ -312,7 +313,7 @@ router.put('/curriculos/:id/vaga', async (req, res) => {
 });
 
 // PUT /api/rh/curriculos/:id/status
-router.put('/curriculos/:id/status', async (req, res) => {
+router.put('/curriculos/:id/status', requirePermission('rh', 'edit'), async (req, res) => {
     try {
         const { status } = req.body;
         await db.query('UPDATE app_rh_curriculos SET status = ? WHERE id = ?', [status, req.params.id]);
@@ -323,7 +324,7 @@ router.put('/curriculos/:id/status', async (req, res) => {
 });
 
 // PUT /api/rh/curriculos/:id/comentarios
-router.put('/curriculos/:id/comentarios', async (req, res) => {
+router.put('/curriculos/:id/comentarios', requirePermission('rh', 'edit'), async (req, res) => {
     try {
         const { comentario, autor } = req.body;
         
@@ -357,13 +358,17 @@ router.put('/curriculos/:id/comentarios', async (req, res) => {
 });
 
 // GET /api/rh/curriculos/download/:filename
-router.get('/curriculos/download/:filename', (req, res) => {
-    const file = path.join(__dirname, '../uploads/rh_curriculos', req.params.filename);
+router.get('/curriculos/download/:filename', requirePermission('rh', 'view'), (req, res) => {
+    const safeFilename = path.basename(req.params.filename);
+    const file = path.join(__dirname, '../uploads/rh_curriculos', safeFilename);
+    if (!fs.existsSync(file)) {
+        return res.status(404).json({ error: 'Arquivo não encontrado.' });
+    }
     res.download(file);
 });
 
 // POST /api/rh/curriculos/:id/upload
-router.post('/curriculos/:id/upload', upload.single('curriculo'), async (req, res) => {
+router.post('/curriculos/:id/upload', requirePermission('rh', 'edit'), upload.single('curriculo'), async (req, res) => {
     try {
         const file = req.file;
         if (!file) return res.status(400).json({ error: 'Arquivo não enviado.' });
@@ -393,7 +398,7 @@ router.post('/curriculos/:id/upload', upload.single('curriculo'), async (req, re
 });
 
 // POST /api/rh/curriculos/:id/reavaliar
-router.post('/curriculos/:id/reavaliar', async (req, res) => {
+router.post('/curriculos/:id/reavaliar', requirePermission('rh', 'edit'), async (req, res) => {
     try {
         const id = req.params.id;
         const [candRows] = await db.query('SELECT * FROM app_rh_curriculos WHERE id = ?', [id]);
