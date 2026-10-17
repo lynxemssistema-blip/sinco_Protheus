@@ -147,34 +147,7 @@ router.get('/consultar-desenho', async (req, res) => {
             });
         }
 
-        // 3. Consulta app_wabtec_estruturas (MySQL) para ver se já foi associado nesta sessão/estrutura
-        const [myRows] = await db.query(`
-            SELECT protheus_cod, protheus_desc, protheus_rev, rev_convertida, rev_cliente_raw, titulo
-            FROM app_wabtec_estruturas
-            WHERE (
-                TRIM(desenho_cliente) = ?
-                OR REPLACE(TRIM(desenho_cliente), ' ', '') = ?
-            )
-            AND protheus_cod IS NOT NULL AND TRIM(protheus_cod) != ''
-            ORDER BY id DESC
-            LIMIT 1
-        `, [desenhoTrim, desenhoNoSpaces]);
-
-        if (myRows && myRows.length > 0) {
-            const r = myRows[0];
-            return res.json({
-                existe: true,
-                origem: 'estrutura_wabtec',
-                tabela: 'Mapeamento Local da Estrutura WabTec',
-                codigo_protheus: r.protheus_cod.trim(),
-                revisao_cliente: r.rev_convertida || r.rev_cliente_raw || '',
-                descricao: r.protheus_desc || r.titulo || '',
-                grupo: (r.protheus_cod.match(/^[A-Z0-9]+/i) || [''])[0],
-                tipo: 'PI',
-                um: 'PC',
-                ncm: '00000000'
-            });
-        }
+        // 3. Não existe no Protheus (SB1010 / SZ1010)
 
         // 4. Não existe no Protheus
         return res.json({
@@ -231,37 +204,7 @@ router.post('/vincular-produto-existente', async (req, res) => {
             console.warn('[Vincular Existente] Aviso erp_produtos:', dbErr.message);
         }
 
-        // 1. Atualizar ocorrências em app_wabtec_estruturas (MySQL)
-        let linhasAtualizadas = 0;
-        try {
-            const [updateResult] = await db.query(`
-                UPDATE app_wabtec_estruturas
-                SET 
-                    protheus_cod = ?,
-                    protheus_desc = COALESCE(?, ?, protheus_desc),
-                    protheus_rev = COALESCE(?, protheus_rev),
-                    uom = COALESCE(?, uom),
-                    protheus_tipo = COALESCE(?, protheus_tipo),
-                    status_mapeamento = 'MAPEADO',
-                    status_detalhe = 'Vinculado ao produto existente no Protheus'
-                WHERE TRIM(desenho_cliente) = ?
-                   OR REPLACE(TRIM(desenho_cliente), ' ', '') = ?
-            `, [
-                codProtheus, 
-                titulo ? String(titulo).replace(/\s+/g, ' ').trim().toUpperCase() : null, 
-                descSb1,
-                rev || null,
-                protheusUm,
-                protheusTipo,
-                codDesenho,
-                codDesenho.replace(/\s+/g, '')
-            ]);
-            linhasAtualizadas = updateResult.affectedRows || 0;
-        } catch (mErr) {
-            console.warn('[Wabtec Vincular Existente] Aviso ao atualizar MySQL:', mErr.message);
-        }
-
-        // 2. Amarração oficial na tabela SZ1010 (Produto x Cliente) no MySQL SINCO
+        // 1. Amarração oficial na tabela SZ1010 (Produto x Cliente) no MySQL SINCO
         const codCliFinal = String(cliente_codigo || (is_sinco ? "" : "00000739")).trim();
         const lojaCliFinal = String(cliente_loja || "0001").trim();
         let sz1Status = 'Nenhum cliente informado para vínculo SZ1010';
@@ -656,29 +599,6 @@ router.post('/criar-produto-protheus', async (req, res) => {
             }
         }
 
-        // 6. Atualizar TODAS as ocorrências de desenho_cliente no MySQL (app_wabtec_estruturas)
-        // Regra do Usuário: Somente executa a amarração de lote na tabela da WabTec se for fluxo WabTec ou se o cliente for WabTec.
-        let linhasAtualizadas = 0;
-        if (!is_sinco || codCliFinal === '00000739') {
-            try {
-                const [updateResult] = await db.query(`
-                    UPDATE app_wabtec_estruturas
-                    SET protheus_cod = ?,
-                        protheus_desc = ?,
-                        protheus_rev = ?,
-                        uom = ?,
-                        protheus_tipo = ?,
-                        cadastro_novo = 1,
-                        status_mapeamento = 'ENCONTRADO',
-                        status_detalhe = 'Item cadastrado e vinculado no Protheus via SINCO'
-                    WHERE desenho_cliente = ?
-                `, [codigoGerado, descCurtada, revWabtec, umLimpa, tipoLimpo, codDesHigienizado]);
-                linhasAtualizadas = updateResult.affectedRows || 0;
-                console.log(`[Wabtec Criar Produto] ✅ ${linhasAtualizadas} linha(s) em app_wabtec_estruturas atualizada(s) para ${codDesHigienizado} -> ${codigoGerado} (cadastro_novo = 1)`);
-            } catch (mysqlErr) {
-                console.warn('[Wabtec Criar Produto] Aviso ao atualizar MySQL app_wabtec_estruturas:', mysqlErr.message);
-            }
-        }
 
         // 7. Retorno do número purinho para a aplicação
         res.json({

@@ -528,34 +528,57 @@ app.get(/(.*)/, (req, res) => {
 
 
 // ==========================================
-// CRON JOB - AGENTE DE IA MONITORAMENTO WHATSAPP
+// CRON JOB - AGENTE DE IA MONITORAMENTO WHATSAPP (MULTI-TENANT & LOCK)
 // ==========================================
 cron.schedule('0 15 * * *', async () => {
     try {
         const { isWeekendOrHoliday } = require('./utils/dateHelper');
         if (isWeekendOrHoliday()) {
-            console.log('[CRON] Hoje é final de semana ou feriado. Relatório diário do Agente de IA para WhatsApp pulado.');
+            console.log('[CRON WhatsApp AI] Hoje é final de semana ou feriado. Relatório diário pulado.');
             return;
         }
-        const [configRows] = await mysqlService.query('SELECT general_config FROM app_company_settings WHERE id = 1');
-        let cfg = null;
-        if (configRows.length && configRows[0].general_config) {
-            cfg = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
-        }
-        if (cfg?.automations?.ai_whatsapp_active === false) {
-            console.log('[CRON] Agente de IA para WhatsApp desativado nas configurações globais.');
+
+        // Lock de execução única (evita execuções simultâneas em instâncias clustered)
+        const [lockResult] = await mysqlService.query("SELECT GET_LOCK('sinco_cron_whatsapp_ai', 0) as acquired");
+        if (!lockResult[0]?.acquired) {
+            console.log('[CRON WhatsApp AI] 🔒 Execução ignorada: lock ativo em outra instância.');
             return;
         }
-        console.log('[CRON] Iniciando relatório diário do Agente de IA para WhatsApp...');
-        const [groups] = await mysqlService.query(
-            'SELECT grupo_nome, grupo_jid FROM app_whatsapp_grupos_monitorados WHERE grupo_jid IS NOT NULL'
-        );
-        for (const group of groups) {
-            try {
-                await whatsappAiAgent.sendDailySummaryToGroup(group.grupo_nome, group.grupo_jid);
-            } catch (groupErr) {
-                console.error(`[CRON WhatsApp AI] Falha ao processar grupo "${group.grupo_nome}":`, groupErr.message);
+
+        try {
+            console.log('[CRON WhatsApp AI] Iniciando relatório diário multi-tenant...');
+            const [empresas] = await mysqlService.query('SELECT IdEmpresa FROM empresa WHERE status_plano = "ativo" OR status_plano IS NULL');
+            const listaEmpresas = empresas.length > 0 ? empresas : [{ IdEmpresa: 1 }];
+
+            for (const emp of listaEmpresas) {
+                const tenantId = emp.IdEmpresa;
+                const [configRows] = await mysqlService.query(
+                    'SELECT general_config FROM app_company_settings WHERE IdEmpresa = ? OR (IdEmpresa IS NULL AND ? = 1) LIMIT 1',
+                    [tenantId, tenantId]
+                );
+                let cfg = null;
+                if (configRows.length && configRows[0].general_config) {
+                    cfg = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+                }
+                if (cfg?.automations?.ai_whatsapp_active === false) {
+                    continue;
+                }
+
+                const [groups] = await mysqlService.query(
+                    'SELECT grupo_nome, grupo_jid FROM app_whatsapp_grupos_monitorados WHERE grupo_jid IS NOT NULL AND (IdEmpresa = ? OR ? = 1)',
+                    [tenantId, tenantId]
+                );
+
+                for (const group of groups) {
+                    try {
+                        await whatsappAiAgent.sendDailySummaryToGroup(group.grupo_nome, group.grupo_jid);
+                    } catch (groupErr) {
+                        console.error(`[CRON WhatsApp AI] Falha ao processar grupo "${group.grupo_nome}" (Tenant ${tenantId}):`, groupErr.message);
+                    }
+                }
             }
+        } finally {
+            await mysqlService.query("SELECT RELEASE_LOCK('sinco_cron_whatsapp_ai')").catch(() => {});
         }
     } catch (err) {
         console.error('[CRON WhatsApp AI] Erro geral ao executar rotina:', err.message);
@@ -564,102 +587,124 @@ cron.schedule('0 15 * * *', async () => {
 
 
 // ==========================================
-// CRON JOBS AUTOMATIZADOS - MEU CANAL
+// CRON JOBS AUTOMATIZADOS - MEU CANAL (MULTI-TENANT & LOCK)
 // ==========================================
 cron.schedule('0 6,15 * * *', async () => {
     try {
         const { isWeekendOrHoliday } = require('./utils/dateHelper');
         if (isWeekendOrHoliday()) {
-            console.log('[CRON] Hoje é final de semana ou feriado. Rotina de Meu Canal pulada.');
+            console.log('[CRON Meu Canal] Hoje é final de semana ou feriado. Rotina de Meu Canal pulada.');
             return;
         }
-        const [configRows] = await mysqlService.query('SELECT general_config FROM app_company_settings WHERE id = 1');
-        let cfg = null;
-        if (configRows.length && configRows[0].general_config) {
-            cfg = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
-            if (cfg?.automations?.meu_canal_active === false && cfg?.automations?.meu_canal_email_active === false) {
-                console.log('[CRON] Rotina de Meu Canal desativada (WhatsApp e E-mail) nas configurações globais.');
-                return;
-            }
+
+        // Lock de execução única (evita envios duplicados entre workers/PM2)
+        const [lockResult] = await mysqlService.query("SELECT GET_LOCK('sinco_cron_meu_canal', 0) as acquired");
+        if (!lockResult[0]?.acquired) {
+            console.log('[CRON Meu Canal] 🔒 Execução ignorada: lock ativo em outra instância.');
+            return;
         }
-        console.log('[CRON] Iniciando rotina de disparo de e-mails/WhatsApp Meu Canal...');
-        const [respRows] = await mysqlService.query(`
-            SELECT DISTINCT u.idUsuario as id, u.Login, u.NomeCompleto, u.email, u.whatsapp
-            FROM pcp_setor_responsaveis sr
-            JOIN usuario u ON u.idUsuario = sr.usuario_id
-        `);
 
-        for (const user of respRows) {
-            if (!user.email && !user.whatsapp) continue;
+        try {
+            console.log('[CRON Meu Canal] Iniciando rotina de disparo multi-tenant...');
+            const [empresas] = await mysqlService.query('SELECT IdEmpresa FROM empresa WHERE status_plano = "ativo" OR status_plano IS NULL');
+            const listaEmpresas = empresas.length > 0 ? empresas : [{ IdEmpresa: 1 }];
 
-            try {
-                const kpiData = await calcularKPIMeuCanal(user.id, user.Login, user.NomeCompleto);
-                
-                let bodyHtml = `
-                    <div style="padding: 10px; font-family: sans-serif;">
-                        <h2 style="color: #0d9488; margin-bottom: 5px;">Performance do Setor</h2>
-                        <p style="color: #475569; font-size: 14px;">Olá, <b>${user.NomeCompleto || user.Login}</b>. Resumo de hoje:</p>
-                        <table style="width: 100%; max-width: 600px; border-collapse: collapse; font-size: 14px;">
-                            <thead>
-                                <tr style="background-color: #f1f5f9; text-align: left;">
-                                    <th style="padding: 8px; border-bottom: 2px solid #cbd5e1;">Setor</th>
-                                    <th style="padding: 8px; border-bottom: 2px solid #cbd5e1; text-align: center;">Evolução</th>
-                                    <th style="padding: 8px; border-bottom: 2px solid #cbd5e1; text-align: center;">Score</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                `;
-
-                for (const setor of kpiData.setores) {
-                    const emoji = setor.score >= 90 ? '✅' : setor.score >= 60 ? '⚠️' : '❌';
-                    bodyHtml += `
-                                <tr>
-                                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${emoji} ${setor.nome}</td>
-                                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${setor.producaoRealizada ?? 0} / ${setor.producaoPlanejada ?? 0}</td>
-                                    <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${setor.cor};">${setor.score}%</td>
-                                </tr>
-                    `;
-                }
-
-                bodyHtml += `
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-
-                bodyHtml += `</div>`;
-
-                if (user.email && cfg?.automations?.meu_canal_email_active !== false) {
-                    const emailSubject = 'Meu Canal - Performance Diária do Setor';
-                    try {
-                        await sendMail({
-                            to: user.email,
-                            subject: emailSubject,
-                            html: getCorporateEmailTemplate(bodyHtml)
-                        });
-                        logEmailSent({ recipients: [user.email], subject: emailSubject, body: bodyHtml }).catch(() => {});
-                    } catch (mErr) {
-                        console.error('[SMTP OFICIAL] Erro ao enviar Meu Canal email:', mErr.message);
+            for (const emp of listaEmpresas) {
+                const tenantId = emp.IdEmpresa;
+                const [configRows] = await mysqlService.query(
+                    'SELECT general_config FROM app_company_settings WHERE IdEmpresa = ? OR (IdEmpresa IS NULL AND ? = 1) LIMIT 1',
+                    [tenantId, tenantId]
+                );
+                let cfg = null;
+                if (configRows.length && configRows[0].general_config) {
+                    cfg = typeof configRows[0].general_config === 'string' ? JSON.parse(configRows[0].general_config) : configRows[0].general_config;
+                    if (cfg?.automations?.meu_canal_active === false && cfg?.automations?.meu_canal_email_active === false) {
+                        continue;
                     }
                 }
 
-                if (user.whatsapp && cfg?.automations?.meu_canal_active !== false) {
-                    const waText = msgMeuCanal({
-                        nome: user.NomeCompleto || user.Login,
-                        setores: kpiData.setores
-                    });
-                    await waSend(user.whatsapp, waText, 'Meu Canal - Performance Diária').catch(e =>
-                        console.error('[CRON Meu Canal] Erro WhatsApp para', user.Login, e.message)
-                    );
-                }
+                const [respRows] = await mysqlService.query(`
+                    SELECT DISTINCT u.idUsuario as id, u.Login, u.NomeCompleto, u.email, u.whatsapp
+                    FROM pcp_setor_responsaveis sr
+                    JOIN usuario u ON u.idUsuario = sr.usuario_id
+                    WHERE u.IdEmpresa = ? OR (? = 1 AND u.IdEmpresa IS NULL)
+                `, [tenantId, tenantId]);
 
-            } catch (err) {
-                console.error('[CRON Meu Canal] Erro ao enviar para', user.Login, err);
+                for (const user of respRows) {
+                    if (!user.email && !user.whatsapp) continue;
+
+                    try {
+                        const kpiData = await calcularKPIMeuCanal(user.id, user.Login, user.NomeCompleto);
+                        
+                        let bodyHtml = `
+                            <div style="padding: 10px; font-family: sans-serif;">
+                                <h2 style="color: #0d9488; margin-bottom: 5px;">Performance do Setor</h2>
+                                <p style="color: #475569; font-size: 14px;">Olá, <b>${user.NomeCompleto || user.Login}</b>. Resumo de hoje:</p>
+                                <table style="width: 100%; max-width: 600px; border-collapse: collapse; font-size: 14px;">
+                                    <thead>
+                                        <tr style="background-color: #f1f5f9; text-align: left;">
+                                            <th style="padding: 8px; border-bottom: 2px solid #cbd5e1;">Setor</th>
+                                            <th style="padding: 8px; border-bottom: 2px solid #cbd5e1; text-align: center;">Evolução</th>
+                                            <th style="padding: 8px; border-bottom: 2px solid #cbd5e1; text-align: center;">Score</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                        `;
+
+                        for (const setor of kpiData.setores) {
+                            const emoji = setor.score >= 90 ? '✅' : setor.score >= 60 ? '⚠️' : '❌';
+                            bodyHtml += `
+                                        <tr>
+                                            <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${emoji} ${setor.nome}</td>
+                                            <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${setor.producaoRealizada ?? 0} / ${setor.producaoPlanejada ?? 0}</td>
+                                            <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: ${setor.cor};">${setor.score}%</td>
+                                        </tr>
+                            `;
+                        }
+
+                        bodyHtml += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        `;
+
+                        bodyHtml += `</div>`;
+
+                        if (user.email && cfg?.automations?.meu_canal_email_active !== false) {
+                            const emailSubject = 'Meu Canal - Performance Diária do Setor';
+                            try {
+                                await sendMail({
+                                    to: user.email,
+                                    subject: emailSubject,
+                                    html: getCorporateEmailTemplate(bodyHtml)
+                                });
+                                logEmailSent({ recipients: [user.email], subject: emailSubject, body: bodyHtml }).catch(() => {});
+                            } catch (mErr) {
+                                console.error('[SMTP OFICIAL] Erro ao enviar Meu Canal email:', mErr.message);
+                            }
+                        }
+
+                        if (user.whatsapp && cfg?.automations?.meu_canal_active !== false) {
+                            const waText = msgMeuCanal({
+                                nome: user.NomeCompleto || user.Login,
+                                setores: kpiData.setores
+                            });
+                            await waSend(user.whatsapp, waText, 'Meu Canal - Performance Diária').catch(e =>
+                                console.error('[CRON Meu Canal] Erro WhatsApp para', user.Login, e.message)
+                            );
+                        }
+
+                    } catch (err) {
+                        console.error('[CRON Meu Canal] Erro ao enviar para', user.Login, err);
+                    }
+                }
             }
+            console.log('[CRON Meu Canal] Rotina finalizada com sucesso.');
+        } finally {
+            await mysqlService.query("SELECT RELEASE_LOCK('sinco_cron_meu_canal')").catch(() => {});
         }
-        console.log('[CRON] Rotina de Meu Canal finalizada com sucesso.');
     } catch (err) {
-        console.error('[CRON] Erro geral na rotina:', err);
+        console.error('[CRON Meu Canal] Erro geral na rotina:', err);
     }
 });
 

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-17T17:01:08.013Z",
+  "timestamp": "2026-10-17T17:09:44.577Z",
   "resumo": {
     "total": 25,
     "sucesso": 25,
@@ -9,15 +9,15 @@
   "jornadaDiretor": {
     "faturamentoDashboard": {
       "status": 200,
-      "durationMs": 212
+      "durationMs": 197
     },
     "faturamentoPrevisao": {
       "status": 200,
-      "durationMs": 342
+      "durationMs": 348
     },
     "carteiraPedidos": {
       "totalPedidos": 40,
-      "durationMs": 133
+      "durationMs": 166
     },
     "rncs": {
       "total": 3,

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors, ArrowUp, ArrowDown, Award, Boxes } from 'lucide-react';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors, ArrowUp, ArrowDown, Award, Boxes, Trash2 } from 'lucide-react';
 import CorteForecastModal from './CorteForecastModal';
-import { getPedidos, getItensPedido, getPedidoPdfData, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, updateOrderItemTag, getSalesNotes, api, getFileUrl } from '../services/api';
+import { getPedidos, getItensPedido, getPedidoPdfData, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, getSalesPlanningMasterSheet, updateOrderItemTag, getSalesNotes, api, getFileUrl } from '../services/api';
+import { exportFractionalMasterSheetExcel } from '../services/masterSheetExportGenerator';
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
@@ -22,6 +23,8 @@ import InvoiceDetailsModal from './InvoiceDetailsModal';
 import PCPBalanceModal from './PCPBalanceModal';
 import ClassificacaoModal from './orders/ClassificacaoModal';
 import PlanejamentoInteligenteModal from './PlanejamentoInteligenteModal';
+import SplitOPModal from './SplitOPModal';
+import ManageLotModal from './ManageLotModal';
 import BOMStructureModal from './BOMStructureModal';
 import ProductStructureStockModal from './orders/ProductStructureStockModal';
 import { useAuth } from '../contexts/AuthContext';
@@ -48,6 +51,7 @@ const PREF_KEY = 'visao_geral_col_order_v2';
 export const ALL_FLAT_COLUMNS = [
     { key: 'checkbox', label: 'Sel.', required: true, width: 40 },
     { key: 'pedido', label: 'Pedido', required: true, width: 90 },
+    { key: 'lote_lpf', label: 'Lote LPF', required: false, width: 110 },
     { key: 'emissao', label: 'Emissão', required: false, width: 90 },
     { key: 'ref_cliente', label: 'Ref. Cliente', required: false, width: 100 },
     { key: 'cliente', label: 'Cliente', required: false, width: 150 },
@@ -72,6 +76,97 @@ export const ALL_FLAT_COLUMNS = [
     { key: 'prev_fat', label: 'Prev. Fat.', required: false },
     { key: 'evolucao_op', label: 'Evolução OP', required: false, width: 100 },
 ];
+
+const getFractionLetter = (index) => {
+    const firstChar = String.fromCharCode(65 + Math.floor(index / 26));
+    const secondChar = String.fromCharCode(65 + (index % 26));
+    return `${firstChar}${secondChar}`;
+};
+
+// Lista Plana: itens com mais de uma programação PCP (app_pcp_delivery_forecasts) viram uma linha por fração (AA, AB...).
+// As frações criadas junto com a OP (01A, 01B...) já chegam do backend como linhas próprias.
+const buildFlatRows = (orders) => orders.reduce((acc, order) => {
+    const progs = Array.isArray(order.pcp_programacoes) ? order.pcp_programacoes : [];
+
+    if (progs.length > 1) {
+        // Base da OP da fração (ex: 00461809001 a partir de 004618 + item 09)
+        let baseOp = '';
+        const rawOp = String(order.op_num || '').trim();
+        if (rawOp && rawOp !== '-') {
+            if (rawOp.length === 6) baseOp = `${rawOp}${String(order.item || '').padStart(2, '0')}001`;
+            else if (rawOp.length === 8) baseOp = `${rawOp}001`;
+            else baseOp = rawOp;
+        } else {
+            baseOp = `${String(order.pedido || '').padStart(6, '0')}${String(order.item || '').padStart(2, '0')}001`;
+        }
+
+        progs.forEach((fraction, index) => {
+            const letter = fraction.numero_lote && /^[A-Z]{2}$/i.test(String(fraction.numero_lote).trim())
+                ? String(fraction.numero_lote).trim().toUpperCase()
+                : getFractionLetter(index);
+
+            // OP inteira + fração (ex: 00461801001AA)
+            let fracOpNum = fraction.op_protheus ? String(fraction.op_protheus).trim() : '';
+            if (!fracOpNum || fracOpNum === '-' || /00\d$/.test(fracOpNum) || !fracOpNum.endsWith(letter) || fracOpNum.length < 13) {
+                fracOpNum = `${baseOp}${letter}`;
+            }
+
+            acc.push({
+                ...order,
+                ...fraction,
+                pedido: order.pedido,
+                item: order.item,
+                is_fraction: true,
+                fraction_letter: letter,
+                fraction_index: index,
+                total_fractions: progs.length,
+                _pcp_prog: fraction,
+                fraction_id: fraction.id || `${order.pedido}-${order.item}-${index}`,
+                visual_qtd: fraction.quantidade_pcp !== undefined && fraction.quantidade_pcp !== null && fraction.quantidade_pcp !== ''
+                    ? parseFloat(fraction.quantidade_pcp)
+                    : parseFloat(order.qtd_faturar || 0),
+                visual_op: fracOpNum,
+                lpf_codigo: fraction.lpf_codigo || null,
+                // Data PCP / Qtd. PCP / Prev. Fat. da linha passam a ser os da própria fração
+                pcp_delivery_forecast_id: fraction.id || order.pcp_delivery_forecast_id,
+                pcp_delivery_forecast_date: fraction.data_entrega_pcp || null,
+                pcp_delivery_forecast_qtd: fraction.quantidade_pcp ?? null,
+            });
+        });
+        return acc;
+    }
+
+    const singleForecast = progs.length === 1 ? progs[0] : null;
+    // eslint-disable-next-line no-unused-vars
+    const { id: _forecastId, ...singleForecastFields } = singleForecast || {};
+
+    // OP de 8 dígitos (ex: 00461815)
+    let fullOp = '';
+    const rawOp = String(order.op_num || '').trim();
+    const itemPad = String(order.item || '').padStart(2, '0');
+    const opSource = rawOp && rawOp !== '-' ? rawOp : String(singleForecast?.op_protheus || '').trim();
+    if (opSource) {
+        if (opSource.length === 6) fullOp = `${opSource}${itemPad}`;
+        else if (opSource.length === 11) fullOp = opSource.substring(0, 8);
+        else fullOp = opSource;
+    }
+
+    acc.push({
+        // Campos da programação única só completam o que a linha não tem (lote, numero_lote, op_protheus...)
+        ...singleForecastFields,
+        ...order,
+        is_fraction: false,
+        fraction_letter: '',
+        fraction_index: 0,
+        total_fractions: 1,
+        _pcp_prog: singleForecast,
+        fraction_id: `${order.pedido}-${order.item}`,
+        visual_qtd: parseFloat(order.qtd_faturar || 0),
+        visual_op: fullOp,
+        lpf_codigo: singleForecast?.lpf_codigo || order.lpf_codigo_base || null,
+    });
+    return acc;
+}, []);
 
 const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao = null }) => {
 
@@ -154,6 +249,17 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
     const [colConfig, setColConfig] = useState(() => loadColConfigLocal(PREF_KEY, ALL_FLAT_COLUMNS));
     const [showColSettings, setShowColSettings] = useState(false);
+
+    // Frações e Lotes de Fabricação (LPF)
+    const [splitOpTarget, setSplitOpTarget] = useState(null);
+    const [smartPlanOps, setSmartPlanOps] = useState([]);
+    const [isManageLotModalOpen, setIsManageLotModalOpen] = useState(false);
+    const [manageLotSelectedItems, setManageLotSelectedItems] = useState([]);
+    const [manageLotPreselectedCode, setManageLotPreselectedCode] = useState(null);
+    const [pcpReleaseModal, setPcpReleaseModal] = useState({ open: false, targets: [], registerRelease: true });
+    const [batchProgress, setBatchProgress] = useState(null);
+    const [exportingMasterSheet, setExportingMasterSheet] = useState(false);
+    const [filterLote, setFilterLote] = useState('');
 
     // PCP Excel Import State
     const [importProgress, setImportProgress] = useState(null);
@@ -358,7 +464,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     const handleSelectAll = (e) => {
         if (e.target.checked) {
             if (viewMode === 'flat') {
-                setSelectedItems([...sortedOrders]);
+                setSelectedItems([...flatRows]);
             } else {
                 const allIds = [];
                 sortedOrders.forEach(o => {
@@ -382,10 +488,11 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     const [activeRowKey, setActiveRowKey] = useState(null);
 
 
+    // Frações do mesmo item compartilham pedido/item; a seleção é feita por linha (fraction_id)
     const handleSelectItem = useCallback((item) => {
         setSelectedItems(prev => {
-            const isSelected = prev.some(i => i.pedido === item.pedido && i.item === item.item);
-            if (isSelected) return prev.filter(i => !(i.pedido === item.pedido && i.item === item.item));
+            const isSelected = prev.some(i => i.fraction_id === item.fraction_id);
+            if (isSelected) return prev.filter(i => i.fraction_id !== item.fraction_id);
             return [...prev, item];
         });
     }, []);
@@ -445,10 +552,26 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         fetchData({ page: 1, _useRawFilters: true });
     };
 
+    // Recarrega a lista desde o primeiro lote (após fracionar, unificar ou mexer em lotes)
+    const reloadFromStart = () => {
+        setPage(1);
+        fetchData({ page: 1 });
+    };
+
     const handleUpdateFaturamentoDate = useCallback((pedidoId, itemId, dateValue, newId) => {
         // Update local orders array (for flat view)
         setOrders(prev => prev.map(o => {
             if (o.pedido === pedidoId && o.item === itemId) {
+                const isFractioned = Array.isArray(o.pcp_programacoes) && o.pcp_programacoes.length > 1;
+                if (isFractioned) {
+                    // Linha de fração: a data pertence só à programação editada
+                    return {
+                        ...o,
+                        pcp_programacoes: o.pcp_programacoes.map(p =>
+                            String(p.id) === String(newId) ? { ...p, data_prevista_faturamento: dateValue } : p
+                        )
+                    };
+                }
                 return {
                     ...o,
                     pcp_delivery_forecast_id: newId || o.pcp_delivery_forecast_id,
@@ -902,42 +1025,44 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         try {
             for (let i = 0; i < selectedItems.length; i++) {
                 const sel = selectedItems[i];
-                let pedido, item;
+                let pedido, item, row = null;
                 if (typeof sel === 'string') {
                     [pedido, item] = sel.split('-');
                 } else {
                     pedido = sel.pedido;
                     item = sel.item;
+                    row = sel;
                 }
-                setBulkPrintProgress({ current: i + 1, total: selectedItems.length, label: `Pedido ${pedido} Item ${item}` });
+                const fracLabel = row?.is_fraction ? ` (Fração ${row.fraction_letter})` : '';
+                setBulkPrintProgress({ current: i + 1, total: selectedItems.length, label: `Pedido ${pedido} Item ${item}${fracLabel}` });
 
                 switch (type) {
                     case 'op_mirror':
-                        await handlePrintOPMirror(pedido, null, item);
+                        await handlePrintOPMirror(pedido, null, item, row);
                         break;
                     case 'op_ficha':
-                        await handlePrintFichas(pedido, null, item);
+                        await handlePrintFichas(pedido, null, item, row);
                         break;
                     case 'op_oper':
-                        await handlePrintOPByOperation(pedido, null, item);
+                        await handlePrintOPByOperation(pedido, null, item, row);
                         break;
                     case 'op_drawings':
-                        await handlePrintOPByOperationWithDrawings(pedido, null, item);
+                        await handlePrintOPByOperationWithDrawings(pedido, null, item, false, row);
                         break;
                     case 'op_resource_drawings':
-                        await handlePrintOPByResourceWithDrawings(pedido, null, item);
+                        await handlePrintOPByResourceWithDrawings(pedido, null, item, false, row);
                         break;
                     case 'op_stamp_drawings':
-                        await handlePrintOPWithOpsStampWithDrawings(pedido, null, item);
+                        await handlePrintOPWithOpsStampWithDrawings(pedido, null, item, false, row);
                         break;
                     case 'op_stamp_resource_drawings':
-                        await handlePrintOPWithOpsStampDrawingsByResource(pedido, null, item);
+                        await handlePrintOPWithOpsStampDrawingsByResource(pedido, null, item, false, row);
                         break;
                     case 'op_stamp_desc_drawings':
-                        await handlePrintOPWithOpsStampWithDescDrawings(pedido, null, item);
+                        await handlePrintOPWithOpsStampWithDescDrawings(pedido, null, item, false, row);
                         break;
                     case 'op_stamp_desc_resource_drawings':
-                        await handlePrintOPWithOpsStampWithDescDrawingsByResource(pedido, null, item);
+                        await handlePrintOPWithOpsStampWithDescDrawingsByResource(pedido, null, item, false, row);
                         break;
                 }
 
@@ -955,7 +1080,30 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPMirror = async (pedido, e, itemId = null) => {
+    // Linha de fração (AA, AB...): imprime com a quantidade e a OP da fração. Linhas normais seguem como antes.
+    const getFractionContext = (row) => (row?.is_fraction ? row : null);
+
+    const applyFractionToMirror = (mirrorData, row) => {
+        if (!row?.is_fraction) return;
+        mirrorData.opNumFromTable = row.visual_op || row.op_num || '';
+        if (!row.visual_qtd || !mirrorData.pedido) return;
+        const fractionQtd = parseFloat(row.visual_qtd);
+        mirrorData.pedido.quantidade = fractionQtd;
+        if (Array.isArray(mirrorData.itens)) {
+            mirrorData.itens.forEach(grp => {
+                const originalQtd = parseFloat(grp.produto_principal?.quantidade_venda || grp.quantidade_venda || mirrorData.pedido?.quantidade || 1);
+                if (grp.produto_principal) grp.produto_principal.quantidade_calculada = fractionQtd;
+                if (Array.isArray(grp.estrutura_linear)) {
+                    grp.estrutura_linear.forEach(comp => {
+                        const baseRaw = parseFloat(comp.quantidade_calculada || comp.qtd_total || 0);
+                        comp.quantidade_calculada = originalQtd > 0 ? (baseRaw / originalQtd) * fractionQtd : baseRaw;
+                    });
+                }
+            });
+        }
+    };
+
+    const handlePrintOPMirror = async (pedido, e, itemId = null, itemObj = null) => {
         if (e) e.stopPropagation();
         // Guard: never call op-mirror with an empty pedido (would produce 500 or /op-mirror/?...)
         if (!pedido || String(pedido).trim() === '') {
@@ -974,7 +1122,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
             const orderObj = orders.find(o => o.pedido === pedido);
             const targetItemObj = orderObj?.itens?.find(i => i.item === itemId);
             mirrorData.opNumFromTable = targetItemObj ? (targetItemObj.op_num_completa || targetItemObj.op_num || '') : '';
-
+            applyFractionToMirror(mirrorData, itemObj);
 
             const { generateOPMirrorPdf } = await import('../services/opMirrorPdfGenerator');
             generateOPMirrorPdf(mirrorData);
@@ -988,7 +1136,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintFichas = async (pedido, e, itemId = null) => {
+    const handlePrintFichas = async (pedido, e, itemId = null, itemObj = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `ficha-${pedido}-${itemId}` : `ficha-${pedido}`;
         setPrintingOrderId(loadKey);
@@ -999,6 +1147,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
+            applyFractionToMirror(mirrorData, itemObj);
 
             const { generateOPFichaPdf } = await import('../services/opFichaPdfGenerator');
             generateOPFichaPdf(mirrorData);
@@ -1012,7 +1161,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPByOperationWithDrawings = async (pedido, e, itemId = null, includeStock = false) => {
+    const handlePrintOPByOperationWithDrawings = async (pedido, e, itemId = null, includeStock = false, itemObj = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-drawings-${pedido}-${itemId}${includeStock ? '-stock' : ''}` : `op-drawings-${pedido}${includeStock ? '-stock' : ''}`;
         setPrintingOrderId(loadKey);
@@ -1029,7 +1178,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const userName = user?.nome || 'Usuário';
             const { generateOPByOperationWithDrawingsPdf } = await import('../services/opByOperationWithDrawingsPdfGenerator');
-            await generateOPByOperationWithDrawingsPdf(mirrorData, userName, null, false, includeStock);
+            await generateOPByOperationWithDrawingsPdf(mirrorData, userName, getFractionContext(itemObj), false, includeStock);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -1040,7 +1189,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPByResourceWithDrawings = async (pedido, e, itemId = null, includeStock = false) => {
+    const handlePrintOPByResourceWithDrawings = async (pedido, e, itemId = null, includeStock = false, itemObj = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-resource-drawings-${pedido}-${itemId}${includeStock ? '-stock' : ''}` : `op-resource-drawings-${pedido}${includeStock ? '-stock' : ''}`;
         setPrintingOrderId(loadKey);
@@ -1054,7 +1203,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const userName = user?.nome || 'Usuário';
             const { generateOPDrawingsByResourcePdf } = await import('../services/opDrawingsByResourceGenerator');
-            await generateOPDrawingsByResourcePdf(mirrorData, userName, null, false, false, false, includeStock);
+            await generateOPDrawingsByResourcePdf(mirrorData, userName, getFractionContext(itemObj), false, false, false, includeStock);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -1065,7 +1214,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPWithOpsStampWithDescDrawingsByResource = async (pedido, e, itemId = null, includeStock = false) => {
+    const handlePrintOPWithOpsStampWithDescDrawingsByResource = async (pedido, e, itemId = null, includeStock = false, itemObj = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-stamp-desc-resource-drawings-${pedido}-${itemId}${includeStock ? '-stock' : ''}` : `op-stamp-desc-resource-drawings-${pedido}${includeStock ? '-stock' : ''}`;
         setPrintingOrderId(loadKey);
@@ -1079,7 +1228,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const userName = user?.nome || 'Usuário';
             const { generateOPDrawingsByResourcePdf } = await import('../services/opDrawingsByResourceGenerator');
-            await generateOPDrawingsByResourcePdf(mirrorData, userName, null, false, true, true, includeStock);
+            await generateOPDrawingsByResourcePdf(mirrorData, userName, getFractionContext(itemObj), false, true, true, includeStock);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -1090,7 +1239,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPWithOpsStampDrawingsByResource = async (pedido, e, itemId = null, includeStock = false) => {
+    const handlePrintOPWithOpsStampDrawingsByResource = async (pedido, e, itemId = null, includeStock = false, itemObj = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-stamp-resource-drawings-${pedido}-${itemId}${includeStock ? '-stock' : ''}` : `op-stamp-resource-drawings-${pedido}${includeStock ? '-stock' : ''}`;
         setPrintingOrderId(loadKey);
@@ -1104,7 +1253,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const userName = user?.nome || 'Usuário';
             const { generateOPDrawingsByResourcePdf } = await import('../services/opDrawingsByResourceGenerator');
-            await generateOPDrawingsByResourcePdf(mirrorData, userName, null, false, true, false, includeStock);
+            await generateOPDrawingsByResourcePdf(mirrorData, userName, getFractionContext(itemObj), false, true, false, includeStock);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -1115,7 +1264,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPWithOpsStampWithDrawings = async (pedido, e, itemId = null, includeStock = false) => {
+    const handlePrintOPWithOpsStampWithDrawings = async (pedido, e, itemId = null, includeStock = false, itemObj = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-stamp-drawings-${pedido}-${itemId}${includeStock ? '-stock' : ''}` : `op-stamp-drawings-${pedido}${includeStock ? '-stock' : ''}`;
         setPrintingOrderId(loadKey);
@@ -1129,7 +1278,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const userName = user?.nome || 'Usuário';
             const { generateOPDrawingsWithOpsStampPdf } = await import('../services/opDrawingsWithOpsStampGenerator');
-            await generateOPDrawingsWithOpsStampPdf(mirrorData, userName, null, false, false, includeStock);
+            await generateOPDrawingsWithOpsStampPdf(mirrorData, userName, getFractionContext(itemObj), false, false, includeStock);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -1140,7 +1289,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPWithOpsStampWithDescDrawings = async (pedido, e, itemId = null, includeStock = false) => {
+    const handlePrintOPWithOpsStampWithDescDrawings = async (pedido, e, itemId = null, includeStock = false, itemObj = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-stamp-desc-drawings-${pedido}-${itemId}${includeStock ? '-stock' : ''}` : `op-stamp-desc-drawings-${pedido}${includeStock ? '-stock' : ''}`;
         setPrintingOrderId(loadKey);
@@ -1154,7 +1303,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const userName = user?.nome || 'Usuário';
             const { generateOPDrawingsWithOpsStampPdf } = await import('../services/opDrawingsWithOpsStampGenerator');
-            await generateOPDrawingsWithOpsStampPdf(mirrorData, userName, null, false, true, includeStock);
+            await generateOPDrawingsWithOpsStampPdf(mirrorData, userName, getFractionContext(itemObj), false, true, includeStock);
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -1165,7 +1314,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handlePrintOPByOperation = async (pedido, e, itemId = null) => {
+    const handlePrintOPByOperation = async (pedido, e, itemId = null, itemObj = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-oper-${pedido}-${itemId}` : `op-oper-${pedido}`;
         setPrintingOrderId(loadKey);
@@ -1181,7 +1330,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
             mirrorData.opNumFromTable = targetItemObj ? (targetItemObj.op_num_completa || targetItemObj.op_num || '') : '';
 
             const { generateOPByOperationPdf } = await import('../services/opByOperationPdfGenerator');
-            generateOPByOperationPdf(mirrorData);
+            generateOPByOperationPdf(mirrorData, false, getFractionContext(itemObj));
 
         } catch (error) {
             const msg = error.response?.data?.error || error.message;
@@ -1192,7 +1341,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handleExportOPByOperationExcel = async (pedido, e, itemId = null) => {
+    const handleExportOPByOperationExcel = async (pedido, e, itemId = null, itemObj = null) => {
         if (e) e.stopPropagation();
         const loadKey = itemId ? `op-excel-${pedido}-${itemId}` : `op-excel-${pedido}`;
         setPrintingOrderId(loadKey);
@@ -1203,6 +1352,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
             const response = await api.get(endpoint);
             const mirrorData = response.data;
+            applyFractionToMirror(mirrorData, itemObj);
 
             const { opByOperationExcelGenerator } = await import('../services/opByOperationExcelGenerator');
             opByOperationExcelGenerator(mirrorData);

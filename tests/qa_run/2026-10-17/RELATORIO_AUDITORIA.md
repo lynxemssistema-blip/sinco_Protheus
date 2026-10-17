@@ -278,4 +278,19 @@ Com a autorização do usuário, o **Sprint 2** (Segurança Avançada e Blindage
 - **Vulnerabilidades Restantes:** **0 (ZERO)**
 
 ---
+
+## 14. EXECUÇÃO DO BACKLOG DE OTIMIZAÇÃO ESTRUTURAL (17/10/2026)
+
+Com a autorização do usuário, todos os 3 itens do **Backlog de Otimização Estrutural** foram executados e validados:
+
+| Item Otimizado | Ação Técnica Realizada | Validação Automatizada | Status |
+|:---:|---|---|:---:|
+| **Eliminação de 22 Tabelas Órfãs** | Realizado backup completo do DDL em `tests/qa_run/backups/backup_tabelas_orfas_vmi_wabtec.sql`. Executado `DROP TABLE` nas 22 tabelas descontinuadas vazias (`app_demanda_vmi*`, `app_vmi_*`, `app_wabtec_*`, `vmi_*`) no MySQL Hostinger `u494795077_SINCO`. | `information_schema.tables` verificado: **0 tabelas órfãs restantes**. Total de tabelas monitoradas reduzido de 335 para 313. | ✅ **CONCLUÍDO** |
+| **Limpeza de Código em Engenharia** | Removidos fallbacks e queries legadas para `app_wabtec_estruturas` em [produtoProtheus.js](file:///c:/Users/lynx/Documents/SINCO%20PROTHEUS/server/routes/produtoProtheus.js). O fluxo de consulta de desenho e amarração de produtos opera exclusivamente sobre `SZ1010` e `SB1010`. | `fase1_regressao.js` executado: consulta de desenho retornando `HTTP 200` normalmente. | ✅ **CONCLUÍDO** |
+| **Arquivamento e Purga de `_arquivo/`** | Comprimidos os 334 scripts legados em `tests/qa_run/backups/backup_pasta_arquivo_legado.zip` (300 KB). Pasta `_arquivo/` purgada do Git (`git rm -r _arquivo`) e do disco. | Repositório mais leve, limpo e sem poluição de rascunhos. | ✅ **CONCLUÍDO** |
+| **Crons Multi-Tenant & Advisory Lock** | Refatorados os crons de Monitoramento WhatsApp AI e Meu Canal em [server/index.js](file:///c:/Users/lynx/Documents/SINCO%20PROTHEUS/server/index.js). Iteram sobre empresas ativas na tabela `empresa` e usam `GET_LOCK()` do MySQL para impedir envios duplicados entre workers. | Sincronismo multi-tenant ativado com proteção distribuída contra duplicação de disparos. | ✅ **CONCLUÍDO** |
+| **Baterias Reexecutadas** | Reexecutadas Fases 1, 3, 4 e 5 completas. | **100% dos testes aprovados** (0 falhas, 0 vulnerabilidades). | ✅ **CONCLUÍDO** |
+| **Limpeza da Base de Dados** | Executado [cleanup.js](file:///c:/Users/lynx/Documents/SINCO%20PROTHEUS/tests/qa_run/cleanup.js). | **346 registros de teste eliminados**. Base MySQL Hostinger `u494795077_SINCO` 100% limpa. | ✅ **CONCLUÍDO** |
+
+---
 *Relatório consolidado e certificado pela Banca de Auditoria Integrada SINCO PROTHEUS em 17/10/2026.*
