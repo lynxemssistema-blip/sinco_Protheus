@@ -5,6 +5,7 @@ import { PDFDocument } from 'pdf-lib';
 import { logoBase64 } from './metalfisaLogoBase64';
 import api from './api';
 import { getCompanyShortName } from './companyBranding';
+import { downloadBlob } from '../utils/downloadHelper';
 
 const BLUE = [30, 58, 95];
 const ML = 10;
@@ -303,12 +304,7 @@ const generateSincoStructurePdf = async (structure, user, returnBytes = false) =
     }
 
     const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
-    const link = document.createElement('a');
-    link.href = window.URL.createObjectURL(blob);
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadBlob(blob, fileName, 'application/pdf');
 };
 
 export { generateSincoStructurePdf };

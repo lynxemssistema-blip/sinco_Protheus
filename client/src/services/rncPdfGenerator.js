@@ -5,6 +5,7 @@ import { logoBase64 } from './metalfisaLogoBase64';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import api from './api';
 import { getCompanyShortName } from './companyBranding';
+import { downloadBlob } from '../utils/downloadHelper';
 
 const drawRncStampOnPage = (page, rnc, helveticaFont, helveticaBoldFont) => {
     const { width, height } = page.getSize();
@@ -454,12 +455,8 @@ export const generateSingleRNCPdf = async (rnc, options = {}) => {
         }
 
         const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `F097-22_RNC_${rnc.id}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const fileName = `F097-22_RNC_${rnc.id}.pdf`;
+        downloadBlob(blob, fileName, 'application/pdf');
     } catch (err) {
         console.error('Erro ao gerar RNC individual PDF', err);
         throw err;

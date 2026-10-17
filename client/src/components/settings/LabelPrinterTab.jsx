@@ -6,6 +6,13 @@ import {
 } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import api from '../../services/api';
+import {
+    getCompany,
+    getCompanyLegalName,
+    getCompanyShortName,
+    getCompanyLogoBase64,
+    loadCompanyBranding
+} from '../../services/companyBranding';
 
 const AGENT_URL         = 'http://localhost:9101';
 const AGENT_PRINTER_KEY = '@lynxems:localPrinterName';
@@ -103,6 +110,7 @@ export default function LabelPrinterTab() {
     };
 
     useEffect(() => {
+        loadCompanyBranding();
         fetchConfigs();
     }, []);
 
@@ -163,17 +171,48 @@ export default function LabelPrinterTab() {
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, 600, 440);
 
-        // Desenhar logo
+        // 1. Logo da empresa ativa (proporcionalmente ajustada ao quadrante do cabeçalho)
         if (logoImg) {
-            ctx.drawImage(logoImg, 10, 10);
-            
-            // Linha separadora abaixo da logo (apenas p/ manter estética anterior)
-            ctx.beginPath();
-            ctx.moveTo(20, logoImg.height + 20);
-            ctx.lineTo(580, logoImg.height + 20);
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            const maxW = 155;
+            const maxH = 100;
+            const ratio = Math.min(maxW / logoImg.width, maxH / logoImg.height, 1);
+            const renderW = Math.round(logoImg.width * ratio);
+            const renderH = Math.round(logoImg.height * ratio);
+            const offsetX = 10 + Math.max(0, Math.floor((maxW - renderW) / 2));
+            const offsetY = 10 + Math.max(0, Math.floor((maxH - renderH) / 2));
+            ctx.drawImage(logoImg, offsetX, offsetY, renderW, renderH);
+        }
+
+        // 2. Linha divisória horizontal do cabeçalho
+        const separatorY = 125;
+        ctx.beginPath();
+        ctx.moveTo(15, separatorY);
+        ctx.lineTo(585, separatorY);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Abrevia texto longo se necessário
+        const fitText = (text, maxWidth) => {
+            if (!text || ctx.measureText(text).width <= maxWidth) return text;
+            let chars = text;
+            while (chars.length > 1 && ctx.measureText(chars + '...').width > maxWidth) {
+                chars = chars.slice(0, -1);
+            }
+            return chars + '...';
+        };
+
+        // 3. Razão Social da empresa ativa ao lado da logo
+        const legalName = getCompanyLegalName();
+        const shortName = getCompanyShortName();
+        if (legalName) {
+            ctx.fillStyle = 'black';
+            ctx.textBaseline = 'top';
+            const fontSize = legalName.length > 40 ? 14 : (legalName.length > 28 ? 16 : 18);
+            ctx.font = `bold ${fontSize}px Tahoma, Arial, sans-serif`;
+            const maxHeaderWidth = 420;
+            const fittedLegalName = fitText(legalName, maxHeaderWidth);
+            ctx.fillText(fittedLegalName, 170, 16);
         }
 
         // Desenhar campos de texto / código de barras
@@ -184,10 +223,15 @@ export default function LabelPrinterTab() {
             if (field.disabled) return;
 
             // 1. Sempre desenha o texto (rótulo + valor)
+            let fieldLabel = field.label || '';
+            if (/metalfisa/i.test(fieldLabel)) {
+                fieldLabel = fieldLabel.replace(/metalfisa/gi, shortName || 'Empresa');
+            }
             const fontStr = `${field.fontWeight === 'bold' ? 'bold' : 'normal'} ${field.fontSize}px ${field.fontFamily}`;
             ctx.font = fontStr;
-            const text = `${field.label}[${AVAILABLE_FIELDS.find(f => f.key === field.dataKey)?.label || field.dataKey}]`;
-            ctx.fillText(text, field.x, field.y);
+            const text = `${fieldLabel}[${AVAILABLE_FIELDS.find(f => f.key === field.dataKey)?.label || field.dataKey}]`;
+            const targetY = (field.x >= 170 && field.y < 48) ? 52 : field.y;
+            ctx.fillText(text, field.x, targetY);
 
             // 2. Se for código de barras, renderiza o código logo abaixo do texto
             if (field.barcode) {
@@ -207,12 +251,12 @@ export default function LabelPrinterTab() {
                         lineColor: '#000000',
                     });
                     
-                    const barcodeY = field.y + parseInt(field.fontSize || 24) + 5;
+                    const barcodeY = targetY + parseInt(field.fontSize || 24) + 5;
                     ctx.drawImage(tmpCanvas, field.x, barcodeY);
                 } catch (e) {
                     ctx.fillStyle = 'red';
                     ctx.font = '12px Arial';
-                    ctx.fillText('[Barcode Error]', field.x, field.y + parseInt(field.fontSize || 24) + 5);
+                    ctx.fillText('[Barcode Error]', field.x, targetY + parseInt(field.fontSize || 24) + 5);
                     ctx.fillStyle = 'black';
                 }
             }

@@ -6,6 +6,13 @@ import {
 } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import api from '../../services/api';
+import {
+    getCompany,
+    getCompanyLegalName,
+    getCompanyShortName,
+    getCompanyLogoBase64,
+    loadCompanyBranding
+} from '../../services/companyBranding';
 
 // ── Componente: modal de configuração do Print Agent ──────────────────────────
 function PrintSetupModal({ onClose, localAgentUrl, onSave }) {
@@ -337,6 +344,7 @@ export default function LabelPrintModal({ items, onClose }) {
 
     const [config, setConfig] = useState(null);
     const [logoImg, setLogoImg] = useState(null);
+    const [brandingVersion, setBrandingVersion] = useState(0);
 
     const [copiesMode, setCopiesMode] = useState('one');
     const [customCopies, setCustomCopies] = useState(1);
@@ -420,6 +428,19 @@ export default function LabelPrintModal({ items, onClose }) {
         checkAgent();
     }, []);
 
+    // ── Carregar branding da empresa ativa (logo + Razão Social) ─────────────
+    useEffect(() => {
+        loadCompanyBranding().then(() => {
+            setBrandingVersion(v => v + 1);
+            const compLogo = getCompanyLogoBase64();
+            if (compLogo && compLogo.length > 50) {
+                const img = new Image();
+                img.onload = () => setLogoImg(img);
+                img.src = compLogo.startsWith('data:') ? compLogo : `data:image/png;base64,${compLogo}`;
+            }
+        });
+    }, []);
+
     // ── Carregar configurações da etiqueta ─────────────────────────────────────
     const applyConfig = useCallback((c) => {
         if (typeof c.label_fields === 'string') {
@@ -427,10 +448,15 @@ export default function LabelPrintModal({ items, onClose }) {
         }
         setConfig(c);
 
-        if (c.logo_base64) {
+        const compLogo = getCompanyLogoBase64();
+        const logoToUse = (compLogo && compLogo.length > 50)
+            ? compLogo
+            : (c.logo_base64 ? (c.logo_base64.startsWith('data:') ? c.logo_base64 : `data:image/png;base64,${c.logo_base64}`) : null);
+
+        if (logoToUse) {
             const img = new Image();
             img.onload = () => setLogoImg(img);
-            img.src = `data:image/png;base64,${c.logo_base64}`;
+            img.src = logoToUse.startsWith('data:') ? logoToUse : `data:image/png;base64,${logoToUse}`;
         } else {
             setLogoImg(null);
         }
@@ -473,18 +499,50 @@ export default function LabelPrintModal({ items, onClose }) {
         ctx.fillStyle = 'white';
         ctx.fillRect(0, 0, 600, 440);
 
+        // 1. Logo da empresa ativa (proporcionalmente ajustada ao quadrante do cabeçalho)
         if (logoImg) {
-            ctx.drawImage(logoImg, 10, 10);
-            ctx.beginPath();
-            ctx.moveTo(20, logoImg.height + 20);
-            ctx.lineTo(580, logoImg.height + 20);
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            const maxW = 155;
+            const maxH = 100;
+            const ratio = Math.min(maxW / logoImg.width, maxH / logoImg.height, 1);
+            const renderW = Math.round(logoImg.width * ratio);
+            const renderH = Math.round(logoImg.height * ratio);
+            const offsetX = 10 + Math.max(0, Math.floor((maxW - renderW) / 2));
+            const offsetY = 10 + Math.max(0, Math.floor((maxH - renderH) / 2));
+            ctx.drawImage(logoImg, offsetX, offsetY, renderW, renderH);
         }
+
+        // 2. Linha divisória horizontal do cabeçalho
+        const separatorY = 125;
+        ctx.beginPath();
+        ctx.moveTo(15, separatorY);
+        ctx.lineTo(585, separatorY);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
         ctx.fillStyle = 'black';
         ctx.textBaseline = 'top';
+
+        // Abrevia texto longo para caber na largura máxima disponível.
+        const fitText = (text, maxWidth) => {
+            if (!text || ctx.measureText(text).width <= maxWidth) return text;
+            let chars = text;
+            while (chars.length > 1 && ctx.measureText(chars + '...').width > maxWidth) {
+                chars = chars.slice(0, -1);
+            }
+            return chars + '...';
+        };
+
+        // 3. Razão Social da empresa ativa ao lado da logo
+        const legalName = getCompanyLegalName();
+        const shortName = getCompanyShortName();
+        if (legalName) {
+            const fontSize = legalName.length > 40 ? 14 : (legalName.length > 28 ? 16 : 18);
+            ctx.font = `bold ${fontSize}px Tahoma, Arial, sans-serif`;
+            const maxHeaderWidth = 420; // 600 - 170 - 10
+            const fittedLegalName = fitText(legalName, maxHeaderWidth);
+            ctx.fillText(fittedLegalName, 170, 16);
+        }
 
         const formatIfDate = (val, key) => {
             if (!val) return '';
@@ -543,22 +601,17 @@ export default function LabelPrintModal({ items, onClose }) {
             return removeAccents(it[key] || '');
         };
 
-        // Abrevia texto longo para caber na largura máxima disponível.
-        // Remove palavras do final até caber + "...", depois caracteres se necessário.
-        const fitText = (text, maxWidth) => {
-            if (!text || ctx.measureText(text).width <= maxWidth) return text;
-            let chars = text;
-            while (chars.length > 1 && ctx.measureText(chars + '...').width > maxWidth) {
-                chars = chars.slice(0, -1);
-            }
-            return chars + '...';
-        };
-
         const fields = config.label_fields || [];
         fields.forEach(field => {
             if (field.disabled) return;
             const rawVal = getFieldValue(item, field.dataKey, field.label);
             const val = formatIfDate(rawVal, field.dataKey);
+
+            // Ajusta rótulo dinamicamente: substitui Metalfisa pelo nome da empresa ativa
+            let fieldLabel = field.label || '';
+            if (/metalfisa/i.test(fieldLabel)) {
+                fieldLabel = fieldLabel.replace(/metalfisa/gi, shortName || 'Empresa');
+            }
 
             if (field.barcode && val) {
                 try {
@@ -587,8 +640,10 @@ export default function LabelPrintModal({ items, onClose }) {
                 ctx.font = `${isBold ? 'bold' : 'normal'} ${field.fontSize}px ${field.fontFamily}`;
                 ctx.fillStyle = 'black';
                 const maxWidth = 600 - field.x - 10;
-                const displayText = fitText(`${field.label}${val}`, maxWidth);
-                ctx.fillText(displayText, field.x, field.y);
+                // Evita sobreposição com o topo da Razão Social no cabeçalho
+                const targetY = (field.x >= 170 && field.y < 48) ? 52 : field.y;
+                const displayText = fitText(`${fieldLabel}${val}`, maxWidth);
+                ctx.fillText(displayText, field.x, targetY);
             }
         });
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -619,7 +674,7 @@ export default function LabelPrintModal({ items, onClose }) {
             }
             drawLabelToCanvas(previewCanvasRef.current, itemToPreview);
         }
-    }, [previewIdx, currentItem, config, logoImg, drawLabelToCanvas, copiesMode, customCopies]);
+    }, [previewIdx, currentItem, config, logoImg, drawLabelToCanvas, copiesMode, customCopies, brandingVersion]);
 
     const sleep = ms => new Promise(r => setTimeout(r, ms));
 

@@ -3,6 +3,7 @@ import { getFileUrl } from './api';
 import { toast } from 'react-toastify';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { downloadBlob } from '../utils/downloadHelper';
 
 export const generateMergedDrawingsPdf = async (structure, rootCode, productStatuses = {}) => {
     if (!structure || structure.length === 0) {
@@ -186,17 +187,9 @@ export const generateMergedDrawingsPdf = async (structure, rootCode, productStat
         // Save merged PDF and trigger download
         const pdfBytes = await mergedPdf.save({ useObjectStreams: false });
         const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-        const urlBlob = URL.createObjectURL(blob);
-        
-        const link = document.createElement('a');
-        link.href = urlBlob;
-        link.download = `Desenhos_Estrutura_${rootCode}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const fileName = `Desenhos_Estrutura_${rootCode}.pdf`;
+        downloadBlob(blob, fileName, 'application/pdf');
 
-        // Cleanup after a moment
-        setTimeout(() => URL.revokeObjectURL(urlBlob), 500);
 
         toast.update(toastId, { render: `PDF com ${successCount} desenhos gerado com sucesso!`, type: "success", isLoading: false, autoClose: 5000 });
 

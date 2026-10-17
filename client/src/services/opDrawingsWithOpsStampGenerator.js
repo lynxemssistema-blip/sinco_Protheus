@@ -3,6 +3,7 @@ const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import api from './api';
 import { generateOPByOperationPdf } from './opByOperationPdfGenerator';
+import { downloadBlob } from '../utils/downloadHelper';
 
 /**
  * Option B: Generates the "Capa OP", then adds one copy of each component's drawing.
@@ -264,15 +265,9 @@ export const generateOPDrawingsWithOpsStampPdf = async (mirrorData, userName = '
         const opPrefix = batchContext && batchContext.visual_op ? `OP_${String(batchContext.visual_op).replace(/[^a-zA-Z0-9-]/g, '')}` : (opNumRaw ? `OP_${opNumRaw.replace(/[^a-zA-Z0-9]/g, '')}` : `Pedido_${String(mirrorData.pedido?.pedido || '').replace(/[^a-zA-Z0-9-]/g, '')}`);
         
         const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
         const filenameSuffix = includeDescription ? '_Roteiro_Descricao_Carimbo.pdf' : '_Roteiro_Carimbo.pdf';
-        link.download = `Pacote_${opPrefix}${filenameSuffix}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+        const fileName = `Pacote_${opPrefix}${filenameSuffix}`;
+        downloadBlob(blob, fileName, 'application/pdf');
 
     } catch (error) {
         console.error("Error generating OP Operation Refresh PDF with ops stamp:", error);

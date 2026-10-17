@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { downloadBlob } from '../utils/downloadHelper';
 
 export const getBaseUrl = () => {
     // Both in dev (via Vite proxy) and prod (via Node.js static serving),
@@ -289,15 +290,8 @@ export const downloadRelatorioTratamentoExcel = async (months = 5, includeFinanc
         params: { months, includeFinancials },
         responseType: 'blob'
     });
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
     const fileName = `Relatorio_Envio_Fornecedores_Tratamento_${months ? `${months}Meses` : 'Completo'}_${includeFinancials ? 'ComValores' : 'SemValores'}_KG.xlsx`;
-    link.setAttribute('download', fileName);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    downloadBlob(new Blob([response.data]), fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 };
 
 export const getProductDocs = async (codigo) => {

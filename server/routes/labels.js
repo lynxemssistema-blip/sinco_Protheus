@@ -21,6 +21,7 @@ const db       = require('../services/mysqlService'); // Mudou para MySQL
 const { processImageToGW } = require('../services/imageProcessor');
 const { buildLabel, buildFields, calculateCopies } = require('../services/pplbEngine');
 const { sendRaw, testConnection, DEFAULT_PORT }    = require('../services/rawPrinter');
+const { getTenantContext } = require('../util/authHelper');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -82,10 +83,35 @@ ensureTable().catch(e => console.error('[Labels] Erro ao criar tabela label_conf
 // ── GET /api/labels/config ────────────────────────────────────────────────────
 router.get('/config', async (req, res) => {
     try {
+        const tenantId = getTenantContext(req) || 1;
+        let company = {};
+        try {
+            const [compRows] = await db.query(
+                'SELECT razao_social, nome_fantasia, logo_base64 FROM app_company_settings WHERE IdEmpresa = ? LIMIT 1',
+                [tenantId]
+            );
+            company = compRows[0] || {};
+        } catch (e) {
+            console.warn('[Labels] Falha ao obter dados da empresa ativa:', e.message);
+        }
+        const companyShortName = (company.nome_fantasia || company.razao_social || 'EMPRESA').toUpperCase().split(/\s+/)[0].slice(0, 12);
+
         const [rows] = await db.query(
             'SELECT id, name, is_default, printer_mode, printer_host, printer_port, print_offset_x, print_offset_y, logo_base64, logo_width, logo_height, label_fields FROM label_config ORDER BY is_default DESC, id ASC'
         );
-        if (rows.length === 0) return res.json({ ok: true, config: null, configs: [] });
+        if (rows.length === 0) {
+            return res.json({
+                ok: true,
+                config: null,
+                configs: [],
+                company: {
+                    razao_social: company.razao_social,
+                    nome_fantasia: company.nome_fantasia,
+                    short_name: companyShortName,
+                    logo_base64: company.logo_base64
+                }
+            });
+        }
         
         const configs = rows.map(r => {
             let fields = [];
@@ -94,10 +120,34 @@ router.get('/config', async (req, res) => {
             } else {
                 fields = r.label_fields || [];
             }
-            return { ...r, label_fields: fields };
+            // Substitui "Metalfisa" dinamicamente pelo nome curto da empresa ativa
+            fields = fields.map(f => {
+                if (f && f.label && /metalfisa/i.test(f.label)) {
+                    return { ...f, label: f.label.replace(/metalfisa/gi, companyShortName) };
+                }
+                return f;
+            });
+
+            // Se a empresa possui logo cadastrada em app_company_settings, expõe na config
+            let logoBase64 = r.logo_base64;
+            if (company.logo_base64) {
+                logoBase64 = company.logo_base64.replace(/^data:image\/\w+;base64,/, '');
+            }
+
+            return { ...r, logo_base64: logoBase64, label_fields: fields };
         });
 
-        res.json({ ok: true, config: configs[0], configs });
+        res.json({
+            ok: true,
+            config: configs[0],
+            configs,
+            company: {
+                razao_social: company.razao_social,
+                nome_fantasia: company.nome_fantasia,
+                short_name: companyShortName,
+                logo_base64: company.logo_base64
+            }
+        });
     } catch (err) {
         console.error('[Labels] GET /config:', err);
         res.status(500).json({ error: 'Erro ao buscar configuração de etiqueta' });
@@ -258,6 +308,16 @@ router.post('/test-connection', async (req, res) => {
 router.post('/preview', async (req, res) => {
     try {
         const { item, templateId } = req.body; // Um item de exemplo
+        const tenantId = getTenantContext(req) || 1;
+        let company = {};
+        try {
+            const [compRows] = await db.query(
+                'SELECT razao_social, nome_fantasia, logo_base64 FROM app_company_settings WHERE IdEmpresa = ? LIMIT 1',
+                [tenantId]
+            );
+            company = compRows[0] || {};
+        } catch (e) {}
+        const companyShortName = (company.nome_fantasia || company.razao_social || 'EMPRESA').toUpperCase().split(/\s+/)[0].slice(0, 12);
 
         let query = 'SELECT label_fields, logo_base64, logo_width, logo_height FROM label_config ORDER BY is_default DESC, id LIMIT 1';
         let params = [];
@@ -276,12 +336,29 @@ router.post('/preview', async (req, res) => {
             parsedFields = config.label_fields || [];
         }
 
+        parsedFields = parsedFields.map(f => {
+            if (f && f.label && /metalfisa/i.test(f.label)) {
+                return { ...f, label: f.label.replace(/metalfisa/gi, companyShortName) };
+            }
+            return f;
+        });
+
         const fields = buildFields(item || {}, parsedFields);
+
+        let effectiveLogo = config.logo_base64;
+        if (company.logo_base64) {
+            effectiveLogo = company.logo_base64.replace(/^data:image\/\w+;base64,/, '');
+        }
 
         res.json({
             ok: true,
             fields,
-            logoBase64: config.logo_base64 ? `data:image/png;base64,${config.logo_base64}` : null,
+            company: {
+                razao_social: company.razao_social,
+                nome_fantasia: company.nome_fantasia,
+                short_name: companyShortName
+            },
+            logoBase64: effectiveLogo ? `data:image/png;base64,${effectiveLogo}` : null,
             logoWidth: config.logo_width,
             logoHeight: config.logo_height,
         });

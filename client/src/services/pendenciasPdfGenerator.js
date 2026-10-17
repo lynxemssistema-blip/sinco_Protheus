@@ -5,6 +5,7 @@ import { PDFDocument } from 'pdf-lib';
 import { logoBase64 } from './metalfisaLogoBase64';
 import api, { getProductDocs } from './api';
 import { getCompanyShortName } from './companyBranding';
+import { downloadBlob } from '../utils/downloadHelper';
 
 const BLUE = [30, 58, 95];
 const ML = 10;
@@ -287,18 +288,8 @@ export const generatePendenciasReportPdf = async ({
 
     // Disparar abertura/download do PDF final
     const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
-    const url = window.URL.createObjectURL(blob);
     const fileName = `Pendencias_OP_${opNum || 'Geral'}${itemPv ? `_Item_${itemPv}` : ''}_${new Date().toISOString().split('T')[0]}.pdf`;
-
-    const win = window.open(url, '_blank');
-    if (!win) {
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
+    downloadBlob(blob, fileName, 'application/pdf');
 };
 
 export default generatePendenciasReportPdf;

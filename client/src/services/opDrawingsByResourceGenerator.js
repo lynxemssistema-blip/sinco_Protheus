@@ -3,6 +3,7 @@ const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import api from './api';
 import { generateOPByOperationPdf } from './opByOperationPdfGenerator';
+import { downloadBlob } from '../utils/downloadHelper';
 
 /**
  * Option A: Generates the "Capa OP" and then groups all PDF drawings by "Recurso".
@@ -343,18 +344,12 @@ export const generateOPDrawingsByResourcePdf = async (mirrorData, userName = 'Us
         const opPrefix = batchContext && batchContext.visual_op ? `OP_${String(batchContext.visual_op).replace(/[^a-zA-Z0-9-]/g, '')}` : (opNumRaw ? `OP_${opNumRaw.replace(/[^a-zA-Z0-9]/g, '')}` : `Pedido_${String(mirrorData.pedido?.pedido || '').replace(/[^a-zA-Z0-9-]/g, '')}`);
         
         const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
         let filenameSuffix = '_Por_Recursos.pdf';
         if (includeRoteiroStamp) {
             filenameSuffix = includeDesc ? '_Por_Recursos_Roteiro_Descricao.pdf' : '_Por_Recursos_Roteiro.pdf';
         }
-        link.download = `Pacote_${opPrefix}${filenameSuffix}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+        const fileName = `Pacote_${opPrefix}${filenameSuffix}`;
+        downloadBlob(blob, fileName, 'application/pdf');
 
     } catch (error) {
         console.error("Error generating OP Drawings by Resource:", error);

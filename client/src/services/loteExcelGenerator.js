@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import api from './api';
+import { downloadBlob } from '../utils/downloadHelper';
 
 const formatDate = (dateStr) => {
     if (!dateStr) return '—';
@@ -525,14 +526,7 @@ export const generateLoteExcel = async (release, user = null, onProgress = null)
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
         const fileName = `${lotCode}_PACOTE_COMPLETO_ESTRUTURAS_E_ROTEIROS.xlsx`;
-
-        const link = document.createElement('a');
-        link.href = window.URL.createObjectURL(blob);
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(link.href);
+        downloadBlob(blob, fileName, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
         return true;
     } catch (err) {
