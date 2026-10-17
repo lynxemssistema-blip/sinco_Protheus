@@ -277,12 +277,18 @@ export default function DashboardFaturamento() {
     };
 
     // Cálculos de KPIs
+    // BUGFIX (IA): Normalização de chaves de status para garantir compatibilidade entre backend (minúsculo) e STATUS_CONFIG (TitleCase)
     const kpiTotais = useMemo(() => {
         if (!data?.kpis) return {};
         const map = {};
         let total = { qtd_solicitacoes: 0, qtd_itens: 0, qtd_total: 0, valor_total: 0 };
         data.kpis.forEach(r => {
-            map[r.status] = r;
+            const rawStatus = String(r.status || '').trim();
+            const lower = rawStatus.toLowerCase();
+            const title = lower.charAt(0).toUpperCase() + lower.slice(1);
+            map[rawStatus] = r;
+            map[lower] = r;
+            map[title] = r;
             total.qtd_solicitacoes += Number(r.qtd_solicitacoes || 0);
             total.qtd_itens        += Number(r.qtd_itens || 0);
             total.qtd_total        += Number(r.qtd_total || 0);
@@ -322,11 +328,17 @@ export default function DashboardFaturamento() {
     // Donut de Status
     const pieData = useMemo(() => {
         if (!data?.kpis) return [];
-        return data.kpis.map(r => ({
-            name:  r.status,
-            value: activeMetric === 'valor' ? Number(r.valor_total || 0) : Number(r.qtd_itens || 0),
-            color: STATUS_CONFIG[r.status]?.color || '#94a3b8',
-        })).filter(r => r.value > 0);
+        return data.kpis.map(r => {
+            const raw = String(r.status || '').trim();
+            const title = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+            // BUGFIX (IA): Suporte a cores de status case-insensitive no gráfico Donut
+            const color = STATUS_CONFIG[raw]?.color || STATUS_CONFIG[title]?.color || (raw.toLowerCase() === 'faturado' ? FATURADO_NF_CONFIG.color : '#94a3b8');
+            return {
+                name:  raw,
+                value: activeMetric === 'valor' ? Number(r.valor_total || 0) : Number(r.qtd_itens || 0),
+                color,
+            };
+        }).filter(r => r.value > 0);
     }, [data?.kpis, activeMetric]);
 
     // Evolução Diária
@@ -647,7 +659,8 @@ export default function DashboardFaturamento() {
 
                 {/* Cards por Status Operacional */}
                 {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
-                    const row = kpiTotais.map?.[key];
+                    // BUGFIX (IA): Matching resiliente do status pelo nome TitleCase ou minúsculo
+                    const row = kpiTotais.map?.[key] || kpiTotais.map?.[key.toLowerCase()];
                     return (
                         <KpiCard
                             key={key}
@@ -667,21 +680,29 @@ export default function DashboardFaturamento() {
                     );
                 })}
 
-                {/* Card Faturado Efetivo (NF Protheus) */}
-                <KpiCard
-                    label={FATURADO_NF_CONFIG.label}
-                    icon={FATURADO_NF_CONFIG.icon}
-                    color={FATURADO_NF_CONFIG.color}
-                    bg={FATURADO_NF_CONFIG.bg}
-                    border={FATURADO_NF_CONFIG.border}
-                    text={FATURADO_NF_CONFIG.text}
-                    qtd_solicitacoes={data?.kpiFaturadoNF?.qtd_solicitacoes || 0}
-                    qtd_itens={data?.kpiFaturadoNF?.qtd_itens || 0}
-                    valor_total={data?.kpiFaturadoNF?.valor_total || 0}
-                    loading={loading}
-                    canViewValues={canViewValues}
-                    activeMetric={activeMetric}
-                />
+                {/* Card Faturado Efetivo (NF Protheus com fallback para solicitações faturadas) */}
+                {(() => {
+                    // BUGFIX (IA): Fallback para solicitações com status 'faturado' se kpiFaturadoNF vier zerado
+                    const faturadoRow = (data?.kpiFaturadoNF && Number(data.kpiFaturadoNF.qtd_itens) > 0)
+                        ? data.kpiFaturadoNF
+                        : (kpiTotais.map?.['faturado'] || kpiTotais.map?.['Faturado'] || {});
+                    return (
+                        <KpiCard
+                            label={FATURADO_NF_CONFIG.label}
+                            icon={FATURADO_NF_CONFIG.icon}
+                            color={FATURADO_NF_CONFIG.color}
+                            bg={FATURADO_NF_CONFIG.bg}
+                            border={FATURADO_NF_CONFIG.border}
+                            text={FATURADO_NF_CONFIG.text}
+                            qtd_solicitacoes={faturadoRow?.qtd_solicitacoes || 0}
+                            qtd_itens={faturadoRow?.qtd_itens || 0}
+                            valor_total={faturadoRow?.valor_total || 0}
+                            loading={loading}
+                            canViewValues={canViewValues}
+                            activeMetric={activeMetric}
+                        />
+                    );
+                })()}
             </div>
 
             {/* ── Seção de Gráficos e Analytics ───────────────────────────── */}

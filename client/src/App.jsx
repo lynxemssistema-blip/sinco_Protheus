@@ -430,6 +430,11 @@ function App() {
                                                 <ProductStructure />
                                             </Layout>
                                         } />
+                                        {/* BUGFIX (IA): Redirecionamentos de rotas alternativas para evitar tela em branco */}
+                                        <Route path="/estrutura" element={<Navigate to="/estrutura/EX-TRANS35" replace />} />
+                                        <Route path="/estrutura-produto" element={<Navigate to="/estrutura/EX-TRANS35" replace />} />
+                                        <Route path="/saldos-estoque" element={<Navigate to="/saldo-materiais" replace />} />
+                                        <Route path="/sgq/rncs" element={<Navigate to="/sgq/gestao-rncs" replace />} />
                                         <Route path="/bom-generator" element={
                                             <Layout>
                                                 <BOMGenerator />

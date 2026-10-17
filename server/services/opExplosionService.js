@@ -94,7 +94,8 @@ async function fetchProductBom(productCode, conn) {
                 AND COALESCE(sb1.d_e_l_e_t_, '') = ''
             WHERE TRIM(g1.g1_cod) = $1 
               AND COALESCE(g1.d_e_l_e_t_, '') = ''
-            ORDER BY g1.g1_trf ASC, g1.g1_comp ASC
+            -- BUGFIX (IA): Correção do nome da coluna Protheus sg1010 de g1_trf para g1_trt no ORDER BY
+            ORDER BY g1.g1_trt ASC, g1.g1_comp ASC
         `, [cleanCode]);
 
         if (rowsPg && rowsPg.length > 0) {
@@ -519,9 +520,15 @@ async function explodirOrdemProducao({
     // 2. Explode a estrutura completa (materiais e sub-ops)
     await processarEstruturaRecursiva(cleanProd, cleanOp, opQty, 1);
 
-    // Consulta total de materiais empenhados gerados para conferência
-    const [[matCount]] = await client.query('SELECT COUNT(*) as total FROM erp_ordens_producao_materiais WHERE numero_op = ?', [cleanOp]);
-    const totalMateriais = matCount?.total || 0;
+    // BUGFIX (IA): Desestruturação resiliente do resultado de contagem de materiais (compatível com [rows, fields] e rows direto)
+    let totalMateriais = 0;
+    try {
+        const queryRes = await client.query('SELECT COUNT(*) as total FROM erp_ordens_producao_materiais WHERE numero_op = ?', [cleanOp]);
+        const rows = Array.isArray(queryRes) ? (Array.isArray(queryRes[0]) ? queryRes[0] : queryRes) : [];
+        totalMateriais = (rows[0] && typeof rows[0].total !== 'undefined') ? Number(rows[0].total) : 0;
+    } catch (cntErr) {
+        console.warn(`[OP Explosion] Aviso ao consultar total de materiais para OP ${cleanOp}:`, cntErr.message);
+    }
 
     console.log(`✅ [OP EXPLOSION ENGINE CONCLUÍDO] OP ${cleanOp}: ${totalMateriais} materiais empenhados, ${totalOps} operações instanciadas, ${generatedSubOps.length} sub-OPs geradas.`);
 

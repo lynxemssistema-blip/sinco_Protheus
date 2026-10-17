@@ -375,10 +375,33 @@ function translatePgToMysql(sql, params = []) {
         }
     );
 
+    // BUGFIX (IA): Tratamento seguro de consultas à pg_stat_activity (diagnóstico PG) para evitar erro de tabela inexistente no MySQL
+    if (newSql.toLowerCase().includes('pg_stat_activity')) {
+        return {
+            sql: 'SELECT 1 AS terminated, 1 AS pid, "mysql" AS usename, "idle" AS state, 0 AS idle_since WHERE 1 = 0',
+            params: [],
+            isNoop: false
+        };
+    }
+
     // 8. Funções de Data do Postgres -> MySQL
     newSql = replacePgDateFunctions(newSql);
+    // BUGFIX (IA): Generalização de DATE_TRUNC para suportar ano, mês e dia em qualquer expressão
     newSql = newSql.replace(/\bDATE_TRUNC\s*\(\s*'year'\s*,\s*CURRENT_DATE\s*\)/gi, "DATE_FORMAT(CURRENT_DATE, '%Y-01-01')");
-    newSql = newSql.replace(/CURRENT_DATE\s*-\s*INTERVAL\s*'(\d+)\s*months?'/gi, "DATE_SUB(CURRENT_DATE, INTERVAL $1 MONTH)");
+    newSql = newSql.replace(/\bDATE_TRUNC\s*\(\s*'month'\s*,\s*CURRENT_DATE\s*\)/gi, "DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')");
+    newSql = newSql.replace(/\bDATE_TRUNC\s*\(\s*'year'\s*,\s*([^)]+)\s*\)/gi, "DATE_FORMAT($1, '%Y-01-01')");
+    newSql = newSql.replace(/\bDATE_TRUNC\s*\(\s*'month'\s*,\s*([^)]+)\s*\)/gi, "DATE_FORMAT($1, '%Y-%m-01')");
+    newSql = newSql.replace(/\bDATE_TRUNC\s*\(\s*'day'\s*,\s*([^)]+)\s*\)/gi, "DATE($1)");
+
+    // BUGFIX (IA): Generalização de intervalos de data do Postgres (dias, meses, anos com + e -)
+    newSql = newSql.replace(/(CURRENT_DATE|NOW\(\))\s*-\s*INTERVAL\s*'(\d+)\s*(months?|days?|years?)'/gi, (match, dt, num, unit) => {
+        const cleanUnit = unit.toUpperCase().replace(/S$/, '');
+        return `DATE_SUB(${dt}, INTERVAL ${num} ${cleanUnit})`;
+    });
+    newSql = newSql.replace(/(CURRENT_DATE|NOW\(\))\s*\+\s*INTERVAL\s*'(\d+)\s*(months?|days?|years?)'/gi, (match, dt, num, unit) => {
+        const cleanUnit = unit.toUpperCase().replace(/S$/, '');
+        return `DATE_ADD(${dt}, INTERVAL ${num} ${cleanUnit})`;
+    });
 
     // 9. Conversão de ANY($N) para IN (?)
     // 9. Conversão de ANY($N), ALL($N) e literais ARRAY[...]
