@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logoBase64 } from './metalfisaLogoBase64';
+import { getCompanyLegalName, getCompanyShortName, getCompanyCnpjIeLine, getCompanyAddressLine, getCompanyTagline } from './companyBranding';
 
 const fmtQtd = (v) => parseFloat(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
 const fmtMoeda = (v) => {
@@ -42,31 +43,31 @@ export const generateEspelhoNfPdf = (nf, includeValues = true, currentUser = nul
         doc.line(col1, hY, col1, hY + hH);
         doc.line(col2, hY, col2, hY + hH);
 
-        // Logo MetalFisa
+        // Logo Lynx
         if (logoBase64) {
             doc.addImage(logoBase64, 'PNG', ML + 3, hY + 3, 42, 16);
         } else {
             doc.setFontSize(14);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(30, 58, 95);
-            doc.text('METALFISA', ML + 4, hY + 8);
+            doc.text(getCompanyShortName(), ML + 4, hY + 8);
             doc.setFontSize(6.5);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(100, 100, 100);
-            doc.text('Transformando metais em excelência', ML + 4, hY + 14);
+            doc.text(getCompanyTagline(), ML + 4, hY + 14);
         }
 
         // Dados da Empresa Emissora
         doc.setFontSize(8.5);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(30, 58, 95);
-        doc.text('METALFISA METALURGICA LTDA', col1 + 4, hY + 5.5);
+        doc.text(getCompanyLegalName(), col1 + 4, hY + 5.5);
 
         doc.setFontSize(6.5);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(60, 60, 60);
-        doc.text('CNPJ: 23.881.592/0001-01  —  IE: 002.668.514.00-88', col1 + 4, hY + 9.5);
-        doc.text('Rua Américo Santiago Piacenza, 516 - Cinco', col1 + 4, hY + 13.5);
+        doc.text(getCompanyCnpjIeLine(), col1 + 4, hY + 9.5);
+        doc.text(getCompanyAddressLine(), col1 + 4, hY + 13.5);
         doc.text('Contagem - MG  |  CEP: 32010-080  |  Tel: (31) 3352-1600', col1 + 4, hY + 17.5);
 
         // Identificação do Espelho de NF
@@ -317,7 +318,7 @@ export const generateEspelhoNfPdf = (nf, includeValues = true, currentUser = nul
             
             const emissor = currentUser?.nome ? ` | Solicitado por: ${currentUser.nome}` : '';
             const dataGeracao = new Date().toLocaleString('pt-BR');
-            doc.text(`Espelho de NF gerado pelo App MetalFisa em ${dataGeracao}${emissor}`, ML, pageHeight - 6);
+            doc.text(`Espelho de NF gerado pelo App Lynx em ${dataGeracao}${emissor}`, ML, pageHeight - 6);
             doc.text(`Pág. ${i} de ${pageCount}`, pageWidth - MR, pageHeight - 6, { align: 'right' });
         }
 

@@ -257,7 +257,7 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
 
     const handleFetchSinco = async (pedido, po_number, cod_produto, item_cliente, index) => {
         if (!pedido) {
-            toast.error('Pedido Metalfisa ausente.');
+            toast.error('Pedido Lynx ausente.');
             return;
         }
         setFetchingSinco(index);
@@ -698,8 +698,8 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                 <button onClick={() => copyToClipboard(row.po_number || '', 'PO Number')} className="w-full text-left px-4 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-slate-600">
                     <Copy className="w-3.5 h-3.5 text-slate-400" /> PO Number
                 </button>
-                <button onClick={() => copyToClipboard(row.pedido_metal || '', 'Pedido Metalfisa')} className="w-full text-left px-4 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-slate-600">
-                    <Copy className="w-3.5 h-3.5 text-slate-400" /> Pedido Metalfisa
+                <button onClick={() => copyToClipboard(row.pedido_metal || '', 'Pedido Lynx')} className="w-full text-left px-4 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-slate-600">
+                    <Copy className="w-3.5 h-3.5 text-slate-400" /> Pedido Lynx
                 </button>
                 <button onClick={() => copyToClipboard(row.cod_produto || '', 'Código Produto')} className="w-full text-left px-4 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-slate-600">
                     <Copy className="w-3.5 h-3.5 text-slate-400" /> Código Produto
@@ -984,7 +984,7 @@ export default function WabtecDatasSolicitacaoPage({ isTab = false }) {
                             <button
                                 onClick={() => setGroupBy('pedido_metal')}
                                 className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${groupBy === 'pedido_metal' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                                Pedido Metalfisa
+                                Pedido Lynx
                             </button>
                         </div>
                     </div>

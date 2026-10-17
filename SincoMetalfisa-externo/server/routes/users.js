@@ -343,7 +343,7 @@ router.post('/send-credentials', async (req, res) => {
         const results = { success: [], failed: [] };
 
         // Determine access URL
-        const serverUrl = process.env.APP_URL || 'https://metalfisa.lynxems.com.br';
+        const serverUrl = process.env.APP_URL || 'https://lynxems.com.br/login';
 
         for (const user of users) {
             if (!user.email) {

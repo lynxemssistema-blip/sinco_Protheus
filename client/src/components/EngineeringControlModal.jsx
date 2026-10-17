@@ -648,8 +648,7 @@ const EngineeringControlModal = ({ isOpen, onClose, orderId: orderIdProp, pedido
                                             </div>
                                         ) : (
                                             <div className="divide-y divide-gray-100">
-                                                {searchResults.map(p => (
-                                                    <div key={p.codigo} className="p-3 hover:bg-blue-50/50 transition-colors flex items-center justify-between group">
+                                                {searchResults.map((p, idx) => (<div key={`${p.codigo}-${idx}`} className="p-3 hover:bg-blue-50/50 transition-colors flex items-center justify-between group">
                                                         <div className="flex-1 min-w-0 pr-4">
                                                             <div className="flex items-center gap-2 mb-1">
                                                                 <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{p.codigo}</span>

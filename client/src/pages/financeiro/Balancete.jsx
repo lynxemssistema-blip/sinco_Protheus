@@ -258,7 +258,7 @@ const Balancete = () => {
 
                                     return (
                                         <tr key={conta.codigo} className={`${isSintetica ? 'bg-slate-50/50 border-t border-slate-200' : ''} transition-colors ${bgHoverStr}`}>
-                                            <td className="py-2.5 pr-6 whitespace-nowrap text-sm text-slate-900 border-l-[3px] border-l-transparent" style={{...indentStyle, borderLeftColor: isSintetica ? '#3b82f6' : 'transparent'}}>
+                                            <td className="py-2.5 pr-6 whitespace-nowrap text-sm text-slate-900 border-l-[3px] border-l-transparent" style={{...indentStyle, borderLeftColor: isSintetica ? '#425750' : 'transparent'}}>
                                                 <span className={`${isSintetica ? 'font-bold' : 'font-mono text-slate-600'}`}>{conta.codigo}</span>
                                             </td>
                                             <td className="px-6 py-2.5 text-sm text-slate-700">

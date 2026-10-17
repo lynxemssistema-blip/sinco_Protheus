@@ -341,8 +341,8 @@ export default function EvolucaoApontamentosView({
                             {/* Definitions for Gradients */}
                             <defs>
                                 <linearGradient id="blueCyanGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#2563eb" stopOpacity="0.95" />
-                                    <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.8" />
+                                    <stop offset="0%" stopColor="#24312D" stopOpacity="0.95" />
+                                    <stop offset="100%" stopColor="#425750" stopOpacity="0.85" />
                                 </linearGradient>
                                 <linearGradient id="emeraldTealGrad" x1="0" y1="0" x2="0" y2="1">
                                     <stop offset="0%" stopColor="#059669" stopOpacity="0.95" />

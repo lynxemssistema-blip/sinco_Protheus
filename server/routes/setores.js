@@ -3,6 +3,7 @@ const router = express.Router();
 const mysql = require('../services/mysqlService');
 const db = require('../db'); // Protheus (PostgreSQL)
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
+const { isSuperAdminUser, getTenantContext } = require('../util/authHelper');
 
 // ─── Ensure Tables (MySQL) ────────────────────────────────────────────────────
 async function ensureTables() {
@@ -14,6 +15,7 @@ async function ensureTables() {
             cor         VARCHAR(20) DEFAULT '#3b82f6',
             ativo       TINYINT(1) DEFAULT 1,
             ordem       INT DEFAULT 0,
+            IdEmpresa   INT DEFAULT 1,
             criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP,
             atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -22,21 +24,48 @@ async function ensureTables() {
     // Safety fallback to add column if table already exists
     try {
         await mysql.query('ALTER TABLE pcp_setores ADD COLUMN ordem INT DEFAULT 0');
-    } catch (e) {
-        // Ignore if column already exists
-    }
+    } catch (e) {}
+    try {
+        await mysql.query('ALTER TABLE pcp_setores ADD COLUMN IdEmpresa INT DEFAULT 1');
+    } catch (e) {}
 
+    // Catálogo Centralizado de Recursos
+    await mysql.query(`
+        CREATE TABLE IF NOT EXISTS pcp_recursos (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            IdEmpresa INT NOT NULL DEFAULT 1,
+            codigo VARCHAR(50) NOT NULL,
+            nome VARCHAR(200) NOT NULL,
+            tipo VARCHAR(50) DEFAULT 'MA',
+            descricao TEXT,
+            capacidade_padrao DECIMAL(10,2) DEFAULT 0,
+            ativo TINYINT(1) DEFAULT 1,
+            criado_em DATETIME DEFAULT CURRENT_TIMESTAMP,
+            atualizado_em DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_empresa_recurso (IdEmpresa, codigo),
+            INDEX idx_recurso_emp (IdEmpresa),
+            INDEX idx_recurso_ativo (ativo),
+            INDEX idx_recurso_codigo (codigo)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+
+    // Recursos vinculados aos setores (permite 1 recurso em N setores)
     await mysql.query(`
         CREATE TABLE IF NOT EXISTS pcp_setor_recursos (
             id              INT AUTO_INCREMENT PRIMARY KEY,
             setor_id        INT NOT NULL,
-            recurso_codigo  VARCHAR(20) NOT NULL,
+            recurso_codigo  VARCHAR(50) NOT NULL,
             recurso_nome    VARCHAR(200),
+            IdEmpresa       INT NOT NULL DEFAULT 1,
             criado_em       DATETIME DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY uq_recurso (recurso_codigo),
+            UNIQUE KEY uq_setor_recurso (setor_id, recurso_codigo),
             FOREIGN KEY (setor_id) REFERENCES pcp_setores(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
+    try {
+        await mysql.query('ALTER TABLE pcp_setor_recursos ADD COLUMN IdEmpresa INT DEFAULT 1');
+    } catch (e) {}
+
     await mysql.query(`
         CREATE TABLE IF NOT EXISTS pcp_setor_responsaveis (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -60,17 +89,31 @@ ensureTables().catch(err => console.error('[setores] Erro ao criar tabelas:', er
 
 // ─── GET /api/pcp-setores ─────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
+    const tenantId = getTenantContext(req);
+    const empresaFiltro = req.query.empresa_id ? parseInt(req.query.empresa_id) : null;
+    const targetEmpresa = empresaFiltro || tenantId;
+
     try {
-        const [rows] = await mysql.query(`
+        let sql = `
             SELECT s.*,
+                   COALESCE(e.NomeFantasia, e.RazaoSocial, CONCAT('Empresa ', s.IdEmpresa)) AS empresa_nome,
                    COUNT(DISTINCT r.id) AS qtd_recursos,
                    COUNT(DISTINCT resp.id) AS qtd_responsaveis
             FROM pcp_setores s
+            LEFT JOIN empresa e ON e.IdEmpresa = s.IdEmpresa
             LEFT JOIN pcp_setor_recursos r ON r.setor_id = s.id
             LEFT JOIN pcp_setor_responsaveis resp ON resp.setor_id = s.id
-            GROUP BY s.id
-            ORDER BY s.ordem ASC, s.nome ASC
-        `);
+        `;
+        const params = [];
+
+        if (targetEmpresa) {
+            sql += ` WHERE s.IdEmpresa = ?`;
+            params.push(targetEmpresa);
+        }
+
+        sql += ` GROUP BY s.id ORDER BY s.ordem ASC, s.nome ASC`;
+
+        const [rows] = await mysql.query(sql, params);
         res.json(rows);
     } catch (err) {
         console.error('[setores] GET /:', err.message);
@@ -80,17 +123,30 @@ router.get('/', async (req, res) => {
 
 // ─── POST /api/pcp-setores ────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
-    const { nome, descricao, cor } = req.body;
-    if (!nome?.trim()) return res.status(400).json({ error: 'Nome e obrigatorio.' });
+    const tenantId = getTenantContext(req);
+    const { nome, descricao, cor, IdEmpresa } = req.body;
+    if (!nome?.trim()) return res.status(400).json({ error: 'Nome é obrigatório.' });
+
+    const targetEmpresa = IdEmpresa || tenantId || 1;
+
     try {
-        const [maxRow] = await mysql.query('SELECT MAX(ordem) as maxOrdem FROM pcp_setores');
-        const nextOrdem = (maxRow[0].maxOrdem || 0) + 1;
+        const [maxRow] = await mysql.query(
+            'SELECT MAX(ordem) as maxOrdem FROM pcp_setores WHERE IdEmpresa = ?',
+            [targetEmpresa]
+        );
+        const nextOrdem = (maxRow[0]?.maxOrdem || 0) + 1;
         
         const [result] = await mysql.query(
-            `INSERT INTO pcp_setores (nome, descricao, cor, ordem) VALUES (?, ?, ?, ?)`,
-            [nome.trim(), descricao || null, cor || '#3b82f6', nextOrdem]
+            `INSERT INTO pcp_setores (nome, descricao, cor, ordem, IdEmpresa) VALUES (?, ?, ?, ?, ?)`,
+            [nome.trim(), descricao || null, cor || '#3b82f6', nextOrdem, targetEmpresa]
         );
-        const [rows] = await mysql.query(`SELECT * FROM pcp_setores WHERE id = ?`, [result.insertId]);
+        const [rows] = await mysql.query(
+            `SELECT s.*, COALESCE(e.NomeFantasia, e.RazaoSocial, CONCAT('Empresa ', s.IdEmpresa)) AS empresa_nome 
+             FROM pcp_setores s
+             LEFT JOIN empresa e ON e.IdEmpresa = s.IdEmpresa
+             WHERE s.id = ?`,
+            [result.insertId]
+        );
         res.status(201).json(rows[0]);
     } catch (err) {
         console.error('[setores] POST /:', err.message);
@@ -125,15 +181,31 @@ router.post('/reorder', async (req, res) => {
 
 // ─── PUT /api/pcp-setores/:id ─────────────────────────────────────────────────
 router.put('/:id', async (req, res) => {
-    const { nome, descricao, cor } = req.body;
-    if (!nome?.trim()) return res.status(400).json({ error: 'Nome e obrigatorio.' });
+    const { nome, descricao, cor, IdEmpresa } = req.body;
+    if (!nome?.trim()) return res.status(400).json({ error: 'Nome é obrigatório.' });
+    const isSA = isSuperAdminUser(req.user) || req.isSuperAdmin;
+
     try {
-        await mysql.query(
-            `UPDATE pcp_setores SET nome=?, descricao=?, cor=? WHERE id=?`,
-            [nome.trim(), descricao || null, cor || '#3b82f6', req.params.id]
+        let updateSql = `UPDATE pcp_setores SET nome=?, descricao=?, cor=?`;
+        const params = [nome.trim(), descricao || null, cor || '#3b82f6'];
+
+        if (isSA && IdEmpresa) {
+            updateSql += `, IdEmpresa=?`;
+            params.push(IdEmpresa);
+        }
+
+        updateSql += ` WHERE id=?`;
+        params.push(req.params.id);
+
+        await mysql.query(updateSql, params);
+        const [rows] = await mysql.query(
+            `SELECT s.*, COALESCE(e.NomeFantasia, e.RazaoSocial, CONCAT('Empresa ', s.IdEmpresa)) AS empresa_nome 
+             FROM pcp_setores s
+             LEFT JOIN empresa e ON e.IdEmpresa = s.IdEmpresa
+             WHERE s.id = ?`,
+            [req.params.id]
         );
-        const [rows] = await mysql.query(`SELECT * FROM pcp_setores WHERE id = ?`, [req.params.id]);
-        if (!rows.length) return res.status(404).json({ error: 'Setor nao encontrado.' });
+        if (!rows.length) return res.status(404).json({ error: 'Setor não encontrado.' });
         res.json(rows[0]);
     } catch (err) {
         console.error('[setores] PUT /:id:', err.message);
@@ -149,7 +221,7 @@ router.patch('/:id/toggle', async (req, res) => {
             [req.params.id]
         );
         const [rows] = await mysql.query(`SELECT * FROM pcp_setores WHERE id = ?`, [req.params.id]);
-        if (!rows.length) return res.status(404).json({ error: 'Setor nao encontrado.' });
+        if (!rows.length) return res.status(404).json({ error: 'Setor não encontrado.' });
         res.json(rows[0]);
     } catch (err) {
         console.error('[setores] PATCH /:id/toggle:', err.message);
@@ -160,12 +232,19 @@ router.patch('/:id/toggle', async (req, res) => {
 // ─── DELETE /api/pcp-setores/:id ─────────────────────────────────────────────
 router.delete('/:id', async (req, res) => {
     try {
+        const isSA = isSuperAdminUser(req.user) || req.isSuperAdmin;
         const [[check]] = await mysql.query(
             `SELECT COUNT(*) AS total FROM pcp_setor_recursos WHERE setor_id=?`,
             [req.params.id]
         );
         if (check.total > 0) {
-            return res.status(400).json({ error: 'Remova os recursos vinculados antes de excluir o setor.' });
+            if (isSA && req.query.force === 'true') {
+                // SuperAdmin pode forçar exclusão desvinculando recursos automaticamente
+                await mysql.query(`DELETE FROM pcp_setor_recursos WHERE setor_id=?`, [req.params.id]);
+                await mysql.query(`DELETE FROM pcp_setor_responsaveis WHERE setor_id=?`, [req.params.id]);
+            } else {
+                return res.status(400).json({ error: 'Remova os recursos vinculados antes de excluir o setor.' });
+            }
         }
         await mysql.query(`DELETE FROM pcp_setores WHERE id=?`, [req.params.id]);
         res.json({ ok: true });
@@ -251,21 +330,235 @@ router.get('/todos-recursos', async (req, res) => {
     }
 });
 
+// ─── CATÁLOGO CENTRALIZADO DE RECURSOS (Multi-Empresa) ─────────────────────────
+
+// GET /api/pcp-setores/catalogo-recursos
+router.get('/catalogo-recursos', async (req, res) => {
+    const tenantId = getTenantContext(req);
+    const empresaFiltro = req.query.empresa_id ? parseInt(req.query.empresa_id) : null;
+    const targetEmpresa = empresaFiltro || tenantId;
+
+    const q = (req.query.q || '').trim();
+    const status = req.query.status;
+    const tipo = req.query.tipo;
+
+    try {
+        let sql = `
+            SELECT r.*,
+                   COALESCE(e.NomeFantasia, e.RazaoSocial, CONCAT('Empresa ', r.IdEmpresa)) AS empresa_nome,
+                   GROUP_CONCAT(DISTINCT s.nome ORDER BY s.nome SEPARATOR ', ') AS setores_nomes,
+                   GROUP_CONCAT(DISTINCT s.id ORDER BY s.nome) AS setores_ids,
+                   COUNT(DISTINCT sr.setor_id) AS qtd_setores
+            FROM pcp_recursos r
+            LEFT JOIN empresa e ON e.IdEmpresa = r.IdEmpresa
+            LEFT JOIN pcp_setor_recursos sr ON sr.recurso_codigo COLLATE utf8mb4_unicode_ci = r.codigo COLLATE utf8mb4_unicode_ci AND sr.IdEmpresa = r.IdEmpresa
+            LEFT JOIN pcp_setores s ON s.id = sr.setor_id
+            WHERE 1=1
+        `;
+        const params = [];
+
+        if (targetEmpresa) {
+            sql += ` AND r.IdEmpresa = ?`;
+            params.push(targetEmpresa);
+        }
+
+        if (q) {
+            sql += ` AND (r.codigo LIKE ? OR r.nome LIKE ? OR r.descricao LIKE ?)`;
+            const like = `%${q}%`;
+            params.push(like, like, like);
+        }
+
+        if (status === 'ativos') {
+            sql += ` AND r.ativo = 1`;
+        } else if (status === 'inativos') {
+            sql += ` AND r.ativo = 0`;
+        }
+
+        if (tipo && tipo !== 'todos') {
+            sql += ` AND r.tipo = ?`;
+            params.push(tipo);
+        }
+
+        sql += ` GROUP BY r.id ORDER BY r.codigo ASC`;
+
+        const [rows] = await mysql.query(sql, params);
+        res.json(rows);
+    } catch (err) {
+        console.error('[setores] GET /catalogo-recursos:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/pcp-setores/catalogo-recursos
+router.post('/catalogo-recursos', async (req, res) => {
+    const tenantId = getTenantContext(req);
+    const { codigo, nome, tipo, descricao, capacidade_padrao, ativo, IdEmpresa } = req.body;
+
+    if (!codigo || !nome) {
+        return res.status(400).json({ error: 'Código e nome são obrigatórios.' });
+    }
+
+    const targetEmpresa = IdEmpresa || tenantId || 1;
+    const cleanCodigo = codigo.trim().toUpperCase();
+    const cleanNome = nome.trim();
+    const cleanTipo = tipo || 'MA';
+    const cleanAtivo = ativo !== undefined ? (ativo ? 1 : 0) : 1;
+    const cleanCapacidade = parseFloat(capacidade_padrao) || 0;
+
+    try {
+        const [existing] = await mysql.query(
+            'SELECT id FROM pcp_recursos WHERE IdEmpresa = ? AND codigo = ?',
+            [targetEmpresa, cleanCodigo]
+        );
+        if (existing.length > 0) {
+            return res.status(409).json({ error: `O recurso "${cleanCodigo}" já está cadastrado nesta empresa.` });
+        }
+
+        const [result] = await mysql.query(
+            `INSERT INTO pcp_recursos (IdEmpresa, codigo, nome, tipo, descricao, capacidade_padrao, ativo)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [targetEmpresa, cleanCodigo, cleanNome, cleanTipo, descricao || null, cleanCapacidade, cleanAtivo]
+        );
+
+        const [created] = await mysql.query(
+            `SELECT r.*, COALESCE(e.NomeFantasia, e.RazaoSocial, CONCAT('Empresa ', r.IdEmpresa)) AS empresa_nome
+             FROM pcp_recursos r
+             LEFT JOIN empresa e ON e.IdEmpresa = r.IdEmpresa
+             WHERE r.id = ?`,
+            [result.insertId]
+        );
+        res.status(201).json(created[0]);
+    } catch (err) {
+        console.error('[setores] POST /catalogo-recursos:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT /api/pcp-setores/catalogo-recursos/:id
+router.put('/catalogo-recursos/:id', async (req, res) => {
+    const tenantId = getTenantContext(req);
+    const id = req.params.id;
+    const { nome, tipo, descricao, capacidade_padrao, ativo, IdEmpresa } = req.body;
+    const isSA = isSuperAdminUser(req.user) || req.isSuperAdmin;
+
+    try {
+        let checkSql = 'SELECT * FROM pcp_recursos WHERE id = ?';
+        const checkParams = [id];
+        if (!isSA && tenantId) {
+            checkSql += ' AND IdEmpresa = ?';
+            checkParams.push(tenantId);
+        }
+
+        const [existing] = await mysql.query(checkSql, checkParams);
+        if (existing.length === 0) {
+            return res.status(404).json({ error: 'Recurso não encontrado ou sem permissão.' });
+        }
+
+        const current = existing[0];
+        const updatedNome = nome !== undefined ? nome.trim() : current.nome;
+        const updatedTipo = tipo !== undefined ? tipo : current.tipo;
+        const updatedDesc = descricao !== undefined ? descricao : current.descricao;
+        const updatedCap = capacidade_padrao !== undefined ? (parseFloat(capacidade_padrao) || 0) : current.capacidade_padrao;
+        const updatedAtivo = ativo !== undefined ? (ativo ? 1 : 0) : current.ativo;
+        const updatedEmpresa = (isSA && IdEmpresa) ? IdEmpresa : current.IdEmpresa;
+
+        await mysql.query(
+            `UPDATE pcp_recursos 
+             SET nome = ?, tipo = ?, descricao = ?, capacidade_padrao = ?, ativo = ?, IdEmpresa = ?
+             WHERE id = ?`,
+            [updatedNome, updatedTipo, updatedDesc, updatedCap, updatedAtivo, updatedEmpresa, id]
+        );
+
+        if (nome !== undefined) {
+            await mysql.query(
+                `UPDATE pcp_setor_recursos SET recurso_nome = ? WHERE recurso_codigo = ? AND IdEmpresa = ?`,
+                [updatedNome, current.codigo, current.IdEmpresa]
+            );
+        }
+
+        const [updated] = await mysql.query(
+            `SELECT r.*, COALESCE(e.NomeFantasia, e.RazaoSocial, CONCAT('Empresa ', r.IdEmpresa)) AS empresa_nome
+             FROM pcp_recursos r
+             LEFT JOIN empresa e ON e.IdEmpresa = r.IdEmpresa
+             WHERE r.id = ?`,
+            [id]
+        );
+        res.json(updated[0]);
+    } catch (err) {
+        console.error('[setores] PUT /catalogo-recursos/:id:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /api/pcp-setores/catalogo-recursos/:id
+router.delete('/catalogo-recursos/:id', async (req, res) => {
+    const tenantId = getTenantContext(req);
+    const id = req.params.id;
+    const isSA = isSuperAdminUser(req.user) || req.isSuperAdmin;
+
+    try {
+        let checkSql = 'SELECT * FROM pcp_recursos WHERE id = ?';
+        const checkParams = [id];
+        if (!isSA && tenantId) {
+            checkSql += ' AND IdEmpresa = ?';
+            checkParams.push(tenantId);
+        }
+
+        const [existing] = await mysql.query(checkSql, checkParams);
+        if (existing.length === 0) {
+            return res.status(404).json({ error: 'Recurso não encontrado ou sem permissão.' });
+        }
+
+        const recurso = existing[0];
+        // Remove vínculos dos setores primeiro
+        await mysql.query('DELETE FROM pcp_setor_recursos WHERE recurso_codigo = ? AND IdEmpresa = ?', [recurso.codigo, recurso.IdEmpresa]);
+        // Remove do catálogo
+        await mysql.query('DELETE FROM pcp_recursos WHERE id = ?', [id]);
+
+        res.json({ ok: true });
+    } catch (err) {
+        console.error('[setores] DELETE /catalogo-recursos/:id:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ─── POST /api/pcp-setores/recursos ──────────────────────────────────────────
 router.post('/recursos', async (req, res) => {
+    const tenantId = getTenantContext(req);
     const { setor_id, recurso_codigo, recurso_nome } = req.body;
     if (!setor_id || !recurso_codigo) {
-        return res.status(400).json({ error: 'setor_id e recurso_codigo sao obrigatorios.' });
+        return res.status(400).json({ error: 'setor_id e recurso_codigo são obrigatórios.' });
     }
+
+    const cod = recurso_codigo.trim().toUpperCase();
+    const nome = (recurso_nome || cod).trim();
+
     try {
-        const [result] = await mysql.query(
-            `INSERT IGNORE INTO pcp_setor_recursos (setor_id, recurso_codigo, recurso_nome)
-             VALUES (?, ?, ?)`,
-            [setor_id, recurso_codigo.trim().toUpperCase(), recurso_nome || recurso_codigo]
-        );
-        if (result.affectedRows === 0) {
-            return res.status(409).json({ error: `Recurso ${recurso_codigo} ja esta vinculado a outro setor.` });
+        // Se tenantId for null (SuperAdmin no modo global), busca o IdEmpresa do próprio setor
+        let targetEmpresa = tenantId;
+        if (!targetEmpresa) {
+            const [setorRows] = await mysql.query('SELECT IdEmpresa FROM pcp_setores WHERE id = ?', [setor_id]);
+            targetEmpresa = setorRows[0]?.IdEmpresa || 1;
         }
+
+        // 1. Garante que o recurso está registrado no catálogo central pcp_recursos
+        await mysql.query(
+            `INSERT IGNORE INTO pcp_recursos (IdEmpresa, codigo, nome)
+             VALUES (?, ?, ?)`,
+            [targetEmpresa, cod, nome]
+        );
+
+        // 2. Insere vínculo no setor (permite vincular a qualquer setor)
+        const [result] = await mysql.query(
+            `INSERT IGNORE INTO pcp_setor_recursos (setor_id, recurso_codigo, recurso_nome, IdEmpresa)
+             VALUES (?, ?, ?, ?)`,
+            [setor_id, cod, nome, targetEmpresa]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(409).json({ error: `Recurso ${cod} já está vinculado a este setor.` });
+        }
+
         const [rows] = await mysql.query(`SELECT * FROM pcp_setor_recursos WHERE id=?`, [result.insertId]);
         res.status(201).json(rows[0]);
     } catch (err) {
@@ -885,19 +1178,8 @@ router.get('/visao', async (req, res) => {
 
 const { sendText } = require('../services/whatsapp');
 const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
-const nodemailer = require('nodemailer');
+const { sendMail } = require('../services/mailService');
 const axios = require('axios');
-
-const transporter = nodemailer.createTransport({
-    host: 'smtp.task.com.br',
-    port: 587,
-    secure: false,
-    auth: {
-        user: 'sincometal@metalfisa.com.br',
-        pass: 'Pro1042@sm'
-    },
-    tls: { rejectUnauthorized: false }
-});
 
 router.post('/visao/notify', async (req, res) => {
     try {
@@ -965,7 +1247,7 @@ router.post('/visao/notify', async (req, res) => {
                             ${trs}
                         </tbody>
                     </table>
-                    <p style="margin-top: 30px; font-size: 12px; color: #64748b;">Relatório gerado automaticamente pelo sistema SGQ MetalFisa.</p>
+                    <p style="margin-top: 30px; font-size: 12px; color: #64748b;">Relatório gerado automaticamente pelo sistema SGQ Lynx.</p>
                 </div>
             `;
         };
@@ -1000,8 +1282,7 @@ router.post('/visao/notify', async (req, res) => {
                 try {
                     if (canal === 'email' && data.user.email) {
                         const html = getCorporateEmailTemplate(formatEmailHtml(data.user.NomeCompleto, data.setores));
-                        const info = await transporter.sendMail({
-                            from: '"MetalFisa PCP" <sincometal@metalfisa.com.br>',
+                        const info = await sendMail({
                             to: data.user.email,
                             subject: `Relatório PCP: Evolução de Pedidos - ${data.user.NomeCompleto}`,
                             html: html

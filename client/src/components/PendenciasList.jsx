@@ -11,7 +11,7 @@ const STATUS_LABEL = {
 };
 
 // Lista de pendências de apontamento (recursos não concluídos) de uma OP,
-// com histórico de snapshots gerados automaticamente e opção de impressão em PDF padrão MetalFisa.
+// com histórico de snapshots gerados automaticamente e opção de impressão em PDF padrão Lynx.
 export default function PendenciasList({ opNum, itemPv, pedido, produtoPai, liveItens }) {
     const { user } = useAuth();
     const [snapshots, setSnapshots] = useState([]);
@@ -134,7 +134,7 @@ export default function PendenciasList({ opNum, itemPv, pedido, produtoPai, live
                     onClick={handlePrintPdf}
                     disabled={generatingPdf}
                     className="flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 disabled:opacity-50 text-white rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wide shadow-sm transition-all hover:shadow"
-                    title="Gera o Relatório de Pendências no formato oficial MetalFisa com o Desenho Técnico do Produto Pai anexado"
+                    title="Gera o Relatório de Pendências no formato oficial Lynx com o Desenho Técnico do Produto Pai anexado"
                 >
                     {generatingPdf ? (
                         <>

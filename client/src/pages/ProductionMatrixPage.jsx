@@ -18,9 +18,9 @@ const formatDate = (dateStr) => {
 };
 
 export default function ProductionMatrixPage() {
-    const [data, setData] = useStickyState({ operations: [], items: [] }, '@metalfisa:matrix_data');
-    const [loading, setLoading] = useState(true);
-    const [filters, setFilters] = useStickyState({ op: '', produto: '', cliente: '', pedido: '', operacao: '', data_inicio: '', data_fim: '' }, '@metalfisa:matrix_filters');
+    const [data, setData] = useState({ operations: [], items: [] });
+    const [loading, setLoading] = useState(false);
+    const [filters, setFilters] = useStickyState({ op: '', produto: '', cliente: '', pedido: '', operacao: '', data_inicio: '', data_fim: '' }, '@lynxems:matrix_filters');
     const [appointingOp, setAppointingOp] = useState(null);
     const [appointmentMode, setAppointmentMode] = useState(null);
     const [showProcessLegend, setShowProcessLegend] = useState(false);
@@ -31,8 +31,10 @@ export default function ProductionMatrixPage() {
     const { timers, startTimer, pauseTimer, restartTimer, getElapsedTime } = useTimer();
 
     useEffect(() => {
-        // loadData(); // Removido: o usuário pediu para buscar apenas ao aplicar o filtro
-        setLoading(false);
+        try {
+            localStorage.removeItem('@lynxems:matrix_data');
+            sessionStorage.removeItem('@lynxems:matrix_data');
+        } catch (_) {}
         getCompanySettings()
             .then(d => setAppointmentMode(d?.general_config?.production_appointment_mode || 'free'))
             .catch(() => setAppointmentMode('free'));
@@ -60,6 +62,16 @@ export default function ProductionMatrixPage() {
             return;
         }
         loadData();
+    };
+
+    const handleClear = () => {
+        setFilters({ op: '', produto: '', cliente: '', pedido: '', operacao: '', data_inicio: '', data_fim: '' });
+        setData({ operations: [], items: [] });
+        try {
+            localStorage.removeItem('@lynxems:matrix_data');
+            localStorage.removeItem('@lynxems:matrix_filters');
+            sessionStorage.removeItem('@lynxems:matrix_data');
+        } catch (_) {}
     };
 
     const buildOpObject = (item, opCode) => {
@@ -341,13 +353,21 @@ export default function ProductionMatrixPage() {
                             placeholder="Cód..."
                         />
                     </div>
-                    <div>
+                    <div className="flex gap-2">
                         <button
                             onClick={handleSearch}
-                            className="w-full bg-blue-600 text-white rounded p-2 font-bold hover:bg-blue-700 flex items-center justify-center gap-2"
+                            className="flex-1 bg-blue-600 text-white rounded p-2 font-bold hover:bg-blue-700 flex items-center justify-center gap-2"
                         >
                             <Search className="w-4 h-4" />
                             Buscar
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleClear}
+                            className="px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded p-2 font-semibold flex items-center justify-center border border-slate-300 transition-colors"
+                            title="Limpar Filtros e Matriz"
+                        >
+                            <RotateCcw className="w-4 h-4" />
                         </button>
                     </div>
                 </div>

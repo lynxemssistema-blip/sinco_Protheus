@@ -35,7 +35,7 @@ export default function FornecedorRomaneioDetalhes() {
 
     const fetchDetails = async () => {
         try {
-            const token = localStorage.getItem('@MetalFisa:token');
+            const token = localStorage.getItem('@Lynx:token');
             const res = await fetch(`/api/romaneios/portal/details/${id}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });

@@ -16,7 +16,8 @@ if (!SECRET_KEY) {
 
 // Login Route
 router.post('/login', async (req, res) => {
-    const { login, senha } = req.body;
+    const login = (req.body.login || '').trim();
+    const senha = (req.body.senha || '').trim();
 
     if (!login || !senha) {
         return res.status(400).json({ error: 'Login e senha são obrigatórios' });
@@ -24,11 +25,13 @@ router.post('/login', async (req, res) => {
 
     try {
         const [rows] = await db.execute(
-            'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, fotoUsuario, email, aprovado, status, Senha, idFornecedor, lojaFornecedor, idCliente, lojaCliente, tipoExterno, pedidos_autorizados FROM usuario WHERE Login = ?',
-            [login]
+            'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, fotoUsuario, email, aprovado, status, Senha, idFornecedor, lojaFornecedor, idCliente, lojaCliente, tipoExterno, pedidos_autorizados, IdEmpresa, is_master FROM usuario WHERE Login = ? OR LOWER(email) = LOWER(?)',
+            [login, login]
         );
 
+        console.log('[/api/auth/login] Recebido login:', login, 'Rows:', rows.length);
         if (rows.length === 0) {
+            console.log('[/api/auth/login] 0 rows encontradas para:', login);
             return res.status(401).json({ error: 'Credenciais inválidas' });
         }
 
@@ -42,14 +45,15 @@ router.post('/login', async (req, res) => {
             passwordMatch = await bcrypt.compare(senha, user.Senha);
         } else {
             passwordMatch = (senha === user.Senha);
-            
-            if (passwordMatch) {
-                try {
-                    const hashedPwd = await bcrypt.hash(senha, 10);
-                    await db.execute('UPDATE usuario SET Senha = ? WHERE idUsuario = ?', [hashedPwd, user.idUsuario]);
-                } catch (migrationError) {
-                    console.warn('Falha na migração da senha para bcrypt (provavelmente a coluna Senha é muito curta):', migrationError.message);
-                }
+        }
+        console.log('[/api/auth/login] Password match para', user.Login, ':', passwordMatch);
+
+        if (passwordMatch && !isBcrypt) {
+            try {
+                const hashedPwd = await bcrypt.hash(senha, 10);
+                await db.execute('UPDATE usuario SET Senha = ? WHERE idUsuario = ?', [hashedPwd, user.idUsuario]);
+            } catch (migrationError) {
+                console.warn('Falha na migração da senha para bcrypt:', migrationError.message);
             }
         }
 
@@ -62,11 +66,58 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ error: 'Sua conta está inativa ou aguardando aprovação do Administrador.' });
         }
 
+        // Verificação especial do Superadmin Global da Plataforma (apenas edsonmanoel2012@gmail.com / ID 37)
+        const userEmailLower = (user.email || '').toLowerCase().trim();
+        const userLoginLower = (user.Login || '').toLowerCase().trim();
+        const isSuperAdmin = (userEmailLower === 'edsonmanoel2012@gmail.com') || (user.idUsuario === 37) || (userLoginLower === 'sinco' && user.idUsuario === 37);
+        const effectiveRole = isSuperAdmin ? 'superadmin' : (user.TipoUsuario || (user.is_master === 1 ? 'master' : 'operador'));
+        const effectiveIsMaster = isSuperAdmin || user.is_master === 1;
+        const tenantId = user.IdEmpresa || null;
+
+        // Buscar dados da Empresa / Tenant e Plano
+        let empresaData = null;
+        if (tenantId) {
+            try {
+                const [empRows] = await db.query(
+                    'SELECT IdEmpresa, RazaoSocial, NomeFantasia, plano, status_plano, trial_expira_em, limite_usuarios FROM empresa WHERE IdEmpresa = ?',
+                    [tenantId]
+                );
+                if (empRows.length > 0) {
+                    const emp = empRows[0];
+                    empresaData = {
+                        id: emp.IdEmpresa,
+                        nomeFantasia: emp.NomeFantasia || emp.RazaoSocial,
+                        razaoSocial: emp.RazaoSocial,
+                        plano: emp.plano || 'pro',
+                        statusPlano: emp.status_plano || 'ativo',
+                        limiteUsuarios: emp.limite_usuarios || 10,
+                        trialExpiraEm: emp.trial_expira_em
+                    };
+                }
+            } catch (e) {
+                console.warn('Nota ao carregar empresa:', e.message);
+            }
+        }
+
         // Generate Token
         const token = jwt.sign(
-            { id: user.idUsuario, login: user.Login, email: user.email, nome: user.NomeCompleto, tipo: user.TipoUsuario, idFornecedor: user.idFornecedor, lojaFornecedor: user.lojaFornecedor, idCliente: user.idCliente, lojaCliente: user.lojaCliente, tipoExterno: user.tipoExterno },
+            {
+                id: user.idUsuario,
+                login: user.Login,
+                email: user.email,
+                nome: user.NomeCompleto,
+                tipo: effectiveRole,
+                IdEmpresa: tenantId,
+                is_master: effectiveIsMaster,
+                is_superadmin: isSuperAdmin,
+                idFornecedor: user.idFornecedor,
+                lojaFornecedor: user.lojaFornecedor,
+                idCliente: user.idCliente,
+                lojaCliente: user.lojaCliente,
+                tipoExterno: user.tipoExterno
+            },
             SECRET_KEY,
-            { expiresIn: '8h' }
+            { expiresIn: '12h' }
         );
 
         res.json({
@@ -75,16 +126,21 @@ router.post('/login', async (req, res) => {
                 id: user.idUsuario,
                 nome: user.NomeCompleto,
                 login: user.Login,
-                tipo: user.TipoUsuario,
+                tipo: effectiveRole,
                 fotoUsuario: user.fotoUsuario,
                 email: user.email,
+                IdEmpresa: tenantId,
+                is_master: effectiveIsMaster,
+                is_superadmin: isSuperAdmin,
+                empresa: empresaData,
                 idFornecedor: user.idFornecedor,
                 lojaFornecedor: user.lojaFornecedor,
                 idCliente: user.idCliente,
                 lojaCliente: user.lojaCliente,
                 tipoExterno: user.tipoExterno,
                 pedidos_autorizados: user.pedidos_autorizados
-            }
+            },
+            empresa: empresaData
         });
 
     } catch (error) {
@@ -96,84 +152,170 @@ router.post('/login', async (req, res) => {
     }
 });
 
-// Password Recovery Route
+// Password Recovery Route (Inteligente: E-mail, WhatsApp ou Login)
 router.post('/recuperar-senha', async (req, res) => {
-    const { email } = req.body; // 'email' parameter acts as generic contact info (email or phone) from frontend
-    if (!email) return res.status(400).json({ error: 'O E-mail ou WhatsApp é obrigatório' });
+    const rawContact = (req.body.email || req.body.contato || req.body.login || '').trim();
+    if (!rawContact) {
+        return res.status(400).json({ error: 'Informe seu E-mail, WhatsApp ou Login para recuperar o acesso.' });
+    }
 
     try {
-        // Clean phone number if it looks like one (keep only numbers)
-        const isPhone = /^[0-9()\-\s+]+$/.test(email) && email.replace(/\D/g, '').length >= 10;
-        const cleanContact = isPhone ? email.replace(/\D/g, '') : email;
+        const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawContact);
+        const digitsOnly = rawContact.replace(/\D/g, '');
+        const isPhone = !isEmail && digitsOnly.length >= 8 && digitsOnly.length <= 14;
 
         let rows = [];
-        if (isPhone) {
-            // Find by whatsapp (removing non-digits from DB column just to match safely, or simply match right-padded/unpadded)
-            [rows] = await db.execute('SELECT idUsuario, NomeCompleto, Login, Senha, whatsapp, email FROM usuario WHERE whatsapp LIKE ? OR telefone LIKE ?', [`%${cleanContact.slice(-8)}%`, `%${cleanContact.slice(-8)}%`]);
+
+        if (isEmail) {
+            // Busca específica por e-mail ou login idêntico
+            [rows] = await db.query(
+                'SELECT idUsuario, NomeCompleto, Login, Senha, whatsapp, telefone, email, IdEmpresa FROM usuario WHERE email = ? OR Login = ? ORDER BY idUsuario DESC',
+                [rawContact.toLowerCase(), rawContact.toLowerCase()]
+            );
+        } else if (isPhone) {
+            // Busca flexível pelo final do número de telefone / WhatsApp (últimos 8 dígitos para cobrir DDD e formatos variados)
+            const phoneSuffix = `%${digitsOnly.slice(-8)}%`;
+            [rows] = await db.query(
+                `SELECT idUsuario, NomeCompleto, Login, Senha, whatsapp, telefone, email, IdEmpresa 
+                 FROM usuario 
+                 WHERE (REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(whatsapp, ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE ?)
+                    OR (REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(telefone, ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE ?)
+                 ORDER BY idUsuario DESC`,
+                [phoneSuffix, phoneSuffix]
+            );
         } else {
-            [rows] = await db.execute('SELECT idUsuario, NomeCompleto, Login, Senha, whatsapp, email FROM usuario WHERE email = ?', [email]);
+            // Busca por login ou nome de usuário
+            [rows] = await db.query(
+                'SELECT idUsuario, NomeCompleto, Login, Senha, whatsapp, telefone, email, IdEmpresa FROM usuario WHERE Login = ? OR email = ? ORDER BY idUsuario DESC',
+                [rawContact, rawContact]
+            );
         }
-        
+
         if (rows.length === 0) {
-            return res.status(404).json({ error: 'Nenhum usuário encontrado com este contato no sistema.' });
+            return res.status(404).json({ 
+                error: isEmail 
+                    ? `Nenhum usuário encontrado com o e-mail "${rawContact}".` 
+                    : isPhone 
+                        ? `Nenhum usuário encontrado com o telefone/WhatsApp informado.` 
+                        : `Nenhum usuário encontrado com o login "${rawContact}".` 
+            });
         }
 
         const user = rows[0];
 
-        // Generate temporary password
-        const tempPassword = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit PIN
+        // Gera nova senha temporária de 6 dígitos
+        const tempPassword = Math.floor(100000 + Math.random() * 900000).toString();
         const hashedTempPassword = await bcrypt.hash(tempPassword, 10);
 
-        // Update DB with hashed temp password
-        const targetUserId = user.idUsuario || (user.Login ? await db.execute('SELECT idUsuario FROM usuario WHERE Login = ?', [user.Login]).then(res => res[0][0].idUsuario) : null);
-        await db.execute('UPDATE usuario SET Senha = ? WHERE idUsuario = ?', [hashedTempPassword, targetUserId]);
+        // Atualiza a senha no banco de dados
+        await db.query('UPDATE usuario SET Senha = ? WHERE idUsuario = ?', [hashedTempPassword, user.idUsuario]);
 
-        // Send via WhatsApp if matched phone, otherwise via Email
-        if (isPhone && user.whatsapp) {
-            const { sendText } = require('../services/whatsapp');
-            const serverUrl = process.env.APP_URL || 'http://192.168.1.77:3001/login';
-            const textMessage = `*Recuperação de Acesso*\n\nOlá, *${user.NomeCompleto}*!\nVocê solicitou a recuperação de senha do *Sistema ERP da Metalfisa*.\n\n👤 *Usuário:* ${user.Login}\n🔑 *Nova Senha Temporária:* ${tempPassword}\n\n🌐 *Como Acessar*\n${serverUrl}\n\n_Recomendamos que você altere sua senha após o primeiro login._`;
-            
+        const serverUrl = process.env.APP_URL || 'https://lynxems.com.br/login';
+
+        let sentVia = [];
+        let errors = [];
+
+        // Regra inteligente:
+        // 1. Se digitou E-MAIL -> prioridade absoluta é enviar por E-mail
+        // 2. Se digitou WHATSAPP -> prioridade absoluta é enviar por WhatsApp
+        // 3. Se digitou LOGIN -> envia pelo canal disponível (se tiver ambos, envia em ambos)
+        const shouldSendEmail = isEmail || (!isPhone && user.email);
+        const shouldSendWa = isPhone || (!isEmail && (user.whatsapp || user.telefone));
+
+        // Envio via E-mail Oficial Hostinger
+        if (shouldSendEmail && user.email) {
             try {
-                await sendText(user.whatsapp, textMessage, 'Recuperação de Acesso via Login');
-                res.json({ message: 'Os dados de acesso foram enviados para o seu WhatsApp!' });
-            } catch (err) {
-                console.error('Erro WhatsApp recovery:', err);
-                return res.status(500).json({ error: 'Erro ao disparar mensagem para seu WhatsApp.' });
+                const { sendMail } = require('../services/mailService');
+                await sendMail({
+                    to: user.email,
+                    subject: '🔐 Recuperação de Acesso — SINCO / Lynx ERP',
+                    html: getCorporateEmailTemplate(`
+                        <h2 style="color: #0284c7; margin-top: 0; font-family: 'Segoe UI', Arial, sans-serif;">Recuperação de Acesso</h2>
+                        <p style="font-size: 15px;">Olá, <b>${user.NomeCompleto}</b>!</p>
+                        <p style="font-size: 15px; color: #475569;">Você solicitou a recuperação da sua senha de acesso ao <b>Sistema SINCO / Lynx ERP</b>.</p>
+                        
+                        <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 24px; border-radius: 12px; margin: 25px 0; border: 1px solid #bae6fd;">
+                            <table style="border-collapse: collapse; width: 100%;">
+                                <tr>
+                                    <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 140px;"><b>👤 Usuário / Login:</b></td>
+                                    <td style="padding: 8px 0; font-size: 16px; color: #0f172a; font-weight: bold; font-family: 'Courier New', monospace; background: #ffffff; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">${user.Login}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 140px;"><b>🔑 Senha Temporária:</b></td>
+                                    <td style="padding: 8px 0; font-size: 16px; color: #0f172a; font-weight: bold; font-family: 'Courier New', monospace; background: #ffffff; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">${tempPassword}</td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        <div style="background: #f8fafc; border-radius: 10px; padding: 16px 20px; margin: 20px 0; border-left: 4px solid #0ea5e9;">
+                            <p style="margin: 0 0 8px 0; font-size: 14px; font-weight: bold; color: #0369a1;">🌐 Como Acessar</p>
+                            <p style="margin: 0; font-size: 14px; color: #475569;">
+                                Acesse pelo navegador: <a href="${serverUrl}" style="color: #0284c7; text-decoration: underline; font-weight: bold;">${serverUrl}</a>
+                            </p>
+                        </div>
+
+                        <p style="font-size: 13px; color: #64748b; margin-top: 20px;">
+                            Recomendamos que você altere sua senha para uma de sua preferência após efetuar o login.
+                        </p>
+                    `)
+                });
+                sentVia.push(`E-mail (${user.email})`);
+            } catch (mailErr) {
+                console.error('[Recuperar Senha] Erro envio e-mail:', mailErr.message);
+                errors.push(`Falha no e-mail: ${mailErr.message}`);
             }
-        } else {
-            const transporter = nodemailer.createTransport({
-                host: 'smtp.task.com.br',
-                port: 587,
-                secure: false, 
-                auth: {
-                    user: 'sincometal@metalfisa.com.br',
-                    pass: 'Pro1042@sm'
-                },
-                tls: { rejectUnauthorized: false }
-            });
-
-            await transporter.sendMail({
-                from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
-                to: user.email || email,
-                subject: 'Recuperação de Acesso - MetalFisa ERP',
-                html: getCorporateEmailTemplate(`
-                    <h2 style="color: #0284c7; margin-top: 0; font-family: Arial, sans-serif;">Recuperação de Acesso</h2>
-                    <p>Olá, <b>${user.NomeCompleto}</b>!</p>
-                    <p>Você solicitou a recuperação de acesso ao Sistema ERP da Metalfisa. Foi gerada uma senha temporária para você:</p>
-                    <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 25px 0; border: 1px solid #e2e8f0;">
-                        <p style="margin: 0 0 10px 0; font-size: 16px;"><b>Usuário:</b> ${user.Login}</p>
-                        <p style="margin: 0; font-size: 16px;"><b>Senha Temporária:</b> ${tempPassword}</p>
-                    </div>
-                    <p style="font-size: 14px;">Recomendamos que você acesse o sistema e altere esta senha imediatamente.</p>
-                `)
-            });
-
-            res.json({ message: 'Os dados de acesso foram enviados para o seu E-mail!' });
         }
+
+        // Envio via WhatsApp
+        const waContact = user.whatsapp || user.telefone || (isPhone ? rawContact : null);
+        if (shouldSendWa && waContact) {
+            try {
+                const { sendText } = require('../services/whatsapp');
+                const textMessage = `*Recuperação de Acesso*\n\nOlá, *${user.NomeCompleto}*!\nVocê solicitou a recuperação de senha do *Sistema SINCO / Lynx*.\n\n👤 *Usuário:* ${user.Login}\n🔑 *Nova Senha Temporária:* ${tempPassword}\n\n🌐 *Como Acessar:*\n${serverUrl}\n\n_Recomendamos que você altere sua senha após efetuar o login._`;
+                
+                await sendText(waContact, textMessage, 'Recuperação de Senha');
+                sentVia.push(`WhatsApp (${waContact})`);
+            } catch (waErr) {
+                console.error('[Recuperar Senha] Erro envio WhatsApp:', waErr.message);
+                errors.push(`Falha no WhatsApp: ${waErr.message}`);
+            }
+        }
+
+        // Fallback: se o canal preferencial falhou mas o outro está disponível
+        if (sentVia.length === 0) {
+            if (isPhone && user.email) {
+                try {
+                    const { sendMail } = require('../services/mailService');
+                    await sendMail({
+                        to: user.email,
+                        subject: '🔐 Recuperação de Acesso — SINCO / Lynx ERP',
+                        html: getCorporateEmailTemplate(`<p>Olá, <b>${user.NomeCompleto}</b>! Sua nova senha temporária é <b>${tempPassword}</b> para o login <b>${user.Login}</b>.</p>`)
+                    });
+                    sentVia.push(`E-mail alternativo (${user.email})`);
+                } catch (e) {}
+            } else if (isEmail && (user.whatsapp || user.telefone)) {
+                try {
+                    const { sendText } = require('../services/whatsapp');
+                    await sendText(user.whatsapp || user.telefone, `*SINCO:* Sua nova senha temporária é *${tempPassword}* para o usuário *${user.Login}*.`);
+                    sentVia.push(`WhatsApp alternativo`);
+                } catch (e) {}
+            }
+        }
+
+        if (sentVia.length > 0) {
+            return res.json({
+                success: true,
+                message: `Os dados de acesso foram enviados com sucesso via ${sentVia.join(' e ')}!`
+            });
+        } else {
+            return res.status(500).json({
+                error: 'Não foi possível entregar a nova senha no momento. Detalhes: ' + errors.join('; ')
+            });
+        }
+
     } catch (err) {
         console.error('Erro ao recuperar senha:', err);
-        res.status(500).json({ error: 'Erro no servidor ao processar a recuperação de senha.' });
+        res.status(500).json({ error: 'Erro no servidor ao processar a recuperação de senha: ' + err.message });
     }
 });
 
@@ -232,7 +374,7 @@ router.post('/update-email', authenticateToken, async (req, res) => {
         );
         
         if (existingEmail.length > 0) {
-            return res.status(409).json({ error: 'Desculpe, este e-mail já está sendo utilizado por outro usuário no sistema Metalfisa.' });
+            return res.status(409).json({ error: 'Desculpe, este e-mail já está sendo utilizado por outro usuário no sistema Lynx.' });
         }
 
         await db.execute('UPDATE usuario SET email = ? WHERE idUsuario = ?', [email, req.user.id]);
@@ -267,12 +409,368 @@ router.post('/register', async (req, res) => {
             [nome, login, hashedPwd, email]
         );
 
-        res.json({ message: 'Seu usuário foi criado com sucesso! Ele foi encaminhado para a análise do Controle de Administração da Metalfisa.' });
+        res.json({ message: 'Seu usuário foi criado com sucesso! Ele foi encaminhado para a análise do Controle de Administração da Lynx.' });
     } catch (err) {
         console.error('Erro de Sign Up:', err);
         res.status(500).json({ error: 'Erro interno ao realizar cadastro.' });
     }
 });
 
+// Auto-Cadastro de Empresa SaaS com Usuário Master e 14 dias de Trial
+router.post('/register-company', async (req, res) => {
+    const { nome, email, senha, telefone, nomeEmpresa, cnpj, segmento } = req.body;
+
+    if (!nome || !email || !senha || !nomeEmpresa) {
+        return res.status(400).json({
+            error: 'Campos obrigatórios ausentes',
+            message: 'Nome do responsável, e-mail, senha e nome da empresa são obrigatórios.'
+        });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanLogin = cleanEmail;
+
+    try {
+        // 1. Checar se usuário ou login já existe
+        const [existingUsers] = await db.execute(
+            'SELECT idUsuario FROM usuario WHERE email = ? OR Login = ?',
+            [cleanEmail, cleanLogin]
+        );
+
+        if (existingUsers.length > 0) {
+            return res.status(409).json({
+                error: 'E-mail já cadastrado',
+                message: 'Já existe uma conta registrada com este endereço de e-mail.'
+            });
+        }
+
+        // Tratar CNPJ se informado ou manter null (permitindo múltiplos registros sem CNPJ no MySQL)
+        const cleanCnpj = (cnpj && String(cnpj).trim().length > 0) ? String(cnpj).trim() : null;
+        if (cleanCnpj) {
+            const [existingCnpj] = await db.execute(
+                'SELECT IdEmpresa FROM empresa WHERE Cnpj = ?',
+                [cleanCnpj]
+            );
+            if (existingCnpj.length > 0) {
+                return res.status(409).json({
+                    error: 'CNPJ já cadastrado',
+                    message: 'Já existe uma empresa cadastrada com este CNPJ.'
+                });
+            }
+        }
+
+        // 2. Data de expiração do trial (14 dias)
+        const dataTrialExpira = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+        const trialExpiraStr = dataTrialExpira.toISOString().slice(0, 19).replace('T', ' ');
+
+        // 3. Criar registro da Empresa (Tenant)
+        const [empresaResult] = await db.execute(`
+            INSERT INTO empresa (
+                RazaoSocial, NomeFantasia, Segmento, Cnpj, Email, Telefone,
+                plano, status_plano, trial_expira_em, limite_usuarios
+            ) VALUES (?, ?, ?, ?, ?, ?, 'pro', 'trial', ?, 10)
+        `, [
+            nomeEmpresa,
+            nomeEmpresa,
+            segmento || 'Indústria & Usinagem',
+            cleanCnpj,
+            cleanEmail,
+            telefone || null,
+            trialExpiraStr
+        ]);
+
+        const novaEmpresaId = empresaResult.insertId;
+
+        // 4. Criar o Usuário Master vinculado à Empresa com acesso irrestrito a todos os módulos
+        const hashedPwd = await bcrypt.hash(senha, 10);
+        const [userResult] = await db.execute(`
+            INSERT INTO usuario (
+                NomeCompleto, Login, Senha, email, telefone,
+                TipoUsuario, is_master, IdEmpresa, aprovado, status,
+                MapaProducao, Romaneio, OrdemServico, SolidWorks,
+                GerenciamentoProducao, VisaoGeralProducao, Comercial, Financeiro,
+                Teste, Expedicao
+            ) VALUES (?, ?, ?, ?, ?, 'master', 1, ?, 1, '1', 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+        `, [
+            nome,
+            cleanLogin,
+            hashedPwd,
+            cleanEmail,
+            telefone || null,
+            novaEmpresaId
+        ]);
+
+        const novoUsuarioId = userResult.insertId;
+
+        // 5. Gerar token JWT de acesso imediato com privilégios Master
+        const token = jwt.sign(
+            {
+                id: novoUsuarioId,
+                login: cleanLogin,
+                email: cleanEmail,
+                nome: nome,
+                tipo: 'master',
+                TipoUsuario: 'master',
+                IdEmpresa: novaEmpresaId,
+                is_master: true,
+                isMaster: true,
+                is_admin: true,
+                isAdmin: true,
+                is_superadmin: false
+            },
+            SECRET_KEY,
+            { expiresIn: '12h' }
+        );
+
+        res.status(201).json({
+            message: 'Empresa cadastrada com sucesso! Bem-vindo ao SINCO SaaS.',
+            token,
+            user: {
+                id: novoUsuarioId,
+                nome: nome,
+                login: cleanLogin,
+                email: cleanEmail,
+                tipo: 'master',
+                TipoUsuario: 'master',
+                IdEmpresa: novaEmpresaId,
+                is_master: true,
+                isMaster: true,
+                is_admin: true,
+                isAdmin: true,
+                is_superadmin: false,
+                aprovado: 1
+            },
+            empresa: {
+                id: novaEmpresaId,
+                nomeFantasia: nomeEmpresa,
+                plano: 'pro',
+                statusPlano: 'trial',
+                limiteUsuarios: 10,
+                trialExpiraEm: trialExpiraStr
+            }
+        });
+
+    } catch (err) {
+        console.error('Erro no auto-cadastro de empresa:', err);
+        res.status(500).json({
+            error: 'Erro no servidor',
+            message: 'Não foi possível concluir o cadastro da empresa: ' + err.message
+        });
+    }
+});
+
+/**
+ * POST /api/auth/register-with-code
+ * Cadastro direto de colaborador através do Código de Segurança fornecido pelo Master (expira em 30min)
+ */
+router.post('/register-with-code', async (req, res) => {
+    const { nome, email, senha, telefone, codigo_seguranca } = req.body;
+
+    if (!nome || !email || !senha || !codigo_seguranca) {
+        return res.status(400).json({
+            error: 'Campos obrigatórios ausentes',
+            message: 'Nome, e-mail, senha e código de segurança são obrigatórios.'
+        });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const cleanLogin = cleanEmail;
+    const cleanCode = String(codigo_seguranca).trim();
+
+    try {
+        // 1. Buscar convite pelo código (token) e checar expiração com NOW() do banco
+        const [conviteRows] = await db.query(
+            'SELECT id, IdEmpresa, email, tipo_usuario, status, expira_em, (expira_em < NOW()) as expirou FROM empresa_convites WHERE token = ?',
+            [cleanCode]
+        );
+
+        if (conviteRows.length === 0) {
+            return res.status(400).json({
+                error: 'Código inválido',
+                message: 'Código de segurança incorreto. Verifique o código recebido pelo WhatsApp ou solicite um novo ao Master da empresa.'
+            });
+        }
+
+        const convite = conviteRows[0];
+
+        // 2. Verificar se já foi aceito
+        if (convite.status === 'aceito') {
+            return res.status(400).json({
+                error: 'Código já utilizado',
+                message: 'Este código de segurança já foi utilizado anteriormente. Solicite um novo código ao Master da sua empresa.'
+            });
+        }
+
+        // 3. Verificar validade de 30 minutos
+        if (convite.expirou === 1 || convite.expirou === true || convite.status === 'expirado') {
+            await db.execute('UPDATE empresa_convites SET status = "expirado" WHERE id = ?', [convite.id]);
+            return res.status(410).json({
+                error: 'Código expirado',
+                message: 'Este código de segurança expirou. Os códigos de acesso têm validade máxima de 30 minutos. Peça para o Master da empresa gerar um novo código.'
+            });
+        }
+
+        // 4. Checar se usuário já existe
+        const [existingUsers] = await db.execute(
+            'SELECT idUsuario FROM usuario WHERE email = ? OR Login = ?',
+            [cleanEmail, cleanLogin]
+        );
+
+        if (existingUsers.length > 0) {
+            return res.status(409).json({
+                error: 'E-mail já cadastrado',
+                message: 'Já existe um usuário cadastrado com este e-mail no sistema.'
+            });
+        }
+
+        // 5. Buscar dados da Empresa associada
+        const [empRows] = await db.query(
+            'SELECT IdEmpresa, RazaoSocial, NomeFantasia, plano, status_plano FROM empresa WHERE IdEmpresa = ?',
+            [convite.IdEmpresa]
+        );
+
+        const empresa = empRows[0] || {
+            IdEmpresa: convite.IdEmpresa,
+            NomeFantasia: 'Minha Empresa'
+        };
+
+        // 6. Cadastrar o colaborador já APROVADO e associado à empresa
+        const hashedPwd = await bcrypt.hash(senha, 10);
+        const role = convite.tipo_usuario || 'operador';
+
+        const [userResult] = await db.execute(`
+            INSERT INTO usuario (
+                NomeCompleto, Login, Senha, email, telefone,
+                TipoUsuario, is_master, IdEmpresa, aprovado, status
+            ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 1, '1')
+        `, [
+            nome,
+            cleanLogin,
+            hashedPwd,
+            cleanEmail,
+            telefone || null,
+            role,
+            convite.IdEmpresa
+        ]);
+
+        const novoUsuarioId = userResult.insertId;
+
+        // 7. Marcar código como aceito
+        await db.execute('UPDATE empresa_convites SET status = "aceito" WHERE id = ?', [convite.id]);
+
+        // 8. Gerar Token JWT de acesso imediato
+        const token = jwt.sign(
+            {
+                id: novoUsuarioId,
+                login: cleanLogin,
+                email: cleanEmail,
+                nome: nome,
+                tipo: role,
+                TipoUsuario: role,
+                IdEmpresa: convite.IdEmpresa,
+                is_master: false,
+                is_superadmin: false
+            },
+            SECRET_KEY,
+            { expiresIn: '12h' }
+        );
+
+        res.status(201).json({
+            message: `Cadastro realizado com sucesso! Você já está vinculado à empresa ${empresa.NomeFantasia || empresa.RazaoSocial}.`,
+            token,
+            user: {
+                id: novoUsuarioId,
+                nome: nome,
+                login: cleanLogin,
+                email: cleanEmail,
+                tipo: role,
+                TipoUsuario: role,
+                IdEmpresa: convite.IdEmpresa,
+                is_master: false,
+                is_superadmin: false,
+                aprovado: 1
+            },
+            empresa: {
+                id: convite.IdEmpresa,
+                nomeFantasia: empresa.NomeFantasia || empresa.RazaoSocial
+            }
+        });
+
+    } catch (err) {
+        console.error('Erro no cadastro com código de segurança:', err);
+        res.status(500).json({
+            error: 'Erro no servidor',
+            message: 'Não foi possível concluir seu cadastro: ' + err.message
+        });
+    }
+});
+
+// Endpoint para validar a sessão atual e dados do Tenant
+router.get('/me', authenticateToken, async (req, res) => {
+    try {
+        const [userRows] = await db.execute(
+            'SELECT idUsuario, NomeCompleto, Login, email, TipoUsuario, IdEmpresa, is_master FROM usuario WHERE idUsuario = ?',
+            [req.user.id]
+        );
+
+        if (userRows.length === 0) {
+            return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
+
+        const user = userRows[0];
+        const userEmailLower = (user.email || user.Login || '').toLowerCase().trim();
+        const isSuperAdmin = (userEmailLower === 'edsonmanoel2012@gmail.com') || (user.TipoUsuario === 'superadmin') || (user.TipoUsuario === 'SA') || (user.idUsuario === 37);
+        const effectiveRole = isSuperAdmin ? 'superadmin' : (user.TipoUsuario || 'operador');
+        const effectiveIsMaster = isSuperAdmin || user.is_master === 1;
+        const tenantId = user.IdEmpresa || 1;
+
+        let empresaData = {
+            id: tenantId,
+            nomeFantasia: 'Empresa Principal',
+            plano: 'enterprise',
+            statusPlano: 'ativo',
+            limiteUsuarios: 9999,
+            trialExpiraEm: null
+        };
+
+        try {
+            const [empRows] = await db.query(
+                'SELECT IdEmpresa, RazaoSocial, NomeFantasia, plano, status_plano, trial_expira_em, limite_usuarios FROM empresa WHERE IdEmpresa = ?',
+                [tenantId]
+            );
+            if (empRows.length > 0) {
+                const emp = empRows[0];
+                empresaData = {
+                    id: emp.IdEmpresa,
+                    nomeFantasia: emp.NomeFantasia || emp.RazaoSocial,
+                    razaoSocial: emp.RazaoSocial,
+                    plano: emp.plano || 'pro',
+                    statusPlano: emp.status_plano || 'ativo',
+                    limiteUsuarios: emp.limite_usuarios || 10,
+                    trialExpiraEm: emp.trial_expira_em
+                };
+            }
+        } catch (e) {}
+
+        res.json({
+            user: {
+                id: user.idUsuario,
+                nome: user.NomeCompleto,
+                login: user.Login,
+                email: user.email,
+                tipo: effectiveRole,
+                IdEmpresa: tenantId,
+                is_master: effectiveIsMaster,
+                is_superadmin: isSuperAdmin
+            },
+            empresa: empresaData
+        });
+    } catch (err) {
+        console.error('Erro no /me:', err);
+        res.status(500).json({ error: 'Erro ao verificar sessão' });
+    }
+});
+
 module.exports = router;
 module.exports.authenticateToken = authenticateToken;
+

@@ -887,7 +887,7 @@ router.get('/estrutura-completa', async (req, res) => {
 });
 
 // POST /api/sinco/validar-estruturas
-// Valida em lote o status de Materiais (SG1), SZ1, Roteiro (SG2) e SZ0 para uma lista de componentes
+// Valida em lote o status de Materiais (BOM), SZ1, Roteiro e SZ0 nativamente no SINCO (MySQL)
 router.post('/validar-estruturas', express.json(), async (req, res) => {
     try {
         const { components } = req.body;
@@ -906,56 +906,63 @@ router.post('/validar-estruturas', express.json(), async (req, res) => {
         const codes = [...new Set(components.map(stripExt))].filter(Boolean);
         if (codes.length === 0) return res.json({});
 
-        // Utilizamos pgPool direto para consultas ao Postgres (Protheus)
-        const pgPool = require('../db');
+        // 1. Consultar tabelas nativas do SINCO (MySQL)
+        const [bomRes] = await pool.query(
+            `SELECT DISTINCT produto_pai_codigo AS cod FROM erp_estruturas_bom WHERE produto_pai_codigo IN (?) AND ativo = 1`,
+            [codes]
+        ).catch(() => [[]]);
+        const [rotRes] = await pool.query(
+            `SELECT DISTINCT codigo_produto AS cod FROM erp_roteiros_operacoes WHERE codigo_produto IN (?)`,
+            [codes]
+        ).catch(() => [[]]);
+        const [sz1Res] = await pool.query(
+            `SELECT DISTINCT TRIM(z1_produto) AS cod FROM sz1010 WHERE TRIM(z1_produto) IN (?) AND (d_e_l_e_t_ IS NULL OR TRIM(d_e_l_e_t_) <> '*')`,
+            [codes]
+        ).catch(() => [[]]);
+        const [sz0Res] = await pool.query(
+            `SELECT DISTINCT TRIM(z0_produto) AS cod FROM sz0010 WHERE TRIM(z0_produto) IN (?) AND (d_e_l_e_t_ IS NULL OR TRIM(d_e_l_e_t_) NOT IN ('*', '  *')) AND (z0_status IS NULL OR TRIM(z0_status) <> 'L')`,
+            [codes]
+        ).catch(() => [[]]);
 
-        const sg1Query = `
-            SELECT DISTINCT TRIM(g1_cod) as cod
-            FROM public.sg1010
-            WHERE TRIM(g1_cod) = ANY($1::text[])
-              AND COALESCE(d_e_l_e_t_, '') <> '*'
-        `;
-        
-        const sz1Query = `
-            SELECT DISTINCT TRIM(z1_produto) as cod
-            FROM public.sz1010
-            WHERE TRIM(z1_produto) = ANY($1::text[])
-              AND COALESCE(d_e_l_e_t_, '') <> '*'
-        `;
-        
-        const sg2Query = `
-            SELECT DISTINCT TRIM(g2_produto) as cod
-            FROM public.sg2010
-            WHERE TRIM(g2_produto) = ANY($1::text[])
-              AND COALESCE(d_e_l_e_t_, '') <> '*'
-        `;
-        
-        const sz0Query = `
-            SELECT DISTINCT TRIM(z0_produto) as cod
-            FROM public.sz0010
-            WHERE TRIM(z0_produto) = ANY($1::text[])
-              AND COALESCE(d_e_l_e_t_, '') <> '*'
-              AND COALESCE(z0_status, '') <> 'L'
-        `;
+        const sg1Set = new Set(bomRes.map(r => r.cod));
+        const rotSet = new Set(rotRes.map(r => r.cod));
+        const sz1Set = new Set(sz1Res.map(r => r.cod));
+        const sz0Set = new Set(sz0Res.map(r => r.cod));
 
-        const [resSg1, resSz1, resSg2, resSz0] = await Promise.all([
-            pgPool.query(sg1Query, [codes]),
-            pgPool.query(sz1Query, [codes]),
-            pgPool.query(sg2Query, [codes]),
-            pgPool.query(sz0Query, [codes])
-        ]);
+        // 2. Fallback nas tabelas espelho legadas caso algum código não tenha sido encontrado
+        const missingSg1 = codes.filter(c => !sg1Set.has(c));
+        const missingRot = codes.filter(c => !rotSet.has(c));
+        const missingSz1 = codes.filter(c => !sz1Set.has(c));
+        const missingSz0 = codes.filter(c => !sz0Set.has(c));
 
-        const sg1Set = new Set(resSg1.rows.map(r => r.cod));
-        const sz1Set = new Set(resSz1.rows.map(r => r.cod));
-        const sg2Set = new Set(resSg2.rows.map(r => r.cod));
-        const sz0Set = new Set(resSz0.rows.map(r => r.cod));
+        if (missingSg1.length > 0 || missingRot.length > 0 || missingSz1.length > 0 || missingSz0.length > 0) {
+            try {
+                const pgPool = require('../db');
+                if (missingSg1.length > 0) {
+                    const r = await pgPool.query(`SELECT DISTINCT TRIM(g1_cod) as cod FROM public.sg1010 WHERE TRIM(g1_cod) = ANY($1::text[]) AND COALESCE(d_e_l_e_t_, '') <> '*'`, [missingSg1]);
+                    r.rows.forEach(x => sg1Set.add(x.cod));
+                }
+                if (missingRot.length > 0) {
+                    const r = await pgPool.query(`SELECT DISTINCT TRIM(g2_produto) as cod FROM public.sg2010 WHERE TRIM(g2_produto) = ANY($1::text[]) AND COALESCE(d_e_l_e_t_, '') <> '*'`, [missingRot]);
+                    r.rows.forEach(x => rotSet.add(x.cod));
+                }
+                if (missingSz1.length > 0) {
+                    const r = await pgPool.query(`SELECT DISTINCT TRIM(z1_produto) as cod FROM public.sz1010 WHERE TRIM(z1_produto) = ANY($1::text[]) AND COALESCE(d_e_l_e_t_, '') <> '*'`, [missingSz1]);
+                    r.rows.forEach(x => sz1Set.add(x.cod));
+                }
+                if (missingSz0.length > 0) {
+                    const r = await pgPool.query(`SELECT DISTINCT TRIM(z0_produto) as cod FROM public.sz0010 WHERE TRIM(z0_produto) = ANY($1::text[]) AND COALESCE(d_e_l_e_t_, '') <> '*' AND COALESCE(z0_status, '') <> 'L'`, [missingSz0]);
+                    r.rows.forEach(x => sz0Set.add(x.cod));
+                }
+            } catch (_) {}
+        }
 
         const result = {};
         for (const c of codes) {
             result[c] = {
                 materiais: sg1Set.has(c),
                 sz1: sz1Set.has(c),
-                roteiro: sg2Set.has(c),
+                roteiro: rotSet.has(c),
                 sz0: sz0Set.has(c)
             };
         }
@@ -963,7 +970,7 @@ router.post('/validar-estruturas', express.json(), async (req, res) => {
         res.json(result);
     } catch (error) {
         console.error('❌ Erro em /validar-estruturas:', error);
-        res.status(500).json({ error: 'Erro ao validar estruturas no Protheus' });
+        res.status(500).json({ error: 'Erro ao validar estruturas no SINCO' });
     }
 });
 
@@ -972,10 +979,34 @@ async function queryProtheus(sql, params) {
     return res.rows;
 }
 
-// GET /api/sinco/arvore/:codigo — estrutura do produto (BOM) via Protheus (SG1010)
+// GET /api/sinco/arvore/:codigo — estrutura do produto (BOM) nativa do SINCO (erp_estruturas_bom)
 router.get('/arvore/:codigo', async (req, res) => {
     const codigo = req.params.codigo.trim().toUpperCase();
     try {
+        // 1. Busca nativa no SINCO
+        const [bomRows] = await pool.query(`
+            SELECT
+                '1' AS nivel,
+                b.produto_filho_codigo AS componente,
+                COALESCE(b.quantidade, 1) AS quantidade,
+                '   ' AS trt,
+                NULL AS ini,
+                NULL AS fim,
+                COALESCE(b.perda_percentual, 0) AS perda,
+                COALESCE(p.descricao, b.produto_filho_codigo) AS descricao,
+                COALESCE(b.unidade, p.unidade_medida, 'UN') AS unidade,
+                COALESCE(p.tipo, 'PA') AS tipo
+            FROM erp_estruturas_bom b
+            LEFT JOIN erp_produtos p ON p.codigo = b.produto_filho_codigo
+            WHERE b.produto_pai_codigo = ? AND b.ativo = 1
+            ORDER BY b.ordem_sequencia ASC, b.id ASC
+        `, [codigo]);
+
+        if (bomRows.length > 0) {
+            return res.json(bomRows);
+        }
+
+        // 2. Fallback espelho legado
         const rows = await queryProtheus(`
             SELECT
                 TRIM(g.g1_niv)    AS nivel,
@@ -998,77 +1029,132 @@ router.get('/arvore/:codigo', async (req, res) => {
         `, [codigo]);
         res.json(rows);
     } catch (err) {
-        console.error('Erro arvore produto (Protheus):', err.message);
+        console.error('Erro arvore produto (SINCO):', err.message);
         res.status(500).json({ 
             success: false,
-            error: 'Erro ao buscar árvore de produto (Protheus)', 
+            error: 'Erro ao buscar árvore de produto', 
             details: err.message,
             codigo,
-            endpoint: `/api/sinco/arvore/${codigo}`,
-            timestamp: new Date().toISOString(),
-            stack: err.stack
+            endpoint: `/api/sinco/arvore/${codigo}`
         });
     }
 });
 
-// GET /api/sinco/arvore-completa/:codigo — explosão recursiva de todos os níveis da estrutura (BOM)
+// GET /api/sinco/arvore-completa/:codigo — explosão BFS de todos os níveis da estrutura (BOM) nativa
 router.get('/arvore-completa/:codigo', async (req, res) => {
     const codigo = req.params.codigo.trim().toUpperCase();
     try {
-        const query = `
-            WITH RECURSIVE bom AS (
-                -- Nível 1: Filhos imediatos do produto raiz
+        const root = codigo;
+        let queue = [{ cod: root, path: [root], sortKey: '' }];
+        let level = 1;
+        const allItems = [];
+
+        while (queue.length > 0 && level <= 12) {
+            const nextQueue = [];
+            const parentsToFetch = [...new Set(queue.map(q => q.cod))];
+
+            // 1. Busca nativa no SINCO
+            const [sincoRows] = await pool.query(`
                 SELECT 
-                    1 as nivel,
-                    TRIM(g1.g1_cod) as pai,
-                    TRIM(g1.g1_comp) as componente,
-                    g1.g1_quant::numeric as quantidade,
-                    TRIM(g1.g1_trt) as trt,
-                    ARRAY[TRIM(g1.g1_cod), TRIM(g1.g1_comp)] as path,
-                    ARRAY[ROW_NUMBER() OVER (ORDER BY g1.g1_comp)] as sort_path
-                FROM sg1010 g1
-                WHERE TRIM(g1.g1_cod) = $1
-                  AND COALESCE(g1.d_e_l_e_t_, '') NOT IN ('*', '  *')
-                
-                UNION ALL
-                
-                -- Níveis subsequentes recursivos
-                SELECT
-                    b.nivel + 1,
-                    TRIM(g.g1_cod) as pai,
-                    TRIM(g.g1_comp) as componente,
-                    g.g1_quant::numeric as quantidade,
-                    TRIM(g.g1_trt) as trt,
-                    b.path || TRIM(g.g1_comp) as path,
-                    b.sort_path || ROW_NUMBER() OVER (PARTITION BY g.g1_cod ORDER BY g.g1_comp) as sort_path
-                FROM bom b
-                JOIN sg1010 g ON TRIM(g.g1_cod) = b.componente
-                WHERE COALESCE(g.d_e_l_e_t_, '') NOT IN ('*', '  *')
-                  AND b.nivel < 12
-                  AND NOT (TRIM(g.g1_comp) = ANY(b.path))
-            )
-            SELECT 
-                b.nivel,
-                b.pai,
-                b.componente,
-                b.quantidade,
-                b.trt,
-                array_to_string(b.path, ' > ') as caminho_hierarquico,
-                TRIM(sb.b1_desc) as descricao,
-                TRIM(sb.b1_um) as unidade,
-                TRIM(sb.b1_tipo) as tipo,
-                TRIM(sb.b1_grupo) as grupo,
-                sb.b1_peso as peso
-            FROM bom b
-            LEFT JOIN sb1010 sb 
-                ON TRIM(sb.b1_cod) = b.componente 
-                AND COALESCE(sb.d_e_l_e_t_, '') NOT IN ('*', '  *')
-            ORDER BY b.sort_path;
-        `;
-        const rows = await queryProtheus(query, [codigo]);
-        res.json(rows);
+                    b.produto_pai_codigo AS pai,
+                    b.produto_filho_codigo AS componente,
+                    COALESCE(b.quantidade, 1) AS quantidade,
+                    '   ' AS trt,
+                    COALESCE(p.descricao, b.produto_filho_codigo) AS descricao,
+                    COALESCE(b.unidade, p.unidade_medida, 'UN') AS unidade,
+                    COALESCE(p.tipo, 'PA') AS tipo,
+                    '01' AS grupo,
+                    COALESCE(p.peso_liquido, 0) AS peso
+                FROM erp_estruturas_bom b
+                LEFT JOIN erp_produtos p ON p.codigo = b.produto_filho_codigo
+                WHERE b.produto_pai_codigo IN (?) AND b.ativo = 1
+                ORDER BY b.ordem_sequencia ASC, b.id ASC
+            `, [parentsToFetch]);
+
+            const parentsFound = new Set(sincoRows.map(r => r.pai));
+            const missingParents = parentsToFetch.filter(p => !parentsFound.has(p));
+
+            let legacyRows = [];
+            if (missingParents.length > 0) {
+                try {
+                    const placeholders = missingParents.map((_, i) => `$${i + 1}`).join(',');
+                    legacyRows = await queryProtheus(`
+                        SELECT 
+                            TRIM(g.g1_cod) AS pai,
+                            TRIM(g.g1_comp) AS componente,
+                            COALESCE(g.g1_quant, 0) AS quantidade,
+                            TRIM(COALESCE(g.g1_trt, '')) AS trt,
+                            TRIM(COALESCE(sb.b1_desc, '')) AS descricao,
+                            TRIM(COALESCE(sb.b1_um, '')) AS unidade,
+                            TRIM(COALESCE(sb.b1_tipo, '')) AS tipo,
+                            TRIM(COALESCE(sb.b1_grupo, '')) AS grupo,
+                            COALESCE(sb.b1_peso, 0) AS peso
+                        FROM sg1010 g
+                        LEFT JOIN sb1010 sb ON TRIM(sb.b1_cod) = TRIM(g.g1_comp) AND COALESCE(sb.d_e_l_e_t_, '') NOT IN ('*', '  *')
+                        WHERE TRIM(g.g1_cod) IN (${placeholders})
+                          AND COALESCE(g.d_e_l_e_t_, '') NOT IN ('*', '  *')
+                        ORDER BY g.g1_comp ASC
+                    `, missingParents);
+                } catch (_) {}
+            }
+
+            const rows = [...sincoRows, ...legacyRows];
+
+            // Group by parent
+            const childrenByParent = new Map();
+            for (const r of rows) {
+                if (!childrenByParent.has(r.pai)) childrenByParent.set(r.pai, []);
+                childrenByParent.get(r.pai).push(r);
+            }
+
+            for (const parentItem of queue) {
+                const children = childrenByParent.get(parentItem.cod) || [];
+                for (let i = 0; i < children.length; i++) {
+                    const child = children[i];
+                    const comp = child.componente;
+
+                    if (parentItem.path.includes(comp)) continue;
+
+                    const newPath = [...parentItem.path, comp];
+                    const caminho = newPath.join(' > ');
+                    const qtd = parseFloat(child.quantidade) || 0;
+
+                    const itemData = {
+                        nivel: level,
+                        pai: child.pai,
+                        componente: comp,
+                        quantidade: qtd,
+                        trt: child.trt,
+                        caminho_hierarquico: caminho,
+                        descricao: child.descricao,
+                        unidade: child.unidade,
+                        tipo: child.tipo,
+                        grupo: child.grupo,
+                        peso: parseFloat(child.peso) || 0,
+                        _sortKey: parentItem.sortKey ? `${parentItem.sortKey}.${String(i).padStart(4, '0')}` : String(i).padStart(4, '0')
+                    };
+
+                    allItems.push(itemData);
+
+                    if (child.tipo !== 'MP' && level < 12) {
+                        nextQueue.push({
+                            cod: comp,
+                            path: newPath,
+                            sortKey: itemData._sortKey
+                        });
+                    }
+                }
+            }
+
+            queue = nextQueue;
+            level++;
+        }
+
+        allItems.sort((a, b) => a._sortKey.localeCompare(b._sortKey));
+        const finalRows = allItems.map(({ _sortKey, ...rest }) => rest);
+        res.json(finalRows);
     } catch (err) {
-        console.error('Erro ao buscar árvore completa recursiva (Protheus):', err.message);
+        console.error('Erro ao buscar árvore completa recursiva (SINCO):', err.message);
         res.status(500).json({ 
             success: false,
             error: 'Erro ao buscar árvore completa de produtos', 
@@ -1079,12 +1165,46 @@ router.get('/arvore-completa/:codigo', async (req, res) => {
     }
 });
 
-// GET /api/sinco/produto/:codigo — dados básicos + complementares do produto (SB1 + SB5)
-// ⚠️ Não filtramos d_e_l_e_t_ aqui: o formulário SINCO precisa acessar qualquer produto,
-//    inclusive os que foram excluídos logicamente no ERP (engenharia ainda referencia esses dados).
+// GET /api/sinco/produto/:codigo — dados básicos + complementares do produto (nativa no erp_produtos)
 router.get('/produto/:codigo', async (req, res) => {
     const codigo = req.params.codigo.trim().toUpperCase();
     try {
+        // 1. Busca nativa no SINCO (erp_produtos)
+        const [erpRows] = await pool.query(`
+            SELECT
+                codigo,
+                descricao AS titulo,
+                tipo,
+                unidade_medida AS unidade,
+                '01' AS grupo,
+                COALESCE(peso_liquido, 0) AS peso,
+                COALESCE(revisao_atual, '00') AS rev,
+                COALESCE(revisao_atual, '00') AS xrevm,
+                0 AS comprimento,
+                0 AS largura,
+                0 AS espessura,
+                '' AS status_delete,
+                foto_url,
+                desenho_url,
+                desenho_nome,
+                desenho_tipo
+            FROM erp_produtos
+            WHERE codigo = ?
+            LIMIT 1
+        `, [codigo]);
+
+        if (erpRows.length > 0) {
+            const p = erpRows[0];
+            return res.json({ 
+                success: true, 
+                ...p, 
+                erp_excluido: false,
+                endpoint: `/api/sinco/produto/${codigo}`,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        // 2. Fallback no espelho legado (SB1 + SB5)
         const rows = await queryProtheus(`
             SELECT
                 TRIM(sb1.b1_cod)     AS codigo,
@@ -1110,7 +1230,7 @@ router.get('/produto/:codigo', async (req, res) => {
         if (rows.length === 0) {
             return res.status(404).json({ 
                 success: false,
-                error: 'Produto não encontrado no Protheus (SB1010).',
+                error: 'Produto não encontrado no SINCO.',
                 codigo,
                 endpoint: `/api/sinco/produto/${codigo}`,
                 timestamp: new Date().toISOString()
@@ -1118,7 +1238,6 @@ router.get('/produto/:codigo', async (req, res) => {
         }
 
         const row = rows[0];
-        // Informa o frontend se o produto está excluído no ERP
         const isDeleted = row.status_delete === '*' || row.status_delete === '  *';
         res.json({ 
             success: true, 
@@ -1128,52 +1247,48 @@ router.get('/produto/:codigo', async (req, res) => {
             timestamp: new Date().toISOString()
         });
     } catch (err) {
-        console.error('Erro ao buscar produto (Protheus):', err.message);
+        console.error('Erro ao buscar produto no SINCO:', err.message);
         res.status(500).json({ 
             success: false,
-            error: 'Erro ao buscar produto (Protheus)', 
+            error: 'Erro ao buscar produto no SINCO', 
             details: err.message,
             codigo,
             endpoint: `/api/sinco/produto/${codigo}`,
-            timestamp: new Date().toISOString(),
-            stack: err.stack
+            timestamp: new Date().toISOString()
         });
     }
 });
 
-
-// GET /api/sinco/produtos/busca?q=... — busca produtos por código ou descrição
+// GET /api/sinco/produtos/busca?q=... — busca produtos por código ou descrição no SINCO
 router.get('/produtos/busca', async (req, res) => {
     const termo = req.query.q ? req.query.q.trim().toUpperCase() : '';
-    if (!termo || termo.length < 3) {
-        return res.json([]);
-    }
-    
+
     try {
-        const rows = await queryProtheus(`
+        // Busca nativa no SINCO (sem termo = lista os produtos cadastrados)
+        const where = termo ? 'WHERE (codigo LIKE ? OR descricao LIKE ?)' : '';
+        const params = termo ? [`%${termo}%`, `%${termo}%`] : [];
+        const [rows] = await pool.query(`
             SELECT
-                TRIM(sb1.b1_cod)     AS codigo,
-                TRIM(sb1.b1_desc)    AS titulo,
-                TRIM(sb1.b1_tipo)    AS tipo,
-                TRIM(sb1.b1_um)      AS unidade
-            FROM public.sb1010 sb1
-            WHERE (TRIM(sb1.b1_cod) LIKE $1 OR TRIM(sb1.b1_desc) LIKE $1)
-              AND COALESCE(sb1.d_e_l_e_t_, '') NOT IN ('*', '  *')
-            ORDER BY sb1.b1_cod
-            LIMIT 50
-        `, [`%${termo}%`]);
-        
+                codigo,
+                descricao AS titulo,
+                tipo,
+                unidade_medida AS unidade
+            FROM erp_produtos
+            ${where}
+            ORDER BY codigo
+            LIMIT 200
+        `, params);
+
         res.json(rows);
     } catch (err) {
         console.error('Erro ao buscar produtos:', err.message);
         res.status(500).json({ 
             success: false,
-            error: 'Erro ao buscar produtos no Protheus', 
+            error: 'Erro ao buscar produtos no SINCO', 
             details: err.message,
             query: termo,
             endpoint: '/api/sinco/produtos/busca',
-            timestamp: new Date().toISOString(),
-            stack: err.stack
+            timestamp: new Date().toISOString()
         });
     }
 });
@@ -1182,7 +1297,7 @@ router.get('/produtos/busca', async (req, res) => {
 router.get('/restricoes/:codigo', async (req, res) => {
     const codigo = req.params.codigo.trim().toUpperCase();
     try {
-        const rows = await queryProtheus(`
+        const [rows] = await pool.query(`
             SELECT
                 TRIM(z1_cliente)  AS cliente,
                 TRIM(z1_loja)     AS loja,
@@ -1191,9 +1306,9 @@ router.get('/restricoes/:codigo', async (req, res) => {
                 TRIM(z1_desccli)  AS desc_cliente,
                 TRIM(z1_revisao)  AS revisao,
                 R_E_C_N_O_        AS recno
-            FROM public.sz1010
-            WHERE TRIM(z1_produto) = $1
-              AND TRIM(COALESCE(d_e_l_e_t_, '')) <> '*'
+            FROM sz1010
+            WHERE TRIM(z1_produto) = ?
+              AND (d_e_l_e_t_ IS NULL OR TRIM(d_e_l_e_t_) <> '*')
             ORDER BY z1_nomecli
         `, [codigo]);
         res.json(rows);
@@ -1201,20 +1316,41 @@ router.get('/restricoes/:codigo', async (req, res) => {
         console.error('Erro restricoes SZ1:', err.message);
         res.status(500).json({ 
             success: false,
-            error: 'Erro ao buscar restrições SZ1 (Protheus)', 
+            error: 'Erro ao buscar restrições SZ1', 
             details: err.message,
             codigo,
-            endpoint: `/api/sinco/restricoes/${codigo}`,
-            timestamp: new Date().toISOString(),
-            stack: err.stack
+            endpoint: `/api/sinco/restricoes/${codigo}`
         });
     }
 });
 
-// GET /api/sinco/operacoes/:codigo — roteiro de operações via Protheus (SG2010 + SH1010)
+// GET /api/sinco/operacoes/:codigo — roteiro de operações nativo do SINCO (erp_roteiros_operacoes)
 router.get('/operacoes/:codigo', async (req, res) => {
     const codigo = req.params.codigo.trim().toUpperCase();
     try {
+        // 1. Busca nativa no SINCO
+        const [sincoRows] = await pool.query(`
+            SELECT
+                o.operacao_seq AS operacao,
+                COALESCE(o.descricao_operacao, '') AS descricao,
+                o.codigo_recurso AS recurso,
+                COALESCE(r.nome, o.codigo_recurso) AS recurso_descricao,
+                COALESCE(o.centro_custo, '') AS ctrab,
+                ROUND(COALESCE(o.tempo_operacao_minutos, 0), 3) AS tempo,
+                COALESCE(o.tempo_setup_minutos, 0) AS setup,
+                1 AS lotepad,
+                1 AS maoobra
+            FROM erp_roteiros_operacoes o
+            LEFT JOIN pcp_recursos r ON r.codigo COLLATE utf8mb4_unicode_ci = o.codigo_recurso COLLATE utf8mb4_unicode_ci
+            WHERE o.codigo_produto = ?
+            ORDER BY o.operacao_seq ASC
+        `, [codigo]);
+
+        if (sincoRows.length > 0) {
+            return res.json(sincoRows);
+        }
+
+        // 2. Fallback espelho legado
         const rows = await queryProtheus(`
             SELECT
                 TRIM(g2.g2_operac)                                          AS operacao,
@@ -1242,15 +1378,13 @@ router.get('/operacoes/:codigo', async (req, res) => {
         `, [codigo]);
         res.json(rows);
     } catch (err) {
-        console.error('Erro operacoes (Protheus):', err.message);
+        console.error('Erro operacoes (SINCO):', err.message);
         res.status(500).json({ 
             success: false,
-            error: 'Erro ao buscar operações (Protheus)', 
+            error: 'Erro ao buscar operações no SINCO', 
             details: err.message,
             codigo,
-            endpoint: `/api/sinco/operacoes/${codigo}`,
-            timestamp: new Date().toISOString(),
-            stack: err.stack
+            endpoint: `/api/sinco/operacoes/${codigo}`
         });
     }
 });
@@ -1259,8 +1393,7 @@ router.get('/operacoes/:codigo', async (req, res) => {
 router.get('/restricoes-sz0/:codigo', async (req, res) => {
     const codigo = req.params.codigo.trim().toUpperCase();
     try {
-        // z0_restric é bytea (Latin-1 com null terminator) — não usar TRIM() no SQL
-        const rows = await queryProtheus(`
+        const [rows] = await pool.query(`
             SELECT
                 Z0.z0_produto        AS produto,
                 Z0.z0_item           AS item,
@@ -1270,32 +1403,30 @@ router.get('/restricoes-sz0/:codigo', async (req, res) => {
                 Z0.z0_respons        AS responsavel,
                 Z0.z0_dtultal        AS dt_ultima_alt,
                 Z0.z0_hrultal        AS hr_ultima_alt,
-                B1.b1_desc           AS descricao_oficial,
-                B1.b1_tipo           AS tipo,
-                B1.b1_um             AS unidade,
+                COALESCE(P.descricao, '') AS descricao_oficial,
+                COALESCE(P.tipo, '')      AS tipo,
+                COALESCE(P.unidade_medida, '') AS unidade,
                 Z0.z0_xrevm          AS revisao
-            FROM public.sz0010 Z0
-            INNER JOIN public.sb1010 B1
-                ON TRIM(B1.b1_cod) = TRIM(Z0.z0_produto)
-                AND COALESCE(B1.d_e_l_e_t_, '') NOT IN ('*', '  *')
-            WHERE TRIM(Z0.z0_produto) = $1
-              AND COALESCE(Z0.d_e_l_e_t_, '') NOT IN ('*', '  *')
-              AND COALESCE(Z0.z0_status, '') <> 'L'
+            FROM sz0010 Z0
+            LEFT JOIN erp_produtos P
+                ON P.codigo = Z0.z0_produto
+            WHERE TRIM(Z0.z0_produto) = ?
+              AND (Z0.d_e_l_e_t_ IS NULL OR TRIM(Z0.d_e_l_e_t_) NOT IN ('*', '  *'))
+              AND (Z0.z0_status IS NULL OR TRIM(Z0.z0_status) <> 'L')
             ORDER BY Z0.z0_item
         `, [codigo]);
 
-        // Decodifica bytea (null-terminated) → string JS
-        // Dados novos (via API) são UTF-8; dados antigos são Latin-1.
-        // Detecta automaticamente: tenta UTF-8 (sem replacement chars U+FFFD), senão usa Latin-1.
         const decoded = rows.map(row => {
             const raw = row.restricao_raw;
             let restricao = '';
             if (raw) {
-                const buf = Buffer.from(raw).filter(b => b !== 0);
-                const asUtf8 = buf.toString('utf8');
-                restricao = asUtf8.includes('\uFFFD')
-                    ? buf.toString('latin1').trim()
-                    : asUtf8.trim();
+                if (Buffer.isBuffer(raw)) {
+                    const buf = raw.filter(b => b !== 0);
+                    const asUtf8 = buf.toString('utf8');
+                    restricao = asUtf8.includes('\uFFFD') ? buf.toString('latin1').trim() : asUtf8.trim();
+                } else {
+                    restricao = String(raw).trim();
+                }
             }
             return {
                 produto: (row.produto || '').trim(),
@@ -1318,20 +1449,18 @@ router.get('/restricoes-sz0/:codigo', async (req, res) => {
         console.error('Erro restricoes SZ0:', err.message);
         res.status(500).json({ 
             success: false,
-            error: 'Erro ao buscar restrições SZ0 (Protheus)', 
+            error: 'Erro ao buscar restrições SZ0', 
             details: err.message,
             codigo,
-            endpoint: `/api/sinco/restricoes-sz0/${codigo}`,
-            timestamp: new Date().toISOString(),
-            stack: err.stack
+            endpoint: `/api/sinco/restricoes-sz0/${codigo}`
         });
     }
 });
 
-// GET /api/sinco/restricoes-sz0-todas - Todas as Restrições (SZ0010)
+// GET /api/sinco/restricoes-sz0-todas — Todas as restrições ativas
 router.get('/restricoes-sz0-todas', async (req, res) => {
     try {
-        const rows = await queryProtheus(`
+        const [rows] = await pool.query(`
             SELECT
                 Z0.z0_produto        AS produto,
                 Z0.z0_item           AS item,
@@ -1341,16 +1470,15 @@ router.get('/restricoes-sz0-todas', async (req, res) => {
                 Z0.z0_respons        AS responsavel,
                 Z0.z0_dtultal        AS dt_ultima_alt,
                 Z0.z0_hrultal        AS hr_ultima_alt,
-                B1.b1_desc           AS descricao_oficial,
-                B1.b1_tipo           AS tipo,
-                B1.b1_um             AS unidade,
+                COALESCE(P.descricao, '') AS descricao_oficial,
+                COALESCE(P.tipo, '')      AS tipo,
+                COALESCE(P.unidade_medida, '') AS unidade,
                 Z0.z0_xrevm          AS revisao
-            FROM public.sz0010 Z0
-            INNER JOIN public.sb1010 B1
-                ON TRIM(B1.b1_cod) = TRIM(Z0.z0_produto)
-                AND COALESCE(B1.d_e_l_e_t_, '') NOT IN ('*', '  *')
-            WHERE COALESCE(Z0.d_e_l_e_t_, '') NOT IN ('*', '  *')
-              AND COALESCE(Z0.z0_status, '') <> 'L'
+            FROM sz0010 Z0
+            LEFT JOIN erp_produtos P
+                ON P.codigo = Z0.z0_produto
+            WHERE (Z0.d_e_l_e_t_ IS NULL OR TRIM(Z0.d_e_l_e_t_) NOT IN ('*', '  *'))
+              AND (Z0.z0_status IS NULL OR TRIM(Z0.z0_status) <> 'L')
             ORDER BY Z0.z0_produto, Z0.z0_item
         `);
 
@@ -1358,11 +1486,13 @@ router.get('/restricoes-sz0-todas', async (req, res) => {
             const raw = row.restricao_raw;
             let restricao = '';
             if (raw) {
-                const buf = Buffer.from(raw).filter(b => b !== 0);
-                const asUtf8 = buf.toString('utf8');
-                restricao = asUtf8.includes('\uFFFD')
-                    ? buf.toString('latin1').trim()
-                    : asUtf8.trim();
+                if (Buffer.isBuffer(raw)) {
+                    const buf = raw.filter(b => b !== 0);
+                    const asUtf8 = buf.toString('utf8');
+                    restricao = asUtf8.includes('\uFFFD') ? buf.toString('latin1').trim() : asUtf8.trim();
+                } else {
+                    restricao = String(raw).trim();
+                }
             }
             return {
                 produto: (row.produto || '').trim(),
@@ -1385,65 +1515,16 @@ router.get('/restricoes-sz0-todas', async (req, res) => {
         console.error('Erro todas restricoes SZ0:', err.message);
         res.status(500).json({ 
             success: false,
-            error: 'Erro ao buscar todas as restrições SZ0 (Protheus)', 
+            error: 'Erro ao buscar todas as restrições SZ0', 
             details: err.message,
-            endpoint: '/api/sinco/restricoes-sz0-todas',
-            timestamp: new Date().toISOString(),
-            stack: err.stack
+            endpoint: '/api/sinco/restricoes-sz0-todas'
         });
     }
 });
 
-
-// POST /api/sinco/restricao/edit — Proxy para API Protheus de inclusão/alteração de restrições
+// POST /api/sinco/restricao/edit — Inclusão e alteração de restrições de engenharia 100% nativo no SINCO (sz0010)
 router.post('/restricao/edit', async (req, res) => {
-    const https = require('https');
-    const PROTHEUS_BASE = 'https://192.168.1.60:47500';
-
-    // Função auxiliar: faz request HTTPS ignorando cert autoassinado
-    const httpsRequest = (url, options, body) => new Promise((resolve, reject) => {
-        const parsed = new URL(url);
-        const opts = {
-            hostname: parsed.hostname,
-            port: parsed.port || 443,
-            path: parsed.pathname + parsed.search,
-            rejectUnauthorized: false,
-            ...options,
-            headers: {
-                ...(options.headers || {}),
-                ...(body ? { 'Content-Length': Buffer.byteLength(body) } : {}),
-            },
-        };
-        const r = https.request(opts, (resp) => {
-            let raw = '';
-            resp.on('data', chunk => raw += chunk);
-            resp.on('end', () => {
-                try {
-                    const ct = resp.headers['content-type'] || '';
-                    const parsed = ct.includes('application/json') ? JSON.parse(raw) : { message: raw };
-                    resolve({ status: resp.statusCode, data: parsed, raw });
-                } catch (e) {
-                    resolve({ status: resp.statusCode, data: { message: raw }, raw });
-                }
-            });
-        });
-        r.on('error', reject);
-        if (body) r.write(body);
-        r.end();
-    });
-
     try {
-        // 1. Obter token OAuth2
-        const tokenResp = await httpsRequest(
-            `${PROTHEUS_BASE}/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120`,
-            { method: 'GET' }
-        );
-        if (tokenResp.status >= 400 || !tokenResp.data.access_token) {
-            throw new Error('Falha ao obter token Protheus: ' + (tokenResp.data.message || tokenResp.raw));
-        }
-        const accessToken = tokenResp.data.access_token;
-
-        // 2. Normalização e Higienização do Payload para a API Protheus TLPP
         let rawRestricoes = [];
         if (Array.isArray(req.body?.data?.restricoes)) {
             rawRestricoes = req.body.data.restricoes;
@@ -1460,7 +1541,7 @@ router.post('/restricao/edit', async (req, res) => {
                 Z0_RESUMO: req.body.resumo || req.body.Z0_RESUMO || '',
                 Z0_RESTRIC: req.body.restricao || req.body.Z0_RESTRIC || '',
                 Z0_RESPONS: req.body.responsavel || req.body.Z0_RESPONS || 'ENGENHARIA',
-                Z0_XREVM: req.body.revMetalfisa || req.body.Z0_XREVM || ''
+                Z0_XREVM: req.body.revLynx || req.body.Z0_XREVM || ''
             }];
         }
 
@@ -1468,107 +1549,63 @@ router.post('/restricao/edit', async (req, res) => {
         const dtHoje = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
         const hrAgora = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-        const sanitizedRestricoes = [];
         for (const r of rawRestricoes) {
-            const noperRaw = Number(r.NOPER);
-            // CRÍTICO: No Protheus TLPP (APICADASTRORESTRICAO.TLPP), NOPER 5 (Exclusão física) NÃO é implementado e
-            // gera Internal Server Error 500 no backend Protheus.
-            // Para "excluir/cancelar" a restrição mantendo conformidade ISO/SGQ e liberando o produto,
-            // convertemos para NOPER 4 com Z0_STATUS = 'L' (Liberada/Inativa).
-            const isExclusao = noperRaw === 5 || r.OPERACAO === 'EXCLUIR' || r.OPCAO === 'EXCLUIR' || r.deleted;
-            const noperFinal = isExclusao ? 4 : (noperRaw === 3 ? 3 : 4);
-            const statusFinal = isExclusao ? 'L' : (r.Z0_STATUS || 'P');
             const produtoCod = String(r.Z0_PRODUTO || r.produto || '').trim().toUpperCase();
-
+            if (!produtoCod) continue;
+            const noperRaw = Number(r.NOPER);
+            const isExclusao = noperRaw === 5 || r.OPERACAO === 'EXCLUIR' || r.OPCAO === 'EXCLUIR' || r.deleted;
+            const statusFinal = isExclusao ? 'L' : (['P', 'L', 'A'].includes(r.Z0_STATUS) ? r.Z0_STATUS : 'P');
             let itemFinal = String(r.Z0_ITEM || r.item || '001').padStart(3, '0');
-            // Se for inclusão (NOPER 3), garante que Z0_ITEM não colida com nenhum item existente no Protheus (mesmo os com status 'L' ou deletados)
-            if (!isExclusao && noperFinal === 3 && produtoCod) {
-                try {
-                    const maxRes = await protheusDB.query(
-                        'SELECT MAX(z0_item) as max_item FROM public.sz0010 WHERE TRIM(z0_produto) = $1',
-                        [produtoCod]
-                    );
-                    const maxVal = parseInt(maxRes.rows[0]?.max_item || '0', 10);
-                    if (!isNaN(maxVal) && maxVal >= parseInt(itemFinal, 10)) {
-                        itemFinal = String(maxVal + 1).padStart(3, '0');
-                    }
-                } catch (dbErr) {
-                    console.warn('⚠️ [SINCO] Erro ao obter MAX(z0_item):', dbErr.message);
+            const resumo = String(r.Z0_RESUMO || r.resumo || 'RESTRIÇÃO').trim().substring(0, 80);
+            const restricao = String(r.Z0_RESTRIC || r.restricao || resumo).trim();
+            const responsavel = String(r.Z0_RESPONS || r.responsavel || 'ENGENHARIA').trim().substring(0, 15);
+            const rev = String(r.Z0_XREVM || r.revLynx || '').trim().substring(0, 2);
+
+            // Verificar se já existe na sz0010
+            const [existRows] = await pool.query(
+                'SELECT R_E_C_N_O_ FROM sz0010 WHERE TRIM(z0_produto) = ? AND TRIM(z0_item) = ? LIMIT 1',
+                [produtoCod, itemFinal]
+            );
+
+            if (existRows.length > 0) {
+                await pool.query(`
+                    UPDATE sz0010 SET
+                        z0_status = ?,
+                        z0_resumo = ?,
+                        z0_restric = ?,
+                        z0_respons = ?,
+                        z0_dtultal = ?,
+                        z0_hrultal = ?,
+                        z0_xrevm = ?,
+                        d_e_l_e_t_ = ?
+                    WHERE R_E_C_N_O_ = ?
+                `, [statusFinal, resumo, restricao, responsavel, dtHoje, hrAgora, rev, isExclusao ? '*' : ' ', existRows[0].R_E_C_N_O_]);
+            } else {
+                const [[maxRec]] = await pool.query('SELECT COALESCE(MAX(R_E_C_N_O_), 0) + 1 AS nextRec FROM sz0010');
+                const [[maxItem]] = await pool.query('SELECT COALESCE(MAX(CAST(z0_item AS UNSIGNED)), 0) + 1 AS nextItem FROM sz0010 WHERE TRIM(z0_produto) = ?', [produtoCod]);
+                if (noperRaw === 3) {
+                    itemFinal = String(maxItem.nextItem).padStart(3, '0');
                 }
+                await pool.query(`
+                    INSERT INTO sz0010 (
+                        z0_filial, z0_produto, z0_item, z0_status, z0_resumo, z0_restric,
+                        z0_respons, z0_dtultal, z0_hrultal, z0_xrevm, d_e_l_e_t_, r_e_c_n_o_, IdEmpresa
+                    ) VALUES ('01', ?, ?, ?, ?, ?, ?, ?, ?, ?, ' ', ?, 1)
+                `, [produtoCod, itemFinal, statusFinal, resumo, restricao, responsavel, dtHoje, hrAgora, rev, maxRec.nextRec]);
             }
-
-            sanitizedRestricoes.push({
-                EMPRESA: String(r.EMPRESA || '01').trim(),
-                CFILANT: String(r.CFILANT || '01').trim(),
-                NOPER: noperFinal,
-                Z0_PRODUTO: produtoCod,
-                Z0_ITEM: itemFinal,
-                Z0_STATUS: ['P', 'L', 'A'].includes(statusFinal) ? statusFinal : 'P',
-                Z0_RESUMO: String(r.Z0_RESUMO || r.resumo || 'RESTRIÇÃO').trim().substring(0, 80),
-                Z0_RESTRIC: String(r.Z0_RESTRIC || r.restricao || r.Z0_RESUMO || r.resumo || 'RESTRIÇÃO').trim().substring(0, 500),
-                Z0_RESPONS: String(r.Z0_RESPONS || r.responsavel || 'ENGENHARIA').trim().substring(0, 15),
-                Z0_DTULTAL: String(r.Z0_DTULTAL || dtHoje).trim(),
-                Z0_HRULTAL: String(r.Z0_HRULTAL || hrAgora).trim(),
-                Z0_XREVM: String(r.Z0_XREVM || r.revMetalfisa || '').trim().substring(0, 2)
-            });
         }
 
-        const normalizedPayload = {
-            data: {
-                restricoes: sanitizedRestricoes
-            }
-        };
-
-        // 3. Enviar restrição higienizada
-        const body = JSON.stringify(normalizedPayload);
-        const editResp = await httpsRequest(
-            `${PROTHEUS_BASE}/restricao/edit`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`,
-                },
-            },
-            body
-        );
-
-        if (editResp.status >= 400 || editResp.data?.status === 'partial') {
-            return res.status(editResp.status >= 400 ? editResp.status : 400).json({
-                success: false,
-                error: 'Erro retornado pela API Protheus de Restrições (SZ0)',
-                message: Array.isArray(editResp.data?.message) ? editResp.data.message.join(' | ') : (editResp.data?.message || 'Falha no processamento da restrição'),
-                details: editResp.data,
-                protheusStatus: editResp.status,
-                protheusRawResponse: editResp.data || editResp.raw,
-                protheusPayload: normalizedPayload,
-                frontendPayload: req.body,
-                endpoint: '/api/sinco/restricao/edit',
-                timestamp: new Date().toISOString()
-            });
-        }
         res.json({
             success: true,
-            message: 'Restrição (SZ0) salva/atualizada com sucesso no Protheus',
-            protheusStatus: editResp.status,
-            protheusRawResponse: editResp.data || editResp.raw,
-            protheusPayload: normalizedPayload,
-            frontendPayload: req.body,
-            endpoint: '/api/sinco/restricao/edit',
-            timestamp: new Date().toISOString(),
-            raw: editResp.data
+            message: 'Restrição salva com sucesso no SINCO'
         });
     } catch (err) {
-        console.error('Erro ao enviar restrição para Protheus:', err.message || err);
+        console.error('Erro ao salvar restrição no SINCO:', err.message || err);
         res.status(500).json({ 
             success: false,
-            error: 'Falha de comunicação com API Protheus', 
+            error: 'Falha ao salvar restrição no SINCO', 
             details: err.message || String(err),
-            protheusPayload: req.body,
-            frontendPayload: req.body,
-            endpoint: '/api/sinco/restricao/edit',
-            timestamp: new Date().toISOString(),
-            stack: err.stack
+            endpoint: '/api/sinco/restricao/edit'
         });
     }
 });

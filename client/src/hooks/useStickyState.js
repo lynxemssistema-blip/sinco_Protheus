@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
  * Salva e recupera valores do window.localStorage permanentemente (com fallback para sessionStorage).
  * 
  * @param {any} defaultValue Valor padrão inicial (caso a chave não exista no Storage)
- * @param {string} key Chave única para o Storage (ex: '@metalfisa:itensFat_filters')
+ * @param {string} key Chave única para o Storage (ex: '@lynxems:itensFat_filters')
  */
 export default function useStickyState(defaultValue, key) {
     const [value, setValue] = useState(() => {

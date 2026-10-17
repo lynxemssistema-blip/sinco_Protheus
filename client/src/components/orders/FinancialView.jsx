@@ -62,13 +62,13 @@ const SortableHeader = ({ label, columnKey, sortConfig, requestSort, filterValue
 
 const FinancialView = ({ rows, loading, error, onRefresh }) => {
     // Grouping: 'prev_fat', 'data_pcp', 'cliente', 'pedido', 'produto', 'sem_agrupamento'
-    const [grouping, setGrouping] = useStickyState('prev_fat', '@metalfisa:financial_grouping');
+    const [grouping, setGrouping] = useStickyState('prev_fat', '@lynxems:financial_grouping');
     
     // Expanded groups state: { [groupKey]: boolean }
     const [expandedGroups, setExpandedGroups] = useState({});
 
     // Toggle do gráfico comparativo com persistência no LocalStorage (padrão: recolhido/falso)
-    const [showComparativeChart, setShowComparativeChart] = useStickyState(false, '@metalfisa:financial_show_chart');
+    const [showComparativeChart, setShowComparativeChart] = useStickyState(false, '@lynxems:financial_show_chart');
 
     // Filter states persistentes
     const [filters, setFilters] = useStickyState({
@@ -79,14 +79,14 @@ const FinancialView = ({ rows, loading, error, onRefresh }) => {
         dataInicial: '',
         dataFinal: '',
         showMode: 'all' // 'all', 'pending', 'billed'
-    }, '@metalfisa:financial_filters');
+    }, '@lynxems:financial_filters');
 
     // Estado do progresso da exportação Excel em tempo real
     const [exportProgress, setExportProgress] = useState(null);
 
     const timelineContainerRef = useRef(null);
 
-    // Disparador da exportação financeira no Padrão MetalFisa com feedback em tempo real
+    // Disparador da exportação financeira no Padrão Lynx com feedback em tempo real
     const handleExportFinancialExcel = async () => {
         if (!filteredRows || filteredRows.length === 0) {
             toast.warning('Nenhum item filtrado para exportação.');
@@ -105,7 +105,7 @@ const FinancialView = ({ rows, loading, error, onRefresh }) => {
                 setExportProgress(progress);
             });
 
-            toast.success(`Planilha "${fileName}" exportada com sucesso no padrão MetalFisa!`);
+            toast.success(`Planilha "${fileName}" exportada com sucesso no padrão Lynx!`);
         } catch (err) {
             console.error('Erro ao exportar Excel Financeiro:', err);
             toast.error('Erro ao gerar planilha: ' + (err.message || err));
@@ -603,16 +603,16 @@ const FinancialView = ({ rows, loading, error, onRefresh }) => {
                                 <span>{loading ? 'Atualizando Dados...' : 'Atualizar Dados com Base nos Filtros'}</span>
                             </button>
                         )}
-                        {/* Botão de Exportação para Excel Padrão MetalFisa */}
+                        {/* Botão de Exportação para Excel Padrão Lynx */}
                         <button
                             type="button"
                             onClick={handleExportFinancialExcel}
                             disabled={exportProgress !== null || filteredRows.length === 0}
                             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs transition-colors cursor-pointer"
-                            title="Exportar Carteira Financeira Analítica e Consolidada para Excel (Padrão Oficial MetalFisa)"
+                            title="Exportar Carteira Financeira Analítica e Consolidada para Excel (Padrão Oficial Lynx)"
                         >
                             <FileSpreadsheet className="h-3.5 w-3.5" />
-                            <span>Exportar Excel (MetalFisa)</span>
+                            <span>Exportar Excel (Lynx)</span>
                             <span className="text-[10px] bg-emerald-800/40 px-1.5 py-0.2 rounded font-mono">
                                 {filteredRows.length}
                             </span>
@@ -972,7 +972,7 @@ const FinancialView = ({ rows, loading, error, onRefresh }) => {
                             </div>
                             <div className="min-w-0 flex-1">
                                 <h3 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
-                                    <span>Gerando Planilha MetalFisa</span>
+                                    <span>Gerando Planilha Lynx</span>
                                     <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded">
                                         ExcelJS
                                     </span>
@@ -1029,7 +1029,7 @@ const FinancialView = ({ rows, loading, error, onRefresh }) => {
 // Internal table detail rendering
 const FlatDetailsTable = ({ items, formatCurrency }) => {
     const [sortConfig, setSortConfig] = useState({ key: '', direction: '' });
-    const [columnFilters, setColumnFilters] = useStickyState({}, '@metalfisa:financial_table_colFilters');
+    const [columnFilters, setColumnFilters] = useStickyState({}, '@lynxems:financial_table_colFilters');
 
     const requestSort = (key) => {
         let direction = 'asc';

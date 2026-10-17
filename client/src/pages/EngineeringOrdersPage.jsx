@@ -315,10 +315,10 @@ const EngineeringOrdersPage = () => {
     const limit = 100;
 
     // Tipo frontend filter (multi-select) — default: Revisão, Restrição, Novo
-    const [tipoFilter, setTipoFilter] = useStickyState(['Revisão', 'Restrição', 'Novo'], '@metalfisa:eng_tipoFilter');
+    const [tipoFilter, setTipoFilter] = useStickyState(['Revisão', 'Restrição', 'Novo'], '@lynxems:eng_tipoFilter');
     const printRef = useRef(null);
     // Emissão frontend filter (single date)
-    const [emissaoFilter, setEmissaoFilter] = useStickyState('', '@metalfisa:eng_emissaoFilter');
+    const [emissaoFilter, setEmissaoFilter] = useStickyState('', '@lynxems:eng_emissaoFilter');
     const [showSettings, setShowSettings] = useState(false);
     const [colConfig, setColConfig] = useState(() => loadColConfigLocal());
     
@@ -626,7 +626,7 @@ const EngineeringOrdersPage = () => {
             alert('Filtre por um número de pedido específico para gerar o Espelho OS Corte (Laser).');
             return;
         }
-        const token = localStorage.getItem('@MetalFisa:token') || '';
+        const token = localStorage.getItem('@Lynx:token') || '';
         window.open(`/api/pedidos/op-mirror/${encodeURIComponent(pedido)}/export-laser?token=${token}`, '_blank');
     };
 
@@ -707,7 +707,7 @@ const EngineeringOrdersPage = () => {
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(13);
         doc.setFont('helvetica', 'bold');
-        doc.text('METALFISA — Relatório de Pedidos de Engenharia', 14, 16.5);
+        doc.text('LYNX — Relatório de Pedidos de Engenharia', 14, 16.5);
         doc.setFontSize(8);
         doc.text(`Emitido em: ${new Date().toLocaleString('pt-BR')}  |  Itens: ${filteredOrders.length}`, 300, 16.5, { align: 'right' });
         doc.setTextColor(0, 0, 0);
@@ -737,7 +737,7 @@ const EngineeringOrdersPage = () => {
             doc.setPage(i);
             doc.setFontSize(7);
             doc.setTextColor(150);
-            doc.text(`MetalFisa — Sistema LYNX — Página ${i} de ${pageCount}`, 10, doc.internal.pageSize.getHeight() - 6);
+            doc.text(`Lynx — Sistema LYNX — Página ${i} de ${pageCount}`, 10, doc.internal.pageSize.getHeight() - 6);
         }
 
         doc.save(`Pedidos_Engenharia_${new Date().toISOString().slice(0,10)}.pdf`);

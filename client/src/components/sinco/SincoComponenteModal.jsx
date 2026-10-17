@@ -288,10 +288,10 @@ export default function SincoComponenteModal({
                                     onClose();
                                 }}
                                 className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                                title="Cadastrar ou revisar este componente no Protheus"
+                                title="Cadastrar ou revisar este componente no SINCO"
                             >
                                 <Sparkles size={13} />
-                                <span>Cadastrar no Protheus</span>
+                                <span>Cadastrar no SINCO</span>
                             </button>
                         )}
                     </div>
@@ -302,7 +302,7 @@ export default function SincoComponenteModal({
                     {loading ? (
                         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
                             <Loader2 className="w-8 h-8 animate-spin text-blue-600 mb-2" />
-                            <span className="text-xs font-semibold">Consultando Protheus e engenharia...</span>
+                            <span className="text-xs font-semibold">Consultando SINCO e engenharia...</span>
                         </div>
                     ) : error ? (
                         <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
@@ -423,7 +423,7 @@ export default function SincoComponenteModal({
                                     {roteiro.length === 0 ? (
                                         <div className="text-center py-12 text-slate-400 text-xs">
                                             <Wrench className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-                                            Nenhum roteiro de operações cadastrado no Protheus (SG2) para este item.
+                                            Nenhum roteiro de operações cadastrado no SINCO (SG2) para este item.
                                         </div>
                                     ) : (
                                         <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
@@ -470,7 +470,7 @@ export default function SincoComponenteModal({
                                     {restricoesSz1.length === 0 ? (
                                         <div className="text-center py-12 text-slate-400 text-xs">
                                             <Building2 className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-                                            Nenhum vínculo de produto x cliente (SZ1) cadastrado no Protheus.
+                                            Nenhum vínculo de produto x cliente (SZ1) cadastrado no SINCO.
                                         </div>
                                     ) : (
                                         <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
@@ -532,7 +532,7 @@ export default function SincoComponenteModal({
                                                     </p>
                                                     <div className="text-[10px] text-amber-800/80 pt-1 flex items-center gap-3">
                                                         <span>Responsável: <strong>{r.Z0_RESPONS || r.responsavel || '—'}</strong></span>
-                                                        <span>Rev: <strong>{r.Z0_REVMETA || r.revMetalfisa || '—'}</strong></span>
+                                                        <span>Rev: <strong>{r.Z0_REVMETA || r.revLynx || '—'}</strong></span>
                                                     </div>
                                                 </div>
                                             ))}

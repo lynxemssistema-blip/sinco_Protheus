@@ -1,4 +1,5 @@
 import jsPDFLib from 'jspdf';
+import { getCompanyShortName } from './companyBranding';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 
 
@@ -41,7 +42,7 @@ export const generateOPFichaPdf = (mirrorData) => {
                 doc.rect(10, 5, 40, 15, 'F');
                 doc.setTextColor(255, 255, 255);
                 doc.setFontSize(12);
-                doc.text("METALFISA", 30, 14, { align: 'center' });
+                doc.text(getCompanyShortName(), 30, 14, { align: 'center' });
                 doc.setTextColor(0, 0, 0);
 
                 doc.setFontSize(20);
@@ -53,7 +54,7 @@ export const generateOPFichaPdf = (mirrorData) => {
                 doc.setFont('helvetica', 'normal');
                 doc.setTextColor(0, 0, 0);
                 doc.text(`Data Impressão: ${new Date().toLocaleDateString('pt-BR')}`, 200, 10, { align: 'right' });
-                doc.text(`Criado via App MetalFisa`, 200, 15, { align: 'right' });
+                doc.text(`Criado via App Lynx`, 200, 15, { align: 'right' });
 
                 doc.setLineWidth(0.5);
                 doc.line(10, 22, pageWidth - 10, 22);

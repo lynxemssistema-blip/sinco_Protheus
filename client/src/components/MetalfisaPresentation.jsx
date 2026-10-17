@@ -1,7 +1,7 @@
 import React from 'react';
 import { ShieldCheck, Target, Users, Zap, LayoutDashboard, Clock } from 'lucide-react';
 
-const MetalfisaPresentation = () => {
+const LynxPresentation = () => {
     const features = [
         {
             icon: <LayoutDashboard className="w-8 h-8 text-blue-500" />,
@@ -31,7 +31,7 @@ const MetalfisaPresentation = () => {
                 <div className="inline-flex items-center justify-center p-3 bg-blue-50 rounded-2xl mb-4 shadow-sm border border-blue-100">
                     <img 
                         src="/logo_metal.png" 
-                        alt="Metalfisa Logo" 
+                        alt="Lynx Logo" 
                         className="h-16 object-contain"
                         onError={(e) => {
                             e.target.onerror = null; 
@@ -41,7 +41,7 @@ const MetalfisaPresentation = () => {
                 </div>
                 
                 <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900">
-                    Bem-vindo ao Portal <span className="text-blue-600 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">Metalfisa</span>
+                    Bem-vindo ao Portal <span className="text-blue-600 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">Lynx</span>
                 </h1>
                 
                 <p className="text-lg md:text-xl text-slate-600 leading-relaxed max-w-3xl mx-auto">
@@ -65,4 +65,4 @@ const MetalfisaPresentation = () => {
     );
 };
 
-export default MetalfisaPresentation;
+export default LynxPresentation;

@@ -147,7 +147,7 @@ export default function BOMPrintLandscape({ data, opNum, itemPv, pedido, produto
                 <div className="flex items-center gap-3">
                     <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                         <Printer className="w-4 h-4 text-blue-700" />
-                        Relatório Oficial MetalFisa — Formato A4 Deitado (Paisagem)
+                        Relatório Oficial Lynx — Formato A4 Deitado (Paisagem)
                     </span>
                     {rootItens.length > 1 && (
                         <div className="flex items-center gap-1.5 ml-2 pl-3 border-l border-slate-300">
@@ -184,7 +184,7 @@ export default function BOMPrintLandscape({ data, opNum, itemPv, pedido, produto
             <div className="p-4 sm:p-8 flex justify-center">
                 <div id="bom-printable-area" className="bg-white w-full max-w-[1140px] p-6 sm:p-8 rounded-xl shadow-lg border border-slate-300 print:shadow-none print:border-none print:p-0 print:m-0 print:w-full print:max-w-none text-slate-900 text-xs">
                     
-                    {/* ═══ CABEÇALHO PADRÃO OFICIAL METALFISA ═══ */}
+                    {/* ═══ CABEÇALHO PADRÃO OFICIAL LYNX ═══ */}
                     <div className="border-2 border-slate-800 rounded-t-lg overflow-hidden mb-3">
                         <div className="grid grid-cols-12 divide-x-2 divide-slate-800 bg-slate-50">
                             {/* Logo */}
@@ -192,11 +192,11 @@ export default function BOMPrintLandscape({ data, opNum, itemPv, pedido, produto
                                 {logoBase64 ? (
                                     <img 
                                         src={logoBase64} 
-                                        alt="Logo MetalFisa" 
+                                        alt="Logo Lynx" 
                                         className="h-11 object-contain max-w-full"
                                     />
                                 ) : (
-                                    <div className="font-extrabold text-lg text-slate-900 tracking-tight">METALFISA</div>
+                                    <div className="font-extrabold text-lg text-slate-900 tracking-tight">LYNX</div>
                                 )}
                                 <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter mt-0.5">
                                     Estruturas Metálicas
@@ -462,9 +462,9 @@ export default function BOMPrintLandscape({ data, opNum, itemPv, pedido, produto
                         )}
                     </div>
 
-                    {/* ═══ RODAPÉ OFICIAL METALFISA ═══ */}
+                    {/* ═══ RODAPÉ OFICIAL LYNX ═══ */}
                     <div className="mt-4 pt-2 border-t-2 border-slate-800 flex items-center justify-between text-[10px] text-slate-500 font-medium">
-                        <span>MetalFisa ERP • Sistema de Gestão Industrial Integrada</span>
+                        <span>Lynx ERP • Sistema de Gestão Industrial Integrada</span>
                         <span>Documento emitido eletronicamente • Formato A4 Paisagem (Landscape)</span>
                     </div>
                 </div>

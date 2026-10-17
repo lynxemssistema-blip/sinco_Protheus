@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getCompanyLegalName, getCompanyShortName, getCompanyAddressCnpjLine, getCompanyTagline } from './companyBranding';
 
 // ── Utilitários de data ───────────────────────────────────────────────────────
 const safeDate = (val) => {
@@ -64,15 +65,15 @@ export const generateGanttPDF = async (opData, orderedGroups, operationPlans, ai
 
             // Logo
             doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(0,0,0);
-            doc.text('METALFISA', ML + 4, y0 + 7);
+            doc.text(getCompanyShortName(), ML + 4, y0 + 7);
             doc.setFontSize(6); doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80);
-            doc.text('Transformando metais em excelência', ML + 4, y0 + 12);
+            doc.text(getCompanyTagline(), ML + 4, y0 + 12);
 
             // Empresa
             doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(0,0,0);
-            doc.text('METALFISA METALURGICA LTDA', c1 + 3, y0 + 6);
+            doc.text(getCompanyLegalName(), c1 + 3, y0 + 6);
             doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(60,60,60);
-            doc.text('R. Américo Santiago Piacenza, 516  —  CNPJ: 23.881.592/0001-01', c1 + 3, y0 + 10.5);
+            doc.text(getCompanyAddressCnpjLine(), c1 + 3, y0 + 10.5);
             doc.text('PCP - Planejamento e Controle de Produção', c1 + 3, y0 + 15);
 
             // Emissão
@@ -429,7 +430,7 @@ export const generateGanttPDF = async (opData, orderedGroups, operationPlans, ai
         // ── Rodapé ───────────────────────────────────────────────────────────
         doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(130,130,130);
         doc.text(
-            `Gerado em ${fmtDate(new Date())}  |  MetalFisa PCP System`,
+            `Gerado em ${fmtDate(new Date())}  |  Lynx PCP System`,
             PW / 2, PH - 4, { align: 'center' }
         );
         doc.text(`Pág. 2`, PW - MR, PH - 4, { align: 'right' });
@@ -456,7 +457,7 @@ export const generateGanttPDF = async (opData, orderedGroups, operationPlans, ai
             // Rodapé da página 3
             doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(130,130,130);
             doc.text(
-                `Gerado em ${fmtDate(new Date())}  |  MetalFisa PCP System`,
+                `Gerado em ${fmtDate(new Date())}  |  Lynx PCP System`,
                 PW / 2, PH - 4, { align: 'center' }
             );
             doc.text(`Pág. 3`, PW - MR, PH - 4, { align: 'right' });

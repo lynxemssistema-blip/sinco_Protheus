@@ -63,8 +63,8 @@ export default function RecursoLegendModal({ onClose, onSelect }) {
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
-                                {filtered.map(r => (
-                                    <tr key={r.codigo} className="hover:bg-blue-50 transition-colors group cursor-pointer"
+                                {filtered.map((r, idx) => (
+                                    <tr key={`${r.codigo}-${idx}`} className="hover:bg-blue-50 transition-colors group cursor-pointer"
                                         onClick={() => onSelect(r.codigo)}>
                                         <td className="p-2 font-mono font-bold text-blue-700">{r.codigo}</td>
                                         <td className="p-2 text-slate-700">{r.nome || <span className="text-slate-400 italic">Sem descrição</span>}</td>

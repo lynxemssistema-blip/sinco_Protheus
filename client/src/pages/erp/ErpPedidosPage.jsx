@@ -5,8 +5,53 @@ import {
     ShoppingCart, Plus, Search, RefreshCw, Layers, CheckCircle2, AlertCircle, 
     Trash2, Calendar, User, DollarSign, Eye, X, Building2, Package, Edit2, 
     Lock, Save, Check, Filter, Tag, SlidersHorizontal, ArrowUpDown, ChevronLeft, 
-    ChevronRight, ChevronDown, RotateCcw, Sparkles, Clock, Truck 
+    ChevronRight, ChevronDown, RotateCcw, Sparkles, Clock, Truck, Copy, FileText, MessageSquare 
 } from 'lucide-react';
+import { Button, IconButton } from '../../components/ui';
+
+const STATUS_META = {
+    orcamento: { label: 'Orçamento', cls: 'bg-amber-50 text-amber-800 border border-amber-200' },
+    pedido: { label: 'Pedido', cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+    cancelado: { label: 'Cancelado', cls: 'bg-red-50 text-red-700 border border-red-200' }
+};
+const statusMeta = (s) => STATUS_META[s] || STATUS_META.orcamento;
+
+function StatusBadge({ status, size = 'text-[11px]' }) {
+    const meta = statusMeta(status);
+    return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-semibold ${size} ${meta.cls}`}>
+            {meta.label}
+        </span>
+    );
+}
+
+const formatBytes = (n) => {
+    const v = Number(n) || 0;
+    if (v < 1024) return `${v} B`;
+    if (v < 1024 * 1024) return `${(v / 1024).toFixed(0)} KB`;
+    return `${(v / 1024 / 1024).toFixed(1)} MB`;
+};
+
+function ClientAvatar({ logo, name, size = 'w-8 h-8' }) {
+    if (logo) {
+        return <img src={logo} alt={name || 'Cliente'} className={`${size} rounded-lg object-contain bg-white border border-gray-200 p-0.5 shrink-0`} />;
+    }
+    const initials = String(name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    return (
+        <div className={`${size} rounded-lg bg-slate-100 border border-slate-200 text-slate-500 text-[10px] font-bold flex items-center justify-center shrink-0`}>
+            {initials}
+        </div>
+    );
+}
+
+// Accepts Brazilian decimal input ("2,3" / "1.234,56") as well as "2.3"
+const parseDecimalBR = (v) => {
+    const s = String(v ?? '').trim();
+    if (!s) return NaN;
+    return parseFloat(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s);
+};
+const sanitizeDecimal = (v) => String(v ?? '').replace(/[^\d.,]/g, '');
+const toInputBR = (v) => (v === '' || v === null || v === undefined || isNaN(parseFloat(v)) ? '' : String(parseFloat(v)).replace('.', ','));
 
 export default function ErpPedidosPage() {
     const [pedidos, setPedidos] = useState([]);
@@ -71,8 +116,8 @@ export default function ErpPedidosPage() {
                     sublabel = 'Itens sem data prevista de entrega';
                 }
             } else if (groupBy === 'status') {
-                key = p.status || 'aberto';
-                label = key.toUpperCase();
+                key = p.status || 'orcamento';
+                label = statusMeta(key).label.toUpperCase();
                 sublabel = 'Situação no ERP';
             }
 
@@ -158,17 +203,149 @@ export default function ErpPedidosPage() {
     // Modal Detalhes e Edição de Itens
     const [viewOrderModal, setViewOrderModal] = useState(null);
     const [editingItemId, setEditingItemId] = useState(null);
-    const [editFormData, setEditFormData] = useState({ quantidade: '', preco_unitario: '', data_entrega_prevista: '' });
+    const [editFormData, setEditFormData] = useState({ quantidade: '', preco_unitario: '', data_entrega_prevista: '', observacao: '' });
     const [savingItem, setSavingItem] = useState(false);
     const [itemActionMsg, setItemActionMsg] = useState(null);
+    const [clientLogos, setClientLogos] = useState({});
+    const [editingHeader, setEditingHeader] = useState(false);
+    const [headerForm, setHeaderForm] = useState({});
+    const [savingHeader, setSavingHeader] = useState(false);
+    const [obsEditItemId, setObsEditItemId] = useState(null);
+    const [obsDraft, setObsDraft] = useState('');
+    const [statusDialog, setStatusDialog] = useState(null);
+    const [pedidoClienteDraft, setPedidoClienteDraft] = useState('');
+    const [uploadingAnexos, setUploadingAnexos] = useState(false);
+    const [changingStatus, setChangingStatus] = useState(false);
+
+    const syncPedidoInList = (numero, patch) =>
+        setPedidos(prev => prev.map(p => (p.numero_pedido === numero ? { ...p, ...patch } : p)));
+
+    const handleUploadAnexos = async (fileList) => {
+        const numero = viewOrderModal?.pedido?.numero_pedido;
+        const files = Array.from(fileList || []);
+        if (!numero || !files.length) return;
+        const form = new FormData();
+        files.forEach(f => form.append('arquivos', f));
+        setUploadingAnexos(true);
+        try {
+            const res = await api.post(`/erp/pedidos/${numero}/anexos`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+            setViewOrderModal(prev => ({ ...prev, anexos: res.data.anexos || [] }));
+            setItemActionMsg({ type: 'success', text: res.data.message });
+        } catch (err) {
+            setItemActionMsg({ type: 'error', text: err.response?.data?.error || err.message || 'Falha ao anexar.' });
+        } finally {
+            setUploadingAnexos(false);
+        }
+    };
+
+    const handleOpenAnexo = async (anexo) => {
+        try {
+            const res = await api.get(`/erp/pedidos-anexos/${anexo.id}/download?inline=1`, { responseType: 'blob' });
+            const url = URL.createObjectURL(res.data);
+            const win = window.open(url, '_blank', 'noopener');
+            if (!win) {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = anexo.nome_original;
+                a.click();
+            }
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+        } catch (err) {
+            setItemActionMsg({ type: 'error', text: 'Não foi possível abrir o anexo.' });
+        }
+    };
+
+    const handleDeleteAnexo = async (anexo) => {
+        if (!window.confirm(`Remover o anexo "${anexo.nome_original}"?`)) return;
+        try {
+            await api.delete(`/erp/pedidos-anexos/${anexo.id}`);
+            setViewOrderModal(prev => ({ ...prev, anexos: (prev.anexos || []).filter(a => a.id !== anexo.id) }));
+        } catch (err) {
+            setItemActionMsg({ type: 'error', text: err.response?.data?.error || 'Falha ao remover anexo.' });
+        }
+    };
+
+    const handleChangeStatus = async (status) => {
+        const numero = viewOrderModal?.pedido?.numero_pedido;
+        if (!numero) return;
+        if (status === 'cancelado' && !window.confirm(`Cancelar o pedido ${numero}?`)) return;
+        setChangingStatus(true);
+        setItemActionMsg(null);
+        try {
+            const res = await api.put(`/erp/pedidos/${numero}/status`, {
+                status,
+                pedido_cliente: status === 'pedido' ? pedidoClienteDraft : undefined
+            });
+            const patch = { status: res.data.status, pedido_cliente: res.data.pedido_cliente };
+            setViewOrderModal(prev => ({ ...prev, pedido: { ...prev.pedido, ...patch } }));
+            syncPedidoInList(numero, patch);
+            setItemActionMsg({ type: 'success', text: res.data.message });
+            setStatusDialog(null);
+        } catch (err) {
+            setItemActionMsg({ type: 'error', text: err.response?.data?.error || err.message || 'Falha ao alterar status.' });
+        } finally {
+            setChangingStatus(false);
+        }
+    };
+
+    const handleStartEditHeader = () => {
+        const p = viewOrderModal?.pedido || {};
+        setHeaderForm({
+            data_emissao: p.data_emissao ? String(p.data_emissao).split('T')[0] : '',
+            condicao_pagamento: p.condicao_pagamento || '',
+            tipo_frete: p.tipo_frete || 'FOB',
+            transportadora: p.transportadora || '',
+            observacoes: p.observacoes || ''
+        });
+        setEditingHeader(true);
+    };
+
+    const handleSaveHeader = async () => {
+        const numero = viewOrderModal?.pedido?.numero_pedido;
+        if (!numero) return;
+        setSavingHeader(true);
+        setItemActionMsg(null);
+        try {
+            const res = await api.put(`/erp/pedidos/${numero}`, headerForm);
+            const updated = res.data.pedido || headerForm;
+            setViewOrderModal(prev => ({ ...prev, pedido: { ...prev.pedido, ...updated } }));
+            setPedidos(prev => prev.map(p => (p.numero_pedido === numero ? { ...p, ...updated } : p)));
+            setItemActionMsg({ type: 'success', text: res.data.message || 'Pedido atualizado!' });
+            setEditingHeader(false);
+        } catch (err) {
+            setItemActionMsg({ type: 'error', text: err.response?.data?.error || err.message || 'Erro ao salvar o pedido.' });
+        } finally {
+            setSavingHeader(false);
+        }
+    };
+
+    const handleSaveItemObs = async (itemId) => {
+        const numero = viewOrderModal?.pedido?.numero_pedido;
+        if (!numero) return;
+        setSavingItem(true);
+        try {
+            const res = await api.put(`/erp/pedidos/${numero}/itens/${itemId}`, { observacao: obsDraft });
+            setViewOrderModal(prev => ({
+                ...prev,
+                itens: prev.itens.map(it => (it.id === itemId ? { ...it, observacao: res.data.item.observacao } : it))
+            }));
+            setItemActionMsg({ type: 'success', text: res.data.message || 'Observação salva!' });
+            setObsEditItemId(null);
+        } catch (err) {
+            setItemActionMsg({ type: 'error', text: err.response?.data?.error || err.message || 'Erro ao salvar observação.' });
+        } finally {
+            setSavingItem(false);
+        }
+    };
 
     const handleStartEditItem = (item) => {
         setItemActionMsg(null);
         setEditingItemId(item.id);
         setEditFormData({
-            quantidade: item.quantidade || '',
-            preco_unitario: item.preco_unitario || '',
-            data_entrega_prevista: item.data_entrega_prevista ? String(item.data_entrega_prevista).split('T')[0] : ''
+            quantidade: toInputBR(item.quantidade),
+            preco_unitario: toInputBR(item.preco_unitario),
+            data_entrega_prevista: item.data_entrega_prevista ? String(item.data_entrega_prevista).split('T')[0] : '',
+            observacao: item.observacao || ''
         });
     };
 
@@ -182,7 +359,11 @@ export default function ErpPedidosPage() {
         setSavingItem(true);
         setItemActionMsg(null);
         try {
-            const res = await api.put(`/erp/pedidos/${viewOrderModal.pedido.numero_pedido}/itens/${itemId}`, editFormData);
+            const res = await api.put(`/erp/pedidos/${viewOrderModal.pedido.numero_pedido}/itens/${itemId}`, {
+                ...editFormData,
+                quantidade: parseDecimalBR(editFormData.quantidade),
+                preco_unitario: parseDecimalBR(editFormData.preco_unitario) || 0
+            });
 
             // Atualizar lista de itens do modal
             const updatedItens = viewOrderModal.itens.map(it => {
@@ -193,7 +374,8 @@ export default function ErpPedidosPage() {
                         preco_unitario: res.data.item.preco_unitario,
                         valor_total: res.data.item.valor_total,
                         subtotal: res.data.item.valor_total,
-                        data_entrega_prevista: res.data.item.data_entrega_prevista
+                        data_entrega_prevista: res.data.item.data_entrega_prevista,
+                        observacao: res.data.item.observacao
                     };
                 }
                 return it;
@@ -236,7 +418,8 @@ export default function ErpPedidosPage() {
         unidade_medida: '',
         quantidade: 1,
         preco_unitario: 0,
-        data_entrega_prevista: ''
+        data_entrega_prevista: '',
+        observacao: ''
     });
     const [addingItemLoading, setAddingItemLoading] = useState(false);
     const [addingItemError, setAddingItemError] = useState(null);
@@ -301,7 +484,7 @@ export default function ErpPedidosPage() {
             setAddingItemError('Selecione ou informe um código de produto.');
             return;
         }
-        const qtd = parseFloat(newItemData.quantidade);
+        const qtd = parseDecimalBR(newItemData.quantidade);
         if (isNaN(qtd) || qtd <= 0) {
             setAddingItemError('Quantidade deve ser maior que zero.');
             return;
@@ -312,8 +495,9 @@ export default function ErpPedidosPage() {
             const res = await api.post(`/erp/pedidos/${viewOrderModal.pedido.numero_pedido}/itens`, {
                 produto_codigo: newItemData.produto_codigo,
                 quantidade: qtd,
-                preco_unitario: parseFloat(newItemData.preco_unitario) || 0,
-                data_entrega_prevista: newItemData.data_entrega_prevista || (viewOrderModal.pedido.data_emissao ? String(viewOrderModal.pedido.data_emissao).split('T')[0] : '')
+                preco_unitario: parseDecimalBR(newItemData.preco_unitario) || 0,
+                data_entrega_prevista: newItemData.data_entrega_prevista || (viewOrderModal.pedido.data_emissao ? String(viewOrderModal.pedido.data_emissao).split('T')[0] : ''),
+                observacao: newItemData.observacao || ''
             });
 
             const novoItem = res.data.item;
@@ -342,7 +526,8 @@ export default function ErpPedidosPage() {
                 unidade_medida: '',
                 quantidade: 1,
                 preco_unitario: 0,
-                data_entrega_prevista: ''
+                data_entrega_prevista: '',
+                observacao: ''
             });
         } catch (err) {
             setAddingItemError(err.response?.data?.error || err.message || 'Erro ao adicionar item.');
@@ -385,7 +570,14 @@ export default function ErpPedidosPage() {
         setLoading(true);
         try {
             const res = await api.get(`/erp/pedidos?search=${encodeURIComponent(debouncedSearch)}&status=${encodeURIComponent(statusFilter)}&limit=150`);
-            setPedidos(res.data || []);
+            const lista = res.data || [];
+            setPedidos(lista);
+            const codigos = [...new Set(lista.map(p => p.cliente_codigo).filter(Boolean))];
+            if (codigos.length) {
+                api.get(`/erp/clientes-logos?codigos=${encodeURIComponent(codigos.join(','))}`)
+                    .then(r => setClientLogos(r.data || {}))
+                    .catch(() => {});
+            }
         } catch (err) {
             console.error('Erro ao carregar pedidos:', err);
         } finally {
@@ -579,6 +771,15 @@ export default function ErpPedidosPage() {
         );
     };
 
+    const applyProductToItem = (item, prod) => ({
+        ...item,
+        produto_codigo: prod.codigo,
+        produto_descricao: prod.descricao,
+        preco_unitario: parseFloat(prod.preco_venda) || 0,
+        desenho_url: prod.desenho_url || null,
+        desenho_nome: prod.desenho_nome || null
+    });
+
     const handleSelectProductFromModal = (prod) => {
         if (productTargetRow === 'adding') {
             setNewItemData(prev => ({
@@ -596,9 +797,7 @@ export default function ErpPedidosPage() {
         }
         if (productTargetRow === null) return;
         const newItens = [...itens];
-        newItens[productTargetRow].produto_codigo = prod.codigo;
-        newItens[productTargetRow].produto_descricao = prod.descricao;
-        newItens[productTargetRow].preco_unitario = parseFloat(prod.preco_venda) || 0;
+        newItens[productTargetRow] = applyProductToItem(newItens[productTargetRow], prod);
         setItens(newItens);
         setIsProductModalOpen(false);
         setProductTargetRow(null);
@@ -617,9 +816,7 @@ export default function ErpPedidosPage() {
 
     const handleSelectProduct = (prod, rowIndex) => {
         const newItens = [...itens];
-        newItens[rowIndex].produto_codigo = prod.codigo;
-        newItens[rowIndex].produto_descricao = prod.descricao;
-        newItens[rowIndex].preco_unitario = parseFloat(prod.preco_venda) || 0;
+        newItens[rowIndex] = applyProductToItem(newItens[rowIndex], prod);
         setItens(newItens);
         setActiveProductRow(null);
         setProductOptions([]);
@@ -628,8 +825,20 @@ export default function ErpPedidosPage() {
     const addItemRow = () => {
         setItens([
             ...itens,
-            { produto_codigo: '', produto_descricao: '', quantidade: 1, preco_unitario: 0, data_entrega_prevista: cabecalho.data_emissao }
+            { produto_codigo: '', produto_descricao: '', quantidade: 1, preco_unitario: 0, data_entrega_prevista: cabecalho.data_emissao, observacao: '' }
         ]);
+    };
+
+    // Copies the line right below the original (same product, qty, price, date, notes)
+    const duplicateItemRow = (index) => {
+        const copy = { ...itens[index] };
+        setItens([...itens.slice(0, index + 1), copy, ...itens.slice(index + 1)]);
+    };
+
+    const toggleItemObs = (index) => {
+        const newItens = [...itens];
+        newItens[index] = { ...newItens[index], showObs: !newItens[index].showObs };
+        setItens(newItens);
     };
 
     const removeItemRow = (index) => {
@@ -639,11 +848,11 @@ export default function ErpPedidosPage() {
 
     const updateItemField = (index, field, value) => {
         const newItens = [...itens];
-        newItens[index][field] = value;
+        newItens[index] = { ...newItens[index], [field]: value };
         setItens(newItens);
     };
 
-    const totalPedido = itens.reduce((acc, it) => acc + ((parseFloat(it.quantidade) || 0) * (parseFloat(it.preco_unitario) || 0)), 0);
+    const totalPedido = itens.reduce((acc, it) => acc + ((parseDecimalBR(it.quantidade) || 0) * (parseDecimalBR(it.preco_unitario) || 0)), 0);
 
     const handleSalvarPedido = async (e) => {
         e.preventDefault();
@@ -653,7 +862,11 @@ export default function ErpPedidosPage() {
         try {
             const res = await api.post('/erp/pedidos', {
                 cabecalho,
-                itens
+                itens: itens.map(({ showObs, ...it }) => ({
+                    ...it,
+                    quantidade: parseDecimalBR(it.quantidade),
+                    preco_unitario: parseDecimalBR(it.preco_unitario) || 0
+                }))
             });
 
             setIsCreateModalOpen(false);
@@ -684,6 +897,8 @@ export default function ErpPedidosPage() {
     const handleViewOrder = async (numeroPedido) => {
         setEditingItemId(null);
         setItemActionMsg(null);
+        setEditingHeader(false);
+        setObsEditItemId(null);
         try {
             const res = await api.get(`/erp/pedidos/${numeroPedido}`);
             setViewOrderModal(res.data);
@@ -714,72 +929,85 @@ export default function ErpPedidosPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <button
+                    <Button
                         onClick={handleOpenCreateModal}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition shadow-sm cursor-pointer"
+                        variant="primary"
+                        size="md"
+                        icon={Plus}
                     >
-                        <Plus className="w-4 h-4" />
                         Digitar Novo Pedido
-                    </button>
-                    <button
+                    </Button>
+                    <IconButton
                         onClick={loadPedidos}
                         disabled={loading}
-                        className="p-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-600 hover:text-gray-900 transition shadow-sm cursor-pointer"
-                        title="Atualizar lista"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                    </button>
+                        icon={RefreshCw}
+                        title="Atualizar lista de pedidos"
+                        variant="light"
+                        size="md"
+                        loading={loading}
+                    />
                 </div>
             </div>
 
-            {/* Quick Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3">
-                    <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg">
-                        <ShoppingCart className="w-5 h-5" />
+            {/* Quick Stats Cards — reflect search/status filters and expanded groups */}
+            {(() => {
+                const visiveis = groupBy === 'none'
+                    ? pedidos
+                    : groupedPedidos.filter(g => !collapsedGroups[g.key]).flatMap(g => g.itens);
+                const valorDe = (p) => parseFloat(p.valor_total) || parseFloat(p.valor_calculado) || 0;
+                const resumo = (lista) => ({ qtd: lista.length, valor: lista.reduce((acc, p) => acc + valorDe(p), 0) });
+                const cards = [
+                    { key: '', label: 'Total', icon: ShoppingCart, tone: 'blue', ...resumo(visiveis) },
+                    { key: 'orcamento', label: 'Orçamentos', icon: Clock, tone: 'amber', ...resumo(visiveis.filter(p => (p.status || 'orcamento') === 'orcamento')) },
+                    { key: 'pedido', label: 'Pedidos', icon: CheckCircle2, tone: 'emerald', ...resumo(visiveis.filter(p => p.status === 'pedido')) },
+                    { key: 'cancelado', label: 'Cancelados', icon: X, tone: 'red', ...resumo(visiveis.filter(p => p.status === 'cancelado')) }
+                ];
+                const tones = {
+                    blue: 'bg-blue-50 text-blue-600 ring-blue-400',
+                    amber: 'bg-amber-50 text-amber-600 ring-amber-400',
+                    emerald: 'bg-emerald-50 text-emerald-600 ring-emerald-400',
+                    red: 'bg-red-50 text-red-600 ring-red-400'
+                };
+                const hidden = pedidos.length - visiveis.length;
+                return (
+                    <div className="space-y-1">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            {cards.map(c => {
+                                const Icon = c.icon;
+                                const active = statusFilter === c.key;
+                                const [bg, text, ring] = tones[c.tone].split(' ');
+                                return (
+                                    <button
+                                        key={c.label}
+                                        type="button"
+                                        onClick={() => setStatusFilter(active && c.key ? '' : c.key)}
+                                        className={`text-left bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3 transition hover:shadow-md cursor-pointer ${active ? `ring-2 ${ring}` : ''}`}
+                                        title={c.key ? `Filtrar por ${c.label}` : 'Mostrar todos os status'}
+                                    >
+                                        <div className={`p-2.5 rounded-lg ${bg} ${text}`}>
+                                            <Icon className="w-5 h-5" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{c.label}</span>
+                                            <div className="flex items-baseline gap-2 mt-0.5">
+                                                <span className={`text-xl font-bold ${c.key ? text : 'text-gray-900'}`}>{c.qtd.toLocaleString('pt-BR')}</span>
+                                                <span className="text-sm font-mono font-semibold text-gray-700 truncate">
+                                                    R$ {c.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {hidden > 0 && (
+                            <p className="text-[11px] text-gray-500 px-1">
+                                Totais consideram apenas os grupos expandidos ({hidden} pedido(s) em grupos recolhidos não somados).
+                            </p>
+                        )}
                     </div>
-                    <div>
-                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total de Pedidos</span>
-                        <p className="text-xl font-bold text-gray-900 mt-0.5">{pedidos.length.toLocaleString('pt-BR')}</p>
-                    </div>
-                </div>
-
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3">
-                    <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-lg">
-                        <CheckCircle2 className="w-5 h-5" />
-                    </div>
-                    <div>
-                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Abertos / Em Andamento</span>
-                        <p className="text-xl font-bold text-emerald-600 mt-0.5">
-                            {pedidos.filter(p => p.status === 'aberto' || !p.status).length.toLocaleString('pt-BR')}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3">
-                    <div className="p-2.5 bg-purple-50 text-purple-600 rounded-lg">
-                        <Layers className="w-5 h-5" />
-                    </div>
-                    <div>
-                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Faturados / Encerrados</span>
-                        <p className="text-xl font-bold text-purple-600 mt-0.5">
-                            {pedidos.filter(p => p.status === 'faturado' || p.status === 'encerrado').length.toLocaleString('pt-BR')}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3">
-                    <div className="p-2.5 bg-amber-50 text-amber-600 rounded-lg">
-                        <DollarSign className="w-5 h-5" />
-                    </div>
-                    <div>
-                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Valor em Carteira</span>
-                        <p className="text-xl font-bold text-gray-900 mt-0.5">
-                            R$ {pedidos.reduce((acc, p) => acc + (parseFloat(p.valor_total) || parseFloat(p.valor_calculado) || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                    </div>
-                </div>
-            </div>
+                );
+            })()}
 
             {/* Search, Filter & Quick Grouping Toolbar */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-3">
@@ -804,8 +1032,8 @@ export default function ErpPedidosPage() {
                             className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 shrink-0 shadow-2xs cursor-pointer"
                         >
                             <option value="">Todos os Status</option>
-                            <option value="aberto">Abertos</option>
-                            <option value="faturado">Faturados</option>
+                            <option value="orcamento">Orçamentos</option>
+                            <option value="pedido">Pedidos</option>
                             <option value="cancelado">Cancelados</option>
                         </select>
                     </div>
@@ -958,13 +1186,16 @@ export default function ErpPedidosPage() {
                                         <div className={`p-1 text-gray-500 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`}>
                                             <ChevronDown className="w-5 h-5" />
                                         </div>
+                                        {group.type === 'cliente' ? (
+                                            <ClientAvatar logo={clientLogos[group.key]} name={group.label} size="w-9 h-9" />
+                                        ) : (
                                         <div className="p-2 rounded-lg bg-blue-100 text-blue-700">
-                                            {group.type === 'cliente' ? <Building2 className="w-4 h-4" /> :
-                                             group.type === 'data_emissao' ? <Calendar className="w-4 h-4" /> :
+                                            {group.type === 'data_emissao' ? <Calendar className="w-4 h-4" /> :
                                              group.type === 'mes_emissao' ? <Calendar className="w-4 h-4" /> :
                                              group.type === 'data_entrega' ? <Truck className="w-4 h-4" /> :
                                              <Tag className="w-4 h-4" />}
                                         </div>
+                                        )}
                                         <div>
                                             <div className="flex items-center gap-2">
                                                 <h3 className="font-bold text-gray-900 text-sm">{group.label}</h3>
@@ -1023,8 +1254,13 @@ export default function ErpPedidosPage() {
                                                         </td>
                                                         {group.type !== 'cliente' && (
                                                             <td className="py-3 px-4">
-                                                                <div className="font-semibold text-gray-900 text-xs">{p.cliente_nome || 'Cliente não identificado'}</div>
-                                                                <div className="text-[11px] text-gray-500 font-mono">Cód: {p.cliente_codigo}</div>
+                                                                <div className="flex items-center gap-2.5">
+                                                                    <ClientAvatar logo={clientLogos[p.cliente_codigo]} name={p.cliente_nome} />
+                                                                    <div>
+                                                                        <div className="font-semibold text-gray-900 text-xs">{p.cliente_nome || 'Cliente não identificado'}</div>
+                                                                        <div className="text-[11px] text-gray-500 font-mono">Cód: {p.cliente_codigo}</div>
+                                                                    </div>
+                                                                </div>
                                                             </td>
                                                         )}
                                                         {group.type !== 'data_emissao' && group.type !== 'mes_emissao' && (
@@ -1052,13 +1288,7 @@ export default function ErpPedidosPage() {
                                                             {p.condicao_pagamento || '-'}
                                                         </td>
                                                         <td className="py-3 px-4">
-                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                                                                p.status === 'cancelado' ? 'bg-red-50 text-red-700 border border-red-200' :
-                                                                p.status === 'faturado' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
-                                                                'bg-green-50 text-green-700 border border-green-200'
-                                                            }`}>
-                                                                {p.status || 'aberto'}
-                                                            </span>
+                                                            <StatusBadge status={p.status} />
                                                         </td>
                                                         <td className="py-3 px-4 text-right">
                                                             <button
@@ -1111,8 +1341,13 @@ export default function ErpPedidosPage() {
                                             {p.numero_pedido}
                                         </td>
                                         <td className="py-3.5 px-4">
-                                            <div className="font-semibold text-gray-900">{p.cliente_nome || 'Cliente não identificado'}</div>
-                                            <div className="text-xs text-gray-500 font-mono">Cód: {p.cliente_codigo}</div>
+                                            <div className="flex items-center gap-3">
+                                                <ClientAvatar logo={clientLogos[p.cliente_codigo]} name={p.cliente_nome} size="w-9 h-9" />
+                                                <div>
+                                                    <div className="font-semibold text-gray-900">{p.cliente_nome || 'Cliente não identificado'}</div>
+                                                    <div className="text-xs text-gray-500 font-mono">Cód: {p.cliente_codigo}</div>
+                                                </div>
+                                            </div>
                                         </td>
                                         <td className="py-3.5 px-4 text-gray-600 text-xs font-mono">
                                             {p.data_emissao ? String(p.data_emissao).split('T')[0] : '-'}
@@ -1137,13 +1372,10 @@ export default function ErpPedidosPage() {
                                             {p.condicao_pagamento || '-'}
                                         </td>
                                         <td className="py-3.5 px-4">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                                                p.status === 'cancelado' ? 'bg-red-50 text-red-700 border border-red-200' :
-                                                p.status === 'faturado' ? 'bg-purple-50 text-purple-700 border border-purple-200' :
-                                                'bg-green-50 text-green-700 border border-green-200'
-                                            }`}>
-                                                {p.status || 'aberto'}
-                                            </span>
+                                            <StatusBadge status={p.status} size="text-xs" />
+                                            {p.pedido_cliente && (
+                                                <div className="text-[10px] text-gray-500 font-mono mt-0.5">PC: {p.pedido_cliente}</div>
+                                            )}
                                         </td>
                                         <td className="py-3.5 px-4 text-right">
                                             <button
@@ -1167,8 +1399,8 @@ export default function ErpPedidosPage() {
 
             {/* MODAL DE CRIAÇÃO DE PEDIDO (MATA410 - LineOk & AllOk) */}
             {isCreateModalOpen && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-                    <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-5xl overflow-hidden my-4 sm:my-8 animate-fadeIn">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-3 overflow-y-auto">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-[98vw] overflow-hidden my-2 animate-fadeIn">
                         {/* Header do Modal */}
                         <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
                             <div className="flex items-center gap-3">
@@ -1283,9 +1515,9 @@ export default function ErpPedidosPage() {
                                                     {/* Dropdown rápido de Clientes */}
                                                     {clientOptions.length > 0 && (
                                                         <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl z-40 max-h-52 overflow-y-auto">
-                                                            {clientOptions.map((cli) => (
+                                                            {clientOptions.map((cli, cliIdx) => (
                                                                 <div
-                                                                    key={cli.codigo}
+                                                                    key={`${cli.codigo}-${cliIdx}`}
                                                                     onClick={() => handleSelectClient(cli)}
                                                                     className="p-2.5 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-none"
                                                                 >
@@ -1367,6 +1599,21 @@ export default function ErpPedidosPage() {
                                         />
                                     </div>
                                 </div>
+
+                                <div>
+                                    <label htmlFor="pedido-observacoes" className="flex items-center gap-1 text-xs font-semibold text-gray-600 mb-1">
+                                        <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
+                                        Observações do Pedido
+                                    </label>
+                                    <textarea
+                                        id="pedido-observacoes"
+                                        rows={2}
+                                        placeholder="Informações gerais do pedido: instruções de entrega, embalagem, nº do pedido do cliente, contato..."
+                                        value={cabecalho.observacoes || ''}
+                                        onChange={(e) => setCabecalho({ ...cabecalho, observacoes: e.target.value })}
+                                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                                    />
+                                </div>
                             </div>
 
                             {/* SEÇÃO 2: GRID DE ITENS (LineOk) */}
@@ -1391,20 +1638,22 @@ export default function ErpPedidosPage() {
                                         <thead className="bg-gray-50 border-b border-gray-200 font-semibold uppercase text-gray-600">
                                             <tr>
                                                 <th className="py-2.5 px-3 w-12 text-center">#</th>
-                                                <th className="py-2.5 px-3 w-64">Produto *</th>
+                                                <th className="py-2.5 px-3 w-72">Produto *</th>
                                                 <th className="py-2.5 px-3">Descrição</th>
-                                                <th className="py-2.5 px-3 w-24 text-right">Qtd *</th>
-                                                <th className="py-2.5 px-3 w-28 text-right">Preço Un. (R$) *</th>
-                                                <th className="py-2.5 px-3 w-32">Entrega Prev.</th>
-                                                <th className="py-2.5 px-3 w-28 text-right">Subtotal</th>
-                                                <th className="py-2.5 px-3 w-10 text-center"></th>
+                                                <th className="py-2.5 px-3 w-28 text-right">Qtd *</th>
+                                                <th className="py-2.5 px-3 w-32 text-right">Preço Un. (R$) *</th>
+                                                <th className="py-2.5 px-3 w-40">Entrega Prev.</th>
+                                                <th className="py-2.5 px-3 w-32 text-right">Subtotal</th>
+                                                <th className="py-2.5 px-3 w-40 text-center">Ações</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100 bg-white">
                                             {itens.map((item, idx) => {
-                                                const subtotal = (parseFloat(item.quantidade) || 0) * (parseFloat(item.preco_unitario) || 0);
+                                                const subtotal = (parseDecimalBR(item.quantidade) || 0) * (parseDecimalBR(item.preco_unitario) || 0);
+                                                const obsAberta = item.showObs || !!item.observacao;
                                                 return (
-                                                    <tr key={idx} className="hover:bg-gray-50/60">
+                                                    <React.Fragment key={idx}>
+                                                    <tr className={`hover:bg-gray-50/60 ${obsAberta ? '[&>td]:border-b-0' : ''}`}>
                                                         <td className="py-2 px-3 text-center font-mono text-gray-500 font-bold">
                                                             {idx + 1}
                                                         </td>
@@ -1446,9 +1695,9 @@ export default function ErpPedidosPage() {
                                                             {/* Autocomplete Dropdown */}
                                                             {activeProductRow === idx && productOptions.length > 0 && (
                                                                 <div className="absolute left-3 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl z-50 max-h-52 overflow-y-auto">
-                                                                    {productOptions.map((prod) => (
+                                                                    {productOptions.map((prod, prodIdx) => (
                                                                         <div
-                                                                            key={prod.codigo}
+                                                                            key={`${prod.codigo}-${prodIdx}`}
                                                                             onClick={() => handleSelectProduct(prod, idx)}
                                                                             className="p-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-none"
                                                                         >
@@ -1478,24 +1727,24 @@ export default function ErpPedidosPage() {
 
                                                         <td className="py-2 px-3">
                                                             <input
-                                                                type="number"
+                                                                type="text" inputMode="decimal"
                                                                 required
                                                                 min="0.001"
                                                                 step="any"
                                                                 value={item.quantidade}
-                                                                onChange={(e) => updateItemField(idx, 'quantidade', e.target.value)}
+                                                                onChange={(e) => updateItemField(idx, 'quantidade', sanitizeDecimal(e.target.value))}
                                                                 className="w-full bg-white border border-gray-300 rounded px-2 py-1 text-xs font-mono text-right text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 font-bold"
                                                             />
                                                         </td>
 
                                                         <td className="py-2 px-3">
                                                             <input
-                                                                type="number"
+                                                                type="text" inputMode="decimal"
                                                                 required
                                                                 min="0"
                                                                 step="0.01"
                                                                 value={item.preco_unitario}
-                                                                onChange={(e) => updateItemField(idx, 'preco_unitario', e.target.value)}
+                                                                onChange={(e) => updateItemField(idx, 'preco_unitario', sanitizeDecimal(e.target.value))}
                                                                 className="w-full bg-white border border-gray-300 rounded px-2 py-1 text-xs font-mono text-right text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                                             />
                                                         </td>
@@ -1513,17 +1762,64 @@ export default function ErpPedidosPage() {
                                                             R$ {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                         </td>
 
-                                                        <td className="py-2 px-3 text-center">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => removeItemRow(idx)}
-                                                                disabled={itens.length === 1}
-                                                                className="p-1 text-gray-400 hover:text-red-600 disabled:opacity-30 transition cursor-pointer"
-                                                            >
-                                                                <Trash2 className="w-3.5 h-3.5" />
-                                                            </button>
+                                                        <td className="py-2 px-3">
+                                                            <div className="flex items-center justify-center gap-0.5">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => item.desenho_url && window.open(item.desenho_url, '_blank', 'noopener')}
+                                                                    disabled={!item.desenho_url}
+                                                                    className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-25 disabled:hover:bg-transparent disabled:cursor-not-allowed transition cursor-pointer"
+                                                                    title={item.desenho_url ? `Abrir desenho/PDF do produto${item.desenho_nome ? `: ${item.desenho_nome}` : ''}` : 'Produto sem PDF/desenho cadastrado'}
+                                                                >
+                                                                    <FileText className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => toggleItemObs(idx)}
+                                                                    className={`p-1.5 rounded transition cursor-pointer ${item.observacao ? 'text-amber-600 bg-amber-50' : 'text-gray-400 hover:text-amber-600 hover:bg-amber-50'}`}
+                                                                    title="Observação da linha"
+                                                                >
+                                                                    <MessageSquare className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => duplicateItemRow(idx)}
+                                                                    className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition cursor-pointer"
+                                                                    title="Duplicar linha"
+                                                                >
+                                                                    <Copy className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => removeItemRow(idx)}
+                                                                    disabled={itens.length === 1}
+                                                                    className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-30 transition cursor-pointer"
+                                                                    title="Remover linha"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
                                                         </td>
                                                     </tr>
+                                                    {obsAberta && (
+                                                        <tr className="bg-amber-50/30">
+                                                            <td></td>
+                                                            <td colSpan={7} className="pb-2 px-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <MessageSquare className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                                                    <input
+                                                                        type="text"
+                                                                        autoFocus={item.showObs && !item.observacao}
+                                                                        placeholder={`Observação da linha ${idx + 1} (ex.: revisão do desenho, embalagem especial, tratamento...)`}
+                                                                        value={item.observacao || ''}
+                                                                        onChange={(e) => updateItemField(idx, 'observacao', e.target.value)}
+                                                                        className="w-full bg-white border border-amber-200 rounded px-2 py-1 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                                                    />
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                    </React.Fragment>
                                                 );
                                             })}
                                         </tbody>
@@ -1546,20 +1842,22 @@ export default function ErpPedidosPage() {
 
                             {/* Modal Footer */}
                             <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-                                <button
+                                <Button
                                     type="button"
+                                    variant="light"
+                                    size="md"
                                     onClick={() => setIsCreateModalOpen(false)}
-                                    className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 transition"
                                 >
                                     Cancelar
-                                </button>
-                                <button
+                                </Button>
+                                <Button
                                     type="submit"
-                                    disabled={saveLoading}
-                                    className="px-6 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition shadow-sm disabled:opacity-50"
+                                    variant="primary"
+                                    size="md"
+                                    loading={saveLoading}
                                 >
-                                    {saveLoading ? 'Validando e Gravando...' : 'Gravar Pedido no ERP'}
-                                </button>
+                                    Gravar Pedido no ERP
+                                </Button>
                             </div>
                         </form>
                     </div>
@@ -1569,25 +1867,28 @@ export default function ErpPedidosPage() {
             {/* MODAL DE DETALHES E EDIÇÃO DE ITENS DO PEDIDO (MATA410) */}
             {viewOrderModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-xs overflow-hidden animate-fadeIn">
-                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-[96vw] max-h-[94vh] flex flex-col overflow-hidden">
                         {/* Header Fixo */}
                         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-slate-50 shrink-0">
                             <div className="flex items-center gap-3">
+                                {viewOrderModal.pedido?.cliente_logo ? (
+                                    <ClientAvatar logo={viewOrderModal.pedido.cliente_logo} name={viewOrderModal.pedido.cliente_nome} size="w-12 h-12" />
+                                ) : (
                                 <div className="p-2.5 bg-blue-100 text-blue-700 rounded-xl">
                                     <ShoppingCart className="w-6 h-6" />
                                 </div>
+                                )}
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <h2 className="text-lg font-bold text-gray-900">
                                             Pedido de Venda: <span className="font-mono text-blue-700 font-black">{viewOrderModal.pedido?.numero_pedido}</span>
                                         </h2>
-                                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase ${
-                                            viewOrderModal.pedido?.status === 'cancelado' ? 'bg-red-100 text-red-700' :
-                                            viewOrderModal.pedido?.status === 'faturado' ? 'bg-purple-100 text-purple-700' :
-                                            'bg-emerald-100 text-emerald-800'
-                                        }`}>
-                                            {viewOrderModal.pedido?.status || 'Aberto'}
-                                        </span>
+                                        <StatusBadge status={viewOrderModal.pedido?.status} size="text-xs uppercase" />
+                                        {viewOrderModal.pedido?.pedido_cliente && (
+                                            <span className="text-xs font-mono text-gray-600 bg-white border border-gray-200 px-2 py-0.5 rounded">
+                                                Pedido do Cliente: <b>{viewOrderModal.pedido.pedido_cliente}</b>
+                                            </span>
+                                        )}
                                     </div>
                                     <p className="text-xs text-gray-600 mt-0.5">
                                         Cliente: <span className="font-semibold text-gray-800">{viewOrderModal.pedido?.cliente_nome}</span> 
@@ -1609,23 +1910,56 @@ export default function ErpPedidosPage() {
                             </button>
                         </div>
 
-                        {/* Banner Informativo / Notificações de Ação */}
-                        {itemActionMsg && (
-                            <div className={`px-6 py-2.5 flex items-center gap-2 text-sm font-medium shrink-0 ${
-                                itemActionMsg.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-b border-emerald-200' :
-                                'bg-rose-50 text-rose-800 border-b border-rose-200'
-                            }`}>
-                                {itemActionMsg.type === 'success' ? (
-                                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                                ) : (
-                                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                                )}
-                                <span>{itemActionMsg.text}</span>
+                        {/* Cabeçalho do Pedido (visualização / edição) */}
+                        {editingHeader ? (
+                            <div className="px-6 py-3 bg-amber-50/60 border-b border-amber-200 shrink-0 text-xs space-y-2">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                    <label className="block">
+                                        <span className="text-gray-600 font-semibold block mb-1">Emissão</span>
+                                        <input type="date" value={headerForm.data_emissao || ''}
+                                            onChange={(e) => setHeaderForm(f => ({ ...f, data_emissao: e.target.value }))}
+                                            className="w-full px-2 py-1.5 border border-amber-300 rounded-lg bg-white" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="text-gray-600 font-semibold block mb-1">Condição de Pagto</span>
+                                        <input type="text" value={headerForm.condicao_pagamento || ''}
+                                            onChange={(e) => setHeaderForm(f => ({ ...f, condicao_pagamento: e.target.value }))}
+                                            className="w-full px-2 py-1.5 border border-amber-300 rounded-lg bg-white font-mono" />
+                                    </label>
+                                    <label className="block">
+                                        <span className="text-gray-600 font-semibold block mb-1">Tipo de Frete</span>
+                                        <select value={headerForm.tipo_frete || 'FOB'}
+                                            onChange={(e) => setHeaderForm(f => ({ ...f, tipo_frete: e.target.value }))}
+                                            className="w-full px-2 py-1.5 border border-amber-300 rounded-lg bg-white">
+                                            <option value="FOB">FOB - Destinatário</option>
+                                            <option value="CIF">CIF - Emitente</option>
+                                        </select>
+                                    </label>
+                                    <label className="block">
+                                        <span className="text-gray-600 font-semibold block mb-1">Transportadora</span>
+                                        <input type="text" value={headerForm.transportadora || ''}
+                                            onChange={(e) => setHeaderForm(f => ({ ...f, transportadora: e.target.value }))}
+                                            className="w-full px-2 py-1.5 border border-amber-300 rounded-lg bg-white" />
+                                    </label>
+                                </div>
+                                <label className="block">
+                                    <span className="text-gray-600 font-semibold block mb-1">Observações do Pedido</span>
+                                    <textarea rows={2} value={headerForm.observacoes || ''}
+                                        onChange={(e) => setHeaderForm(f => ({ ...f, observacoes: e.target.value }))}
+                                        className="w-full px-2 py-1.5 border border-amber-300 rounded-lg bg-white resize-y" />
+                                </label>
+                                <div className="flex justify-end gap-2">
+                                    <button onClick={() => setEditingHeader(false)} disabled={savingHeader}
+                                        className="px-3 py-1.5 rounded-lg font-semibold text-gray-600 hover:bg-gray-100">Cancelar</button>
+                                    <button onClick={handleSaveHeader} disabled={savingHeader}
+                                        className="px-3 py-1.5 rounded-lg font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 disabled:opacity-50">
+                                        <Save className="w-3.5 h-3.5" /> {savingHeader ? 'Salvando...' : 'Salvar Pedido'}
+                                    </button>
+                                </div>
                             </div>
-                        )}
-
-                        {/* Cards de Resumo do Cabeçalho */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-6 py-3 bg-gray-50/70 border-b border-gray-200 shrink-0 text-xs">
+                        ) : (
+                        <div className="px-6 py-3 bg-gray-50/70 border-b border-gray-200 shrink-0 text-xs space-y-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 items-start">
                             <div>
                                 <span className="text-gray-500 block">Emissão:</span>
                                 <span className="font-bold text-gray-900">
@@ -1633,8 +1967,9 @@ export default function ErpPedidosPage() {
                                 </span>
                             </div>
                             <div>
-                                <span className="text-gray-500 block">Condição de Pagto:</span>
+                                <span className="text-gray-500 block">Condição de Pagto / Frete:</span>
                                 <span className="font-bold text-gray-900">{viewOrderModal.pedido?.condicao_pagamento || '-'}</span>
+                                <span className="text-gray-500 ml-1">· {viewOrderModal.pedido?.tipo_frete || 'FOB'}{viewOrderModal.pedido?.transportadora ? ` · ${viewOrderModal.pedido.transportadora}` : ''}</span>
                             </div>
                             <div>
                                 <span className="text-gray-500 block">Total de Itens:</span>
@@ -1650,6 +1985,102 @@ export default function ErpPedidosPage() {
                                 <span className="font-black text-blue-700 text-sm font-mono">
                                     R$ {(parseFloat(viewOrderModal.pedido?.valor_total) || viewOrderModal.itens?.reduce((acc, it) => acc + (parseFloat(it.valor_total || it.subtotal) || 0), 0) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
+                            </div>
+                            <div className="sm:text-right">
+                                {viewOrderModal.pedido?.status !== 'cancelado' && viewOrderModal.pedido?.status !== 'faturado' && (
+                                    <button onClick={handleStartEditHeader}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg font-bold transition cursor-pointer">
+                                        <Edit2 className="w-3.5 h-3.5" /> Editar Pedido
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                        <div className="flex items-start gap-1.5 text-gray-700 bg-white border border-gray-200 rounded-lg px-3 py-2">
+                            <MessageSquare className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0" />
+                            <span className="font-semibold text-gray-500 shrink-0">Observações:</span>
+                            <span className="whitespace-pre-wrap">{viewOrderModal.pedido?.observacoes || <em className="text-gray-400">Nenhuma observação</em>}</span>
+                        </div>
+                        </div>
+                        )}
+
+                        {/* Status do Pedido + Anexos */}
+                        <div className="px-6 py-2.5 border-b border-gray-200 shrink-0 text-xs space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-bold text-gray-700 uppercase tracking-wider mr-1">Status:</span>
+                                <StatusBadge status={viewOrderModal.pedido?.status} size="text-xs" />
+                                <div className="flex-1" />
+                                {viewOrderModal.pedido?.status === 'orcamento' && (
+                                    <button
+                                        onClick={() => { setStatusDialog('pedido'); setPedidoClienteDraft(viewOrderModal.pedido?.pedido_cliente || ''); }}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold cursor-pointer"
+                                    >
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> Converter em Pedido
+                                    </button>
+                                )}
+                                {viewOrderModal.pedido?.status === 'cancelado' && (
+                                    <button onClick={() => handleChangeStatus('orcamento')} disabled={changingStatus}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg font-bold cursor-pointer disabled:opacity-50">
+                                        <RotateCcw className="w-3.5 h-3.5" /> Reativar como Orçamento
+                                    </button>
+                                )}
+                                {viewOrderModal.pedido?.status !== 'cancelado' && (
+                                    <button onClick={() => handleChangeStatus('cancelado')} disabled={changingStatus}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg font-bold cursor-pointer disabled:opacity-50">
+                                        <X className="w-3.5 h-3.5" /> Cancelar
+                                    </button>
+                                )}
+                            </div>
+
+                            {statusDialog === 'pedido' && (
+                                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
+                                    <div className="font-bold text-emerald-900 uppercase tracking-wider">Converter Orçamento em Pedido</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                                        <label className="block">
+                                            <span className="text-gray-700 font-semibold block mb-1">Nº do Pedido do Cliente *</span>
+                                            <input type="text" value={pedidoClienteDraft} autoFocus
+                                                onChange={(e) => setPedidoClienteDraft(e.target.value)}
+                                                placeholder="Ex: PC-45871"
+                                                className="w-full px-2 py-1.5 border border-emerald-300 rounded-lg bg-white font-mono focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+                                        </label>
+                                        <div className="md:col-span-2 text-gray-600">
+                                            Anexos do cliente: <b className={(viewOrderModal.anexos || []).length ? 'text-emerald-700' : 'text-red-600'}>
+                                                {(viewOrderModal.anexos || []).length} arquivo(s)
+                                            </b> {!(viewOrderModal.anexos || []).length && '— anexe pelo menos 1 arquivo abaixo.'}
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-end gap-2">
+                                        <button onClick={() => setStatusDialog(null)} className="px-3 py-1.5 rounded-lg font-semibold text-gray-600 hover:bg-gray-100">Voltar</button>
+                                        <button
+                                            onClick={() => handleChangeStatus('pedido')}
+                                            disabled={changingStatus || !pedidoClienteDraft.trim() || !(viewOrderModal.anexos || []).length}
+                                            className="px-3 py-1.5 rounded-lg font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1 disabled:opacity-50"
+                                        >
+                                            <Check className="w-3.5 h-3.5" /> {changingStatus ? 'Confirmando...' : 'Confirmar Pedido'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-bold text-gray-700 uppercase tracking-wider mr-1">Anexos:</span>
+                                {(viewOrderModal.anexos || []).length === 0 && <em className="text-gray-400">Nenhum arquivo anexado</em>}
+                                {(viewOrderModal.anexos || []).map(a => (
+                                    <span key={a.id} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 bg-slate-50 border border-slate-200 rounded-lg">
+                                        <button onClick={() => handleOpenAnexo(a)} className="flex items-center gap-1 text-blue-700 hover:underline cursor-pointer" title="Abrir / baixar">
+                                            <FileText className="w-3.5 h-3.5" />
+                                            <span className="max-w-[220px] truncate">{a.nome_original}</span>
+                                            <span className="text-gray-400">({formatBytes(a.tamanho)})</span>
+                                        </button>
+                                        <button onClick={() => handleDeleteAnexo(a)} className="p-0.5 text-gray-400 hover:text-red-600 cursor-pointer" title="Remover anexo">
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </span>
+                                ))}
+                                <label className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border font-bold cursor-pointer transition ${uploadingAnexos ? 'opacity-50 pointer-events-none' : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200'}`}>
+                                    <Plus className="w-3.5 h-3.5" /> {uploadingAnexos ? 'Enviando...' : 'Anexar arquivos'}
+                                    <input type="file" multiple className="hidden"
+                                        onChange={(e) => { handleUploadAnexos(e.target.files); e.target.value = ''; }} />
+                                </label>
                             </div>
                         </div>
 
@@ -1753,9 +2184,9 @@ export default function ErpPedidosPage() {
                                                 {/* Dropdown de sugestões */}
                                                 {addItemProdOptions.length > 0 && (
                                                     <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
-                                                        {addItemProdOptions.map(p => (
+                                                        {addItemProdOptions.map((p, pIdx) => (
                                                             <button
-                                                                key={p.codigo}
+                                                                key={`${p.codigo}-${pIdx}`}
                                                                 type="button"
                                                                 onClick={() => handleSelectAddItemProduct(p)}
                                                                 className="w-full text-left px-3 py-2 text-xs hover:bg-emerald-50 border-b border-gray-100 last:border-b-0 cursor-pointer"
@@ -1764,7 +2195,7 @@ export default function ErpPedidosPage() {
                                                                 <span className="text-gray-700 ml-2">{p.descricao}</span>
                                                                 {p.preco_venda && (
                                                                     <span className="float-right text-emerald-700 font-semibold font-mono">
-                                                                        R$ {parseFloat(p.preco_venda).toFixed(2)}
+                                                                        R$ {parseFloat(p.preco_venda).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
                                                                     </span>
                                                                 )}
                                                             </button>
@@ -1795,11 +2226,11 @@ export default function ErpPedidosPage() {
                                             Quantidade *
                                         </label>
                                         <input
-                                            type="number"
+                                            type="text" inputMode="decimal"
                                             min="0.0001"
                                             step="any"
                                             value={newItemData.quantidade}
-                                            onChange={(e) => setNewItemData(prev => ({ ...prev, quantidade: e.target.value }))}
+                                            onChange={(e) => setNewItemData(prev => ({ ...prev, quantidade: sanitizeDecimal(e.target.value) }))}
                                             className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-right font-mono"
                                         />
                                     </div>
@@ -1810,11 +2241,11 @@ export default function ErpPedidosPage() {
                                             Preço Un. (R$) *
                                         </label>
                                         <input
-                                            type="number"
+                                            type="text" inputMode="decimal"
                                             min="0"
                                             step="0.01"
                                             value={newItemData.preco_unitario}
-                                            onChange={(e) => setNewItemData(prev => ({ ...prev, preco_unitario: e.target.value }))}
+                                            onChange={(e) => setNewItemData(prev => ({ ...prev, preco_unitario: sanitizeDecimal(e.target.value) }))}
                                             className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none text-right font-mono"
                                         />
                                     </div>
@@ -1831,13 +2262,26 @@ export default function ErpPedidosPage() {
                                             className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                                         />
                                     </div>
+
+                                    <div className="md:col-span-12">
+                                        <label className="block text-[11px] font-bold text-gray-700 uppercase mb-1">
+                                            Observação do Item
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={newItemData.observacao || ''}
+                                            onChange={(e) => setNewItemData(prev => ({ ...prev, observacao: e.target.value }))}
+                                            placeholder="Ex: acabamento zincado, embalar separado..."
+                                            className="w-full px-3 py-1.5 text-xs bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                                        />
+                                    </div>
                                 </div>
 
                                 <div className="mt-3 pt-3 border-t border-emerald-200/60 flex items-center justify-between">
                                     <div className="text-xs">
                                         <span className="text-gray-500 mr-2">Subtotal previsto:</span>
                                         <span className="font-bold text-emerald-800 font-mono text-sm">
-                                            R$ {(((parseFloat(newItemData.quantidade) || 0) * (parseFloat(newItemData.preco_unitario) || 0))).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            R$ {(((parseDecimalBR(newItemData.quantidade) || 0) * (parseDecimalBR(newItemData.preco_unitario) || 0))).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -1876,6 +2320,7 @@ export default function ErpPedidosPage() {
                                             <th className="py-3 px-3 text-right w-28">Subtotal</th>
                                             <th className="py-3 px-3 w-28 text-center">Entrega</th>
                                             <th className="py-3 px-3 w-36 text-center">Status OP</th>
+                                            <th className="py-3 px-3 w-20 text-center">Docs</th>
                                             <th className="py-3 px-3 w-28 text-center">Ações</th>
                                         </tr>
                                     </thead>
@@ -1884,11 +2329,12 @@ export default function ErpPedidosPage() {
                                             const isEditing = editingItemId === it.id;
                                             const hasOp = !it.pode_editar;
                                             const subtotalCalculado = isEditing 
-                                                ? ((parseFloat(editFormData.quantidade) || 0) * (parseFloat(editFormData.preco_unitario) || 0))
+                                                ? ((parseDecimalBR(editFormData.quantidade) || 0) * (parseDecimalBR(editFormData.preco_unitario) || 0))
                                                 : (parseFloat(it.valor_total || it.subtotal || 0));
 
                                             return (
-                                                <tr key={it.id} className={`${isEditing ? 'bg-amber-50/50' : hasOp ? 'hover:bg-gray-50/60' : 'hover:bg-blue-50/30'} transition`}>
+                                                <React.Fragment key={it.id}>
+                                                <tr className={`${isEditing ? 'bg-amber-50/50' : hasOp ? 'hover:bg-gray-50/60' : 'hover:bg-blue-50/30'} transition`}>
                                                     {/* Seq */}
                                                     <td className="py-2.5 px-3 font-mono text-center text-gray-500 font-semibold">
                                                         {it.item_seq}
@@ -1911,11 +2357,11 @@ export default function ErpPedidosPage() {
                                                     <td className="py-2.5 px-3 text-right font-mono font-bold">
                                                         {isEditing ? (
                                                             <input
-                                                                type="number"
+                                                                type="text" inputMode="decimal"
                                                                 step="0.0001"
                                                                 min="0.0001"
                                                                 value={editFormData.quantidade}
-                                                                onChange={(e) => setEditFormData({ ...editFormData, quantidade: e.target.value })}
+                                                                onChange={(e) => setEditFormData({ ...editFormData, quantidade: sanitizeDecimal(e.target.value) })}
                                                                 className="w-20 px-2 py-1 border border-amber-300 rounded font-mono text-right text-xs focus:ring-2 focus:ring-amber-500 bg-white"
                                                                 autoFocus
                                                             />
@@ -1928,15 +2374,15 @@ export default function ErpPedidosPage() {
                                                     <td className="py-2.5 px-3 text-right font-mono">
                                                         {isEditing ? (
                                                             <input
-                                                                type="number"
+                                                                type="text" inputMode="decimal"
                                                                 step="0.01"
                                                                 min="0"
                                                                 value={editFormData.preco_unitario}
-                                                                onChange={(e) => setEditFormData({ ...editFormData, preco_unitario: e.target.value })}
+                                                                onChange={(e) => setEditFormData({ ...editFormData, preco_unitario: sanitizeDecimal(e.target.value) })}
                                                                 className="w-24 px-2 py-1 border border-amber-300 rounded font-mono text-right text-xs focus:ring-2 focus:ring-amber-500 bg-white"
                                                             />
                                                         ) : (
-                                                            `R$ ${parseFloat(it.preco_unitario || 0).toFixed(2)}`
+                                                            `R$ ${parseFloat(it.preco_unitario || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`
                                                         )}
                                                     </td>
 
@@ -1981,6 +2427,31 @@ export default function ErpPedidosPage() {
                                                     </td>
 
                                                     {/* Ações */}
+                                                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                                        <div className="flex items-center justify-center gap-1">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => it.desenho_url && window.open(it.desenho_url, '_blank', 'noopener')}
+                                                            disabled={!it.desenho_url}
+                                                            className={`p-1 rounded border transition ${it.desenho_url ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 cursor-pointer' : 'text-gray-300 border-gray-200 cursor-not-allowed'}`}
+                                                            title={it.desenho_url ? 'Abrir desenho/PDF do produto' : 'Produto sem desenho anexado'}
+                                                        >
+                                                            <FileText className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (obsEditItemId === it.id) { setObsEditItemId(null); return; }
+                                                                setObsEditItemId(it.id);
+                                                                setObsDraft(it.observacao || '');
+                                                            }}
+                                                            className={`p-1 rounded border transition cursor-pointer ${it.observacao ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-gray-50 hover:bg-amber-50 text-gray-500 border-gray-200'}`}
+                                                            title={it.observacao ? `Observação: ${it.observacao}` : 'Adicionar observação ao item'}
+                                                        >
+                                                            <MessageSquare className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        </div>
+                                                    </td>
                                                     <td className="py-2.5 px-3 text-center whitespace-nowrap">
                                                         {isEditing ? (
                                                             <div className="flex items-center justify-center gap-1">
@@ -2033,6 +2504,42 @@ export default function ErpPedidosPage() {
                                                         )}
                                                     </td>
                                                 </tr>
+                                                {obsEditItemId === it.id ? (
+                                                    <tr className="bg-amber-50/70">
+                                                        <td colSpan={10} className="px-3 py-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <MessageSquare className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                                                <input
+                                                                    type="text"
+                                                                    value={obsDraft}
+                                                                    onChange={(e) => setObsDraft(e.target.value)}
+                                                                    onKeyDown={(e) => { if (e.key === 'Enter') handleSaveItemObs(it.id); if (e.key === 'Escape') setObsEditItemId(null); }}
+                                                                    placeholder="Observação do item (Enter para salvar)"
+                                                                    className="flex-1 px-2 py-1 border border-amber-300 rounded text-xs bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                                                                    autoFocus
+                                                                />
+                                                                <button onClick={() => handleSaveItemObs(it.id)} disabled={savingItem}
+                                                                    className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold flex items-center gap-1 disabled:opacity-50">
+                                                                    <Save className="w-3 h-3" /> {savingItem ? '...' : 'Salvar'}
+                                                                </button>
+                                                                <button onClick={() => setObsEditItemId(null)}
+                                                                    className="px-1.5 py-1 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded text-xs">
+                                                                    <X className="w-3 h-3" />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ) : it.observacao ? (
+                                                    <tr className="bg-amber-50/30">
+                                                        <td colSpan={10} className="px-3 py-1.5 text-[11px] text-amber-900">
+                                                            <span className="inline-flex items-start gap-1.5">
+                                                                <MessageSquare className="w-3 h-3 text-amber-600 mt-0.5 shrink-0" />
+                                                                <span><b>Obs:</b> {it.observacao}</span>
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ) : null}
+                                                </React.Fragment>
                                             );
                                         })}
                                     </tbody>
@@ -2126,9 +2633,9 @@ export default function ErpPedidosPage() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100 bg-white">
-                                            {clientModalList.map((cli) => (
+                                            {clientModalList.map((cli, cIdx) => (
                                                 <tr 
-                                                    key={cli.codigo}
+                                                    key={`${cli.codigo}-${cIdx}`}
                                                     onClick={() => handleSelectClientFromModal(cli)}
                                                     className="hover:bg-blue-50/50 cursor-pointer transition"
                                                 >
@@ -2190,7 +2697,7 @@ export default function ErpPedidosPage() {
             {/* MODAL DE CONSULTA PADRÃO DE PRODUTOS (F3 SB1) COM MÚLTIPLOS FILTROS */}
             {isProductModalOpen && (
                 <div style={{ zIndex: 70 }} className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fadeIn">
-                    <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-[95vw] max-h-[94vh] flex flex-col overflow-hidden">
                         {/* Header */}
                         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-slate-50 shrink-0">
                             <div className="flex items-center gap-3">
@@ -2577,7 +3084,7 @@ export default function ErpPedidosPage() {
                                 <div className="py-14 text-center text-gray-500">
                                     <RefreshCw className="w-7 h-7 animate-spin mx-auto mb-2 text-blue-600" />
                                     <div className="font-semibold text-gray-700">Pesquisando no catálogo de produtos do ERP...</div>
-                                    <div className="text-xs text-gray-400 mt-1">Filtrando entre 153.000+ itens no padrão Protheus SB1</div>
+                                    <div className="text-xs text-gray-400 mt-1">Consultando os produtos cadastrados da empresa</div>
                                 </div>
                             ) : productModalList.length === 0 ? (
                                 <div className="py-14 text-center text-gray-400">
@@ -2603,13 +3110,14 @@ export default function ErpPedidosPage() {
                                                 <th className="py-2.5 px-3 w-16 text-center">UM</th>
                                                 <th className="py-2.5 px-3 w-16 text-center">Arm.</th>
                                                 <th className="py-2.5 px-3 w-28 text-right">Preço Sug.</th>
+                                                <th className="py-2.5 px-3 w-16 text-center">PDF</th>
                                                 <th className="py-2.5 px-3 w-24 text-center">Ação</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100 bg-white">
-                                            {productModalList.map((prod) => (
+                                            {productModalList.map((prod, prIdx) => (
                                                 <tr 
-                                                    key={prod.codigo}
+                                                    key={`${prod.codigo}-${prIdx}`}
                                                     onDoubleClick={() => handleSelectProductFromModal(prod)}
                                                     className="hover:bg-blue-50/60 cursor-pointer transition group"
                                                 >
@@ -2646,6 +3154,23 @@ export default function ErpPedidosPage() {
                                                             </span>
                                                         ) : (
                                                             <span className="text-gray-400 font-normal text-[11px]">-</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-center">
+                                                        {prod.desenho_url ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    window.open(prod.desenho_url, '_blank', 'noopener');
+                                                                }}
+                                                                className="p-1.5 rounded text-red-600 hover:bg-red-50 transition cursor-pointer"
+                                                                title={`Abrir desenho/PDF${prod.desenho_nome ? `: ${prod.desenho_nome}` : ''}`}
+                                                            >
+                                                                <FileText className="w-4 h-4" />
+                                                            </button>
+                                                        ) : (
+                                                            <span className="text-gray-300 text-[11px]" title="Produto sem PDF/desenho cadastrado">-</span>
                                                         )}
                                                     </td>
                                                     <td className="py-2.5 px-3 text-center">

@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getCompanyShortName } from './companyBranding';
 
 const formatDateBR = (dateStr) => {
     if (!dateStr) return '-';
@@ -25,7 +26,7 @@ export const generateFilaDependenciasPdf = async (activeTab, recurso, dataFim, d
             docInstance.setFontSize(16);
             docInstance.setFont('helvetica', 'bold');
             docInstance.setTextColor(30, 58, 95);
-            docInstance.text('MetalFisa', ML + logoWidth + 5, 18);
+            docInstance.text(getCompanyShortName(), ML + logoWidth + 5, 18);
 
             docInstance.setFontSize(14);
             docInstance.setFont('helvetica', 'bold');
@@ -140,7 +141,7 @@ export const generateFilaDependenciasPdf = async (activeTab, recurso, dataFim, d
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(150, 150, 150);
             doc.text(`Página ${i} de ${pageCount}`, pageWidth - MR, doc.internal.pageSize.getHeight() - 8, { align: 'right' });
-            doc.text(`Gerado via MetalFisa App`, ML, doc.internal.pageSize.getHeight() - 8);
+            doc.text(`Gerado via Lynx App`, ML, doc.internal.pageSize.getHeight() - 8);
         }
 
         doc.save(`Fila_Dependencias_${recurso || 'Todos'}_${activeTab}_${new Date().getTime()}.pdf`);

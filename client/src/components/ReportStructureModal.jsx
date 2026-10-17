@@ -50,7 +50,7 @@ const ReportStructureModal = ({ isOpen, onClose, codigo }) => {
             // Logo Block
             doc.setFontSize(13);
             doc.setFont('helvetica', 'bold');
-            doc.text('METALFISA', ML + 4, hY + 6);
+            doc.text('LYNX', ML + 4, hY + 6);
             doc.setFontSize(5.5);
             doc.setFont('helvetica', 'normal');
             doc.text('Transformando metais em excelência', ML + 4, hY + 10);
@@ -58,7 +58,7 @@ const ReportStructureModal = ({ isOpen, onClose, codigo }) => {
             // Company Block
             doc.setFontSize(7.5);
             doc.setFont('helvetica', 'bold');
-            doc.text('METALFISA METALURGICA LTDA', col1 + 3, hY + 5.5);
+            doc.text('LYNX EMS SISTEMAS LTDA', col1 + 3, hY + 5.5);
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(6.5);
             doc.text('CNPJ: 23.881.592/0001-01', col1 + 3, hY + 9.5);

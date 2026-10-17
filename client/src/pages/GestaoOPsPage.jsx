@@ -2079,9 +2079,9 @@ const GestaoOPsPage = () => {
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden print:overflow-visible print:shadow-none print:border-none flex flex-col h-[calc(100vh-4.5rem)] md:h-[calc(100vh-1.25rem)] relative">
-            {/* Top loading progress bar (shimmer - idêntico ao /visao-geral) */}
+            {/* Top loading progress bar (shimmer) */}
             <div className={`h-0.5 w-full overflow-hidden transition-opacity duration-300 ${(loading || loadingMore) ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="h-full" style={{ width: '100%', backgroundImage: 'linear-gradient(90deg, transparent 0%, #3b82f6 30%, #60a5fa 50%, #3b82f6 70%, transparent 100%)', backgroundSize: '200% 100%', animation: 'shimmerBar 1.4s linear infinite' }} />
+                <div className="h-full" style={{ width: '100%', backgroundImage: 'linear-gradient(90deg, transparent 0%, #425750 30%, #E0E800 50%, #425750 70%, transparent 100%)', backgroundSize: '200% 100%', animation: 'shimmerBar 1.4s linear infinite' }} />
             </div>
 
             {/* Global Overlay for PDF Generation */}
@@ -2162,7 +2162,7 @@ const GestaoOPsPage = () => {
                     </div>
 
                     <div className="flex flex-col gap-1 xl:col-span-1">
-                        <label className="text-[11px] font-medium text-gray-600 ml-1" title="Item do Pedido Metalfisa (SC6)">Item Pedido:</label>
+                        <label className="text-[11px] font-medium text-gray-600 ml-1" title="Item do Pedido Lynx (SC6)">Item Pedido:</label>
                         <div className="relative">
                             <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
                             <input
@@ -2172,7 +2172,7 @@ const GestaoOPsPage = () => {
                                 value={filters.item || ''}
                                 onChange={handleFilterChange}
                                 className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium h-[42px]"
-                                title="Filtrar por item do pedido Metalfisa (ex: 01, 02)"
+                                title="Filtrar por item do pedido Lynx (ex: 01, 02)"
                             />
                         </div>
                     </div>
@@ -2324,18 +2324,18 @@ const GestaoOPsPage = () => {
                 </div>
 
                 {/* Barra Unificada de Ações em Linha Única */}
-                <div className="mt-3 px-3 py-2 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 text-white rounded-xl flex items-center justify-between flex-wrap gap-2 shadow-xs border border-slate-800">
+                <div className="mt-3 px-3 py-2 bg-gradient-to-r from-[#1E2825] via-[#24312D] to-[#1E2825] text-white rounded-xl flex items-center justify-between flex-wrap gap-2 shadow-xs border border-[#425750]/60">
                     <div className="flex items-center gap-2 flex-wrap">
                         {/* 1. Filtrar (Pesquisa) */}
                         <button
                             type="submit"
                             disabled={loading}
-                            className={`font-semibold rounded-lg text-xs px-3.5 py-2 text-center transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 ${
-                                loading ? 'bg-blue-500/60 text-white cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 text-white'
+                            className={`font-semibold rounded-lg text-xs px-3.5 py-2 text-center transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 border ${
+                                loading ? 'bg-[#425750]/60 border-[#425750] text-white cursor-not-allowed' : 'bg-[#425750] hover:bg-[#32423D] border-[#425750] text-white'
                             }`}
                             title="Aplicar filtros e carregar todas as OPs correspondentes"
                         >
-                            {loading ? <Loader2 className="h-4 w-4 animate-spin text-white" /> : <Search className="h-4 w-4" />}
+                            {loading ? <Loader2 className="h-4 w-4 animate-spin text-[#E0E800]" /> : <Search className="h-4 w-4 text-[#E0E800]" />}
                             <span>{loading ? 'Buscando...' : 'Filtrar'}</span>
                         </button>
 
@@ -3344,12 +3344,12 @@ const GestaoOPsPage = () => {
 
             {/* Floating Batch Actions Bar */}
             {selectedFractions.size > 0 && (
-                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/95 backdrop-blur-md text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-5 z-50 animate-fadeIn border border-slate-700">
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#1E2825]/95 backdrop-blur-md text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-5 z-50 animate-fadeIn border border-[#425750]/60">
                     <div className="flex items-center gap-2">
-                        <span className="bg-blue-600 text-white text-xs font-bold px-2.5 py-0.5 rounded-full">{selectedFractions.size}</span>
+                        <span className="bg-[#425750] border border-[#E0E800]/40 text-[#E0E800] text-xs font-bold px-2.5 py-0.5 rounded-full">{selectedFractions.size}</span>
                         <span className="font-semibold text-sm">itens selecionados</span>
                     </div>
-                    <div className="h-6 w-px bg-slate-700"></div>
+                    <div className="h-6 w-px bg-[#425750]/50"></div>
                     <div className="flex items-center gap-2 flex-wrap">
                         <button
                             type="button"

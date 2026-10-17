@@ -1,5 +1,5 @@
 const db = require('../db');
-const nodemailer = require('nodemailer');
+const { sendMail } = require('../services/mailService');
 
 async function forceSendAccumulated() {
     try {
@@ -65,21 +65,7 @@ async function forceSendAccumulated() {
             </tr>
         `).join('');
 
-        let transporter;
-        try {
-            transporter = nodemailer.createTransport({
-                host: 'smtp.task.com.br',
-                port: 587,
-                secure: false,
-                auth: {
-                    user: 'sincometal@metalfisa.com.br',
-                    pass: 'Pro1042@sm'
-                },
-                tls: { rejectUnauthorized: false }
-            });
-        } catch(e) {
-            console.error('[CRON ACUMULADO] Erro ao configurar nodemailer', e);
-        }
+
 
         const htmlContent = `
             <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
@@ -113,8 +99,7 @@ async function forceSendAccumulated() {
             </div>
         `;
 
-        await transporter.sendMail({
-            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+        await sendMail({
             to: 'edsonmanoel2012@gmail.com',
             subject: `📈 Acumulado do Mês (Validado) - ${periodBr}`,
             html: htmlContent

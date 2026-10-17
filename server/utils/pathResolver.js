@@ -231,7 +231,7 @@ function formatNotFoundHtml(originalPath, normalizedPath, resolvedPath, diag) {
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Arquivo Não Encontrado - MetalFisa</title>
+    <title>Arquivo Não Encontrado - Lynx</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #f1f5f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
         .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; max-width: 800px; width: 100%; padding: 28px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); }

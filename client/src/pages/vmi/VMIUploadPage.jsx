@@ -305,7 +305,7 @@ export default function VMIUploadPage() {
                     </div>
                     <div className="flex items-center gap-2 text-xs text-slate-400 bg-white px-3 py-1.5 rounded-full border border-slate-200">
                         <FileSpreadsheet className="w-3.5 h-3.5" />
-                        <span>Planilha padrão VMI — FALTANTES FEVEREIRO-METALFISA.xlsx</span>
+                        <span>Planilha padrão VMI — FALTANTES FEVEREIRO-LYNX.xlsx</span>
                     </div>
                 </div>
             )}

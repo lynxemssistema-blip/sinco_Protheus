@@ -113,7 +113,7 @@ async function orchestrate({ userMessage, requestContext = {}, pageData = null, 
 
         for (let i = 0; i < sqlQueries.slice(0, MAX_SQL_ROUNDS).length; i++) {
             const { banco, sql } = sqlQueries[i];
-            const dbLabel = banco === 'postgresql' ? 'Protheus (PostgreSQL)' : 'App MetalFisa (MySQL)';
+            const dbLabel = banco === 'postgresql' ? 'Protheus (PostgreSQL)' : 'App Lynx (MySQL)';
             send({
                 type: 'sql',
                 icon: '⚙️',

@@ -5,7 +5,7 @@ import { getStockMainBalances, getFileUrl } from '../services/api';
 import CadastroAnaliseTab from '../components/CadastroAnaliseTab';
 
 export default function StockBalances() {
-    const [activeTab, setActiveTab] = useStickyState('saldo', '@metalfisa:stock_activeTab');
+    const [activeTab, setActiveTab] = useStickyState('saldo', '@lynxems:stock_activeTab');
     const [loading, setLoading] = useState(false);
     const [data, setData] = useState([]);
     const [filters, setFilters] = useStickyState({
@@ -16,7 +16,7 @@ export default function StockBalances() {
         descricao: '',
         grupo: '',
         tipo: ''
-    }, '@metalfisa:stock_filters');
+    }, '@lynxems:stock_filters');
 
     const loadData = async () => {
         setLoading(true);
@@ -41,15 +41,15 @@ export default function StockBalances() {
             <div className="print:hidden mb-6">
                 <div className="flex items-center justify-between mb-4">
                     <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        <Box className="w-8 h-8 text-blue-600" />
+                        <Box className="w-8 h-8 text-[#425750]" />
                         Saldo de Materiais
                     </h1>
                     {activeTab === 'saldo' && (
                         <button
                             onClick={handlePrint}
-                            className="bg-slate-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800"
+                            className="bg-[#425750] hover:bg-[#32423D] text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-sm transition-colors"
                         >
-                            <Printer className="w-4 h-4" /> Imprimir / PDF
+                            <Printer className="w-4 h-4 text-[#E0E800]" /> Imprimir / PDF
                         </button>
                     )}
                 </div>
@@ -57,7 +57,7 @@ export default function StockBalances() {
                     <button
                         onClick={() => setActiveTab('saldo')}
                         className={`py-3 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 -mb-px ${
-                            activeTab === 'saldo' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                            activeTab === 'saldo' ? 'border-[#425750] text-[#32423D] font-black' : 'border-transparent text-gray-500 hover:text-[#425750]'
                         }`}
                     >
                         <Box className="w-4 h-4" /> Saldo de Materiais
@@ -65,10 +65,10 @@ export default function StockBalances() {
                     <button
                         onClick={() => setActiveTab('analise')}
                         className={`py-3 px-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 -mb-px ${
-                            activeTab === 'analise' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+                            activeTab === 'analise' ? 'border-[#425750] text-[#32423D] font-black' : 'border-transparent text-gray-500 hover:text-[#425750]'
                         }`}
                     >
-                        <Sparkles className="w-4 h-4" /> Análise de Cadastro (IA)
+                        <Sparkles className="w-4 h-4 text-[#E0E800]" /> Análise de Cadastro (IA)
                     </button>
                 </div>
             </div>

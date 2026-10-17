@@ -1,0 +1,52 @@
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION BEGIN
+PassengerAppRoot /home/u494795077/domains/lynxems.com.br/public_html
+PassengerBaseURI /
+PassengerNodejs /opt/alt/alt-nodejs20/root/usr/bin/node
+PassengerAppType node
+PassengerStartupFile app.js
+PassengerAppEnv production
+# DO NOT REMOVE. CLOUDLINUX PASSENGER CONFIGURATION END
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1. Não reescrever chamadas para a API, uploads ou WebSockets para o index.html
+  RewriteCond %{REQUEST_URI} ^/api(/|$) [OR]
+  RewriteCond %{REQUEST_URI} ^/uploads(/|$) [OR]
+  RewriteCond %{REQUEST_URI} ^/socket\.io(/|$)
+  RewriteRule ^ - [L]
+
+  # 2. Servir arquivos e pastas existentes diretamente (incluindo subdomínios)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 3. Roteamento SPA: redirecionar todas as outras rotas para o index.html
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+  # HTML nunca deve ser cacheado para garantir que atualizações do app apareçam imediatamente
+  <FilesMatch "\.(html|htm)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires 0
+  </FilesMatch>
+
+  # Assets com hash gerados pelo Vite podem ser cacheados com segurança
+  <FilesMatch "\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>
+
+# Bloquear acesso direto via navegador a arquivos sensíveis (.env, .git, .log)
+<FilesMatch "(^\.|\.env$|\.log$)">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>

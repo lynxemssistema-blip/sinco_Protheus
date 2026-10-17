@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
     Calendar, FileText, Settings, Layers, Package,
     StickyNote, MoreVertical, Loader2, Truck,
-    Factory, ClipboardList, ImageIcon, FileSpreadsheet, AlertTriangle, Award, Boxes
+    Factory, ClipboardList, ImageIcon, FileSpreadsheet, AlertTriangle, Award, Boxes, Trash2
 } from 'lucide-react';
 import ItemStatusBadge from './ItemStatusBadge';
 import { getFileUrl } from '../../services/api';
@@ -50,6 +50,7 @@ const FlatItemRow = ({
     onOpenClassificacaoModal,
     onOpenBomStructure,
     onOpenStructureStock,
+    onExcluirOp,
     canEdit,
 }) => {
     const { user } = useAuth();
@@ -314,6 +315,22 @@ const FlatItemRow = ({
                                                 {printingOrderId === `op-stamp-desc-resource-drawings-${item.pedido}-${item.item}-stock` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0 text-fuchsia-600" /> : <Boxes className="h-4 w-4 flex-shrink-0 text-fuchsia-600" />} 
                                                 <span>OP + Desenhos (Por Recurso) + Estoque</span>
                                             </button>
+                                            {hasOp && (
+                                                <>
+                                                    <div className="border-t border-gray-200 my-1" />
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            onOpenActionMenu(null);
+                                                            if (onExcluirOp) onExcluirOp(item);
+                                                        }}
+                                                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 hover:text-red-800 transition-colors font-semibold"
+                                                    >
+                                                        <Trash2 className="h-4 w-4 flex-shrink-0 text-red-500" />
+                                                        <span>Excluir O.P.</span>
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     )}
                                 </div>

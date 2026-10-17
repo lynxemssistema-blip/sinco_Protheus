@@ -26,8 +26,9 @@ router.get('/eventos', async (req, res) => {
         }
 
         const userId = req.user.id;
+        const tenantId = req.user?.IdEmpresa || req.tenantId || 1;
 
-        // Query 1: Custom activities (app_calendario_atividades) - everyone sees everyone's
+        // Query 1: Custom activities (app_calendario_atividades) - filtered by tenant
         const customQuery = `
             SELECT a.id, a.idRemetente, a.idDestinatario, a.texto, a.data_atividade, a.concluido, a.criado_em, a.data_conclusao, a.grupo_id,
                    ur.NomeCompleto as remetenteNome, ud.NomeCompleto as destinatarioNome
@@ -35,18 +36,20 @@ router.get('/eventos', async (req, res) => {
             JOIN usuario ur ON a.idRemetente = ur.idUsuario
             JOIN usuario ud ON a.idDestinatario = ud.idUsuario
             WHERE a.data_atividade BETWEEN ? AND ?
+              AND (a.IdEmpresa = ? OR (a.IdEmpresa IS NULL AND ? = 1))
         `;
-        const [customRows] = await mysqlPool.query(customQuery, [start, end]);
+        const [customRows] = await mysqlPool.query(customQuery, [start, end, tenantId, tenantId]);
 
-        // Query 2: Ata Viva tasks (app_ata_viva_tarefas)
+        // Query 2: Ata Viva tasks (app_ata_viva_tarefas) - filtered by tenant
         const atavivaQuery = `
             SELECT id, pedido, item_pedido, op_numero, produto, texto_tarefa, status, criado_em, data_conclusao, usuario_criacao, usuario_conclusao
             FROM app_ata_viva_tarefas
             WHERE DATE(criado_em) BETWEEN ? AND ?
+              AND (IdEmpresa = ? OR (IdEmpresa IS NULL AND ? = 1))
         `;
-        const [atavivaRows] = await mysqlPool.query(atavivaQuery, [start, end]);
+        const [atavivaRows] = await mysqlPool.query(atavivaQuery, [start, end, tenantId, tenantId]);
 
-        // Query 3: Warnings/notices (sistema_avisos)
+        // Query 3: Warnings/notices (sistema_avisos) - filtered by tenant
         const avisosQuery = `
             SELECT a.idAviso, a.idRemetente, a.idDestinatario, a.idGrupo, a.mensagem, a.lido, a.concluido, a.data_envio, a.data_conclusao,
                    ur.NomeCompleto as remetenteNome, ud.NomeCompleto as destinatarioNome, g.nome as grupoNome
@@ -58,16 +61,18 @@ router.get('/eventos', async (req, res) => {
                 SELECT idGrupo FROM sistema_avisos_grupos_membros WHERE idUsuario = ?
             ))
               AND DATE(a.data_envio) BETWEEN ? AND ?
+              AND (a.IdEmpresa = ? OR (a.IdEmpresa IS NULL AND ? = 1))
         `;
-        const [avisosRows] = await mysqlPool.query(avisosQuery, [userId, userId, userId, start, end]);
+        const [avisosRows] = await mysqlPool.query(avisosQuery, [userId, userId, userId, start, end, tenantId, tenantId]);
 
         // Query 4: Check if there are PCP deliveries in this range to mark on calendar
         const pcpQuery = `
             SELECT DISTINCT DATE(data_entrega_pcp) as data_pcp
             FROM app_pcp_delivery_forecasts
             WHERE data_entrega_pcp BETWEEN ? AND ?
+              AND (IdEmpresa = ? OR (IdEmpresa IS NULL AND ? = 1))
         `;
-        const [pcpRows] = await mysqlPool.query(pcpQuery, [start, end]);
+        const [pcpRows] = await mysqlPool.query(pcpQuery, [start, end, tenantId, tenantId]);
         const pcpDatesSet = new Set(pcpRows.map(r => formatDate(r.data_pcp)));
 
         // Unify events
@@ -169,6 +174,7 @@ router.post('/atividades', async (req, res) => {
             assignees = [idRemetente];
         }
 
+        const tenantId = req.user?.IdEmpresa || req.tenantId || 1;
         const grupoId = crypto.randomUUID();
         const insertedIds = [];
         const io = req.app.get('io');
@@ -182,9 +188,9 @@ router.post('/atividades', async (req, res) => {
 
         for (const targetDestinatario of assignees) {
             const [result] = await mysqlPool.query(
-                `INSERT INTO app_calendario_atividades (idRemetente, idDestinatario, texto, data_atividade, concluido, grupo_id)
-                 VALUES (?, ?, ?, ?, 0, ?)`,
-                [idRemetente, targetDestinatario, texto, data_atividade, grupoId]
+                `INSERT INTO app_calendario_atividades (idRemetente, idDestinatario, texto, data_atividade, concluido, grupo_id, IdEmpresa)
+                 VALUES (?, ?, ?, ?, 0, ?, ?)`,
+                [idRemetente, targetDestinatario, texto, data_atividade, grupoId, tenantId]
             );
             insertedIds.push(result.insertId);
 
@@ -318,8 +324,9 @@ router.get('/dia', async (req, res) => {
         }
 
         const userId = req.user.id;
+        const tenantId = req.user?.IdEmpresa || req.tenantId || 1;
 
-        // 1. Fetch custom activities for this day - everyone sees everyone's
+        // 1. Fetch custom activities for this day - filtered by tenant
         const customQuery = `
             SELECT a.id, a.idRemetente, a.idDestinatario, a.texto, a.data_atividade, a.concluido, a.criado_em, a.data_conclusao, a.grupo_id,
                    ur.NomeCompleto as remetenteNome, ud.NomeCompleto as destinatarioNome
@@ -327,18 +334,20 @@ router.get('/dia', async (req, res) => {
             JOIN usuario ur ON a.idRemetente = ur.idUsuario
             JOIN usuario ud ON a.idDestinatario = ud.idUsuario
             WHERE a.data_atividade = ?
+              AND (a.IdEmpresa = ? OR (a.IdEmpresa IS NULL AND ? = 1))
         `;
-        const [customRows] = await mysqlPool.query(customQuery, [date]);
+        const [customRows] = await mysqlPool.query(customQuery, [date, tenantId, tenantId]);
 
-        // 2. Fetch Ata Viva tasks for this day
+        // 2. Fetch Ata Viva tasks for this day - filtered by tenant
         const atavivaQuery = `
             SELECT id, pedido, item_pedido, op_numero, produto, texto_tarefa, status, criado_em, data_conclusao, usuario_criacao, usuario_conclusao
             FROM app_ata_viva_tarefas
             WHERE DATE(criado_em) = ?
+              AND (IdEmpresa = ? OR (IdEmpresa IS NULL AND ? = 1))
         `;
-        const [atavivaRows] = await mysqlPool.query(atavivaQuery, [date]);
+        const [atavivaRows] = await mysqlPool.query(atavivaQuery, [date, tenantId, tenantId]);
 
-        // 3. Fetch warnings/notices for this day
+        // 3. Fetch warnings/notices for this day - filtered by tenant
         const avisosQuery = `
             SELECT a.idAviso, a.idRemetente, a.idDestinatario, a.idGrupo, a.mensagem, a.lido, a.concluido, a.data_envio, a.data_conclusao,
                    ur.NomeCompleto as remetenteNome, ud.NomeCompleto as destinatarioNome, g.nome as grupoNome
@@ -350,16 +359,18 @@ router.get('/dia', async (req, res) => {
                 SELECT idGrupo FROM sistema_avisos_grupos_membros WHERE idUsuario = ?
             ))
               AND DATE(a.data_envio) = ?
+              AND (a.IdEmpresa = ? OR (a.IdEmpresa IS NULL AND ? = 1))
         `;
-        const [avisosRows] = await mysqlPool.query(avisosQuery, [userId, userId, userId, date]);
+        const [avisosRows] = await mysqlPool.query(avisosQuery, [userId, userId, userId, date, tenantId, tenantId]);
 
-        // 4. Fetch PCP forecasts for this day
+        // 4. Fetch PCP forecasts for this day - filtered by tenant
         const pcpQuery = `
             SELECT id, TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, quantidade_pcp, op_protheus, observacao
             FROM app_pcp_delivery_forecasts
             WHERE DATE(data_entrega_pcp) = ?
+              AND (IdEmpresa = ? OR (IdEmpresa IS NULL AND ? = 1))
         `;
-        const [pcpRows] = await mysqlPool.query(pcpQuery, [date]);
+        const [pcpRows] = await mysqlPool.query(pcpQuery, [date, tenantId, tenantId]);
 
         const unifiedActivities = [];
 

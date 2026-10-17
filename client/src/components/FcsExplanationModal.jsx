@@ -116,7 +116,7 @@ export default function FcsExplanationModal({ isOpen, onClose }) {
                                     </div>
                                     <div className="space-y-1.5">
                                         <span className="text-xs uppercase tracking-widest font-extrabold text-indigo-300">
-                                            O Cérebro do PCP MetalFisa
+                                            O Cérebro do PCP Lynx
                                         </span>
                                         <h3 className="text-lg font-bold text-white leading-snug">
                                             O que faz o Agente de Planejamento Inteligente?
@@ -598,7 +598,7 @@ export default function FcsExplanationModal({ isOpen, onClose }) {
                 <div className="px-6 py-3.5 bg-white border-t border-slate-100 flex items-center justify-between shrink-0">
                     <div className="text-xs text-slate-500 flex items-center gap-1.5">
                         <Cpu className="w-4 h-4 text-indigo-500" />
-                        <span>Motor de Capacidade Finita · MetalFisa ERP Engine</span>
+                        <span>Motor de Capacidade Finita · Lynx ERP Engine</span>
                     </div>
                     <button
                         onClick={onClose}

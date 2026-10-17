@@ -23,7 +23,7 @@ const ProductionPrint = forwardRef(({ ops, filters }, ref) => {
                 <div className="flex justify-between items-start">
                     <div>
                         <h1 className="text-xl font-bold uppercase tracking-wider text-slate-800">Relatório de Controle de Produção</h1>
-                        <p className="text-slate-500 mt-1">MetalFisa - Sistema de Gestão</p>
+                        <p className="text-slate-500 mt-1">Lynx - Sistema de Gestão</p>
                     </div>
                     <div className="text-right">
                         <p className="font-bold">{new Date().toLocaleDateString('pt-BR')} {new Date().toLocaleTimeString('pt-BR')}</p>

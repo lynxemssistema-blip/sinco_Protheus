@@ -1,13 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // changelogData.js — Registro Oficial de Novas Funcionalidades
-// Marco Inicial: 09/09/2026 (Data Oficial de Entrega do APP MetalFisa)
+// Marco Inicial: 09/09/2026 (Data Oficial de Entrega do APP Lynx)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const CHANGELOG_MODULES = [
     { id: 'todos', label: 'Todos os Módulos' },
     { id: 'sinco', label: 'SINCO & Engenharia' },
     { id: 'sistema', label: 'Sistema & Infraestrutura' },
-    { id: 'wabtec', label: 'WabTec' },
     { id: 'pcp', label: 'PCP & Chão de Fábrica' },
     { id: 'sgq', label: 'SGQ & Qualidade' },
     { id: 'comercial', label: 'Comercial & Faturamento' }
@@ -29,12 +28,12 @@ export const CHANGELOG_DATA = [
         modulo: 'comercial',
         moduloLabel: 'Comercial & Faturamento',
         tipo: 'nova_feature',
-        tipoLabel: 'Comercial, Faturamento & Excel MetalFisa',
+        tipoLabel: 'Comercial, Faturamento & Excel Lynx',
         badgeColor: 'emerald',
-        titulo: '📊 Exportação Excel Financeira Avançada (Padrão MetalFisa) & Atualização em Tempo Real com Filtros',
-        resumo: 'Aprimoramento abrangente do módulo de Itens a Faturar (/vendas/itens-faturar): gerador oficial de planilhas Excel formatadas no Padrão Corporativo MetalFisa com processamento em tempo real (modal animado com barra percentual e etapas), e novos botões dedicados de atualização imediata de dados com base nos filtros selecionados, tanto na listagem de itens quanto na aba de dados financeiros.',
+        titulo: '📊 Exportação Excel Financeira Avançada (Padrão Lynx) & Atualização em Tempo Real com Filtros',
+        resumo: 'Aprimoramento abrangente do módulo de Itens a Faturar (/vendas/itens-faturar): gerador oficial de planilhas Excel formatadas no Padrão Corporativo Lynx com processamento em tempo real (modal animado com barra percentual e etapas), e novos botões dedicados de atualização imediata de dados com base nos filtros selecionados, tanto na listagem de itens quanto na aba de dados financeiros.',
         destaques: [
-            'Exportação Excel no Padrão Oficial MetalFisa: Planilha multi-abas gerada via ExcelJS com identidade visual corporativa (Azul MetalFisa #1E3A5F, #2563EB, linhas zebradas e cabeçalhos escuros estilizados).',
+            'Exportação Excel no Padrão Oficial Lynx: Planilha multi-abas gerada via ExcelJS com identidade visual corporativa (Azul Lynx #1E3A5F, #2563EB, linhas zebradas e cabeçalhos escuros estilizados).',
             'Dupla Visão na Planilha (Analítica & Consolidada): Aba 1 contendo todos os dados financeiros expandidos item a item (Cliente, Pedido, Item, OP, Código, Descrição, Entrega, Previsão Faturamento, PCP, Quantidades e Valores) e Aba 2 com Resumo Consolidado mensal automático usando fórmulas nativas do Excel (=SUM).',
             'Processamento em Tempo Real com Feedback Visual: Modal animado com contagem de registros, porcentagem de conclusão e indicador de etapas em chunks assíncronos (120 linhas por bloco), garantindo fluidez e zero congelamento do navegador.',
             'Botão "Atualizar Dados com Base nos Filtros": Integrado na barra de filtros principal de Itens a Faturar e no cabeçalho de ações com ícone de rotação (RefreshCw) e indicação de carregamento em andamento.',
@@ -88,8 +87,8 @@ export const CHANGELOG_DATA = [
             'Coluna Dedicada de Código de Desenho: Exibição explícita do código do desenho técnico com formatação mono destacada ao lado da descrição.',
             'Controles e Paginação Responsiva: Barra superior compacta com busca multi-termo integrada e seletores rápidos de paginação (25, 50, 100 itens por página).'
         ],
-        linkAcao: '/engenharia/msmetal/produtos',
-        linkLabel: 'Ver Catálogo Otimizado',
+        linkAcao: '/produtos',
+        linkLabel: 'Ver Catálogo de Produtos',
         autor: 'Engenharia & UI/UX'
     },
     {
@@ -111,8 +110,8 @@ export const CHANGELOG_DATA = [
             'Página Dedicada de Estrutura (/engenharia/msmetal/estrutura/:id): Explosão técnica com abas para Matérias-Primas (com peso e consumo por peça), Roteiro de Operações de Fábrica (com tempos de preparação e operação), Subconjuntos e Vínculos com Clientes.',
             'Segurança e Read-Only: Conexão direta com o banco Firebird (192.168.1.253) protegida contra alterações, preservando 100% da integridade da base legada.'
         ],
-        linkAcao: '/engenharia/msmetal/produtos',
-        linkLabel: 'Acessar Catálogo MS Metal',
+        linkAcao: '/produtos',
+        linkLabel: 'Acessar Catálogo de Produtos',
         autor: 'Engenharia & PCP'
     },
     {
@@ -160,29 +159,7 @@ export const CHANGELOG_DATA = [
         linkLabel: 'Ver na Tela de Login',
         autor: 'Equipe de Engenharia de Software'
     },
-    {
-        id: '2026-09-09-wabtec-bom',
-        data: '09/09/2026',
-        dataIso: '2026-09-09',
-        versao: 'v2026.4.0',
-        modulo: 'wabtec',
-        moduloLabel: 'WabTec',
-        tipo: 'nova_feature',
-        tipoLabel: 'Nova Funcionalidade',
-        badgeColor: 'emerald',
-        titulo: '📊 Leitura Enriquecida da Estrutura WabTec & Vínculo Automático Protheus',
-        resumo: 'Importação abrangente da planilha de BOM WabTec com persistência total dos atributos, conversão automática de revisões e cruzamento instantâneo com a base de dados do ERP Protheus.',
-        destaques: [
-            'Persistência Integral: Gravação de Find NO, UOM, Data de Liberação, Status, Item Pai e TCUID no banco de dados.',
-            'Conversão Inteligente de Revisões: Tradução algorítmica de revisões em letras para padrão numérico de 2 dígitos (ex: D → 04, H → 08).',
-            'Cruzamento Automático Protheus: Busca imediata nas tabelas SZ1010 e SB1010 pelo código do desenho WabTec.',
-            'Comparativo em Tempo Real: Badges visuais indicando "Mesma Revisão" (verde), "Divergência de Revisão" (amarelo) ou "Não Encontrado" (cinza).',
-            'Suporte a Unidades e A/R: Tratamento seguro para quantidades decimais e itens do tipo "As Required".'
-        ],
-        linkAcao: '/wabtec/estrutura',
-        linkLabel: 'Acessar Módulo WabTec',
-        autor: 'Equipe de Engenharia & PCP'
-    },
+
     {
         id: '2026-09-09-marco-entrega',
         data: '09/09/2026',
@@ -193,16 +170,16 @@ export const CHANGELOG_DATA = [
         tipo: 'nova_feature',
         tipoLabel: 'Marco Oficial de Entrega',
         badgeColor: 'blue',
-        titulo: '🚀 Entrega Oficial do Portal MetalFisa & Início do Changelog Contínuo',
-        resumo: 'Conclusão e entrega do ecossistema completo de gestão industrial da MetalFisa, integrando PCP, SGQ, Comercial, Engenharia, Suprimentos e RH ao Protheus.',
+        titulo: '🚀 Entrega Oficial do Portal Lynx & Início do Changelog Contínuo',
+        resumo: 'Conclusão e entrega do ecossistema completo de gestão industrial da Lynx, integrando PCP, SGQ, Comercial, Engenharia, Suprimentos e RH ao Protheus.',
         destaques: [
-            '95+ Telas Operacionais Integradas cobrindo todo o ciclo fabril da MetalFisa.',
+            '95+ Telas Operacionais Integradas cobrindo todo o ciclo fabril da Lynx.',
             'Painel de Controle de Execução e Apontamento de Produção em Tempo Real.',
             'Integração Completa Protheus (P12 / PostgreSQL) com replicações e leituras de alta performance.',
             'Inauguração da Tela Oficial de Novas Funcionalidades para auditoria e acompanhamento contínuo.'
         ],
         linkAcao: '/ajuda',
         linkLabel: 'Ver Relatório Geral na Ajuda',
-        autor: 'Diretoria & Equipe Técnica MetalFisa'
+        autor: 'Diretoria & Equipe Técnica Lynx'
     }
 ];

@@ -276,11 +276,11 @@ const ManageLotModal = ({ isOpen, onClose, selectedItems = [], preselectedLotCod
                                 </div>
                             ) : (
                                 <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
-                                    {filteredLots.map(l => {
+                                    {filteredLots.map((l, idx) => {
                                         const isSelected = selectedExistingLot === l.codigo;
                                         return (
                                             <div
-                                                key={l.codigo}
+                                                key={`${l.codigo}-${idx}`}
                                                 onClick={() => setSelectedExistingLot(l.codigo)}
                                                 className={`p-3 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${
                                                     isSelected

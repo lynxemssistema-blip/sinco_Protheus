@@ -71,7 +71,7 @@ export default function SINCOFormularioPrincipal() {
     const [showModalSz0, setShowModalSz0] = useState(false);
     const [savingSz0, setSavingSz0] = useState(false);
     const [editandoRestricao, setEditandoRestricao] = useState(null); // null = nova, objeto = edição
-    const [novaRestricao, setNovaRestricao] = useState({ resumo: '', restricao: '', responsavel: '', revMetalfisa: '', status: 'P' });
+    const [novaRestricao, setNovaRestricao] = useState({ resumo: '', restricao: '', responsavel: '', revLynx: '', status: 'P' });
     // Modal de Regra de Negócio SZ1 (Duplicidade / Conflito Protheus)
     const [modalRegraSz1, setModalRegraSz1] = useState(null);
     // Edição de Árvore (BOM)
@@ -137,14 +137,6 @@ export default function SINCOFormularioPrincipal() {
         return () => clearTimeout(timer);
     }, [searchClienteQuery, showSearchClienteModal]);
 
-    useEffect(() => {
-        getProcessList().then(res => {
-            if (res && res.data) {
-                setProcessList(res.data);
-            }
-        }).catch(err => console.error("Erro ao carregar processos:", err));
-    }, []);
-
     // Modal de Busca de Produto
     const [showSearchModal, setShowSearchModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -152,10 +144,31 @@ export default function SINCOFormularioPrincipal() {
     const [searching, setSearching] = useState(false);
     const [activeRowIndex, setActiveRowIndex] = useState(null);
 
+    // Auto-load SINCO products on open and filter live while typing
+    useEffect(() => {
+        if (!showSearchModal) return;
+        let cancelled = false;
+        const timer = setTimeout(() => {
+            setSearching(true);
+            searchSincoProdutos(searchQuery)
+                .then(res => { if (!cancelled) setSearchResults(res || []); })
+                .catch(err => console.error('Erro ao buscar materiais:', err))
+                .finally(() => { if (!cancelled) setSearching(false); });
+        }, 300);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [showSearchModal, searchQuery]);
+
     // Modal de Busca de Recurso
     const [showSearchRecursoModal, setShowSearchRecursoModal] = useState(false);
     const [searchRecursoQuery, setSearchRecursoQuery] = useState('');
     const [activeRecursoRowIndex, setActiveRecursoRowIndex] = useState(null);
+
+    // Load SINCO resource catalog on mount and every time the resource modal opens
+    useEffect(() => {
+        getProcessList().then(res => {
+            if (res && res.data) setProcessList(res.data);
+        }).catch(err => console.error("Erro ao carregar recursos:", err));
+    }, [showSearchRecursoModal]);
 
     // Toast Notification
     const [toast, setToast] = useState(null);
@@ -292,7 +305,7 @@ export default function SINCOFormularioPrincipal() {
     const handleProdutoCriadoComSucesso = async (resData) => {
         const novoCodigo = resData?.codigo;
         if (novoCodigo) {
-            showToast(`🎉 Produto ${novoCodigo} gerado e cadastrado no Protheus com sucesso!`, 'success');
+            showToast(`🎉 Produto ${novoCodigo} cadastrado no SINCO com sucesso!`, 'success');
             
             // Se foi aberto a partir de uma linha da árvore (BOM)
             if (itemParaCriarProduto?._targetRowIndex !== undefined && itemParaCriarProduto?._targetRowIndex !== null) {
@@ -315,7 +328,7 @@ export default function SINCOFormularioPrincipal() {
             setDados(prev => ({
                 ...prev,
                 arquivo: novoCodigo,
-                caminho: `Cadastrado no Protheus (${resData.desenho_cliente || resData.b1_xcoddes || 'Novo Cadastro Pelo SINCO'})`,
+                caminho: `Cadastrado no SINCO (${resData.desenho_cliente || resData.b1_xcoddes || 'Novo Cadastro Pelo SINCO'})`,
                 titulo: resData.descricao || itemParaCriarProduto?.titulo || prev.titulo,
                 tipo: resData.protheus_tipo || resData.tipo || itemParaCriarProduto?.tipo || prev.tipo,
                 unidade: resData.uom || resData.um || itemParaCriarProduto?.um || prev.unidade,
@@ -449,7 +462,7 @@ export default function SINCOFormularioPrincipal() {
                 setPdfDocUrl(null);
             }
         } catch (error) {
-            console.error("Erro ao carregar dados do Protheus:", error);
+            console.error("Erro ao carregar dados do SINCO:", error);
             setErroProtheus(error.response?.data?.error || error.message || 'Erro desconhecido ao consultar');
             setArvore([]);
             setRestricoes([]);
@@ -526,7 +539,7 @@ export default function SINCOFormularioPrincipal() {
                     unidade: p.unidade || '',
                     grupo: p.grupo || '',
                     peso: p.peso || prev.peso,
-                    // p.xrevm = B1_XREVM (Rev. MetalFisa); p.rev = B1_REVATU (revisão técnica geral)
+                    // p.xrevm = B1_XREVM (Rev. Lynx); p.rev = B1_REVATU (revisão técnica geral)
                     rev: p.xrevm || prev.rev,
                     espessura: p.espessura || prev.espessura,
                     largura: p.largura || prev.largura,
@@ -535,10 +548,8 @@ export default function SINCOFormularioPrincipal() {
                 }));
             }
         } catch (e) {
-            // Produto não está no espelho PostgreSQL (pode existir no ERP mas ainda não sincronizado)
-            console.warn(`[SINCO] Produto ${codigoSemExtensao} ausente no mirror PostgreSQL (SB1010). Ativando modo de preenchimento manual.`);
+            console.warn(`[SINCO] Produto ${codigoSemExtensao} ausente no cadastro do SINCO. Ativando modo de preenchimento manual.`);
             setProdutoNaoNoMirror(true);
-            // Ativa edição automática para o usuário preencher os dados manualmente
             setIsEditingDadosGerais(true);
         }
 
@@ -561,7 +572,7 @@ export default function SINCOFormularioPrincipal() {
                     unidade: p.unidade || '',
                     grupo: p.grupo || '',
                     peso: p.peso || prev.peso,
-                    // p.xrevm = B1_XREVM (Rev. MetalFisa); p.rev = B1_REVATU (revisão técnica geral)
+                    // p.xrevm = B1_XREVM (Rev. Lynx); p.rev = B1_REVATU (revisão técnica geral)
                     rev: p.xrevm || prev.rev,
                     espessura: p.espessura || prev.espessura,
                     largura: p.largura || prev.largura,
@@ -603,7 +614,7 @@ export default function SINCOFormularioPrincipal() {
             };
 
             await updateSincoProduto(payload);
-            showToast('Dados do produto atualizados no Protheus com sucesso!', 'success');
+            showToast('Dados do produto atualizados no SINCO com sucesso!', 'success');
             setIsEditingDadosGerais(false);
         } catch (error) {
             console.error('Erro ao salvar dados do produto:', error.response?.data || error);
@@ -662,7 +673,7 @@ export default function SINCOFormularioPrincipal() {
                     Z0_RESPONS: novaRestricao.responsavel,
                     Z0_DTULTAL: dtHoje,
                     Z0_HRULTAL: hrAgora,
-                    Z0_XREVM: (novaRestricao.revMetalfisa || dados.rev || '').substring(0, 2),
+                    Z0_XREVM: (novaRestricao.revLynx || dados.rev || '').substring(0, 2),
                 }]
             }
         };
@@ -672,7 +683,7 @@ export default function SINCOFormularioPrincipal() {
             await createSincoRestricaoSz0(payload);
             setShowModalSz0(false);
             setEditandoRestricao(null);
-            setNovaRestricao({ resumo: '', restricao: '', responsavel: '', revMetalfisa: '', status: 'P' });
+            setNovaRestricao({ resumo: '', restricao: '', responsavel: '', revLynx: '', status: 'P' });
             const rSz0 = await getSincoRestricoesSz0(produto);
             setRestricoesSz0((Array.isArray(rSz0) ? rSz0 : []).filter(r => r.status !== 'L'));
             showToast('Restrição SZ0 salva com sucesso!', 'success');
@@ -724,7 +735,7 @@ export default function SINCOFormularioPrincipal() {
             console.error('Erro ao excluir restrição SZ0:', err.response?.data || err);
             const msg = err.response?.data?.details?.message || err.response?.data?.details || err.response?.data?.error || err.response?.data?.message || err.message;
             const strMsg = typeof msg === 'object' ? JSON.stringify(msg) : msg;
-            showToast('Erro do Protheus ao processar restrição: ' + strMsg, 'error');
+            showToast('Erro ao processar restrição: ' + strMsg, 'error');
         } finally {
             setLoadingSz0(false);
         }
@@ -869,7 +880,7 @@ export default function SINCOFormularioPrincipal() {
         setSavingArvore(true);
         try {
             await updateSincoProductStructure(payload);
-            showToast('Estrutura atualizada com sucesso no Protheus!', 'success');
+            showToast('Estrutura atualizada com sucesso no SINCO!', 'success');
             // Recarrega apenas a estrutura e valida pontualmente sem piscar telas
             const rA = await getSincoArvore(produtoPai);
             setArvore(Array.isArray(rA) ? rA : []);
@@ -892,14 +903,14 @@ export default function SINCOFormularioPrincipal() {
 
         const activeOps = editedOperacoes.filter(op => !op.deleted);
         if (operacoes.length > 0 && activeOps.length === 0) {
-            showToast('O Protheus exige pelo menos uma operação ativa no roteiro.', 'warning');
+            showToast('É necessário pelo menos uma operação ativa no roteiro.', 'warning');
             return;
         }
 
         // Validação de duplicidade de sequência
         const seqs = activeOps.map(op => String(op.operacao || '').trim().padStart(2, '0'));
         if (new Set(seqs).size !== seqs.length) {
-            showToast('Existem operações com a mesma sequência no roteiro. O Protheus rejeita duplicidade.', 'error');
+            showToast('Existem operações com a mesma sequência no roteiro. O sistema rejeita duplicidade.', 'error');
             return;
         }
 
@@ -1041,7 +1052,7 @@ export default function SINCOFormularioPrincipal() {
         setSavingOperacoes(true);
         try {
             await updateSincoRoteiro(payload);
-            showToast('Roteiro atualizado com sucesso no Protheus!', 'success');
+            showToast('Roteiro atualizado com sucesso no SINCO!', 'success');
             // Recarrega apenas operações pontualmente sem recarregar a tela inteira
             const rO = await getSincoOperacoes(produtoPai);
             const rOMapped = Array.isArray(rO) ? rO.map(o => ({...o, _original_operacao: o.operacao})) : [];
@@ -1065,13 +1076,25 @@ export default function SINCOFormularioPrincipal() {
         return [...arr].sort((a, b) => parseInt(a.operacao || 0, 10) - parseInt(b.operacao || 0, 10));
     };
 
+    const formatItemBase = (r, produto) => ({
+        RECNO: Number(r.recno),
+        Z1_CLIENTE: String(r.cliente || '').trim().toUpperCase(),
+        Z1_LOJA: String(r.loja || '0001').trim().toUpperCase(),
+        Z1_PRODUTO: produto,
+        Z1_CODCLI: String(r.cod_cliente || '').trim().toUpperCase(),
+        Z1_REVISAO: String(r.revisao || '').trim().toUpperCase(),
+    });
+
     const handleSalvarRestricoesSz1 = async () => {
         if (!temArquivo) return;
         const produto = dados.arquivo.replace(/\.[^/.]+$/, '').trim().toUpperCase();
 
         const validos = editedRestricoes.filter(r => !r.deleted && r.cliente && String(r.cliente).trim() !== '');
+        const exclusoes = editedRestricoes
+            .filter(r => r.deleted && !r.isNew && r.recno)
+            .map(r => ({ ...formatItemBase(r, produto), deleted: true }));
 
-        if (validos.length === 0 && restricoes.length === 0) {
+        if (validos.length === 0 && exclusoes.length === 0 && restricoes.length === 0) {
             showToast('Nenhuma mudança para salvar na tabela SZ1.', 'warning');
             setIsEditingRestricoes(false);
             return;
@@ -1127,7 +1150,7 @@ export default function SINCOFormularioPrincipal() {
             }
         });
 
-        if (insercoes.length === 0 && alteracoes.length === 0) {
+        if (insercoes.length === 0 && alteracoes.length === 0 && exclusoes.length === 0) {
             showToast('Nenhuma mudança detectada na tabela SZ1.', 'info');
             setIsEditingRestricoes(false);
             return;
@@ -1135,6 +1158,11 @@ export default function SINCOFormularioPrincipal() {
 
         setSavingRestricoes(true);
         try {
+            if (exclusoes.length > 0) {
+                await updateSincoProdutoCliente({
+                    data: { CFILANT: "0101", EMPRESA: "01", NOPER: 5, produtos_clientes: exclusoes }
+                });
+            }
             if (insercoes.length > 0) {
                 await updateSincoProdutoCliente({
                     data: { CFILANT: "0101", EMPRESA: "01", NOPER: 3, produtos_clientes: insercoes }
@@ -1145,7 +1173,7 @@ export default function SINCOFormularioPrincipal() {
                     data: { CFILANT: "0101", EMPRESA: "01", NOPER: 4, produtos_clientes: alteracoes }
                 });
             }
-            showToast('Produtos x Cliente atualizados com sucesso no Protheus!', 'success');
+            showToast('Produtos x Cliente atualizados com sucesso no SINCO!', 'success');
             const res = await getSincoRestricoes(produto);
             setRestricoes(Array.isArray(res) ? res : []);
             setIsEditingRestricoes(false);
@@ -1479,7 +1507,7 @@ export default function SINCOFormularioPrincipal() {
                 <div className="flex flex-wrap items-center gap-1.5">
                     <button
                         onClick={handleAtualizarDados}
-                        title="Emular recarregamento da página (atualiza dados do cabeçalho Protheus e as tabelas sem perder o último ERP e caminho)"
+                        title="Emular recarregamento da página (atualiza dados do cabeçalho SINCO e as tabelas sem perder o último ERP e caminho)"
                         className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-md transition-colors cursor-pointer"
                     >
                         <RefreshCw className="h-3.5 w-3.5" />
@@ -1568,10 +1596,10 @@ export default function SINCOFormularioPrincipal() {
                     <button
                         onClick={() => handleAbrirCadastroNovo()}
                         className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs border border-emerald-700 text-xs font-medium rounded-md transition-colors whitespace-nowrap flex items-center gap-1 cursor-pointer"
-                        title="Cadastrar Novo Produto no Protheus (SB1010/SB5010/SZ1010)"
+                        title="Cadastrar Novo Produto no SINCO"
                     >
                         <Sparkles className="h-3.5 w-3.5" />
-                        <span>Cadastrar no Protheus</span>
+                        <span>Cadastrar no SINCO</span>
                     </button>
 
                     {maximizedPanel && (
@@ -1587,32 +1615,32 @@ export default function SINCOFormularioPrincipal() {
                 </div>
             </div>
 
-            {/* Erro de comunicação com Protheus */}
+            {/* Alerta de comunicação */}
             {erroProtheus && (
                 <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-sm text-red-700 flex items-start gap-2">
-                    <span className="font-semibold whitespace-nowrap">Erro Protheus:</span>
+                    <span className="font-semibold whitespace-nowrap">Aviso:</span>
                     <span className="font-mono break-all">{erroProtheus}</span>
                 </div>
             )}
 
-            {/* Banner: produto existe no ERP mas não está no espelho PostgreSQL */}
+            {/* Banner: produto não cadastrado no SINCO */}
             {produtoNaoNoMirror && !erroProtheus && (
                 <div className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 text-xs text-amber-800 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-start gap-2">
                         <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
                         <div>
-                            <span className="font-semibold">Produto não encontrado no espelho local (PostgreSQL).</span>
+                            <span className="font-semibold">Produto não encontrado no cadastro do SINCO.</span>
                             <span className="ml-1 text-amber-700">
-                                O produto <strong>{dados.arquivo}</strong> pode existir no Protheus mas não foi sincronizado com o mirror.
+                                O produto <strong>{dados.arquivo}</strong> ainda não foi registrado no banco de dados do SINCO.
                             </span>
                         </div>
                     </div>
                     <button
                         onClick={() => handleAbrirCadastroNovo()}
-                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95"
+                        className="px-2.5 py-1 bg-[#425750] hover:bg-[#32423D] text-white rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95"
                     >
-                        <Sparkles className="w-3.5 h-3.5 text-blue-200" />
-                        <span>Cadastrar no Protheus (TOTVS)</span>
+                        <Sparkles className="w-3.5 h-3.5 text-[#E0E800]" />
+                        <span>Cadastrar no SINCO</span>
                     </button>
                 </div>
             )}
@@ -1625,7 +1653,7 @@ export default function SINCOFormularioPrincipal() {
                         onClick={() => setActiveMainTab('formulario')}
                         className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
                             activeMainTab === 'formulario'
-                                ? 'bg-blue-600 text-white shadow-xs'
+                                ? 'bg-[#425750] text-white shadow-xs'
                                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                         }`}
                     >
@@ -1638,7 +1666,7 @@ export default function SINCOFormularioPrincipal() {
                         onClick={() => setActiveMainTab('arvore')}
                         className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
                             activeMainTab === 'arvore'
-                                ? 'bg-blue-600 text-white shadow-xs'
+                                ? 'bg-[#425750] text-white shadow-xs'
                                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                         }`}
                     >
@@ -1730,7 +1758,7 @@ export default function SINCOFormularioPrincipal() {
                             <input type="text" value={dados.arquivo} readOnly className={readCls} />
                         </div>
                         <div className="col-span-1 sm:col-span-1">
-                            <label className={lblCls} title="Rev. Metalfisa">Rev</label>
+                            <label className={lblCls} title="Rev. Lynx">Rev</label>
                             <input type="text" value={dados.rev} onChange={e => setDados(p => ({ ...p, rev: e.target.value }))} readOnly={!isEditingDadosGerais} className={isEditingDadosGerais ? inputCls : readCls} />
                         </div>
                         <div className="col-span-12 sm:col-span-5">
@@ -2003,6 +2031,14 @@ export default function SINCOFormularioPrincipal() {
                                                                 onBlur={async (e) => {
                                                                     // Se o modal de busca for abrir, podemos ignorar (onMouseDown previne o blur)
                                                                     const codigo = e.target.value.trim().toUpperCase();
+                                                                    if (codigo && codigo === codigoAtual) {
+                                                                        showToast('Um produto não pode ser componente dele mesmo.', 'warning');
+                                                                        const newArr = [...editedArvore];
+                                                                        newArr[i].componente = '';
+                                                                        newArr[i].descricao = '';
+                                                                        setEditedArvore(newArr);
+                                                                        return;
+                                                                    }
                                                                     if (codigo) {
                                                                         try {
                                                                             const prod = await getSincoProduto(codigo);
@@ -2015,7 +2051,7 @@ export default function SINCOFormularioPrincipal() {
                                                                                 throw new Error('Not found');
                                                                             }
                                                                         } catch (err) {
-                                                                            showToast(`Componente ${codigo} não encontrado no Protheus.`, 'warning');
+                                                                            showToast(`Componente ${codigo} não encontrado no SINCO.`, 'warning');
                                                                             const newArr = [...editedArvore];
                                                                             newArr[i].componente = '';
                                                                             newArr[i].descricao = '';
@@ -2036,7 +2072,7 @@ export default function SINCOFormularioPrincipal() {
                                                                     setShowSearchModal(true);
                                                                 }}
                                                                 className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                                                                title="Buscar no Protheus"
+                                                                title="Buscar no SINCO"
                                                             >
                                                                 <Search className="w-3 h-3" />
                                                             </button>
@@ -2046,19 +2082,22 @@ export default function SINCOFormularioPrincipal() {
                                                     )}
                                                 </td>
                                                 <td className="px-2 py-1 text-slate-600 max-w-[200px] truncate" title={r.descricao}>
-                                                    {r.isNew ? <span className="text-indigo-600 font-medium italic">{r.descricao || 'Produto a ser validado pelo Protheus'}</span> : <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.descricao || '—'}</span>}
+                                                    {r.isNew ? <span className="text-indigo-600 font-medium italic">{r.descricao || 'Produto a ser validado pelo SINCO'}</span> : <span className={r.deleted ? 'line-through text-red-500' : ''}>{r.descricao || '—'}</span>}
                                                 </td>
                                                 <td className="px-2 py-1 text-right">
                                                     {isEditingArvore ? (
                                                         <input 
-                                                            type="number" 
-                                                            min="0" 
-                                                            step="0.0001"
-                                                            value={r.quantidade !== undefined ? r.quantidade : ''} 
+                                                            type="text" 
+                                                            inputMode="decimal"
+                                                            value={r.quantidade !== undefined && r.quantidade !== null ? String(r.quantidade).replace('.', ',') : ''} 
                                                             disabled={r.deleted}
                                                             onChange={(e) => {
+                                                                // Accept pt-BR decimal comma; store normalized with dot
+                                                                let v = e.target.value.replace(/[^0-9.,]/g, '').replace(/\./g, ',');
+                                                                const [int, ...dec] = v.split(',');
+                                                                v = dec.length ? `${int}.${dec.join('').slice(0, 6)}` : int;
                                                                 const newArr = [...editedArvore];
-                                                                newArr[i].quantidade = e.target.value;
+                                                                newArr[i].quantidade = v;
                                                                 setEditedArvore(newArr);
                                                             }}
                                                             className="w-20 px-1 py-0.5 border border-indigo-200 rounded text-right text-xs font-mono disabled:opacity-50"
@@ -2124,7 +2163,7 @@ export default function SINCOFormularioPrincipal() {
                 } ${isEditingRestricoes ? 'border-amber-400 ring-1 ring-amber-400' : 'border-slate-200'}`}>
                     <div className={`${boxTitleCls} ${isEditingRestricoes ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-amber-50 text-amber-700 border-amber-100'} flex justify-between items-center`}>
                         <div className="flex items-center gap-1.5">
-                            <span>Produto Metalfisa/Cliente (SZ1)</span>
+                            <span>Produto Lynx/Cliente (SZ1)</span>
                             {listRestricoes.length > 0 && <span className="text-[10px] bg-amber-200/80 text-amber-900 px-1.5 py-0.2 rounded-full font-bold">{listRestricoes.length}</span>}
                         </div>
                         <div className="flex items-center gap-1.5">
@@ -2209,7 +2248,7 @@ export default function SINCOFormularioPrincipal() {
                                     {listRestricoes.length === 0 ? (
                                         <tr>
                                             <td colSpan={isEditingRestricoes ? 5 : 4} className="text-center py-8 text-slate-400">
-                                                <p className="italic text-xs mb-3 text-slate-500 font-medium">Nenhuma restrição encontrada no Protheus</p>
+                                                <p className="italic text-xs mb-3 text-slate-500 font-medium">Nenhum vínculo de cliente encontrado no SINCO</p>
                                                 {temArquivo && !isEditingRestricoes && (
                                                     <button
                                                         type="button"
@@ -2267,7 +2306,7 @@ export default function SINCOFormularioPrincipal() {
                                                                     .finally(() => setSearchingCliente(false));
                                                             }}
                                                             className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                                                            title="Buscar Cliente no Protheus"
+                                                            title="Buscar Cliente no SINCO"
                                                         >
                                                             <Search className="w-3 h-3" />
                                                         </button>
@@ -2400,7 +2439,7 @@ export default function SINCOFormularioPrincipal() {
                                             setEditedOperacoes(JSON.parse(JSON.stringify(operacoes)));
                                             setIsEditingOperacoes(true);
                                         }}
-                                        className="flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-medium rounded transition-colors shadow-2xs cursor-pointer"
+                                        className="flex items-center gap-1 px-2 py-0.5 bg-[#425750] hover:bg-[#32423D] text-white text-[10px] font-medium rounded transition-colors shadow-2xs cursor-pointer"
                                         title="Editar operações existentes"
                                     >
                                         <Pencil className="h-3 w-3" /> Editar
@@ -2420,7 +2459,7 @@ export default function SINCOFormularioPrincipal() {
                                             }]);
                                             setIsEditingOperacoes(true);
                                         }}
-                                        className="flex items-center gap-1 px-2 py-0.5 bg-blue-700 hover:bg-blue-800 text-white text-[10px] font-medium rounded transition-colors shadow-2xs cursor-pointer"
+                                        className="flex items-center gap-1 px-2 py-0.5 bg-[#2D3C37] hover:bg-[#1E2825] text-white text-[10px] font-medium rounded transition-colors shadow-2xs cursor-pointer"
                                         title="Inserir nova operação no roteiro"
                                     >
                                         <Plus className="h-3 w-3" /> Inserir Novo
@@ -2441,7 +2480,7 @@ export default function SINCOFormularioPrincipal() {
                                     <button
                                         onClick={handleSalvarOperacoes}
                                         disabled={savingOperacoes}
-                                        className="flex items-center gap-1 px-2 py-0.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white text-[10px] font-medium rounded transition-colors shadow-2xs"
+                                        className="flex items-center gap-1 px-2 py-0.5 bg-[#425750] hover:bg-[#32423D] disabled:bg-slate-400 text-white text-[10px] font-medium rounded transition-colors shadow-2xs"
                                     >
                                         <Save className="h-3 w-3" /> {savingOperacoes ? 'Salvando...' : 'Salvar'}
                                     </button>
@@ -2477,7 +2516,7 @@ export default function SINCOFormularioPrincipal() {
                                         {listOperacoes.length === 0 ? (
                                             <tr>
                                                 <td colSpan={isEditingOperacoes ? 6 : 5} className="text-center py-8 text-slate-400">
-                                                    <p className="italic text-xs mb-3 text-slate-500 font-medium">Nenhuma operação encontrada no Protheus</p>
+                                                    <p className="italic text-xs mb-3 text-slate-500 font-medium">Nenhuma operação cadastrada no SINCO</p>
                                                     {temArquivo && !isEditingOperacoes && (
                                                         <button
                                                             type="button"
@@ -2494,7 +2533,7 @@ export default function SINCOFormularioPrincipal() {
                                                                 }]);
                                                                 setIsEditingOperacoes(true);
                                                             }}
-                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-md text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#425750] hover:bg-[#32423D] active:bg-[#1E2825] text-white rounded-md text-xs font-semibold shadow-2xs transition-all cursor-pointer"
                                                         >
                                                             <Plus className="w-3.5 h-3.5" /> Inserir Nova Operação
                                                         </button>
@@ -2647,8 +2686,7 @@ export default function SINCOFormularioPrincipal() {
                                 {isEditingOperacoes && (
                                     <>
                                         <datalist id="recursos-list">
-                                            {processList.map(p => (
-                                                <option key={p.codigo} value={p.codigo}>{p.descricao}</option>
+                                            {processList.map((p, idx) => (<option key={`${p.codigo}-${idx}`} value={p.codigo}>{p.descricao}</option>
                                             ))}
                                         </datalist>
                                         <div className="p-2 border-t border-blue-100 bg-blue-50/30">
@@ -2701,7 +2739,7 @@ export default function SINCOFormularioPrincipal() {
                     {temArquivo && (
                         <button
                             onClick={() => {
-                                setNovaRestricao({ resumo: '', restricao: '', responsavel: (user?.nome || user?.login || '').toUpperCase(), revMetalfisa: '' });
+                                setNovaRestricao({ resumo: '', restricao: '', responsavel: (user?.nome || user?.login || '').toUpperCase(), revLynx: '' });
                                 setShowModalSz0(true);
                             }}
                             className="flex items-center gap-1 px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-medium rounded transition-colors shadow-2xs cursor-pointer"
@@ -2768,7 +2806,7 @@ export default function SINCOFormularioPrincipal() {
                                                                     resumo: r.resumo || '',
                                                                     restricao: r.restricao || '',
                                                                     responsavel: (user?.nome || user?.login || '').toUpperCase(),
-                                                                    revMetalfisa: r.revisao || dados.rev || '',
+                                                                    revLynx: r.revisao || dados.rev || '',
                                                                     status: r.status || 'P',
                                                                 });
                                                                 setShowModalSz0(true);
@@ -2827,7 +2865,7 @@ export default function SINCOFormularioPrincipal() {
                                 {loadingTreeValidation && (
                                     <span className="text-[11px] text-blue-600 flex items-center gap-1 animate-pulse font-medium">
                                         <Loader2 size={12} className="animate-spin" />
-                                        Validando Protheus...
+                                        Validando SINCO...
                                     </span>
                                 )}
                             </div>
@@ -2934,7 +2972,7 @@ export default function SINCOFormularioPrincipal() {
                                         <th className="px-3 py-2.5 min-w-[240px]">Código do Componente</th>
                                         <th className="px-3 py-2.5 min-w-[280px]">Descrição Técnica</th>
                                         <th className="px-3 py-2.5 w-24 text-right">Qtde / UN</th>
-                                        <th className="px-2 py-2.5 w-20 text-center" title="Estrutura de Materiais cadastrada no Protheus (SG1)">BOM (SG1)</th>
+                                        <th className="px-2 py-2.5 w-20 text-center" title="Estrutura de Materiais cadastrada no SINCO (SG1)">BOM (SG1)</th>
                                         <th className="px-2 py-2.5 w-20 text-center" title="Vínculo de Produto x Cliente cadastrado (SZ1)">Cliente (SZ1)</th>
                                         <th className="px-2 py-2.5 w-20 text-center" title="Roteiro de Operações cadastrado (SG2)">Roteiro (SG2)</th>
                                         <th className="px-2 py-2.5 w-20 text-center" title="Restrições de Processo/Qualidade (SZ0)">Restrições (SZ0)</th>
@@ -2979,7 +3017,7 @@ export default function SINCOFormularioPrincipal() {
                                                 if (loadingTreeValidation) return <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-300 mx-auto" />;
                                                 if (!vStatus) return <span className="text-slate-300 font-mono">—</span>;
                                                 return vStatus[statusKey]
-                                                    ? <CheckCircle2 className="w-4 h-4 text-emerald-600 mx-auto" title="Cadastrado / Válido no Protheus" />
+                                                    ? <CheckCircle2 className="w-4 h-4 text-emerald-600 mx-auto" title="Cadastrado / Válido no SINCO" />
                                                     : <XCircle className="w-4 h-4 text-slate-300 hover:text-red-500 mx-auto transition-colors" title="Não cadastrado ou sem registro" />;
                                             };
 
@@ -3188,8 +3226,8 @@ export default function SINCOFormularioPrincipal() {
                                     <input type="text" value={novaRestricao.responsavel} readOnly className={readCls} title="Preenchido automaticamente com o usuário logado" />
                                 </div>
                                 <div>
-                                    <label className={lblCls}>Rev. Metalfisa</label>
-                                    <input type="text" maxLength={2} value={novaRestricao.revMetalfisa || dados.rev || ''} onChange={e => setNovaRestricao(p => ({ ...p, revMetalfisa: e.target.value }))} className={inputCls} />
+                                    <label className={lblCls}>Rev. Lynx</label>
+                                    <input type="text" maxLength={2} value={novaRestricao.revLynx || dados.rev || ''} onChange={e => setNovaRestricao(p => ({ ...p, revLynx: e.target.value }))} className={inputCls} />
                                 </div>
                                 <div>
                                     <label className={lblCls}>Status</label>
@@ -3223,7 +3261,7 @@ export default function SINCOFormularioPrincipal() {
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[80vh] max-h-[600px] animate-in fade-in zoom-in duration-200">
                         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
                             <div>
-                                <h3 className="text-sm font-semibold text-slate-800">Buscar Componente (Protheus)</h3>
+                                <h3 className="text-sm font-semibold text-slate-800">Buscar Componente (SINCO)</h3>
                                 <p className="text-[11px] text-slate-500 mt-0.5">Pesquise por código ou parte da descrição do material.</p>
                             </div>
                             <button onClick={() => setShowSearchModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors">
@@ -3247,7 +3285,7 @@ export default function SINCOFormularioPrincipal() {
                                                     .finally(() => setSearching(false));
                                             }
                                         }}
-                                        placeholder="Digite ao menos 3 letras e pressione Enter ou Buscar..."
+                                        placeholder="Filtrar por código ou descrição..."
                                         className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-md shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-shadow"
                                         autoFocus
                                     />
@@ -3272,10 +3310,10 @@ export default function SINCOFormularioPrincipal() {
                         </div>
                         <div className="flex-1 overflow-auto p-0">
                             {searching ? (
-                                <div className="flex justify-center items-center h-full text-sm text-slate-400">Buscando no Protheus...</div>
-                            ) : searchResults.length === 0 ? (
+                                <div className="flex justify-center items-center h-full text-sm text-slate-400">Buscando no SINCO...</div>
+                            ) : searchResults.filter(r => r.codigo !== codigoAtual).length === 0 ? (
                                 <div className="flex justify-center items-center h-full text-sm text-slate-400 italic">
-                                    {searchQuery.length >= 3 ? "Nenhum material encontrado." : "Aguardando busca."}
+                                    {searchQuery ? "Nenhum material encontrado." : "Nenhum produto cadastrado no SINCO."}
                                 </div>
                             ) : (
                                 <table className="w-full text-left text-[11px]">
@@ -3289,7 +3327,7 @@ export default function SINCOFormularioPrincipal() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {searchResults.map((r, i) => (
+                                        {searchResults.filter(r => r.codigo !== codigoAtual).map((r, i) => (
                                             <tr key={i} className="hover:bg-indigo-50/50 transition-colors">
                                                 <td className="px-4 py-2 font-mono font-medium text-slate-700">{r.codigo}</td>
                                                 <td className="px-4 py-2 text-slate-600 font-medium truncate max-w-[200px]" title={r.titulo}>{r.titulo}</td>
@@ -3432,7 +3470,7 @@ export default function SINCOFormularioPrincipal() {
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col h-[80vh] max-h-[600px] animate-in fade-in zoom-in duration-200">
                         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
                             <div>
-                                <h3 className="text-sm font-semibold text-slate-800">Buscar Cliente/Fornecedor (Protheus)</h3>
+                                <h3 className="text-sm font-semibold text-slate-800">Buscar Cliente/Fornecedor (SINCO)</h3>
                                 <p className="text-[11px] text-slate-500 mt-0.5">Pesquise por código ou parte do nome.</p>
                             </div>
                             <button onClick={() => setShowSearchClienteModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors">
@@ -3494,7 +3532,7 @@ export default function SINCOFormularioPrincipal() {
                             {searchingCliente ? (
                                 <div className="flex flex-col justify-center items-center h-full text-sm text-slate-400 gap-2">
                                     <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
-                                    <span>Buscando no Protheus...</span>
+                                    <span>Buscando no SINCO...</span>
                                 </div>
                             ) : searchClienteResults.length === 0 ? (
                                 <div className="flex flex-col justify-center items-center h-full text-sm text-slate-400 italic p-6 text-center">
@@ -3596,9 +3634,9 @@ export default function SINCOFormularioPrincipal() {
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-2">
-                                        <h3 className="text-base font-bold tracking-tight">Regra de Negócio Protheus (Tabela SZ1)</h3>
+                                        <h3 className="text-base font-bold tracking-tight">Regra de Negócio (Tabela SZ1)</h3>
                                         <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-amber-700/60 text-white rounded-full">
-                                            Validação TOTVS
+                                            Validação SINCO
                                         </span>
                                     </div>
                                     <p className="text-xs text-amber-100 mt-0.5">
@@ -3691,7 +3729,7 @@ export default function SINCOFormularioPrincipal() {
                             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1">
                                 <span className="font-bold text-slate-800 flex items-center gap-1.5">
                                     <ShieldAlert className="w-3.5 h-3.5 text-slate-500" />
-                                    Por que o Protheus não permite essa gravação?
+                                    Por que o SINCO não permite essa gravação?
                                 </span>
                                 <p className="leading-relaxed">
                                     {modalRegraSz1.motivo}

@@ -77,7 +77,7 @@ export default function EmailMontagemModal({ isOpen, onClose, pdfBlob, fileName,
 
             htmlBody += `
                     <p style="color: #64748b; font-size: 12px; margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 10px;">
-                        E-mail gerado automaticamente pelo sistema MetalFisa Anty.
+                        E-mail gerado automaticamente pelo sistema Lynx Anty.
                     </p>
                 </div>
             `;
@@ -131,7 +131,7 @@ export default function EmailMontagemModal({ isOpen, onClose, pdfBlob, fileName,
                                 <div key={idx} className="flex gap-2">
                                     <input
                                         type="email"
-                                        placeholder="exemplo@metalfisa.com.br"
+                                        placeholder="exemplo@lynxems.com.br"
                                         value={email}
                                         onChange={(e) => handleEmailChange(idx, e.target.value)}
                                         className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"

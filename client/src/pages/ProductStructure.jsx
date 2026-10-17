@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Layers, Box, FileText, ChevronDown, ChevronRight, Printer, Download, Stamp, PackageCheck, Loader2, X, History, RotateCcw, DollarSign, Wrench } from 'lucide-react';
+import { ArrowLeft, Layers, Box, FileText, ChevronDown, ChevronRight, Printer, Download, Stamp, PackageCheck, Loader2, X, History, RotateCcw, DollarSign, Wrench, FileSpreadsheet } from 'lucide-react';
 import { getEstruturaProduto, getStockBalance, getProductRoute, getFileUrl, getSincoRestricoesSz0, getProductStatus, setProductStatus, getProductStatusesBatch, setProductStatusBatch, setEstruturaCustoOverride, removeEstruturaCustoOverride } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import ProductDocuments from '../components/ProductDocuments';
@@ -9,6 +9,7 @@ import EngineeringReleaseModal from '../components/EngineeringReleaseModal';
 import ProductStatusHistoryModal from '../components/ProductStatusHistoryModal';
 import { generateEstruturaReport } from '../services/estruturaReportPdf';
 import { generateMergedDrawingsPdf } from '../services/pdfMergerService';
+import { exportEstruturaComercialExcel } from '../services/estruturaComercialExcelGenerator';
 
 const CUSTO_TIPOS = ['MP', 'MC', 'EM'];
 
@@ -16,7 +17,7 @@ const ProductStructure = () => {
     const { codigo } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
-    const { hasPermission } = useAuth();
+    const { user, hasPermission } = useAuth();
     const canViewValues = hasPermission('valores_financeiros', 'view');
     const [savingPreco, setSavingPreco] = useState({}); // { [itemCodigo]: true }
     const [structure, setStructure] = useState([]);
@@ -24,6 +25,7 @@ const ProductStructure = () => {
     const [loading, setLoading] = useState(true);
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
     const [isGeneratingPdfN1, setIsGeneratingPdfN1] = useState(false);
+    const [isExportingExcel, setIsExportingExcel] = useState(false);
     const [error, setError] = useState(null);
     const [selectedProductForStock, setSelectedProductForStock] = useState(null);
     const [expandedRoutes, setExpandedRoutes] = useState({}); // Track which items have route expanded
@@ -122,7 +124,7 @@ const ProductStructure = () => {
     const handleUpdateStatus = async (novoEstado) => {
         try {
             setIsUpdatingStatus(true);
-            const user = JSON.parse(localStorage.getItem('@MetalFisa:user') || '{}');
+            const user = JSON.parse(localStorage.getItem('@Lynx:user') || '{}');
             const usuarioNome = user?.nome || 'Desconhecido';
             
             // Build list of codes (PAI + all non-MP children)
@@ -152,7 +154,7 @@ const ProductStructure = () => {
     const handleRowStatusChange = async (itemCodigo, novoEstado) => {
         try {
             setIsUpdatingStatus(true);
-            const user = JSON.parse(localStorage.getItem('@MetalFisa:user') || '{}');
+            const user = JSON.parse(localStorage.getItem('@Lynx:user') || '{}');
             const usuarioNome = user?.nome || 'Desconhecido';
             
             await setProductStatus(itemCodigo, novoEstado, usuarioNome, 'MARCACAO_MANUAL');
@@ -181,7 +183,7 @@ const ProductStructure = () => {
 
         setSavingPreco(prev => ({ ...prev, [itemCodigo]: true }));
         try {
-            const user = JSON.parse(localStorage.getItem('@MetalFisa:user') || '{}');
+            const user = JSON.parse(localStorage.getItem('@Lynx:user') || '{}');
             await setEstruturaCustoOverride(codigo, itemCodigo, precoNum, user?.nome);
             setStructure(prev => prev.map(i =>
                 i.codigo.trim() === itemCodigo.trim()
@@ -350,6 +352,44 @@ const ProductStructure = () => {
         }
     };
 
+    const handleExportExcelComercial = async () => {
+        if (!canViewValues) return;
+        setIsExportingExcel(true);
+        try {
+            // Pré-busca todos os roteiros que ainda não estiverem carregados para que a Aba 2 venha 100% preenchida
+            const allRoutesMap = { ...routes };
+            const missing = structure.filter(item => !allRoutesMap[item.codigo?.trim()]);
+
+            if (missing.length > 0) {
+                await Promise.all(missing.map(async (item) => {
+                    const key = item.codigo?.trim();
+                    try {
+                        const data = await getProductRoute(item.codigo);
+                        allRoutesMap[key] = Array.isArray(data) ? data : [];
+                    } catch {
+                        allRoutesMap[key] = [];
+                    }
+                }));
+                setRoutes(allRoutesMap);
+            }
+
+            const itemPai = structure.find(i => i.nivel === 0) || structure[0] || {};
+            await exportEstruturaComercialExcel({
+                codigo,
+                descricao: itemPai.descricao || '',
+                structure,
+                routes: allRoutesMap,
+                productStatuses,
+                userName: user?.nome || user?.email || 'Comercial MetalFisa'
+            });
+        } catch (err) {
+            console.error('Erro ao exportar Excel Comercial:', err);
+            alert('Falha ao exportar relatório comercial: ' + (err.message || err));
+        } finally {
+            setIsExportingExcel(false);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gray-50 p-4 md:p-6">
             <div className="w-full">
@@ -500,6 +540,29 @@ const ProductStructure = () => {
                                     )}
                                     {isGeneratingPdf ? 'Gerando...' : 'Relatório Completo'}
                                 </button>
+
+                                {canViewValues && (
+                                    <>
+                                        <div className="hidden sm:block h-6 w-px bg-slate-300 mx-1"></div>
+                                        <button
+                                            onClick={handleExportExcelComercial}
+                                            disabled={isExportingExcel}
+                                            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold transition-all shadow-sm text-xs ${
+                                                isExportingExcel
+                                                    ? 'bg-emerald-100 text-emerald-600 border border-emerald-300 cursor-not-allowed'
+                                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-700/20 active:scale-[0.98]'
+                                            }`}
+                                            title="Exportar Relatório Comercial de Custos e Formação de Preço em Excel (Padrão Oficial MetalFisa: Materiais, NCM, Preço de Venda e Mão de Obra)"
+                                        >
+                                            {isExportingExcel ? (
+                                                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                            ) : (
+                                                <FileSpreadsheet className="h-4 w-4" />
+                                            )}
+                                            {isExportingExcel ? 'Gerando Excel...' : 'Excel Comercial'}
+                                        </button>
+                                    </>
+                                )}
                             </div>
 
                             {/* Restante das Ações */}
@@ -555,7 +618,7 @@ const ProductStructure = () => {
                                     <th className="px-6 py-4 text-right">Qtd Nec.</th>
                                     {canViewValues && <th className="px-6 py-4 text-right" title="Custo por unidade — editável, vale só nesta estrutura">Custo Unit. (R$)</th>}
                                     {canViewValues && <th className="px-6 py-4 text-right" title="Qtd Nec. × Custo Unit.">Custo Total (R$)</th>}
-                                    <th className="px-6 py-4">Ref. Cliente</th>
+                                    <th className="px-6 py-4">Desenho / Ref.</th>
                                     <th className="px-6 py-4 text-center">Status Eng.</th>
                                     <th className="px-6 py-4 text-center">Roteiro</th>
                                 </tr>
@@ -676,7 +739,7 @@ const ProductStructure = () => {
                                                                         ? 'border-amber-400 bg-amber-50 font-bold text-amber-800'
                                                                         : 'border-gray-200 text-gray-700'
                                                                 }`}
-                                                                title={item.preco_override != null ? `Custo alterado só nesta estrutura (padrão: ${(item.preco_padrao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})` : 'Custo padrão (Protheus)'}
+                                                                title={item.preco_override != null ? `Custo alterado só nesta estrutura (padrão: ${(item.preco_padrao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})` : 'Custo padrão (cadastro do produto)'}
                                                             />
                                                             {item.preco_override != null && (
                                                                 <button
@@ -795,7 +858,7 @@ const ProductStructure = () => {
                                                                         <tr key={opIdx} className="border-t border-gray-200">
                                                                             <td className="py-2 pr-4 font-mono font-bold text-blue-600">{op.operacao}</td>
                                                                             <td className="py-2 pr-4">{op.descricao?.trim() || '-'}</td>
-                                                                            <td className="py-2 pr-4 font-mono">{op.recurso?.trim() || '-'}</td>
+                                                                            <td className="py-2 pr-4 font-mono">{op.recurso?.trim() || '-'}{op.recurso_descricao && op.recurso_descricao !== op.recurso && <span className="ml-1 font-sans text-gray-500">— {op.recurso_descricao}</span>}</td>
                                                                             <td className="py-2 pr-4 text-right font-mono">{op.tempo_setup || '0'}</td>
                                                                             <td className="py-2 pr-4 text-right font-mono font-medium">{op.tempo_padrao || '0'}</td>
                                                                             {canViewValues && (
@@ -825,7 +888,7 @@ const ProductStructure = () => {
                                         <td colSpan={canViewValues ? 11 : 9} className="p-8 text-center text-gray-500">
                                             Nenhum item encontrado na estrutura (BOM).
                                             <br />
-                                            <span className="text-xs text-gray-400">Verifique se o produto possui cadastro na SG1.</span>
+                                            <span className="text-xs text-gray-400">Cadastre os componentes na tela BOM.</span>
                                         </td>
                                     </tr>
                                 )}

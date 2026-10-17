@@ -112,11 +112,11 @@ const SCHEMA_CONTEXT = [
         })
     },
 
-    // ======= MYSQL (APP INTERNO MetalFisa) =======
+    // ======= MYSQL (APP INTERNO Lynx) =======
     {
         banco: 'mysql',
         tabela: 'producao_apontamentos',
-        descricao: 'Apontamentos de produção internos do App MetalFisa. Registra progresso das operações por pedido, produto e sequência de processo.',
+        descricao: 'Apontamentos de produção internos do App Lynx. Registra progresso das operações por pedido, produto e sequência de processo.',
         colunas_chave: JSON.stringify({
             id: 'ID do apontamento',
             pedido: 'Número do pedido (Ref SC5010)',
@@ -193,7 +193,7 @@ const SCHEMA_CONTEXT = [
     {
         banco: 'mysql',
         tabela: 'usuario',
-        descricao: 'Cadastro de usuários do sistema MetalFisa.',
+        descricao: 'Cadastro de usuários do sistema Lynx.',
         colunas_chave: JSON.stringify({
             idUsuario: 'ID do usuário',
             NomeCompleto: 'Nome completo',

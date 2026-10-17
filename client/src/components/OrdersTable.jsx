@@ -502,6 +502,33 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     }, [orderItems, setOrders, updateOrderItemsForPedido]);
 
+    const handleExcluirOp = useCallback(async (item) => {
+        if (!item?.pedido || !item?.item) return;
+        const opName = item.op_num_completa || item.op_num || item.item;
+        const msg = item.item_fracionado 
+            ? `Tem certeza que deseja excluir a OP ${opName} (Item Fracionado ${item.item}) do Pedido ${item.pedido}?\n\nAo excluir, esta fração será removida e sua quantidade retornará ao item original do pedido.`
+            : `Tem certeza que deseja excluir a OP ${opName} do Pedido ${item.pedido}?`;
+
+        if (!window.confirm(msg)) return;
+
+        try {
+            const res = await api.post('/pedidos/excluir-op', {
+                pedido: item.pedido,
+                item: item.item,
+                op: item.op_num_completa || item.op_num
+            });
+            if (res.data?.success) {
+                toast.success(res.data.message || 'OP excluída com sucesso!');
+                if (typeof fetchData === 'function') fetchData();
+            } else {
+                toast.error(res.data?.error || 'Erro ao excluir OP.');
+            }
+        } catch (err) {
+            console.error('Erro ao excluir OP:', err);
+            toast.error(err.response?.data?.error || err.message || 'Falha ao excluir OP.');
+        }
+    }, [fetchData]);
+
     const handleClassificacaoModalSaveSuccess = (updatedItem) => {
         // Update flat list
         setOrders(prev => prev.map(o => {
@@ -1242,7 +1269,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     const handleDownloadBicromatizacao = async () => {
         setDownloadingBicromat(true);
         try {
-            const token = localStorage.getItem('@MetalFisa:token') || '';
+            const token = localStorage.getItem('@Lynx:token') || '';
             const url = `/api/reports/vmi-bicromatizacao/excel?token=${encodeURIComponent(token)}`;
             const response = await fetch(url, {
                 headers: token ? { Authorization: `Bearer ${token}` } : {}
@@ -1597,7 +1624,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                     </div>
 
                     <div className="flex flex-col gap-1">
-                        <label className="text-[11px] font-medium text-gray-600 ml-1" title="Item do Pedido Metalfisa (SC6)">Item Pedido:</label>
+                        <label className="text-[11px] font-medium text-gray-600 ml-1" title="Item do Pedido Lynx (SC6)">Item Pedido:</label>
                         <div className="relative">
                             <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
                             <input
@@ -1607,7 +1634,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                 value={filters.item || ''}
                                 onChange={handleFilterChange}
                                 className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
-                                title="Filtrar por item do pedido Metalfisa (ex: 01, 02)"
+                                title="Filtrar por item do pedido Lynx (ex: 01, 02)"
                             />
                         </div>
                     </div>
@@ -1777,42 +1804,6 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                         </div>
                     </div>
 
-                    {/* Filtro Classificacao (Multi-select Pills) — oculto quando a página tem classificação fixa (ex: PPAP's) */}
-                    {!fixedClassificacao && (
-                    <div className="flex flex-col gap-1 md:col-span-2">
-                        <label className="text-[11px] font-medium text-gray-600 ml-1">Classificação:</label>
-                        <div className="flex flex-wrap gap-1">
-                            {['Todos', 'Jits', 'PPAP', 'Jits e PPAP', 'Nenhum'].map(classif => {
-                                const activeClassifs = filters.classificacao_item ? filters.classificacao_item.split(',') : [];
-                                const isActive = classif === 'Todos' ? activeClassifs.length === 0 : activeClassifs.includes(classif);
-                                return (
-                                    <button
-                                        key={classif}
-                                        type="button"
-                                        onClick={() => {
-                                            if (classif === 'Todos') {
-                                                setFilters({ classificacao_item: '', page: 1 });
-                                            } else {
-                                                let newClassifs = [...activeClassifs];
-                                                if (isActive) newClassifs = newClassifs.filter(c => c !== classif);
-                                                else newClassifs.push(classif);
-                                                setFilters({ classificacao_item: newClassifs.join(','), page: 1 });
-                                            }
-                                        }}
-                                        className={`px-3 py-1 flex items-center justify-center text-[11px] font-semibold rounded-full border transition-all ${
-                                            isActive
-                                                ? 'bg-purple-100 text-purple-700 border-purple-200 shadow-sm'
-                                                : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
-                                        }`}
-                                    >
-                                        {classif}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-                    )}
-
                     <div className="md:col-span-4 lg:col-span-5 flex flex-wrap gap-2">
                         <button
                             type="submit"
@@ -1842,21 +1833,6 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
                         <button
                             type="button"
-                            onClick={handleDownloadFaturamentoPDF}
-                            disabled={downloadingPDF}
-                            className="bg-orange-50 text-orange-600 border border-orange-300 hover:bg-orange-100 font-medium rounded-lg text-sm px-2.5 py-2.5 text-center transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
-                            title="Faturamento PDF"
-                        >
-                            {downloadingPDF ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <FileText className="h-4 w-4" />
-                            )}
-                            <span className="font-semibold text-xs tracking-tight">Fat.</span>
-                        </button>
-
-                        <button
-                            type="button"
                             onClick={handleDownloadExcel}
                             disabled={loading}
                             className="bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 font-medium rounded-lg text-sm px-3 py-2.5 text-center transition-colors flex items-center justify-center disabled:opacity-40"
@@ -1877,25 +1853,6 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                             ) : (
                                 <FileText className="h-4 w-4" />
                             )}
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => { setIsGlobalReport(false); setShowReportModal(true); }}
-                            disabled={loading}
-                            className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 font-medium rounded-lg text-sm px-3 py-2.5 text-center transition-colors flex items-center justify-center gap-2 disabled:opacity-40"
-                            title="Gerar Ata (Pedidos da Tela)"
-                        >
-                            <StickyNote className="h-4 w-4" />
-                            <span>Ata</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => { setPcpmetalContext({ page: 'visao-geral', modulo: 'Viso Geral', action: 'Geral' }); setPcpmetalOpen(true); }}
-                            className="bg-blue-600 hover:bg-blue-700 text-white border border-blue-700 font-medium rounded-lg text-sm px-4 py-2.5 text-center transition-colors flex items-center justify-center gap-2 shadow-sm"
-                            title="Abrir Assistente Hermes"
-                        >
-                            <Bot className="w-4 h-4" /> Hermes AI
                         </button>
 
                         {viewMode === 'flat' && (
@@ -1945,32 +1902,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                             </div>
                         </div>
 
-                        <div className="flex flex-col gap-1">
-                            <label className="text-[11px] font-medium text-gray-600">Ordenar por:</label>
-                            <div className="flex gap-2">
-                                <select 
-                                    name="sortBy" 
-                                    value={filters.sortBy || 'emissao'} 
-                                    onChange={handleFilterChange}
-                                    className="w-40 rounded border border-gray-200 bg-white p-1 text-[11px] outline-none focus:border-blue-500"
-                                >
-                                    <option value="pedido">Pedido/Item</option>
-                                    <option value="emissao">Data do Pedido</option>
-                                    <option value="entrega">Data de Entrega (Pedido)</option>
-                                    <option value="entrega_pcp">Data de Entrega PCP</option>
-                                    <option value="prev_fat">Prev. Fat. (Faturamento)</option>
-                                </select>
-                                <select 
-                                    name="sortOrder" 
-                                    value={filters.sortOrder || 'DESC'} 
-                                    onChange={handleFilterChange}
-                                    className="w-24 rounded border border-gray-200 bg-white p-1 text-[11px] outline-none focus:border-blue-500"
-                                >
-                                    <option value="DESC">Recentes</option>
-                                    <option value="ASC">Antigos</option>
-                                </select>
-                            </div>
-                        </div>
+
                     </div>
                 </form>
                 </div>
@@ -2968,6 +2900,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                 onOpenClassificacaoModal={handleOpenClassificacaoModal}
                                                 onOpenBomStructure={(op, itemPv, pedido, produto) => setBomStructureTarget({ op, itemPv, pedido, produto })}
                                                 onOpenStructureStock={setStructureStockTarget}
+                                                onExcluirOp={handleExcluirOp}
                                             />
                                         )}
                                     </>

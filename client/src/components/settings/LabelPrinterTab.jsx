@@ -8,7 +8,7 @@ import JsBarcode from 'jsbarcode';
 import api from '../../services/api';
 
 const AGENT_URL         = 'http://localhost:9101';
-const AGENT_PRINTER_KEY = '@metalfisa:localPrinterName';
+const AGENT_PRINTER_KEY = '@lynxems:localPrinterName';
 
 // Mapa de campos disponíveis para o layout da etiqueta
 const AVAILABLE_FIELDS = [
@@ -256,7 +256,7 @@ export default function LabelPrinterTab() {
     const downloadSetupScript = () => {
         const content = `@echo off
 echo ========================================================
-echo Instalando impressora ArgoxUSB para o Sistema MetalFisa...
+echo Instalando impressora ArgoxUSB para o Sistema Lynx...
 echo ========================================================
 echo.
 powershell -Command "Add-Printer -Name 'ArgoxUSB' -DriverName 'Generic / Text Only' -PortName 'USB001' -Shared -ShareName 'ArgoxUSB'"
@@ -287,23 +287,23 @@ pause`;
 
         const batContent = `@echo off
 echo ========================================================
-echo Instalando o MetalFisa Print Agent (Silencioso)...
+echo Instalando o Lynx Print Agent (Silencioso)...
 echo ========================================================
 echo.
-set "AGENT_DIR=%APPDATA%\\MetalFisaAgent"
+set "AGENT_DIR=%APPDATA%\\LynxAgent"
 if not exist "%AGENT_DIR%" mkdir "%AGENT_DIR%"
 cd /d "%AGENT_DIR%"
 
 echo Baixando o agente do servidor...
-powershell -Command "Invoke-WebRequest -Uri '${agentUrl}' -OutFile 'MetalFisa-Print-Agent.exe'"
+powershell -Command "Invoke-WebRequest -Uri '${agentUrl}' -OutFile 'Lynx-Print-Agent.exe'"
 
 echo Criando script de execucao invisivel...
 echo Set objShell = CreateObject("WScript.Shell") > run_hidden.vbs
-echo objShell.Run "cmd /c MetalFisa-Print-Agent.exe", 0, False >> run_hidden.vbs
+echo objShell.Run "cmd /c Lynx-Print-Agent.exe", 0, False >> run_hidden.vbs
 
 echo Configurando para iniciar com o Windows...
 set "STARTUP_FOLDER=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
-set "SHORTCUT_PATH=%STARTUP_FOLDER%\\MetalFisaPrintAgent.lnk"
+set "SHORTCUT_PATH=%STARTUP_FOLDER%\\LynxPrintAgent.lnk"
 powershell -Command "$wshell = New-Object -ComObject WScript.Shell; $s = $wshell.CreateShortcut('%SHORTCUT_PATH%'); $s.TargetPath = 'wscript.exe'; $s.Arguments = '\"%AGENT_DIR%\\run_hidden.vbs\"'; $s.WorkingDirectory = '%AGENT_DIR%'; $s.WindowStyle = 1; $s.Save()"
 
 echo Iniciando o agente agora...
@@ -334,7 +334,7 @@ timeout /t 5 >nul
         if (!canvasRef.current) return;
 
         if (agentStatus !== 'online') {
-            alert('O Print Agent não está rodando neste computador.\nBaixe e inicie o MetalFisa Print Agent antes de testar a impressão.');
+            alert('O Print Agent não está rodando neste computador.\nBaixe e inicie o Lynx Print Agent antes de testar a impressão.');
             return;
         }
 
@@ -362,7 +362,7 @@ timeout /t 5 >nul
             }
         } catch (err) {
             if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
-                alert('Não foi possível conectar ao Print Agent.\nVerifique se o aplicativo MetalFisa Print Agent está aberto e rodando no seu computador.');
+                alert('Não foi possível conectar ao Print Agent.\nVerifique se o aplicativo Lynx Print Agent está aberto e rodando no seu computador.');
                 setAgentStatus('offline');
             } else {
                 alert('Erro ao imprimir teste:\n' + err.message);
@@ -671,7 +671,7 @@ timeout /t 5 >nul
                         </button>
                         <a
                             href="/api/labels/download-agent"
-                            download="MetalFisa-Print-Agent.ems"
+                            download="Lynx-Print-Agent.ems"
                             className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-xl text-xs font-semibold transition-colors shadow-sm"
                         >
                             Baixar manual (.ems)
@@ -1051,7 +1051,7 @@ timeout /t 5 >nul
 
                             <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mt-6">
                                 <p className="font-semibold text-blue-800">Tudo pronto!</p>
-                                <p className="text-blue-700 mt-1">Após fazer isso, basta rodar a Print Bridge que a MetalFisa forneceu e clicar em <strong>Testar Conexão</strong>.</p>
+                                <p className="text-blue-700 mt-1">Após fazer isso, basta rodar a Print Bridge que a Lynx forneceu e clicar em <strong>Testar Conexão</strong>.</p>
                             </div>
                         </div>
                         <div className="px-6 py-4 bg-gray-50 border-t flex justify-end">

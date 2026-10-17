@@ -79,7 +79,7 @@ router.get('/prioridades-tv', async (req, res) => {
             return {
                 ...t,
                 is_pcp_forecast: false,
-                cliente_nome: pedsMap[basePed] || 'METALFISA'
+                cliente_nome: pedsMap[basePed] || 'LYNX'
             };
         });
 
@@ -112,7 +112,7 @@ router.get('/prioridades-tv', async (req, res) => {
                 status: 'PENDENTE',
                 criado_em: row.data_entrega_pcp,
                 data_pcp: row.data_entrega_pcp,
-                cliente_nome: pedsMap[String(row.pedido).trim()] || 'METALFISA',
+                cliente_nome: pedsMap[String(row.pedido).trim()] || 'LYNX',
                 quantidade_pcp: row.quantidade_pcp
             });
         });

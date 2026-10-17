@@ -229,8 +229,8 @@ const AIBatchExtractionModal = ({ isOpen, onClose, productFilters, onSuccess }) 
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-100">
-                                                    {productsToProcess.map((prod) => (
-                                                        <tr key={prod.codigo} className={`hover:bg-indigo-50/50 transition-colors ${selectedProducts.has(prod.codigo) ? 'bg-indigo-50/30' : ''}`}>
+                                                    {productsToProcess.map((prod, idx) => (
+                                                        <tr key={`${prod.codigo}-${idx}`} className={`hover:bg-indigo-50/50 transition-colors ${selectedProducts.has(prod.codigo) ? 'bg-indigo-50/30' : ''}`}>
                                                             <td className="px-4 py-3 text-center">
                                                                 <input 
                                                                     type="checkbox" 

@@ -9,7 +9,7 @@ import api from '../../services/api';
 import { toast } from 'react-toastify';
 
 const PRESET_COLORS = [
-    '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#14b8a6',
+    '#425750', '#10b981', '#f59e0b', '#ef4444', '#14b8a6',
     '#06b6d4', '#f97316', '#ec4899', '#14b8a6', '#64748b'
 ];
 
@@ -18,7 +18,7 @@ function SetorModal({ setor, onClose, onSave }) {
     const [form, setForm] = useState({
         nome: setor?.nome || '',
         descricao: setor?.descricao || '',
-        cor: setor?.cor || '#3b82f6'
+        cor: setor?.cor || '#425750'
     });
     const [saving, setSaving] = useState(false);
 

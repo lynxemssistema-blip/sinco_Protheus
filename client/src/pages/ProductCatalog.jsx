@@ -97,7 +97,7 @@ const ProductCatalog = () => {
                     'Grupo': item.grupo,
                     'Peso (kg)': item.metadados?.peso_kg ? Number(item.metadados.peso_kg) : '',
                     'Saldo Levantamento Fábrica': Number(item.saldo_fabrica !== undefined ? item.saldo_fabrica : (item.estoque_total || 0)),
-                    'Saldo ERP Protheus': Number(item.saldo_protheus || 0),
+                    'Saldo ERP': Number(item.saldo_protheus || 0),
                     'Operação': item.metadados?.operacao || '',
                     'Op c/ Doc.': item.tem_arquivos ? 'Sim' : 'Não',
                     'Associações (Qtd)': item.associacoes?.length || 0
@@ -119,7 +119,7 @@ const ProductCatalog = () => {
                 { wch: 10 }, // Grupo
                 { wch: 12 }, // Peso
                 { wch: 26 }, // Saldo Levantamento Fábrica
-                { wch: 20 }, // Saldo ERP Protheus
+                { wch: 20 }, // Saldo ERP
                 { wch: 25 }, // Operacao
                 { wch: 12 }, // Com Doc
                 { wch: 15 }  // Associacoes
@@ -477,7 +477,7 @@ const ProductCatalog = () => {
                                                     <button
                                                         onClick={() => setSelectedProductForStock(prod)}
                                                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 hover:shadow-xs transition-all cursor-pointer"
-                                                        title={`Levantamento Fábrica: ${prod.saldo_fabrica || prod.estoque_total} ${prod.unidade || ''} (ERP Protheus: ${prod.saldo_protheus || 0}) • Clique para ver/lançar movimentações`}
+                                                        title={`Levantamento Fábrica: ${prod.saldo_fabrica || prod.estoque_total} ${prod.unidade || ''} (ERP: ${prod.saldo_protheus || 0}) • Clique para ver/lançar movimentações`}
                                                     >
                                                         <Box className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                                                         <span>{Number(prod.saldo_fabrica || prod.estoque_total).toLocaleString('pt-BR')}</span>
@@ -495,7 +495,7 @@ const ProductCatalog = () => {
                                                     <button
                                                         onClick={() => setSelectedProductForStock(prod)}
                                                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                                                        title={`Sem saldo na fábrica (ERP Protheus: ${prod.saldo_protheus || 0}) • Clique para lançar levantamento`}
+                                                        title={`Sem saldo na fábrica (ERP: ${prod.saldo_protheus || 0}) • Clique para lançar levantamento`}
                                                     >
                                                         <span>0</span>
                                                     </button>

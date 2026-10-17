@@ -84,13 +84,13 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
 
     const fileInputRef = useRef(null);
 
-    // Exportar estrutura completa em Excel padrão MetalFisa com metadados e KPIs
+    // Exportar estrutura completa em Excel padrão Lynx com metadados e KPIs
     const handleExportarExcel = async (loteId) => {
         try {
             setExportingExcel(true);
-            toast.info("Gerando planilha Excel MetalFisa (.xlsx)...", { autoClose: 2000 });
+            toast.info("Gerando planilha Excel Lynx (.xlsx)...", { autoClose: 2000 });
 
-            const token = localStorage.getItem('@MetalFisa:token') || '';
+            const token = localStorage.getItem('@Lynx:token') || '';
             const url = `/api/wabtec/exportar-excel?lote_id=${loteId || ''}&token=${encodeURIComponent(token)}`;
 
             const response = await fetch(url, {
@@ -112,7 +112,7 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
             const arrayBuffer = await response.arrayBuffer();
             const blob = new Blob([arrayBuffer], { type: XLSX_MIME });
 
-            const fileName = `Estrutura_MetalFisa_Wabtec_${loteId ? `Lote_${loteId}` : 'Completa'}.xlsx`;
+            const fileName = `Estrutura_Lynx_Wabtec_${loteId ? `Lote_${loteId}` : 'Completa'}.xlsx`;
             const blobUrl = URL.createObjectURL(blob);
 
             const a = document.createElement('a');
@@ -376,7 +376,7 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
                 nome_aba: nomeAba,
                 headers: headers
             });
-            toast.success("Lote salvo com sucesso com todos os vínculos MetalFisa!");
+            toast.success("Lote salvo com sucesso com todos os vínculos Lynx!");
             handleCancelPreview();
             fetchLotes();
         } catch (err) {
@@ -462,7 +462,7 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
                                     className={`px-2.5 py-1 text-xs font-medium rounded-md flex items-center gap-1.5 transition ${viewMode === 'inteligente' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                                     title="Visualizar em formato tabular clássico"
                                 >
-                                    <ListTree className="w-3.5 h-3.5" /> Tabela MetalFisa
+                                    <ListTree className="w-3.5 h-3.5" /> Tabela Lynx
                                 </button>
                                 <button 
                                     onClick={() => setViewMode('arvore')}
@@ -536,7 +536,7 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
                             <button 
                                 onClick={() => setViewMode('inteligente')}
                                 className={`px-2 py-0.5 text-xs font-medium rounded flex items-center gap-1 transition ${viewMode === 'inteligente' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                                title="Visualizar com número MetalFisa e conferência de revisão"
+                                title="Visualizar com número Lynx e conferência de revisão"
                             >
                                 <ListTree className="w-3 h-3" /> Tabela
                             </button>
@@ -571,10 +571,10 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
                                         Rev. Cliente (Orig / Conv)
                                     </th>
                                     <th className="px-2 py-1.5 text-[11px] text-center bg-emerald-50/50 text-emerald-900">
-                                        Número MetalFisa
+                                        Número Lynx
                                     </th>
                                     <th className="px-2 py-1.5 text-[11px] text-center bg-emerald-50/50 text-emerald-900 border-r border-emerald-100">
-                                        Rev. MetalFisa
+                                        Rev. Lynx
                                     </th>
                                     <th className="px-2 py-1.5 text-[11px] text-center bg-emerald-50/50 text-emerald-900 border-r border-emerald-100 font-bold" title="Status de cadastro no Protheus">
                                         Cadastro
@@ -588,7 +588,7 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
                                     <th className="px-2 py-1.5 text-[11px] text-center font-bold bg-slate-50 border-r border-slate-200" title="Desenho técnico ou documentos em PDF">
                                         Desenho (PDF)
                                     </th>
-                                    <th className="px-2 py-1.5 text-[11px]">Descrição MetalFisa</th>
+                                    <th className="px-2 py-1.5 text-[11px]">Descrição Lynx</th>
                                     <th className="px-2 py-1.5 text-[11px]">Descrição WabTec</th>
                                     <th className="px-2 py-1.5 text-[11px] text-right">Qtd Unit</th>
                                     <th className="px-2 py-1.5 text-[11px] text-right font-bold bg-amber-50/70 text-amber-950 border-x border-amber-200" title="Quantidade Total acumulada no produto final calculada pela hierarquia da montagem">
@@ -642,7 +642,7 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
                                                 </div>
                                             </td>
 
-                                            {/* Número MetalFisa */}
+                                            {/* Número Lynx */}
                                             <td className="px-2 py-1 text-center bg-emerald-50/30">
                                                 {r.protheus_cod ? (
                                                     <span className="inline-block px-1.5 py-0.5 rounded font-mono font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-2xs text-xs">
@@ -661,7 +661,7 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
                                                 )}
                                             </td>
 
-                                            {/* Revisão MetalFisa */}
+                                            {/* Revisão Lynx */}
                                             <td className="px-2 py-1 text-center bg-emerald-50/30 border-r border-emerald-100 font-mono font-bold text-xs">
                                                 {r.protheus_rev ? (
                                                     <span className={`px-1 py-0.5 rounded text-[11px] ${isMesmaRev ? 'text-green-800 bg-green-100 border border-green-300' : 'text-amber-800 bg-amber-100 border border-amber-300'}`}>
@@ -727,7 +727,7 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
                                                     </span>
                                                 ) : isDivergente ? (
                                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs" 
-                                                        title={`Cliente: ${r.rev_cliente_raw} (${r.rev_convertida}) ≠ MetalFisa: ${r.protheus_rev}`}>
+                                                        title={`Cliente: ${r.rev_cliente_raw} (${r.rev_convertida}) ≠ Lynx: ${r.protheus_rev}`}>
                                                         <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />
                                                         Divergente: Cli {r.rev_cliente_raw} ({r.rev_convertida}) ≠ Metal {r.protheus_rev}
                                                     </span>
@@ -916,7 +916,7 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
                                     <CheckCircle2 className="w-5 h-5 text-green-600" />
                                     <div>
                                         <p className="text-xs font-bold text-green-800">Planilha processada e vinculada com sucesso ao Protheus!</p>
-                                        <p className="text-[11px] text-green-600">Revise os números MetalFisa e conferência de revisão antes de salvar.</p>
+                                        <p className="text-[11px] text-green-600">Revise os números Lynx e conferência de revisão antes de salvar.</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -940,7 +940,7 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
             {previewMode && previewData.length > 0 && (
                 <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
                     <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                        <span className="text-xs font-bold text-slate-800">Preview com Número MetalFisa e Revisão ({previewData.length} itens)</span>
+                        <span className="text-xs font-bold text-slate-800">Preview com Número Lynx e Revisão ({previewData.length} itens)</span>
                     </div>
                     {renderTableContent(previewData, headers, true)}
                 </div>
@@ -1010,13 +1010,13 @@ export default function WabtecEstruturaImportacaoPage({ selectedLote, setSelecte
                             {loteData.length > 0 && (
                                 <a
                                     href={`/api/wabtec/exportar-excel?lote_id=${selectedLote || ''}`}
-                                    download={`Estrutura_MetalFisa_Wabtec_Lote_${selectedLote || 'Completa'}.xlsx`}
+                                    download={`Estrutura_Lynx_Wabtec_Lote_${selectedLote || 'Completa'}.xlsx`}
                                     onClick={(e) => {
                                         e.preventDefault();
                                         handleExportarExcel(selectedLote);
                                     }}
                                     className={`px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer no-underline ${exportingExcel ? 'opacity-60 pointer-events-none' : ''}`}
-                                    title="Exportar dados completos da estrutura formatados no padrão MetalFisa (.xlsx)"
+                                    title="Exportar dados completos da estrutura formatados no padrão Lynx (.xlsx)"
                                 >
                                     {exportingExcel ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" />}
                                     <span>{exportingExcel ? 'Gerando...' : 'Exportar Excel (.xlsx)'}</span>

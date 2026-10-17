@@ -312,7 +312,7 @@ export default function VerticalAppointmentPage() {
     const [groupByResource, setGroupByResource] = useState(false);
     const [pageBreakPerGroup, setPageBreakPerGroup] = useState(false);
     const [operations, setOperations] = useState([]);
-    const [selectedOp, setSelectedOp] = useStickyState('', '@metalfisa:vert_selectedOp');
+    const [selectedOp, setSelectedOp] = useStickyState('', '@lynxems:vert_selectedOp');
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
     const [apiError, setApiError] = useState(null);
@@ -321,21 +321,21 @@ export default function VerticalAppointmentPage() {
     const [pagination, setPagination] = useState({ hasMore: false, total: 0, limit: 200, totalPages: 1 });
 
     // Configurações de Lote para Grande Volume de Dados
-    const [batchSize, setBatchSize] = useStickyState(200, '@metalfisa:vert_batchSize_v1');
-    const [batchMode, setBatchMode] = useStickyState('CONTINUOUS', '@metalfisa:vert_batchMode_v1'); // 'CONTINUOUS' (acumula na lista) | 'PAGINATED' (página a página)
+    const [batchSize, setBatchSize] = useStickyState(200, '@lynxems:vert_batchSize_v1');
+    const [batchMode, setBatchMode] = useStickyState('CONTINUOUS', '@lynxems:vert_batchMode_v1'); // 'CONTINUOUS' (acumula na lista) | 'PAGINATED' (página a página)
     const [autoLoadingAll, setAutoLoadingAll] = useState(false);
     const [batchProgress, setBatchProgress] = useState({ currentBatch: 0, totalBatches: 0, loaded: 0, total: 0 });
     const cancelAutoLoadRef = useRef(false);
 
     // Filtros rápidos
-    const [filterStatus, setFilterStatus] = useStickyState('ABERTOS', '@metalfisa:vert_statusFilter_v2');
+    const [filterStatus, setFilterStatus] = useStickyState('ABERTOS', '@lynxems:vert_statusFilter_v2');
     const [filters, setFilters] = useStickyState({
         op: '',
         pedido: '',
         produto: '',
         cliente: '',
         plan_inicio_ate: ''
-    }, '@metalfisa:vert_mainFilters_v4');
+    }, '@lynxems:vert_mainFilters_v4');
 
     const [appointingOp, setAppointingOp] = useState(null);
     const [historyTarget, setHistoryTarget] = useState(null);
@@ -1028,7 +1028,7 @@ export default function VerticalAppointmentPage() {
                             <button
                                 onClick={handleGeralPdf}
                                 className="bg-red-700 hover:bg-red-800 text-white px-3 py-2 rounded text-sm font-semibold transition-colors flex items-center gap-1.5 shadow-sm"
-                                title="Exportar Relatório Geral — PDF A4 deitado (padrão MetalFisa)"
+                                title="Exportar Relatório Geral — PDF A4 deitado (padrão Lynx)"
                             >
                                 <FileDown className="w-4 h-4" />
                                 PDF

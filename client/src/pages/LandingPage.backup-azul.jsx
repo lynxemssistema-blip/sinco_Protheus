@@ -209,13 +209,13 @@ const LandingPage = () => {
         },
         {
             id: 'metalfisa',
-            name: 'MetalFisa',
+            name: 'Lynx',
             segment: 'Manufatura Metalmecânica 4.0 & Laser CNC',
             desc: 'Caldeiraria fina de ponta, corte a laser CNC de alta velocidade, conformação robotizada e solda certificada com controle operacional 100% digital via SINCO.',
             logo: metalfisaLogo,
-            link: 'https://metalfisa.com.br/',
+            link: 'https://lynxems.com.br/',
             instagram: 'https://www.instagram.com/metalfisa/',
-            instagramHandle: '@metalfisa',
+            instagramHandle: '@lynxems',
             badge: 'Metalmecânica de Precisão',
             isDarkLogo: false,
             theme: {
@@ -318,12 +318,12 @@ const LandingPage = () => {
             partner: 'SIM Consultoria',
             partnerLogo: simLogo,
             partnerLink: 'https://www.instagram.com/sim.consultoria/',
-            desc: 'Gestão completa do Sistema de Gestão da Qualidade industrial estruturado em parceria com a SIM Consultoria (17 anos de excelência). Controle rigoroso de caixas de ferramentas (Toolbox), calibração de instrumentos, termos de responsabilidade e auditorias.',
+            desc: 'Gestão completa do Sistema de Gestão da Qualidade industrial estruturado em parceria com a SIM Consultoria (18 anos de excelência). Controle rigoroso de caixas de ferramentas (Toolbox), calibração de instrumentos, termos de responsabilidade e auditorias.',
             image: sgqQualityImage,
             badge: 'Parceria SIM Consultoria',
-            stats: '17 Anos de Excelência',
+            stats: '18 anos de Excelência',
             highlights: [
-                'Metodologia homologada e apoiada pela SIM Consultoria (17 anos de história)',
+                'Metodologia homologada e apoiada pela SIM Consultoria (18 anos de história)',
                 'Monitoramento de calibração periódica de paquímetros, micrômetros e CMM',
                 'Abertura, plano de ação e acompanhamento de RNCs com causa raiz',
                 'Termos digitais de custódia e relatórios de auditoria com conformidade normativa'
@@ -474,7 +474,7 @@ const LandingPage = () => {
                             >
                                 <span className="flex items-center gap-2">
                                     <Award className="w-4 h-4 text-blue-600" />
-                                    Parceria Lynx & SIM (17 Anos)
+                                    Parceria Lynx & SIM (18 anos)
                                 </span>
                                 <ChevronRight className="w-4 h-4 text-blue-600" />
                             </a>
@@ -531,7 +531,7 @@ const LandingPage = () => {
                             <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
                             <span>Lynx EMS Sistemas</span>
                             <span className="text-cyan-400 font-black">✕</span>
-                            <span>SIM Consultoria (17 Anos)</span>
+                            <span>SIM Consultoria (18 anos)</span>
                             <span className="text-slate-400 hidden sm:inline">•</span>
                             <span className="text-slate-300 hidden sm:inline font-semibold">Aliança Estratégica em Tecnologia & SGQ</span>
                         </div>
@@ -544,7 +544,7 @@ const LandingPage = () => {
                         </h1>
 
                         <p className="text-lg sm:text-xl text-slate-300 mb-10 leading-relaxed max-w-3xl mx-auto font-normal">
-                            Desenvolvido pela <strong>Lynx EMS Sistemas</strong> em aliança estratégica com a <strong>SIM Consultoria</strong> (17 anos de excelência em SGQ), o <strong>SINCO</strong> substitui sistemas legados por uma suíte de alta performance com <strong>PCP dinâmico</strong>, <strong>ERP nativo</strong>, controle metrológico <strong>SGQ homologado</strong>, <strong>logística VMI</strong> e <strong>Inteligência Artificial</strong>.
+                            Desenvolvido pela <strong>Lynx EMS Sistemas</strong> em aliança estratégica com a <strong>SIM Consultoria</strong> (18 anos de excelência em SGQ), o <strong>SINCO</strong> substitui sistemas legados por uma suíte de alta performance com <strong>PCP dinâmico</strong>, <strong>ERP nativo</strong>, controle metrológico <strong>SGQ homologado</strong>, <strong>logística VMI</strong> e <strong>Inteligência Artificial</strong>.
                         </p>
 
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
@@ -937,14 +937,14 @@ const LandingPage = () => {
                             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-[1.15]">
                                 Tecnologia Industrial 4.0 aliada à <br />
                                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-cyan-300 to-sky-300">
-                                    SIM Consultoria (17 Anos de Excelência)
+                                    SIM Consultoria (18 anos de Excelência)
                                 </span>
                             </h2>
 
                             {/* Official Quote & Bio */}
                             <div className="relative pl-6 border-l-2 border-cyan-400/60 my-6 bg-slate-900/40 p-5 rounded-r-2xl border-y border-r border-slate-800/60 backdrop-blur-sm">
                                 <p className="text-base sm:text-lg text-slate-200 font-normal leading-relaxed italic">
-                                    "Há 17 anos, a Sim Consultoria nasceu com o propósito de transformar ideias em resultados, levando inovação, dedicação e compromisso para cada cliente. Nossa trajetória é marcada pela busca constante da excelência, sempre pautada em valores como ética, responsabilidade e profissionalismo."
+                                    "Há 18 anos, a Sim Consultoria nasceu com o propósito de transformar ideias em resultados, levando inovação, dedicação e compromisso para cada cliente. Nossa trajetória é marcada pela busca constante da excelência, sempre pautada em valores como ética, responsabilidade e profissionalismo."
                                 </p>
                                 <span className="block mt-3 text-xs font-bold uppercase tracking-wider text-cyan-400 not-italic">
                                     — Manifesto Oficial SIM Consultoria
@@ -997,7 +997,7 @@ const LandingPage = () => {
                                         </div>
                                     </div>
                                     <div className="px-3 py-1.5 rounded-xl bg-cyan-950/70 border border-cyan-800/60 text-cyan-300 text-xs font-bold text-center">
-                                        17 Anos de <br /> Excelência
+                                        18 anos de <br /> Excelência
                                     </div>
                                 </div>
 
@@ -1248,7 +1248,7 @@ const LandingPage = () => {
                                             Parceiro em Qualidade
                                         </span>
                                         <h5 className="text-white font-extrabold text-sm leading-tight">SIM Consultoria</h5>
-                                        <span className="text-[11px] text-slate-400 font-medium">17 Anos de História</span>
+                                        <span className="text-[11px] text-slate-400 font-medium">18 anos de História</span>
                                     </div>
                                 </div>
                                 <p className="text-xs text-slate-400 leading-relaxed mb-4">

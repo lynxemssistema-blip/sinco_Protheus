@@ -251,8 +251,8 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
             const res = await getClientes(q ? q.trim() : '');
             setSearchCliResults(Array.isArray(res) ? res : []);
         } catch (err) {
-            console.error('Erro ao buscar clientes no Protheus:', err);
-            toast.error('Erro ao buscar clientes no Protheus.');
+            console.error('Erro ao buscar clientes:', err);
+            toast.error('Erro ao buscar clientes no SINCO.');
         } finally {
             setSearchingCli(false);
         }
@@ -437,8 +437,8 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                     }
                 }
             } catch (err) {
-                console.error('Erro ao carregar listas do Protheus:', err);
-                toast.error('Não foi possível carregar as listas mestres do Protheus.');
+                console.error('Erro ao carregar listas do SINCO:', err);
+                toast.error('Não foi possível carregar as listas mestres do SINCO.');
             } finally {
                 if (isMounted) setLoadingDropdowns(false);
             }
@@ -522,7 +522,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
         e.preventDefault();
 
         if (!titulo.trim()) {
-            toast.warn('A Descrição MetalFisa é obrigatória.');
+            toast.warn('A Descrição Lynx é obrigatória.');
             return;
         }
         if (!grupo) {
@@ -594,15 +594,15 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
 
                 const msgSucesso = clienteCodigo.trim()
                     ? `🎉 Produto ${res.data.codigo} gerado com sucesso! Vínculo criado na SZ1010.`
-                    : `🎉 Produto ${res.data.codigo} gerado com sucesso no Protheus!`;
+                    : `🎉 Produto ${res.data.codigo} gerado com sucesso no SINCO!`;
                 toast.success(msgSucesso, { autoClose: 6000 });
                 if (onSuccess) onSuccess({ ...payload, ...res.data, cliente_nome: clienteCodigo.trim() ? clienteNome : '' });
                 onClose();
             }
         } catch (err) {
-            console.error('Erro ao criar produto no Protheus:', err);
+            console.error('Erro ao criar produto no SINCO:', err);
             const dataErr = err.response?.data;
-            const mainMsg = dataErr?.error || err.message || 'Erro inesperado na API do Protheus.';
+            const mainMsg = dataErr?.error || err.message || 'Erro inesperado ao salvar produto no SINCO.';
             const motivo = dataErr?.motivo ? `\nMotivo: ${dataErr.motivo}` : '';
             toast.error(`${mainMsg}${motivo}`, { autoClose: 12000 });
         } finally {
@@ -625,13 +625,13 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                         </div>
                         <div>
                             <div className="flex items-center gap-2">
-                                <h3 className="font-bold text-base tracking-tight text-white">Cadastrar Produto no Protheus (TOTVS)</h3>
+                                <h3 className="font-bold text-base tracking-tight text-white">Cadastrar Produto no SINCO</h3>
                                 <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                                     {item.badge || 'BOM WabTec'}
                                 </span>
                             </div>
                             <p className="text-xs text-slate-300">
-                                Inclusão nas tabelas SB1010/SB5010 e amarração de documentos na SZ1010
+                                Cadastro mestre de engenharia e amarração técnica de documentos no SINCO
                             </p>
                         </div>
                     </div>
@@ -669,7 +669,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                                 {/* Seletor de Cliente (6 cols) */}
                                 <div className="md:col-span-6 space-y-1">
                                     <label className="block text-xs font-bold text-slate-700 flex items-center justify-between">
-                                        <span>Cliente Protheus (SA1010)</span>
+                                        <span>Cliente SINCO (SA1010)</span>
                                         {clienteCodigo && (
                                             <span className="text-[10px] font-mono text-blue-700 font-bold">
                                                 Cód: {clienteCodigo} | Loja: {clienteLoja || '0001'}
@@ -716,7 +716,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                                         >
                                             <span className="flex items-center gap-2 text-slate-400 italic">
                                                 <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 transition-colors" />
-                                                <span>Selecionar cliente no Protheus...</span>
+                                                <span>Selecionar cliente no SINCO...</span>
                                             </span>
                                             <span className="px-2 py-0.5 bg-blue-50 text-blue-700 group-hover:bg-blue-600 group-hover:text-white rounded text-[11px] font-bold transition-colors">
                                                 Buscar
@@ -759,7 +759,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                             {consultandoDesenho && (
                                 <div className="flex items-center gap-2 text-xs text-blue-600 font-medium">
                                     <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                                    <span>Verificando se o desenho {codDesenhoCliente} já existe no Protheus...</span>
+                                    <span>Verificando se o desenho {codDesenhoCliente} já existe no SINCO...</span>
                                 </div>
                             )}
 
@@ -767,7 +767,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                                 <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 flex flex-wrap items-center justify-between gap-2 text-xs">
                                     <div className="flex items-center gap-2">
                                         <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                                        <span>Desenho já existente no Protheus com o produto <strong>{resultadoDesenho.codigo_protheus}</strong> (Rev: {resultadoDesenho.revisao || '-'}).</span>
+                                        <span>Desenho já existente no SINCO com o produto <strong>{resultadoDesenho.codigo_protheus}</strong> (Rev: {resultadoDesenho.revisao || '-'}).</span>
                                     </div>
                                     <button
                                         type="button"
@@ -795,7 +795,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                                         {consultandoDesenho && (
                                             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 animate-pulse">
                                                 <RefreshCw className="w-3 h-3 animate-spin text-blue-600" />
-                                                <span>Verificando no Protheus...</span>
+                                                <span>Verificando no SINCO...</span>
                                             </span>
                                         )}
                                     </div>
@@ -833,7 +833,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                                             <div className="flex items-center gap-2">
                                                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                                                 <span className="font-bold text-xs uppercase tracking-wider text-amber-900">
-                                                    Desenho Já Cadastrado no Protheus!
+                                                    Desenho Já Cadastrado no SINCO!
                                                 </span>
                                             </div>
                                             <span className="font-mono font-extrabold text-sm px-2.5 py-0.5 rounded-md bg-amber-200 text-amber-950 border border-amber-400">
@@ -841,8 +841,8 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                                             </span>
                                         </div>
                                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-amber-900 bg-amber-100/60 p-2 rounded-lg border border-amber-200 font-medium">
-                                            <div><span className="text-amber-700 block text-[10px]">Origem:</span> {resultadoDesenho.origem === 'sz1010' ? 'SZ1010 (Prd x Cli)' : resultadoDesenho.origem === 'sb1010' ? 'SB1010 (ERP)' : 'Estrutura'}</div>
-                                            <div><span className="text-amber-700 block text-[10px]">Rev. Protheus:</span> {resultadoDesenho.revisao || resultadoDesenho.revisao_cliente || '-'}</div>
+                                            <div><span className="text-amber-700 block text-[10px]">Origem:</span> {resultadoDesenho.origem === 'sz1010' ? 'SZ1010 (Prd x Cli)' : resultadoDesenho.origem === 'sb1010' ? 'SINCO (ERP)' : 'Estrutura'}</div>
+                                            <div><span className="text-amber-700 block text-[10px]">Rev. SINCO:</span> {resultadoDesenho.revisao || resultadoDesenho.revisao_cliente || '-'}</div>
                                             <div><span className="text-amber-700 block text-[10px]">NCM:</span> {resultadoDesenho.ncm || '00000000'}</div>
                                             <div><span className="text-amber-700 block text-[10px]">Tipo / UM:</span> {resultadoDesenho.tipo || 'PI'} / {resultadoDesenho.um || 'PC'}</div>
                                         </div>
@@ -865,8 +865,8 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                                     <div className="mt-1 pt-2 border-t border-slate-200/80 flex items-center justify-between">
                                         <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
                                             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                                            <span>Desenho Novo no Protheus</span>
-                                            <span className="text-[11px] font-normal text-slate-500 hidden sm:inline">— Não cadastrado no Protheus (SB1010 / SZ1010). Pronto para gerar novo código.</span>
+                                            <span>Desenho Novo no SINCO</span>
+                                            <span className="text-[11px] font-normal text-slate-500 hidden sm:inline">— Não cadastrado no SINCO. Pronto para gerar novo código.</span>
                                         </div>
                                         <span className="text-[10px] uppercase font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
                                             Novo (Não Existe no ERP)
@@ -882,18 +882,18 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                         <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
                             <div className="flex items-center gap-2 text-slate-800 font-bold text-xs uppercase tracking-wider">
                                 <Layers className="w-4 h-4 text-blue-600" />
-                                2. Classificação do Produto (Tabelas Mestre TOTVS)
+                                2. Classificação do Produto (SINCO)
                             </div>
                             <div className="flex items-center gap-1.5 text-[11px] bg-blue-50 text-blue-800 px-2.5 py-0.5 rounded-full border border-blue-200 font-medium">
                                 <Sparkles className="w-3 h-3 text-blue-600" />
-                                <span>Autonumeração SB1010 ativa: Grupo <strong>{grupo ? String(grupo).split(/[\-\s]/)[0] : '---'}</strong></span>
+                                <span>Grupo de Engenharia: <strong>{grupo ? String(grupo).split(/[\-\s]/)[0] : '---'}</strong></span>
                             </div>
                         </div>
 
                         {loadingDropdowns ? (
                             <div className="p-6 flex items-center justify-center gap-3 text-slate-500 text-xs">
                                 <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                                Carregando Grupos, Tipos e Unidades do Protheus...
+                                Carregando Grupos, Tipos e Unidades do SINCO...
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
@@ -980,7 +980,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                         <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
                             <div className="flex items-center gap-2 text-slate-800 font-bold text-xs uppercase tracking-wider">
                                 <FileText className="w-4 h-4 text-blue-600" />
-                                3. Descrição MetalFisa
+                                3. Descrição Lynx
                             </div>
 
                             {/* Botões de Tradução e Reversão */}
@@ -1008,11 +1008,11 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                             </div>
                         </div>
 
-                        {/* Campo: Descrição MetalFisa B1_DESC */}
+                        {/* Campo: Descrição Lynx B1_DESC */}
                         <div className="space-y-1">
                             <div className="flex items-center justify-between">
                                 <label className="block text-xs font-bold text-slate-700">
-                                    Descrição MetalFisa (B1_DESC) <span className="text-rose-500">*</span>
+                                    Descrição Lynx (B1_DESC) <span className="text-rose-500">*</span>
                                 </label>
                                 <span className={`text-[10px] font-mono ${titulo.length > 28 ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>
                                     {titulo.length} / 30 caracteres
@@ -1041,11 +1041,11 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                                 <span className="truncate">
                                     {clienteCodigo ? (
                                         <>
-                                            Vínculo <strong>SZ1010</strong>: Cliente <strong>{clienteCodigo} - {clienteNome}</strong> (Loja {clienteLoja || '0001'}) • Cód: <strong>{codDesenhoCliente.trim() || 'Novo Cadastro Pelo SINCO'}</strong> • Rev: <strong>{revisaoCliente || '00'}</strong>
+                                            Vínculo <strong>SZ1</strong>: Cliente <strong>{clienteCodigo} - {clienteNome}</strong> (Loja {clienteLoja || '0001'}) • Cód: <strong>{codDesenhoCliente.trim() || 'Novo Cadastro Pelo SINCO'}</strong> • Rev: <strong>{revisaoCliente || '00'}</strong>
                                         </>
                                     ) : (
                                         <>
-                                            Cadastro Avulso: <strong>Sem amarração de cliente na SZ1010</strong> (inclusão apenas nas tabelas SB1010/SB5010).
+                                            Cadastro Avulso: <strong>Sem amarração de cliente</strong> (cadastro exclusivo no SINCO).
                                         </>
                                     )}
                                 </span>
@@ -1146,12 +1146,12 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                             {submitting ? (
                                 <>
                                     <Loader2 className="w-4 h-4 animate-spin" />
-                                    <span>Cadastrando no Protheus...</span>
+                                    <span>Cadastrando no SINCO...</span>
                                 </>
                             ) : (
                                 <>
                                     <CheckCircle2 className="w-4 h-4" />
-                                    <span>Cadastrar e Vincular no Protheus</span>
+                                    <span>Cadastrar e Vincular no SINCO</span>
                                 </>
                             )}
                         </button>
@@ -1160,13 +1160,13 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
 
             </div>
 
-            {/* Modal de Busca de Clientes Protheus (SA1010) */}
+            {/* Modal de Busca de Clientes (SINCO) */}
             {showSearchCliente && (
                 <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col h-[70vh] max-h-[520px] animate-in fade-in zoom-in duration-150 border border-slate-200">
                         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 bg-slate-50 rounded-t-xl">
                             <div>
-                                <h4 className="text-sm font-bold text-slate-800">Selecionar Cliente (Protheus SA1010)</h4>
+                                <h4 className="text-sm font-bold text-slate-800">Selecionar Cliente (SINCO)</h4>
                                 <p className="text-[11px] text-slate-500">Busque pelo código ou razão social do cliente (Preenchimento opcional)</p>
                             </div>
                             <button 
@@ -1223,7 +1223,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                             </div>
 
                             <div className="flex items-center justify-between text-[11px] text-slate-500 px-0.5">
-                                <span>Busca em tempo real no Protheus SA1010</span>
+                                <span>Busca em tempo real de Clientes no SINCO</span>
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -1241,7 +1241,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                             {searchingCli ? (
                                 <div className="flex items-center justify-center h-full text-xs text-slate-400 gap-2">
                                     <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                                    <span>Buscando no Protheus SA1010...</span>
+                                    <span>Buscando clientes no SINCO...</span>
                                 </div>
                             ) : searchCliResults.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-full text-xs text-slate-400 p-6 text-center gap-2">

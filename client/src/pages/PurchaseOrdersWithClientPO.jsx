@@ -18,7 +18,7 @@ export default function PurchaseOrdersWithClientPO() {
         fornecedor: '',
         data_pv_de: '',
         data_pv_ate: ''
-    }, '@metalfisa:purchase_with_client_po_filters');
+    }, '@lynxems:purchase_with_client_po_filters');
 
     const handleSearch = async (e) => {
         e?.preventDefault();

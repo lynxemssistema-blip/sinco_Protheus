@@ -337,7 +337,7 @@ export default function StockTabletView({ onNavigateCatalog }) {
                             </div>
 
                             <div className="p-3.5 bg-blue-50 rounded-xl border border-blue-200">
-                                <span className="text-[11px] font-bold text-blue-800 uppercase tracking-wider block">Saldo ERP Protheus</span>
+                                <span className="text-[11px] font-bold text-blue-800 uppercase tracking-wider block">Saldo do Sistema (SINCO)</span>
                                 <span className="text-2xl font-black text-blue-700">
                                     {loadingBalance ? '...' : stockBalances.saldoProtheus}
                                 </span>

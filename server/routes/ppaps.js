@@ -3,24 +3,11 @@ const router = express.Router();
 const multer = require('multer');
 const ExcelJS = require('exceljs');
 const db = require('../db'); // PostgreSQL (Protheus)
-const nodemailer = require('nodemailer');
+const { sendMail } = require('../services/mailService');
 const { authenticateToken } = require('../routes/auth');
 const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
-
-const SMTP_CONFIG = {
-    host: 'smtp.task.com.br',
-    port: 587,
-    secure: false,
-    auth: {
-        user: 'sincometal@metalfisa.com.br',
-        pass: 'Pro1042@sm'
-    },
-    tls: {
-        rejectUnauthorized: false
-    }
-};
 
 // --- Obter abas do arquivo Excel ---
 router.post('/get-sheets', authenticateToken, upload.single('file'), async (req, res) => {
@@ -163,7 +150,7 @@ router.post('/process-excel', authenticateToken, upload.single('file'), async (r
                 console.error('Erro ao buscar email do usuario no MySQL:', err);
             }
         }
-        userEmail = userEmail || 'ti@metalfisa.com.br';
+        userEmail = userEmail || 'ti@lynxems.com.br';
         const userName = req.user?.nome || 'Usuário';
         
         try {
@@ -239,7 +226,7 @@ router.post('/process-excel', authenticateToken, upload.single('file'), async (r
                     ${duplicateCount > 0 ? `
                         <div style="margin-top: 30px;">
                             <h3 style="color: #1e293b; font-size: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">Log de Inconsistências (Múltiplos Produtos na SZ1)</h3>
-                            <p style="color: #64748b; font-size: 13px; margin-bottom: 15px;">Os seguintes "Desenhos Cliente" retornaram mais de um código de "Produto MetalFisa" associado.</p>
+                            <p style="color: #64748b; font-size: 13px; margin-bottom: 15px;">Os seguintes "Desenhos Cliente" retornaram mais de um código de "Produto Lynx" associado.</p>
                             
                             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                                 <thead>
@@ -262,14 +249,11 @@ router.post('/process-excel', authenticateToken, upload.single('file'), async (r
                 </div>
             `;
 
-            const transporter = nodemailer.createTransport(SMTP_CONFIG);
-            const mailOptions = {
-                from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+            await sendMail({
                 to: userEmail,
                 subject: 'PPAPs - Relatório de Processamento Excel',
                 html: getCorporateEmailTemplate(bodyContent)
-            };
-            await transporter.sendMail(mailOptions);
+            });
         } catch (mailErr) {
             console.error('Erro ao enviar e-mail resumo PPAPs:', mailErr);
         }

@@ -535,20 +535,13 @@ router.get('/test-email', authenticateToken, async (req, res) => {
                 <h2 style="color:#0d9488;margin:0 0 4px 0;font-size:18px;">Meu Canal — ${hoje}</h2>
                 <p style="color:#64748b;margin:0 0 16px 0;font-size:14px;">Olá, <b>${userName}</b>. Resumo de performance dos seus setores.</p>
                 ${semSetores}
-                <p style="margin:16px 0 0 0;font-size:12px;color:#94a3b8;">MetalFisa ERP</p>
+                <p style="margin:16px 0 0 0;font-size:12px;color:#94a3b8;">Lynx ERP</p>
             </div>`;
 
-        // 4. Enviar
-        const transporter = nodemailer.createTransport({
-            host: 'smtp.task.com.br',
-            port: 587,
-            secure: false,
-            auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
-            tls: { rejectUnauthorized: false }
-        });
+        // 4. Enviar pelo SMTP Oficial Hostinger
+        const { sendMail } = require('../services/mailService');
 
-        const info = await transporter.sendMail({
-            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+        const info = await sendMail({
             to: userEmail,
             subject: `Meu Canal — ${hoje}`,
             html: getCorporateEmailTemplate(bodyHtml)

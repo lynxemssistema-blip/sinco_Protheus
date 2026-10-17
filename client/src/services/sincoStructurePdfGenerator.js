@@ -4,6 +4,7 @@ import autoTable from 'jspdf-autotable';
 import { PDFDocument } from 'pdf-lib';
 import { logoBase64 } from './metalfisaLogoBase64';
 import api from './api';
+import { getCompanyShortName } from './companyBranding';
 
 const BLUE = [30, 58, 95];
 const ML = 10;
@@ -14,7 +15,7 @@ const fmtQtd = (v) =>
     parseFloat(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
 
 // ─────────────────────────────────────────────
-//  CABEÇALHO PADRÃO METALFISA
+//  CABEÇALHO PADRÃO LYNX
 // ─────────────────────────────────────────────
 const drawHeader = (doc, pageWidth, rootCode, user, reportTitle) => {
     const hY = 5;
@@ -44,7 +45,7 @@ const drawHeader = (doc, pageWidth, rootCode, user, reportTitle) => {
         doc.setFontSize(13);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(...BLUE);
-        doc.text('METALFISA', ML + 3, hY + 12);
+        doc.text(getCompanyShortName(), ML + 3, hY + 12);
     }
 
     // ── Título central ──
@@ -68,7 +69,7 @@ const drawHeader = (doc, pageWidth, rootCode, user, reportTitle) => {
 };
 
 // ─────────────────────────────────────────────
-//  FOOTER PADRÃO METALFISA
+//  FOOTER PADRÃO LYNX
 // ─────────────────────────────────────────────
 const drawFooters = (doc, pageWidth) => {
     const pageCount = doc.internal.getNumberOfPages();
@@ -78,7 +79,7 @@ const drawFooters = (doc, pageWidth) => {
         doc.setFontSize(8);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(150, 150, 150);
-        doc.text(`Gerado via MetalFisa App — SINCO Engenharia`, ML, pageH - 5);
+        doc.text(`Gerado via Lynx App — SINCO Engenharia`, ML, pageH - 5);
         doc.text(
             `Página ${i} de ${pageCount}`,
             pageWidth - MR,

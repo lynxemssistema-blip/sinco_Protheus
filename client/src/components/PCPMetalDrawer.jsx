@@ -300,7 +300,7 @@ const PCPMetalDrawer = ({ isOpen, onClose, context = {}, pageData = null }) => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('@MetalFisa:token') || ''}`,
+                    'Authorization': `Bearer ${localStorage.getItem('@Lynx:token') || ''}`,
                 },
                 body: JSON.stringify({
                     pergunta: question,

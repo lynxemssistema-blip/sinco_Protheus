@@ -10,7 +10,7 @@ const RomaneioPrintSGQ = React.forwardRef(({ romaneio, items }, ref) => {
             <div className="border border-black mb-4">
                 <div className="flex border-b border-black">
                     <div className="w-1/4 p-2 border-r border-black flex items-center justify-center">
-                        <img src={metalfisaLogo} alt="MetalFisa" className="max-h-16" />
+                        <img src={metalfisaLogo} alt="Lynx" className="max-h-16" />
                     </div>
                     <div className="w-2/4 p-2 text-center uppercase font-bold flex items-center justify-center text-lg border-r border-black">
                         Romaneio de Equipamentos / Instrumentos (SGQ)
@@ -80,7 +80,7 @@ const RomaneioPrintSGQ = React.forwardRef(({ romaneio, items }, ref) => {
             {/* Signatures */}
             <div className="flex gap-8 mt-16 text-xs">
                 <div className="flex-1 text-center border-t border-black pt-2">
-                    EMITENTE (SGQ METALFISA)
+                    EMITENTE (SGQ LYNX)
                 </div>
                 <div className="flex-1 text-center border-t border-black pt-2">
                     TRANSPORTADOR

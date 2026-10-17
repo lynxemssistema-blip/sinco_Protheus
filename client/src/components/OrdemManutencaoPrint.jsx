@@ -22,7 +22,7 @@ const OrdemManutencaoPrint = React.forwardRef(({ ordem, materiais, historico, us
             <div className="border border-black mb-4">
                 <div className="flex border-b border-black">
                     <div className="w-1/4 p-2 border-r border-black flex items-center justify-center">
-                        <img src={metalfisaLogo} alt="MetalFisa" className="max-h-16" />
+                        <img src={metalfisaLogo} alt="Lynx" className="max-h-16" />
                     </div>
                     <div className="w-2/4 p-2 text-center uppercase font-bold flex flex-col items-center justify-center text-lg border-r border-black">
                         ORDEM DE MANUTENÇÃO (O.M.)

@@ -64,7 +64,7 @@ export default function SmartPlannerReport({ report, onClose }) {
             <html lang="pt-BR">
             <head>
                 <meta charset="UTF-8"/>
-                <title>Relatório FCS - MetalFisa</title>
+                <title>Relatório FCS - Lynx</title>
                 <style>
                     * { box-sizing: border-box; margin: 0; padding: 0; }
                     body { font-family: Arial, sans-serif; font-size: 9px; color: #1e293b; background: #fff; padding: 16px; }
@@ -134,13 +134,13 @@ export default function SmartPlannerReport({ report, onClose }) {
                 <div className="flex-1 overflow-y-auto p-6">
                     <div ref={printRef}>
 
-                        {/* === CABEÇALHO METALFISA === */}
+                        {/* === CABEÇALHO LYNX === */}
                         <div className="border-b-2 border-slate-800 pb-4 mb-5 flex justify-between items-start">
                             <div>
                                 <h1 className="text-base font-extrabold uppercase tracking-widest text-slate-900">
                                     Relatório de Planejamento Inteligente FCS
                                 </h1>
-                                <p className="text-slate-500 text-xs mt-0.5">MetalFisa — Sistema de Gestão da Produção</p>
+                                <p className="text-slate-500 text-xs mt-0.5">Lynx — Sistema de Gestão da Produção</p>
                                 <p className="text-slate-400 text-[10px] mt-0.5">Motor: FCS Determinístico — Algoritmo de Capacidade Finita com Diagnóstico de Gargalos</p>
                             </div>
                             <div className="text-right text-xs text-slate-600">
@@ -447,9 +447,9 @@ export default function SmartPlannerReport({ report, onClose }) {
                             </div>
                         )}
 
-                        {/* === RODAPÉ METALFISA === */}
+                        {/* === RODAPÉ LYNX === */}
                         <div className="mt-8 border-t border-slate-200 pt-4 flex justify-between text-[10px] text-slate-400">
-                            <span>MetalFisa — Relatório gerado automaticamente pelo Agente de Planejamento FCS</span>
+                            <span>Lynx — Relatório gerado automaticamente pelo Agente de Planejamento FCS</span>
                             <span>{formatDateTime(report.gerado_em)}</span>
                         </div>
                     </div>

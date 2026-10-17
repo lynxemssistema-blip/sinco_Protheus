@@ -16,7 +16,7 @@ export const FilterProvider = ({ children }) => {
 
     // Estado para filtros de Produtos
     const [productFilters, setProductFilters] = useState(() =>
-        initFilterState('@metalfisa:productFilters', {
+        initFilterState('@lynxems:productFilters', {
             search: '',
             code: '',
             type: '',
@@ -29,7 +29,7 @@ export const FilterProvider = ({ children }) => {
 
     // Estado para filtros de Produtos MS Metal (Firebird)
     const [msMetalProductFilters, setMSMetalProductFilters] = useState(() =>
-        initFilterState('@metalfisa:msMetalProductFilters', {
+        initFilterState('@lynxems:msMetalProductFilters', {
             search: '',
             code: '',
             client_code: '',
@@ -42,7 +42,7 @@ export const FilterProvider = ({ children }) => {
 
     // Estado para filtros de Pedidos
     const [orderFilters, setOrderFilters] = useState(() =>
-        initFilterState('@metalfisa:orderFilters', {
+        initFilterState('@lynxems:orderFilters', {
             cliente: '',
             pedido: '',
             item: '',
@@ -67,16 +67,16 @@ export const FilterProvider = ({ children }) => {
 
     // Salvar no sessionStorage sempre que o estado mudar
     React.useEffect(() => {
-        sessionStorage.setItem('@metalfisa:productFilters', JSON.stringify(productFilters));
+        sessionStorage.setItem('@lynxems:productFilters', JSON.stringify(productFilters));
     }, [productFilters]);
 
     React.useEffect(() => {
-        sessionStorage.setItem('@metalfisa:msMetalProductFilters', JSON.stringify(msMetalProductFilters));
-        localStorage.setItem('@metalfisa:msMetalProductFilters', JSON.stringify(msMetalProductFilters));
+        sessionStorage.setItem('@lynxems:msMetalProductFilters', JSON.stringify(msMetalProductFilters));
+        localStorage.setItem('@lynxems:msMetalProductFilters', JSON.stringify(msMetalProductFilters));
     }, [msMetalProductFilters]);
 
     React.useEffect(() => {
-        sessionStorage.setItem('@metalfisa:orderFilters', JSON.stringify(orderFilters));
+        sessionStorage.setItem('@lynxems:orderFilters', JSON.stringify(orderFilters));
     }, [orderFilters]);
 
     // Métodos auxiliares para atualizar parcialmente
@@ -99,8 +99,8 @@ export const FilterProvider = ({ children }) => {
             page: 1
         };
         setMSMetalProductFilters(defaultState);
-        sessionStorage.setItem('@metalfisa:msMetalProductFilters', JSON.stringify(defaultState));
-        localStorage.setItem('@metalfisa:msMetalProductFilters', JSON.stringify(defaultState));
+        sessionStorage.setItem('@lynxems:msMetalProductFilters', JSON.stringify(defaultState));
+        localStorage.setItem('@lynxems:msMetalProductFilters', JSON.stringify(defaultState));
     };
 
     const updateOrderFilters = (newFilters) => {

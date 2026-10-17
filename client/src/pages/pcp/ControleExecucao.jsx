@@ -591,14 +591,14 @@ export default function ControleExecucao() {
         try {
             const doc = new jsPDF('landscape');
             
-            // Header MetalFisa
+            // Header Lynx
             doc.setFillColor(30, 58, 95);
             doc.rect(14, 10, 42, 24, 'F');
             doc.addImage(logoBase64, 'PNG', 16, 12, 14, 14);
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(8);
             doc.setTextColor(255, 255, 255);
-            doc.text('METALFISA', 32, 21);
+            doc.text('LYNX', 32, 21);
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(6);
             doc.text('Metalúrgica Ltda', 32, 25.5);

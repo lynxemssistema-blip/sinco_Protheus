@@ -34,7 +34,7 @@ export default function PortalClienteRequestModal({ isOpen, onClose, selectedIte
         setIsProcessing(true);
         try {
             if (nivel === 'pedido') {
-                // Agrupa os itens selecionados por Pedido MetalFisa e envia uma solicitação para cada pedido
+                // Agrupa os itens selecionados por Pedido Lynx e envia uma solicitação para cada pedido
                 const uniquePedidos = [...new Set(selectedItems.map(i => i.pedido))];
                 
                 const promises = uniquePedidos.map(async (ped) => {
@@ -109,7 +109,7 @@ export default function PortalClienteRequestModal({ isOpen, onClose, selectedIte
                     {selectedItems.length === 1 ? (
                         <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm">
                             <div className="grid grid-cols-2 gap-2">
-                                <div><span className="text-slate-500">Pedido MetalFisa:</span> <strong className="text-slate-800">{representativeItem.pedido}</strong></div>
+                                <div><span className="text-slate-500">Pedido Lynx:</span> <strong className="text-slate-800">{representativeItem.pedido}</strong></div>
                                 <div><span className="text-slate-500">Ordem de Compra:</span> <strong className="text-slate-800">{representativeOc}</strong></div>
                                 {nivel === 'produto' && (
                                     <>
@@ -237,7 +237,7 @@ export default function PortalClienteRequestModal({ isOpen, onClose, selectedIte
                     <div className="bg-amber-50 p-3 rounded-lg flex items-start gap-2 border border-amber-100">
                         <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                         <p className="text-xs text-amber-800">
-                            Sua solicitação será enviada diretamente para a equipe de Planejamento (PCP) da MetalFisa. O retorno acontecerá o mais breve possível.
+                            Sua solicitação será enviada diretamente para a equipe de Planejamento (PCP) da Lynx. O retorno acontecerá o mais breve possível.
                         </p>
                     </div>
                 </div>

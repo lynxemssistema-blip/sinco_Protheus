@@ -11,16 +11,16 @@ export default function CaixasFerramenta() {
     const [usuarios, setUsuarios] = useState([]);
     const [availableAssets, setAvailableAssets] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('@MetalFisa:sgq_toolbox_search') || '');
+    const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('@Lynx:sgq_toolbox_search') || '');
     const [assetSearchTerm, setAssetSearchTerm] = useState('');
-    const [viewMode, setViewMode] = useState(() => localStorage.getItem('@MetalFisa:sgq_toolbox_view') || 'card');
+    const [viewMode, setViewMode] = useState(() => localStorage.getItem('@Lynx:sgq_toolbox_view') || 'card');
 
     useEffect(() => {
-        localStorage.setItem('@MetalFisa:sgq_toolbox_search', searchTerm);
+        localStorage.setItem('@Lynx:sgq_toolbox_search', searchTerm);
     }, [searchTerm]);
 
     useEffect(() => {
-        localStorage.setItem('@MetalFisa:sgq_toolbox_view', viewMode);
+        localStorage.setItem('@Lynx:sgq_toolbox_view', viewMode);
     }, [viewMode]);
 
     // Modal states for creating/editing a toolbox
@@ -224,7 +224,7 @@ export default function CaixasFerramenta() {
         if (asset.main_photo_id) {
             return (
                 <img 
-                    src={`/api/sgq/assets/attachments/${asset.main_photo_id}/download?token=${localStorage.getItem('@MetalFisa:token')}`} 
+                    src={`/api/sgq/assets/attachments/${asset.main_photo_id}/download?token=${localStorage.getItem('@Lynx:token')}`} 
                     alt={asset.name} 
                     className="w-10 h-10 object-cover rounded shadow-sm border border-slate-200"
                 />
@@ -738,7 +738,7 @@ export default function CaixasFerramenta() {
                                                 <span className="text-sm text-slate-700 font-medium truncate" title={att.original_name}>{att.original_name}</span>
                                             </div>
                                             <a 
-                                                href={`/api/sgq/assets/attachments/${att.id}/download?token=${localStorage.getItem('@MetalFisa:token')}`} 
+                                                href={`/api/sgq/assets/attachments/${att.id}/download?token=${localStorage.getItem('@Lynx:token')}`} 
                                                 target="_blank" 
                                                 rel="noreferrer"
                                                 className="text-indigo-600 hover:text-indigo-800 bg-white border border-slate-200 p-2 rounded shadow-sm hover:shadow transition-all"

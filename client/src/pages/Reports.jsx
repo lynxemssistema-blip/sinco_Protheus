@@ -10,6 +10,7 @@ import MeetingReportModal from '../components/MeetingReportModal';
 import { useAuth } from '../contexts/AuthContext';
 import { getProductionReportData, getSalesPlanningReportData, getResourceEvolutionReportData, getReportDownloadUrl, getSystemSetting, saveSystemSetting } from '../services/api';
 import { generateProductionReportPdf } from '../services/productionReportPdfGenerator';
+import DateInputBR from '../components/ui/DateInputBR';
 
 // --- SUB-COMPONENTS ---
 
@@ -61,8 +62,8 @@ const ProductionReportView = ({ onExport, filters, setFilters }) => {
                     <div className="flex-1">
                         <label className="block text-xs font-bold text-slate-700 mb-1">Período (Entrega)</label>
                         <div className="flex gap-2">
-                            <input type="date" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-100 outline-none border-slate-300" value={filters.date_start} onChange={e => setFilters({ ...filters, date_start: e.target.value })} />
-                            <input type="date" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-100 outline-none border-slate-300" value={filters.date_end} onChange={e => setFilters({ ...filters, date_end: e.target.value })} />
+                            <DateInputBR className="w-full border rounded-lg px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-blue-100 border-slate-300 bg-white" value={filters.date_start} onChange={e => setFilters({ ...filters, date_start: e.target.value })} />
+                            <DateInputBR className="w-full border rounded-lg px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-blue-100 border-slate-300 bg-white" value={filters.date_end} onChange={e => setFilters({ ...filters, date_end: e.target.value })} />
                         </div>
                     </div>
                     <div className="w-full md:w-48">
@@ -205,8 +206,8 @@ const SalesPlanningReportView = ({ onExport, filters, setFilters }) => {
                         <div className="flex-1">
                             <label className="block text-xs font-bold text-slate-700 mb-1">Entrega (Obrigatório / Prioritário)</label>
                             <div className="flex gap-2">
-                                <input type="date" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-100 outline-none border-slate-300" value={filters.date_start} onChange={e => setFilters({ ...filters, date_start: e.target.value })} />
-                                <input type="date" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-100 outline-none border-slate-300" value={filters.date_end} onChange={e => setFilters({ ...filters, date_end: e.target.value })} />
+                                <DateInputBR className="w-full border rounded-lg px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-blue-100 border-slate-300 bg-white" value={filters.date_start} onChange={e => setFilters({ ...filters, date_start: e.target.value })} />
+                                <DateInputBR className="w-full border rounded-lg px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-blue-100 border-slate-300 bg-white" value={filters.date_end} onChange={e => setFilters({ ...filters, date_end: e.target.value })} />
                             </div>
                         </div>
                         <div className="flex-1">
@@ -497,8 +498,8 @@ const ResourceEvolutionReportView = ({ onExport, filters, setFilters, user }) =>
                         <div className="flex-1">
                             <label className="block text-xs font-bold text-slate-700 mb-1">Período (Entrega)</label>
                             <div className="flex gap-2">
-                                <input type="date" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-100 outline-none border-slate-300" value={filters.date_start} onChange={e => setFilters({ ...filters, date_start: e.target.value })} />
-                                <input type="date" className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-100 outline-none border-slate-300" value={filters.date_end} onChange={e => setFilters({ ...filters, date_end: e.target.value })} />
+                                <DateInputBR className="w-full border rounded-lg px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-blue-100 border-slate-300 bg-white" value={filters.date_start} onChange={e => setFilters({ ...filters, date_start: e.target.value })} />
+                                <DateInputBR className="w-full border rounded-lg px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-blue-100 border-slate-300 bg-white" value={filters.date_end} onChange={e => setFilters({ ...filters, date_end: e.target.value })} />
                             </div>
                         </div>
                         <div className="w-full md:w-48">
@@ -648,7 +649,7 @@ const ResourceEvolutionReportView = ({ onExport, filters, setFilters, user }) =>
 
 export default function Reports() {
     const { user } = useAuth();
-    const [activeTab, setActiveTab] = useStickyState('production', '@metalfisa:reports_activeTab');
+    const [activeTab, setActiveTab] = useStickyState('production', '@lynxems:reports_activeTab');
     const [sharedFilters, setSharedFilters] = useStickyState({
         date_start: '',
         date_end: '',
@@ -659,7 +660,7 @@ export default function Reports() {
         status: '',
         active_only: 'true',
         groupBy: 'pedido'
-    }, '@metalfisa:reports_sharedFilters');
+    }, '@lynxems:reports_sharedFilters');
 
     const handleExport = (type, filters, category) => {
         if (type === 'pdf' && category === 'production') {

@@ -1,170 +1,93 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
-import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus, HelpCircle, Smartphone, Zap, RefreshCw, Clock, ExternalLink } from 'lucide-react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus, HelpCircle, Smartphone, ExternalLink, Key, Building2, CheckCircle2, Clock } from 'lucide-react';
 import { api } from '../services/api';
 import { useHelp } from '../contexts/HelpContext';
 import HelpDrawer from '../components/HelpDrawer';
-import logo from '../assets/app-logo.png';
+import { AppLogo, Button } from '../components/ui';
 import simLogo from '../assets/sim-consultoria-logo.png';
 
 import LandingPage from './LandingPage';
 
 const Login = () => {
+    const [searchParams] = useSearchParams();
+    const location = useLocation();
+
+    // Checa se veio com intenção de cadastrar empresa
+    const isRegisterEmpresaInitial = 
+        searchParams.get('mode') === 'register' || 
+        searchParams.get('tab') === 'empresa' || 
+        searchParams.get('cadastrar') === 'empresa' ||
+        location.state?.mode === 'register' ||
+        location.state?.tab === 'empresa';
+
     const [loginInput, setLoginInput] = useState('');
     const [passwordInput, setPasswordInput] = useState('');
     const [recoverEmail, setRecoverEmail] = useState('');
     
-    // Register states
+    // Register states (Multi-Tenant Onboarding)
     const [regName, setRegName] = useState('');
     const [regEmail, setRegEmail] = useState('');
-    const [regLogin, setRegLogin] = useState('');
     const [regPassword, setRegPassword] = useState('');
+    const [regEmpresa, setRegEmpresa] = useState('');
+    const [regCnpj, setRegCnpj] = useState('');
+    const [regTelefone, setRegTelefone] = useState('');
+    const [regSegmento, setRegSegmento] = useState('Indústria & Caldeiraria');
+    const [regTab, setRegTab] = useState(
+        searchParams.get('tab') === 'empresa' || 
+        searchParams.get('cadastrar') === 'empresa' || 
+        location.state?.tab === 'empresa' 
+            ? 'empresa' 
+            : (isRegisterEmpresaInitial ? 'empresa' : 'convite')
+    );
+    const [regCodigoConvite, setRegCodigoConvite] = useState('');
 
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
     const [loading, setLoading] = useState(false);
     const [showRecoveryHint, setShowRecoveryHint] = useState(false);
     
-    // Watchdog / Slowness / Wake-up states (Exibição condicional sob lentidão/queda)
-    const [isServerSlow, setIsServerSlow] = useState(false);
-    const [wakeUpLoading, setWakeUpLoading] = useState(false);
-    const [wakeUpCountdown, setWakeUpCountdown] = useState(15);
-    const [wakeUpCooldown, setWakeUpCooldown] = useState(0); // em minutos
-    const [wakeUpMessage, setWakeUpMessage] = useState('');
-    
-    const [view, setView] = useState('login'); // 'login', 'recover', 'register'
+    const [view, setView] = useState(isRegisterEmpresaInitial ? 'register' : 'login'); // 'login', 'recover', 'register'
 
     const { login, signed } = useAuth();
     const { toggleHelp } = useHelp();
     const navigate = useNavigate();
 
-    // Checa cooldown persistido e saúde do servidor
-    const checkCooldownAndHealth = React.useCallback(async () => {
-        const storedTime = localStorage.getItem('@MetalFisa:last_wake_up');
-        if (storedTime) {
-            const diff = Date.now() - parseInt(storedTime, 10);
-            const thirtyMin = 30 * 60 * 1000;
-            if (diff < thirtyMin) {
-                setWakeUpCooldown(Math.ceil((thirtyMin - diff) / 60000));
-            } else {
-                setWakeUpCooldown(0);
-            }
-        }
-
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 3500);
-            const res = await fetch('/api/system/status', { signal: controller.signal });
-            clearTimeout(timeoutId);
-            if (res.ok) {
-                const data = await res.json();
-                if (data.slow || !data.online) {
-                    setIsServerSlow(true);
-                }
-                if (data.cooldownRemainingMs > 0) {
-                    setWakeUpCooldown(data.remainingMinutes);
-                }
-            } else {
-                setIsServerSlow(true);
-            }
-        } catch (e) {
-            setIsServerSlow(true);
-        }
-    }, []);
-
+    // Sincroniza parâmetros de rota caso mude após a montagem
     React.useEffect(() => {
-        checkCooldownAndHealth();
-    }, [checkCooldownAndHealth]);
+        const mode = searchParams.get('mode') || location.state?.mode;
+        const tab = searchParams.get('tab') || location.state?.tab;
+        const cadastrar = searchParams.get('cadastrar') || location.state?.cadastrar;
 
-    // If user is already logged in, redirect to dashboard automatically
+        if (mode === 'register' || tab === 'empresa' || cadastrar === 'empresa') {
+            setView('register');
+            if (tab === 'empresa' || cadastrar === 'empresa') {
+                setRegTab('empresa');
+            }
+        }
+    }, [searchParams, location.state]);
+
+    // If user is already logged in, redirect to visao-geral automatically
     React.useEffect(() => {
         if (signed) {
-            navigate('/dashboard', { replace: true });
+            navigate('/visao-geral', { replace: true });
         }
     }, [signed, navigate]);
-
-    const handleWakeUpServer = async () => {
-        setError('');
-        setWakeUpLoading(true);
-        setWakeUpCountdown(15);
-        setWakeUpMessage('Enviando sinal de reinício para o servidor...');
-
-        try {
-            const res = await fetch('/api/system/wake-up', { method: 'POST' });
-            const data = await res.json();
-
-            if (res.status === 429) {
-                setWakeUpLoading(false);
-                setWakeUpCooldown(data.remainingMinutes || 30);
-                setWakeUpMessage(data.message);
-                return;
-            }
-
-            localStorage.setItem('@MetalFisa:last_wake_up', Date.now().toString());
-            setWakeUpCooldown(30);
-
-            let count = 15;
-            const timer = setInterval(async () => {
-                count -= 1;
-                setWakeUpCountdown(count);
-
-                if (count % 3 === 0 || count <= 2) {
-                    try {
-                        const statusRes = await fetch('/api/system/status');
-                        if (statusRes.ok) {
-                            const statusData = await statusRes.json();
-                            if (statusData.online) {
-                                clearInterval(timer);
-                                setWakeUpLoading(false);
-                                setIsServerSlow(false);
-                                setSuccessMsg('Servidor reiniciado com sucesso! Você já pode entrar.');
-                                setWakeUpMessage('');
-                                return;
-                            }
-                        }
-                    } catch (err) {}
-                }
-
-                if (count <= 0) {
-                    clearInterval(timer);
-                    setWakeUpLoading(false);
-                    setWakeUpMessage('O servidor foi reiniciado. Tente efetuar o login novamente.');
-                }
-            }, 1000);
-
-        } catch (err) {
-            setWakeUpLoading(false);
-            setWakeUpMessage('Falha ao comunicar com o Watchdog. Verifique sua conexão.');
-        }
-    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setSuccessMsg('');
-        setWakeUpMessage('');
         setLoading(true);
 
-        const startTime = Date.now();
-        const slowTimer = setTimeout(() => {
-            setIsServerSlow(true);
-        }, 3500);
-
-        const result = await login(loginInput, passwordInput);
-        clearTimeout(slowTimer);
+        const result = await login(loginInput.trim(), passwordInput);
+        setLoading(false);
 
         if (result.success) {
             navigate('/ajuda');
         } else {
             setError(result.message);
-            setLoading(false);
-
-            const elapsed = Date.now() - startTime;
-            if (elapsed > 3500 || result.status >= 500 || result.isNetworkError) {
-                setIsServerSlow(true);
-            }
-
             if (result.message && result.message.toLowerCase().includes('credenciais')) {
                 setShowRecoveryHint(true);
             }
@@ -195,17 +118,62 @@ const Login = () => {
         setLoading(true);
 
         try {
-            const res = await api.post('/auth/register', {
+            const res = await api.post('/auth/register-company', {
                 nome: regName,
                 email: regEmail,
-                login: regLogin,
-                senha: regPassword
+                senha: regPassword,
+                telefone: regTelefone,
+                nomeEmpresa: regEmpresa || `Empresa de ${regName}`,
+                cnpj: regCnpj,
+                segmento: regSegmento
             });
-            setSuccessMsg(res.data.message);
-            setRegName(''); setRegEmail(''); setRegLogin(''); setRegPassword('');
-            setView('login'); // back to login
+
+            if (res.data?.token && res.data?.user) {
+                localStorage.setItem('@Lynx:token', res.data.token);
+                localStorage.setItem('@Lynx:user', JSON.stringify(res.data.user));
+                api.defaults.headers.Authorization = `Bearer ${res.data.token}`;
+                alert('Empresa e conta Master criadas com sucesso! Bem-vindo ao SINCO SaaS (14 dias de teste ativados).');
+                window.location.href = '/visao-geral';
+                return;
+            }
+
+            setSuccessMsg(res.data.message || 'Cadastro realizado com sucesso!');
+            setView('login');
         } catch (err) {
-            setError(err.response?.data?.error || err.message);
+            setError(err.response?.data?.message || err.response?.data?.error || err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleRegisterColaborador = async (e) => {
+        e.preventDefault();
+        setError('');
+        setSuccessMsg('');
+        setLoading(true);
+
+        try {
+            const res = await api.post('/auth/register-with-code', {
+                nome: regName,
+                email: regEmail,
+                senha: regPassword,
+                telefone: regTelefone,
+                codigo_seguranca: regCodigoConvite
+            });
+
+            if (res.data?.token && res.data?.user) {
+                localStorage.setItem('@Lynx:token', res.data.token);
+                localStorage.setItem('@Lynx:user', JSON.stringify(res.data.user));
+                api.defaults.headers.Authorization = `Bearer ${res.data.token}`;
+                alert(res.data.message || 'Cadastro realizado com sucesso! Bem-vindo.');
+                window.location.href = '/visao-geral';
+                return;
+            }
+
+            setSuccessMsg(res.data.message || 'Cadastro realizado com sucesso!');
+            setView('login');
+        } catch (err) {
+            setError(err.response?.data?.message || err.response?.data?.error || err.message);
         } finally {
             setLoading(false);
         }
@@ -241,8 +209,8 @@ const Login = () => {
                             <ArrowLeft className="w-4 h-4" /> Site
                         </button>
                     )}
-                    <div className="bg-white/10 backdrop-blur-sm p-2 rounded-2xl shadow-md mb-4 flex items-center justify-center border border-white/20">
-                        <img src={logo} alt="SINCO Suite" className="h-14 w-14 rounded-xl object-contain" />
+                    <div className="bg-white/10 backdrop-blur-sm p-3 rounded-2xl shadow-md mb-4 flex items-center justify-center border border-white/20">
+                        <AppLogo variant="sublogo-snow" size="lg" />
                     </div>
                     <h1 className="text-2xl font-black mb-1 tracking-tight">SINCO Industrial Suite</h1>
                     <p className="text-[#E0E800] font-bold text-xs tracking-wider uppercase mb-1">Lynx EMS Sistemas ✕ SIM Consultoria</p>
@@ -288,95 +256,240 @@ const Login = () => {
                                 </div>
                             </div>
 
-                            <button
+                            <Button
                                 type="submit"
-                                disabled={loading}
-                                className="w-full bg-[#FFB536] hover:bg-[#e6a230] text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
+                                variant="cta"
+                                size="lg"
+                                loading={loading}
+                                icon={Send}
+                                className="w-full shadow-md"
                             >
-                                {loading ? (
-                                    <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                ) : (
-                                    <>
-                                        <Send className="h-5 w-5" />
-                                        Receber Nova Senha
-                                    </>
-                                )}
-                            </button>
+                                Receber Nova Senha
+                            </Button>
                         </form>
                     )}
 
                     {view === 'register' && (
-                        <form onSubmit={handleRegister} className="space-y-5">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
-                                <div className="relative">
-                                    <User className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-                                    <input
-                                        type="text"
-                                        required
-                                        className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                                        placeholder="Seu nome completo"
-                                        value={regName}
-                                        onChange={(e) => setRegName(e.target.value)}
-                                    />
-                                </div>
-                            </div>
-                            
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">E-mail Corporativo</label>
-                                <div className="relative">
-                                    <Mail className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-                                    <input
-                                        type="email"
-                                        required
-                                        className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                                        placeholder="usuario@metalfisa.com.br"
-                                        value={regEmail}
-                                        onChange={(e) => setRegEmail(e.target.value)}
-                                    />
-                                </div>
+                        <div>
+                            {/* Abas: Colaborador com Código vs Criar Empresa */}
+                            <div className="flex rounded-xl bg-slate-100 p-1 mb-4 border border-slate-200">
+                                <button
+                                    type="button"
+                                    onClick={() => { setRegTab('convite'); setError(''); }}
+                                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                                        regTab === 'convite' 
+                                            ? 'bg-emerald-600 text-white shadow-xs' 
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    <Key className="w-3.5 h-3.5" />
+                                    <span>Sou Colaborador</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setRegTab('empresa'); setError(''); }}
+                                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                                        regTab === 'empresa' 
+                                            ? 'bg-blue-600 text-white shadow-xs' 
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                >
+                                    <Building2 className="w-3.5 h-3.5" />
+                                    <span>Criar Empresa (Master)</span>
+                                </button>
                             </div>
 
-                            <div className="flex gap-3">
-                                <div className="flex-1">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome de Login</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                                        placeholder="ex: pcp01"
-                                        value={regLogin}
-                                        onChange={(e) => setRegLogin(e.target.value)}
-                                    />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-                                    <input
-                                        type="password"
-                                        required
-                                        className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-                                        placeholder="••••••••"
-                                        value={regPassword}
-                                        onChange={(e) => setRegPassword(e.target.value)}
-                                    />
-                                </div>
-                            </div>
+                            {/* Formulário: Sou Colaborador com Código de 30min */}
+                            {regTab === 'convite' ? (
+                                <form onSubmit={handleRegisterColaborador} className="space-y-3.5">
+                                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 text-left">
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <label className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
+                                                <Key className="w-4 h-4 text-emerald-700" />
+                                                Código de Segurança da Empresa
+                                            </label>
+                                            <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                                                <Clock className="w-3 h-3" /> 30 min
+                                            </span>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            required
+                                            maxLength={10}
+                                            className="w-full px-3.5 py-2.5 rounded-lg border-2 border-emerald-400 focus:border-emerald-600 outline-none text-center font-mono font-black text-xl tracking-widest uppercase bg-white text-slate-900 shadow-inner"
+                                            placeholder="Ex: 839201"
+                                            value={regCodigoConvite}
+                                            onChange={(e) => setRegCodigoConvite(e.target.value.trim())}
+                                        />
+                                        <p className="text-[11px] text-emerald-800 font-medium mt-1.5 text-center leading-tight">
+                                            ⚠️ Digite o código de 6 dígitos enviado pelo <strong>Master da empresa pelo WhatsApp</strong>.
+                                        </p>
+                                    </div>
 
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="w-full bg-[#FFB536] hover:bg-[#e6a230] text-white font-bold py-3 mt-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
-                            >
-                                {loading ? (
-                                    <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                ) : (
-                                    <>
-                                        <UserPlus className="h-5 w-5" />
-                                        Solicitar Cadastro
-                                    </>
-                                )}
-                            </button>
-                        </form>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-700 mb-1">Seu Nome Completo</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            className="w-full px-3.5 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-xs transition-all"
+                                            placeholder="Seu nome"
+                                            value={regName}
+                                            onChange={(e) => setRegName(e.target.value)}
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 mb-1">WhatsApp / Celular</label>
+                                            <input
+                                                type="text"
+                                                className="w-full px-3.5 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-xs transition-all"
+                                                placeholder="(11) 99999-9999"
+                                                value={regTelefone}
+                                                onChange={(e) => setRegTelefone(e.target.value)}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 mb-1">E-mail (Login)</label>
+                                            <input
+                                                type="email"
+                                                required
+                                                className="w-full px-3.5 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-xs transition-all"
+                                                placeholder="seuemail@empresa.com"
+                                                value={regEmail}
+                                                onChange={(e) => setRegEmail(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-700 mb-1">Criar Senha de Acesso</label>
+                                        <div className="relative">
+                                            <Lock className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                                            <input
+                                                type="password"
+                                                required
+                                                className="w-full pl-9 pr-3.5 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-xs transition-all"
+                                                placeholder="••••••••"
+                                                value={regPassword}
+                                                onChange={(e) => setRegPassword(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <Button
+                                        type="submit"
+                                        variant="cta"
+                                        size="lg"
+                                        loading={loading}
+                                        icon={CheckCircle2}
+                                        className="w-full mt-2 shadow-md bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                                    >
+                                        Validar Código e Conectar à Empresa
+                                    </Button>
+                                </form>
+                            ) : (
+                                /* Formulário: Criar Nova Empresa (Master) */
+                                <form onSubmit={handleRegister} className="space-y-4">
+                                    {/* Banner 14 Dias Grátis */}
+                                    <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3 rounded-xl shadow-sm text-center">
+                                        <span className="text-xs font-black uppercase tracking-wider block">🚀 14 DIAS DE TESTE GRÁTIS</span>
+                                        <span className="text-[11px] text-blue-100 block mt-0.5">
+                                            Acesso completo ao Plano Pro • Você será o Master da Empresa
+                                        </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 mb-1">Nome da Empresa</label>
+                                            <input
+                                                type="text"
+                                                required
+                                                className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-xs transition-all font-semibold"
+                                                placeholder="Ex: Metalúrgica Juca"
+                                                value={regEmpresa}
+                                                onChange={(e) => setRegEmpresa(e.target.value)}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 mb-1">CNPJ <span className="text-gray-400 font-normal">(opcional)</span></label>
+                                            <input
+                                                type="text"
+                                                className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-xs transition-all"
+                                                placeholder="00.000.000/0000-00"
+                                                value={regCnpj}
+                                                onChange={(e) => setRegCnpj(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 mb-1">Seu Nome (Responsável)</label>
+                                            <input
+                                                type="text"
+                                                required
+                                                className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-xs transition-all"
+                                                placeholder="Seu nome"
+                                                value={regName}
+                                                onChange={(e) => setRegName(e.target.value)}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-700 mb-1">WhatsApp / Celular</label>
+                                            <input
+                                                type="text"
+                                                className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-xs transition-all"
+                                                placeholder="(11) 99999-9999"
+                                                value={regTelefone}
+                                                onChange={(e) => setRegTelefone(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-700 mb-1">E-mail de Acesso (Login)</label>
+                                        <div className="relative">
+                                            <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                            <input
+                                                type="email"
+                                                required
+                                                className="w-full pl-9 pr-3.5 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-xs transition-all"
+                                                placeholder="seuemail@empresa.com"
+                                                value={regEmail}
+                                                onChange={(e) => setRegEmail(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-700 mb-1">Senha de Acesso</label>
+                                        <div className="relative">
+                                            <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                            <input
+                                                type="password"
+                                                required
+                                                className="w-full pl-9 pr-3.5 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-xs transition-all"
+                                                placeholder="••••••••"
+                                                value={regPassword}
+                                                onChange={(e) => setRegPassword(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <Button
+                                        type="submit"
+                                        variant="cta"
+                                        size="lg"
+                                        loading={loading}
+                                        icon={UserPlus}
+                                        className="w-full mt-2 shadow-md bg-blue-600 hover:bg-blue-700 text-white font-bold"
+                                    >
+                                        Criar Conta e Iniciar Teste Grátis
+                                    </Button>
+                                </form>
+                            )}
+                        </div>
                     )}
 
                     {view === 'login' && (
@@ -388,6 +501,9 @@ const Login = () => {
                                     <input
                                         type="text"
                                         required
+                                        autoCapitalize="none"
+                                        autoCorrect="off"
+                                        spellCheck={false}
                                         className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                                         placeholder="Digite seu login..."
                                         value={loginInput}
@@ -420,64 +536,18 @@ const Login = () => {
                                 </div>
                             </div>
 
-                            <button
+                            <Button
                                 type="submit"
-                                disabled={loading}
-                                className="w-full bg-[#1F365C] hover:bg-[#15253f] text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-md hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
+                                variant="primary"
+                                size="lg"
+                                loading={loading}
+                                icon={LogIn}
+                                className="w-full shadow-md"
                             >
-                                {loading ? (
-                                    <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                ) : (
-                                    <>
-                                        <LogIn className="h-5 w-5" />
-                                        Entrar no Sistema
-                                    </>
-                                )}
-                            </button>
+                                Entrar no Sistema
+                            </Button>
 
-                            {/* Card Condicional: Acordar o Servidor (Aparece APENAS se houver lentidão ou falha de conexão) */}
-                            {(isServerSlow || wakeUpLoading || wakeUpMessage) && (
-                                <div className="p-4 bg-amber-50/90 border border-amber-200 rounded-xl text-amber-900 text-xs shadow-sm transition-all duration-300">
-                                    <div className="flex items-start gap-2.5">
-                                        <Zap className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0 animate-pulse" />
-                                        <div className="flex-1">
-                                            <p className="font-bold text-amber-900 mb-0.5">
-                                                Lentidão ou Instabilidade Detectada
-                                            </p>
-                                            <p className="text-amber-700 leading-relaxed mb-3 text-[11px]">
-                                                O servidor demorou para responder ou está fora do ar. Você pode requisitar o reinício automático da aplicação.
-                                            </p>
 
-                                            {wakeUpLoading ? (
-                                                <div className="flex items-center gap-2 text-amber-900 font-semibold py-1">
-                                                    <RefreshCw className="w-4 h-4 animate-spin text-amber-600" />
-                                                    <span>Reiniciando aplicação... Aguarde ({wakeUpCountdown}s)</span>
-                                                </div>
-                                            ) : wakeUpCooldown > 0 ? (
-                                                <div className="text-amber-800 bg-amber-100/70 px-2.5 py-1.5 rounded-lg font-medium inline-flex items-center gap-1.5 text-[11px]">
-                                                    <Clock className="w-3.5 h-3.5 text-amber-700" />
-                                                    <span>Reinício permitido a cada 30 minutos. Restam: ~{wakeUpCooldown} min</span>
-                                                </div>
-                                            ) : (
-                                                <button
-                                                    type="button"
-                                                    onClick={handleWakeUpServer}
-                                                    className="inline-flex items-center gap-1.5 bg-[#FFB536] hover:bg-[#e6a230] text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-all shadow-sm hover:shadow active:scale-95 cursor-pointer"
-                                                >
-                                                    <Zap className="w-3.5 h-3.5" />
-                                                    Acordar o Servidor
-                                                </button>
-                                            )}
-
-                                            {wakeUpMessage && !wakeUpLoading && (
-                                                <p className="mt-2 text-[11px] text-amber-800 font-medium">
-                                                    {wakeUpMessage}
-                                                </p>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
                             
                             <div className="mt-4 text-center">
                                 <p className="text-sm text-gray-600">
@@ -507,7 +577,7 @@ const Login = () => {
                                     Gestão da Qualidade (SGQ)
                                 </span>
                                 <span className="text-[10px] text-slate-400 font-medium">
-                                    SIM Consultoria • 17 Anos
+                                    SIM Consultoria • 18 Anos
                                 </span>
                             </div>
                         </div>

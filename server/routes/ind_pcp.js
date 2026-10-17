@@ -88,12 +88,16 @@ router.get('/pending-ops', async (req, res) => {
         }));
 
         console.log('[ind_pcp] Iniciando mysqlPool.query (MySQL)...');
-        const [mysqlResult] = await mysqlPool.query(`
-            SELECT DISTINCT op_base FROM app_ind_producao_ativa
-        `);
-        console.log('[ind_pcp] mysqlPool.query finalizado. Linhas:', mysqlResult.length);
-        
-        const liberadasArray = mysqlResult.map(row => row.op_base);
+        let liberadasArray = [];
+        try {
+            const [mysqlResult] = await mysqlPool.query(`
+                SELECT DISTINCT op_base FROM app_ind_producao_ativa
+            `);
+            liberadasArray = (mysqlResult || []).map(row => row.op_base);
+            console.log('[ind_pcp] mysqlPool.query finalizado. Linhas:', liberadasArray.length);
+        } catch (mErr) {
+            console.warn('[ind_pcp] app_ind_producao_ativa indisponível/vazia:', mErr.message);
+        }
 
         // Passo 3: Mesclar (Filtrar). Retornar apenas as OPs que NÃO estão no `liberadasArray`
         const pendentes = protheusOps.filter(op => !liberadasArray.includes(op.op_base));
@@ -124,6 +128,42 @@ router.post('/release-op', async (req, res) => {
     try {
         await connection.beginTransaction();
 
+        const c2_num = op_base.substring(0, 6);
+        const c2_item = op_base.substring(6, 8) || '01';
+
+        // =========================================================================
+        // SOBERANIA DO SALDO: Bloqueio rigoroso se o saldo do pedido (c6_qtdven - c6_qtdent) <= 0
+        // =========================================================================
+        try {
+            const [opRows] = await connection.query(`
+                SELECT TRIM(c2_pedido) AS pedido, TRIM(c2_itempv) AS itempv
+                FROM sc2010
+                WHERE c2_num = ? AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                LIMIT 1
+            `, [c2_num]);
+
+            if (opRows.length > 0 && opRows[0].pedido) {
+                const pedidoNum = opRows[0].pedido;
+                const itemPv = opRows[0].itempv;
+                const [sc6Rows] = await connection.query(`
+                    SELECT (COALESCE(c6_qtdven, 0) - COALESCE(c6_qtdent, 0)) AS saldo
+                    FROM sc6010
+                    WHERE TRIM(c6_num) = ? AND TRIM(c6_item) = ? AND COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                    LIMIT 1
+                `, [pedidoNum, itemPv]);
+
+                if (sc6Rows.length > 0 && Number(sc6Rows[0].saldo) <= 0) {
+                    await connection.rollback();
+                    return res.status(400).json({
+                        success: false,
+                        error: `Soberania do Saldo: Não é permitido fracionar a OP ${op_base}. O pedido ${pedidoNum} (item ${itemPv}) já possui saldo zerado ou totalmente entregue.`
+                    });
+                }
+            }
+        } catch (saldoErr) {
+            console.warn(`[ind_pcp] Aviso na validação de soberania do saldo da OP ${op_base}:`, saldoErr.message);
+        }
+
         // Batch INSERT das frações
         const fracPlaceholders = fracoes.map(() => "(?, ?, ?, ?, ?, ?, 'LIBERADO')").join(', ');
         const fracValues = fracoes.flatMap(fracao => [op_base, `${op_base}${fracao.suf}`, produto, descricao, quantidade_total, fracao.qtde]);
@@ -137,9 +177,6 @@ router.post('/release-op', async (req, res) => {
         // Se a OP Original já tinha apontamentos no app_production_appointments,
         // distribui essa quantidade entre as frações recém-criadas.
         // =========================================================================
-        const c2_num = op_base.substring(0, 6);
-        const c2_item = op_base.substring(6, 8) || '01';
-
         const [existingAppts] = await connection.query(`
             SELECT operacao_codigo, SUM(quantidade) as total
             FROM app_production_appointments

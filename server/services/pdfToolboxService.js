@@ -65,7 +65,7 @@ const generateToolboxReport = async (toolboxId, { usuarioGerador } = {}) => {
                 height: pngDims.height
             });
         } catch (e) {
-            drawT('METALFISA', marginX + 20, topY - 45, 14, true);
+            drawT('LYNX', marginX + 20, topY - 45, 14, true);
         }
 
         drawT('TERMO DE RESPONSABILIDADE', col2X + 20, topY - 35, 14, true);

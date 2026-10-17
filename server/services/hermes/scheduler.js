@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const mysqlPool = require('../mysqlService');
 const { orchestrateHermes } = require('./orchestrator');
 const nodemailer = require('nodemailer');
+const { sendMail } = require('../mailService');
 const { sendText } = require('../whatsapp');
 
 // Map of currently scheduled jobs: task_id -> cron task instance
@@ -32,23 +33,15 @@ async function executeTask(task, io) {
     // Send "Início" Email if configured
     if (task.alerta_email && task.alerta_email.trim()) {
         try {
-            const transporter = nodemailer.createTransport({
-                host: 'smtp.task.com.br',
-                port: 587,
-                secure: false,
-                auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
-                tls: { rejectUnauthorized: false }
-            });
-
             const subject = `🚀 [Início] Hermes Agent Task: ${task.nome}`;
             const body = `
                 <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                    <div style="background-color: #4f46e5; color: white; padding: 24px; text-align: center;">
+                    <div style="background-color: #0284c7; color: white; padding: 24px; text-align: center;">
                         <h2 style="margin: 0; font-size: 20px; font-weight: bold;">Hermes AI Agent</h2>
                         <p style="margin: 6px 0 0 0; opacity: 0.85; font-size: 13px;">Início de Execução de Tarefa</p>
                     </div>
                     <div style="padding: 24px; color: #334155; line-height: 1.6;">
-                        <h3 style="margin-top: 0; color: #1e1b4b; font-size: 16px;">Tarefa Iniciada: ${task.nome}</h3>
+                        <h3 style="margin-top: 0; color: #0f172a; font-size: 16px;">Tarefa Iniciada: ${task.nome}</h3>
                         <p style="font-size: 13px; color: #64748b; margin-top: -8px;">${task.descricao || 'Sem descrição'}</p>
                         
                         <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
@@ -56,18 +49,17 @@ async function executeTask(task, io) {
                         <p style="font-size: 14px; color: #1e293b;">
                             O motor de sequenciamento e inteligência artificial do Hermes começou a processar esta tarefa agora.
                         </p>
-                        <p style="font-size: 13px; color: #4f46e5; font-weight: bold;">
+                        <p style="font-size: 13px; color: #0284c7; font-weight: bold;">
                             O e-mail com o relatório de análise final será enviado assim que a execução for concluída.
                         </p>
                     </div>
                     <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b;">
-                        Este e-mail é gerado automaticamente pelo módulo Hermes da MetalFisa.
+                        Este e-mail é gerado automaticamente pelo módulo Hermes da Lynx.
                     </div>
                 </div>
             `;
 
-            await transporter.sendMail({
-                from: '"MetalFisa Hermes" <sincometal@metalfisa.com.br>',
+            await sendMail({
                 to: task.alerta_email,
                 subject,
                 html: body
@@ -114,39 +106,30 @@ async function executeTask(task, io) {
         // Send Email if configured
         if (task.alerta_email && task.alerta_email.trim()) {
             try {
-                const transporter = nodemailer.createTransport({
-                    host: 'smtp.task.com.br',
-                    port: 587,
-                    secure: false,
-                    auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
-                    tls: { rejectUnauthorized: false }
-                });
-
                 const subject = `✅ [Concluído] Hermes Agent Task: ${task.nome}`;
                 
                 const body = `
                     <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                        <div style="background-color: #4f46e5; color: white; padding: 24px; text-align: center;">
+                        <div style="background-color: #0284c7; color: white; padding: 24px; text-align: center;">
                             <h2 style="margin: 0; font-size: 20px; font-weight: bold;">Hermes AI Agent</h2>
                             <p style="margin: 6px 0 0 0; opacity: 0.85; font-size: 13px;">Relatório automático gerado pelo agendador de tarefas</p>
                         </div>
                         <div style="padding: 24px; color: #334155; line-height: 1.6;">
-                            <h3 style="margin-top: 0; color: #1e1b4b; font-size: 16px;">Tarefa: ${task.nome}</h3>
+                            <h3 style="margin-top: 0; color: #0f172a; font-size: 16px;">Tarefa: ${task.nome}</h3>
                             <p style="font-size: 13px; color: #64748b; margin-top: -8px;">${task.descricao || 'Sem descrição'}</p>
                             
                             <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
                             
-                            <h4 style="color: #4f46e5; margin-bottom: 8px; font-size: 14px; font-weight: bold;">Resumo das Ações / Análise da IA:</h4>
+                            <h4 style="color: #0284c7; margin-bottom: 8px; font-size: 14px; font-weight: bold;">Resumo das Ações / Análise da IA:</h4>
                             <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; font-size: 13px; color: #1e293b; white-space: pre-wrap; font-family: sans-serif;">${result.answer}</div>
                         </div>
                         <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b;">
-                            Este e-mail é gerado automaticamente pelo módulo Hermes da MetalFisa.
+                            Este e-mail é gerado automaticamente pelo módulo Hermes da Lynx.
                         </div>
                     </div>
                 `;
 
-                await transporter.sendMail({
-                    from: '"MetalFisa Hermes" <sincometal@metalfisa.com.br>',
+                await sendMail({
                     to: task.alerta_email,
                     subject,
                     html: body
@@ -160,7 +143,7 @@ async function executeTask(task, io) {
         // Send WhatsApp if configured
         if (task.alerta_whatsapp && task.alerta_whatsapp.trim()) {
             try {
-                const waText = `*🤖 HERMES AI AGENT — TAREFA CONCLUÍDA*\n📌 *Tarefa:* ${task.nome}\n\n*Resumo das Ações:*\n${result.answer.slice(0, 1500)}${result.answer.length > 1500 ? '...' : ''}\n\n_Relatório gerado automaticamente pelo MetalFisa Hermes_`;
+                const waText = `*🤖 HERMES AI AGENT — TAREFA CONCLUÍDA*\n📌 *Tarefa:* ${task.nome}\n\n*Resumo das Ações:*\n${result.answer.slice(0, 1500)}${result.answer.length > 1500 ? '...' : ''}\n\n_Relatório gerado automaticamente pelo Lynx Hermes_`;
                 await sendText(task.alerta_whatsapp, waText, `Hermes Task: ${task.nome}`);
                 console.log(`[HermesScheduler] Relatório WhatsApp enviado para: ${task.alerta_whatsapp}`);
             } catch (waErr) {
@@ -183,14 +166,6 @@ async function executeTask(task, io) {
         // Send Failure Email if configured
         if (task.alerta_email && task.alerta_email.trim()) {
             try {
-                const transporter = nodemailer.createTransport({
-                    host: 'smtp.task.com.br',
-                    port: 587,
-                    secure: false,
-                    auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
-                    tls: { rejectUnauthorized: false }
-                });
-
                 const subject = `❌ [Falha] Hermes Agent Task: ${task.nome}`;
                 const body = `
                     <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
@@ -208,13 +183,12 @@ async function executeTask(task, io) {
                             <div style="background-color: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 16px; font-size: 13px; color: #991b1b; font-family: monospace;">${err.message}</div>
                         </div>
                         <div style="background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 11px; color: #64748b;">
-                            Este e-mail é gerado automaticamente pelo módulo Hermes da MetalFisa.
+                            Este e-mail é gerado automaticamente pelo módulo Hermes da Lynx.
                         </div>
                     </div>
                 `;
 
-                await transporter.sendMail({
-                    from: '"MetalFisa Hermes" <sincometal@metalfisa.com.br>',
+                await sendMail({
                     to: task.alerta_email,
                     subject,
                     html: body

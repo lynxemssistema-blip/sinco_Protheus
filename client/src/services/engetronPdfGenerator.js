@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logoBase64 } from './metalfisaLogoBase64';
+import { getCompanyLegalName, getCompanyShortName, getCompanyAddressCnpjLine, getCompanyTagline } from './companyBranding';
 
 export const generateEngetronPdf = ({
     items = [],
@@ -29,25 +30,25 @@ export const generateEngetronPdf = ({
             doc.setLineWidth(0.2);
             [col1, col2].forEach(x => doc.line(x, hY, x, hY + hH));
 
-            // 1. Logo Metalfisa
+            // 1. Logo Lynx
             if (logoBase64) {
                 doc.addImage(logoBase64, 'PNG', ML + 3, hY + 1.5, 40, 13);
             } else {
                 doc.setFontSize(13);
                 doc.setFont('helvetica', 'bold');
-                doc.text('METALFISA', ML + 4, hY + 6);
+                doc.text(getCompanyShortName(), ML + 4, hY + 6);
                 doc.setFontSize(5.5);
                 doc.setFont('helvetica', 'normal');
-                doc.text('Transformando metais em excelência', ML + 4, hY + 10);
+                doc.text(getCompanyTagline(), ML + 4, hY + 10);
             }
 
             // 2. Dados da Empresa
             doc.setFontSize(7.5);
             doc.setFont('helvetica', 'bold');
-            doc.text('METALFISA METALURGICA LTDA', col1 + 3, hY + 5);
+            doc.text(getCompanyLegalName(), col1 + 3, hY + 5);
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(6.5);
-            doc.text('R. Américo Santiago Piacenza, 516 — CNPJ: 23.881.592/0001-01', col1 + 3, hY + 9);
+            doc.text(getCompanyAddressCnpjLine(), col1 + 3, hY + 9);
             doc.text(`Módulo PCP · Cliente: Engetron`, col1 + 3, hY + 13);
 
             // 3. Emissão e Resumo
@@ -121,7 +122,7 @@ export const generateEngetronPdf = ({
                 overflow: 'linebreak'
             },
             headStyles: {
-                fillColor: [30, 41, 59], // Slate 800 Metalfisa
+                fillColor: [30, 41, 59], // Slate 800 Lynx
                 textColor: [255, 255, 255],
                 fontStyle: 'bold',
                 halign: 'center',
@@ -153,13 +154,13 @@ export const generateEngetronPdf = ({
                 }
             },
             didDrawPage: (data) => {
-                // Rodapé padrão Metalfisa
+                // Rodapé padrão Lynx
                 const str = `Página ${data.pageNumber} de ${doc.internal.getNumberOfPages()}`;
                 doc.setFontSize(6.5);
                 doc.setFont('helvetica', 'normal');
                 doc.setTextColor(100);
                 doc.text(str, pageWidth - MR, pageHeight - 5, { align: 'right' });
-                doc.text('Metalfisa PCP - Relatório de Importação Engetron', ML, pageHeight - 5);
+                doc.text('Lynx PCP - Relatório de Importação Engetron', ML, pageHeight - 5);
             }
         });
 

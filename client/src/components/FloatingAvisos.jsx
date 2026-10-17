@@ -19,13 +19,13 @@ const FloatingAvisos = () => {
         if (!signed || !user?.id || isFetchingRef.current) return;
         isFetchingRef.current = true;
         try {
-            const token = localStorage.getItem('@MetalFisa:token');
+            const token = localStorage.getItem('@Lynx:token');
             const res = await api.get(`/avisos/nao-concluidos/${user.id}`, {
                 headers: { Authorization: `Bearer ${token}` },
                 timeout: 8000 // Timeout ágil de 8s para não prender o client
             });
             
-            const saved = sessionStorage.getItem('@metalfisa:dismissedAvisos');
+            const saved = sessionStorage.getItem('@lynxems:dismissedAvisos');
             const dismissed = saved ? new Set(JSON.parse(saved)) : new Set();
             
             const filtered = (res.data || []).filter(a => !dismissed.has(a.idAviso));
@@ -75,7 +75,7 @@ const FloatingAvisos = () => {
             socket.on('novo_aviso', (novoData) => {
                 if (window.location.pathname === '/avisos') return;
                 
-                const saved = sessionStorage.getItem('@metalfisa:dismissedAvisos');
+                const saved = sessionStorage.getItem('@lynxems:dismissedAvisos');
                 const dismissed = saved ? new Set(JSON.parse(saved)) : new Set();
                 if (!dismissed.has(novoData.idAviso)) {
                     setAvisos(prev => [...prev, novoData]);
@@ -98,7 +98,7 @@ const FloatingAvisos = () => {
 
     const handleConcluir = async (idAviso) => {
         try {
-            const token = localStorage.getItem('@MetalFisa:token');
+            const token = localStorage.getItem('@Lynx:token');
             await api.put(`/avisos/${idAviso}/concluir`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -112,10 +112,10 @@ const FloatingAvisos = () => {
     };
 
     const handleDismiss = (idAviso) => {
-        const saved = sessionStorage.getItem('@metalfisa:dismissedAvisos');
+        const saved = sessionStorage.getItem('@lynxems:dismissedAvisos');
         const dismissed = saved ? new Set(JSON.parse(saved)) : new Set();
         dismissed.add(idAviso);
-        sessionStorage.setItem('@metalfisa:dismissedAvisos', JSON.stringify([...dismissed]));
+        sessionStorage.setItem('@lynxems:dismissedAvisos', JSON.stringify([...dismissed]));
         
         setAvisos(prev => prev.filter(a => a.idAviso !== idAviso));
         if (currentIndex > 0) setCurrentIndex(p => p - 1);
@@ -124,7 +124,7 @@ const FloatingAvisos = () => {
     const handleReply = async (aviso) => {
         if (!replyText.trim()) return;
         try {
-            const token = localStorage.getItem('@MetalFisa:token');
+            const token = localStorage.getItem('@Lynx:token');
             await api.post('/avisos', {
                 idRemetente: user.id,
                 idDestinatario: aviso.idRemetente,

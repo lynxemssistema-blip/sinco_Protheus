@@ -20,9 +20,9 @@ export default function EmailBlockerModal() {
             await api.post('/auth/update-email', { email });
             // Since we need to update the User payload across all Contexts correctly,
             // we do it directly over localStorage and reload it
-            const storedUser = JSON.parse(localStorage.getItem('@MetalFisa:user'));
+            const storedUser = JSON.parse(localStorage.getItem('@Lynx:user'));
             storedUser.email = email;
-            localStorage.setItem('@MetalFisa:user', JSON.stringify(storedUser));
+            localStorage.setItem('@Lynx:user', JSON.stringify(storedUser));
             window.location.reload();
         } catch (err) {
             setError(err.response?.data?.error || err.message);
@@ -38,7 +38,7 @@ export default function EmailBlockerModal() {
                         <ShieldAlert className="w-8 h-8" />
                     </div>
                     <h2 className="text-2xl font-bold mb-1">Ação Necessária</h2>
-                    <p className="text-slate-300 text-sm">Atualização de Segurança da Metalfisa</p>
+                    <p className="text-slate-300 text-sm">Atualização de Segurança da Lynx</p>
                 </div>
                 <div className="p-6">
                     <p className="text-slate-600 mb-6 text-sm leading-relaxed text-center">
@@ -61,7 +61,7 @@ export default function EmailBlockerModal() {
                                     required
                                     value={email}
                                     onChange={e => setEmail(e.target.value)}
-                                    placeholder="usuario@metalfisa.com.br"
+                                    placeholder="usuario@lynxems.com.br"
                                     className="w-full pl-10 pr-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800"
                                 />
                             </div>

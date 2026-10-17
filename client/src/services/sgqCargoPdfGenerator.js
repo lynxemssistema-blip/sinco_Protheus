@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { toast } from 'react-toastify';
+import { getCompanyLegalName, getCompanyShortName, getCompanyTagline } from './companyBranding';
 
 export const generateCargoPdf = async (cargo) => {
     try {
@@ -28,11 +29,11 @@ export const generateCargoPdf = async (cargo) => {
         // Texto Logo e Empresa
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(14);
-        doc.text('METALFISA', ML + 6, hY + 9);
+        doc.text(getCompanyShortName(), ML + 6, hY + 9);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(6);
-        doc.text('Transformando metais em excelência', ML + 2, hY + 13);
-        doc.text('METALFISA METALURGICA LTDA', ML + 5, hY + 17);
+        doc.text(getCompanyTagline(), ML + 2, hY + 13);
+        doc.text(getCompanyLegalName(), ML + 5, hY + 17);
 
         // Título Central
         doc.setFontSize(14);
@@ -123,7 +124,7 @@ export const generateCargoPdf = async (cargo) => {
                 doc.setTextColor(100, 100, 100);
                 
                 const footerY = pageHeight - 10;
-                doc.text('Documento Original MetalFisa - Sistema SGQ ' + new Date().getFullYear(), ML, footerY);
+                doc.text('Documento Original Lynx - Sistema SGQ ' + new Date().getFullYear(), ML, footerY);
                 doc.text(pgStr, pageWidth - MR, footerY, { align: 'right' });
                 doc.setTextColor(0, 0, 0);
             }

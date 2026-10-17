@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getCompanyShortName } from './companyBranding';
 
 const formatDateBR = (dateStr) => {
     if (!dateStr) return '';
@@ -21,7 +22,7 @@ export const generateTaxaOcupacaoPdf = async (viewMode, data) => {
             docInstance.setFontSize(16);
             docInstance.setFont('helvetica', 'bold');
             docInstance.setTextColor(30, 58, 95);
-            docInstance.text('MetalFisa', ML + logoWidth + 5, 20);
+            docInstance.text(getCompanyShortName(), ML + logoWidth + 5, 20);
 
             docInstance.setFontSize(12);
             docInstance.setFont('helvetica', 'normal');
@@ -236,7 +237,7 @@ export const generateTaxaOcupacaoPdf = async (viewMode, data) => {
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(150, 150, 150);
             doc.text(`Página ${i} de ${pageCount}`, pageWidth - MR, doc.internal.pageSize.getHeight() - 10, { align: 'right' });
-            doc.text(`Gerado via MetalFisa App`, ML, doc.internal.pageSize.getHeight() - 10);
+            doc.text(`Gerado via Lynx App`, ML, doc.internal.pageSize.getHeight() - 10);
         }
 
         doc.save(`taxa_ocupacao_${viewMode}_${new Date().getTime()}.pdf`);

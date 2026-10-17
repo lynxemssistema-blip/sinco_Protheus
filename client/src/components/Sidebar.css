@@ -1,21 +1,26 @@
-/* Technical Precision Design Tokens */
+/* SINCO Suite / Lynx SM Industrial Precision Design Tokens */
 :root {
-    --tech-bg: #0f172a;
-    /* Slate 900 - Deep Industrial */
-    --tech-surface: #1e293b;
-    /* Slate 800 */
-    --tech-accent: #2563eb;
-    /* Blue 600 - Signal Color */
-    --tech-text-Dim: #94a3b8;
-    /* Slate 400 */
-    --tech-text-High: #f8fafc;
-    /* Slate 50 */
+    /* Deep Forest - Alinhado 100% à paleta da Landing Page (#1E2825) */
+    --tech-bg: #1E2825;
+    /* Rich Forest Dark Surface para containers e cartões (#24312D) */
+    --tech-surface: #24312D;
+    /* Hover state em verde musgo profundo (#2D3C37) */
+    --tech-surface-hover: #2D3C37;
+    /* Lynx Electric Lime - destaque e assinatura visual */
+    --tech-accent: #E0E800;
+    --tech-accent-glow: rgba(224, 232, 0, 0.35);
+    /* Lynx Forest Green estrutural (#425750) */
+    --tech-forest: #425750;
+    --tech-forest-light: #526B63;
+    /* Technical Sage Muted Text */
+    --tech-text-Dim: #8E9F97;
+    /* Snow White de alto contraste */
+    --tech-text-High: #FFFFFF;
 
-    --tech-border: 1px solid rgba(255, 255, 255, 0.08);
-    --tech-border-active: 1px solid #2563eb;
+    --tech-border: 1px solid rgba(66, 87, 80, 0.45);
+    --tech-border-active: 1px solid #E0E800;
 
     --ease-mechanical: cubic-bezier(0.23, 1, 0.32, 1);
-    /* Quick snap */
 }
 
 .tech-sidebar {
@@ -25,27 +30,34 @@
     display: flex;
     flex-direction: column;
     transition: width 0.3s var(--ease-mechanical);
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
-    /* Deep depth */
+    box-shadow: 6px 0 32px rgba(0, 0, 0, 0.55);
 }
 
-/* Section Dividers - Industrial Look */
+/* Section Dividers */
 .tech-divider {
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-    margin: 8px 0;
+    background: linear-gradient(90deg, transparent, rgba(45, 76, 62, 0.45), transparent);
+    margin: 6px 0;
 }
 
 .tech-group-title {
     font-size: 0.65rem;
     text-transform: uppercase;
-    letter-spacing: 0.15em;
-    color: #475569;
-    /* Slate 600 - Very dim */
-    padding: 16px 24px 8px;
+    letter-spacing: 0.14em;
+    color: #7E938A;
+    padding: 14px 20px 6px;
     font-weight: 700;
-    font-family: 'Consolas', 'Monaco', monospace;
-    /* Technical font */
+    font-family: inherit;
+    transition: color 0.15s ease;
+    user-select: none;
+}
+
+.tech-group-title:hover {
+    color: var(--tech-accent);
+}
+
+.tech-group-title.has-active {
+    color: #C8D9D0;
 }
 
 /* Navigation Item */
@@ -54,110 +66,186 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 24px;
+    padding: 9px 20px;
     color: var(--tech-text-Dim);
     text-decoration: none;
-    font-size: 0.875rem;
+    font-size: 0.825rem;
     font-weight: 500;
-    border-left: 2px solid transparent;
-    /* Prepare for active border */
-    transition: all 0.15s var(--ease-mechanical);
+    border-left: 3.5px solid transparent;
+    transition: all 0.2s var(--ease-mechanical);
     cursor: pointer;
     background: transparent;
+    border-radius: 0 10px 10px 0;
+    margin-right: 8px;
+    scroll-margin-top: 70px;
+    scroll-margin-bottom: 70px;
 }
 
-/* Hover State - Mechanical Highlight */
+/* Hover State */
 .tech-nav-item:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(45, 76, 62, 0.25);
     color: var(--tech-text-High);
-    padding-left: 28px;
-    /* Mechanical shift */
+    padding-left: 23px;
+    border-left-color: rgba(224, 232, 0, 0.4);
 }
 
-/* Active State - High Contrast Signal */
+.tech-nav-item:hover .tech-icon {
+    transform: translateX(2px);
+    color: var(--tech-accent);
+}
+
+/* Active State - High Contrast Signal (Fica claramente à vista do usuário) */
 .tech-nav-item.active {
-    background: rgba(255, 181, 54, 0.1);
-    /* Low opacity yellow tint */
-    color: white;
-    border-left: 2px solid #FFB536;
-    /* Sharp indicator */
+    background: linear-gradient(90deg, rgba(224, 232, 0, 0.18) 0%, rgba(26, 49, 39, 0.9) 60%, rgba(18, 34, 27, 0.8) 100%);
+    color: #FFFFFF;
+    border-left: 3.5px solid var(--tech-accent);
     font-weight: 600;
+    box-shadow: inset 0 0 18px rgba(224, 232, 0, 0.08), 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.tech-nav-item.active .tech-icon {
+    color: var(--tech-accent);
+    filter: drop-shadow(0 0 6px rgba(224, 232, 0, 0.55));
 }
 
 .tech-nav-item.active::after {
     content: '';
     position: absolute;
     right: 0;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: #FFB536;
-    opacity: 0.5;
-    box-shadow: -4px 0 12px #FFB536;
-    /* Glow leak */
+    top: 15%;
+    bottom: 15%;
+    width: 2.5px;
+    background: var(--tech-accent);
+    opacity: 0.85;
+    border-radius: 2px 0 0 2px;
+    box-shadow: -2px 0 8px rgba(224, 232, 0, 0.6);
+}
+
+/* Radar pulse dot para indicar item ativo */
+.tech-active-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    width: 8px;
+    height: 8px;
+    position: relative;
+}
+
+.tech-active-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--tech-accent);
+    box-shadow: 0 0 8px var(--tech-accent);
+}
+
+.tech-active-ping {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: rgba(224, 232, 0, 0.4);
+    animation: tech-pulse-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes tech-pulse-ping {
+    0% { transform: scale(0.8); opacity: 0.8; }
+    75%, 100% { transform: scale(2.2); opacity: 0; }
 }
 
 /* Icon Handling */
 .tech-icon {
-    width: 18px;
-    height: 18px;
-    transition: transform 0.2s;
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+    transition: transform 0.2s, color 0.2s;
 }
 
-.tech-nav-item:hover .tech-icon {
-    transform: translateX(2px);
-    /* Micro-movement */
-    color: #FFB536;
-}
-
-.tech-nav-item.active .tech-icon {
-    color: #FFB536;
-}
-
-/* Scrollbar Customization - Invisible but scrollable */
+/* Scrollbar Customization */
 .tech-scroll {
     overflow-y: auto;
-    scrollbar-width: none;
-    /* Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(45, 76, 62, 0.4) transparent;
+    scroll-behavior: smooth;
 }
 
 .tech-scroll::-webkit-scrollbar {
-    display: none;
-    /* Chrome */
+    width: 4px;
+}
+
+.tech-scroll::-webkit-scrollbar-thumb {
+    background: rgba(45, 76, 62, 0.4);
+    border-radius: 4px;
+}
+
+.tech-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(224, 232, 0, 0.5);
 }
 
 /* Header/Footer Areas */
 .tech-header {
-    padding: 24px;
+    padding: 18px 18px 14px;
     border-bottom: var(--tech-border);
+    background: linear-gradient(180deg, #24312D 0%, var(--tech-bg) 100%);
 }
 
 .tech-footer {
-    padding: 16px;
+    padding: 14px 16px;
     border-top: var(--tech-border);
-    background: rgba(0, 0, 0, 0.2);
+    background: linear-gradient(0deg, #24312D 0%, var(--tech-bg) 100%);
 }
 
 /* User Profile in Tech Style */
 .tech-user-card {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 8px;
-    border: 1px solid transparent;
-    transition: all 0.2s;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(66, 87, 80, 0.45);
+    background: rgba(36, 49, 45, 0.85);
+    transition: all 0.2s var(--ease-mechanical);
 }
 
 .tech-user-card:hover {
-    border: var(--tech-border);
-    background: rgba(255, 255, 255, 0.02);
+    border-color: rgba(82, 107, 99, 0.7);
+    background: rgba(45, 60, 55, 0.95);
 }
 
 .tech-avatar {
-    background: var(--tech-surface);
+    background: linear-gradient(135deg, #425750, #1E2825);
     color: var(--tech-accent);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 0;
-    /* SHARP EDGE */
+    border: 1px solid rgba(82, 107, 99, 0.6);
+    border-radius: 9px;
+    box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.08);
 }
-/* placeholder bypass for ux form check */
+
+/* Star Favorite Button - Alinhamento absoluto perfeito na mesma linha à direita */
+.tech-fav-btn {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 4px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+.group\/nav:hover .tech-fav-btn,
+.tech-fav-btn.is-favorite {
+    opacity: 1;
+}
+
+.tech-fav-btn:hover {
+    transform: translateY(-50%) scale(1.15);
+}
+

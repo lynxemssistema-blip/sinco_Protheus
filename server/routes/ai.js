@@ -106,7 +106,7 @@ router.post('/document-assist', async (req, res) => {
             filesContextText = filesContextText.substring(0, 100000) + '\n... (conteúdo de arquivos de contexto truncado para economia de tokens)';
         }
 
-        const systemPrompt = `Você é um Agente de IA com poder de execução total na página de Documentos do SGQ da MetalFisa.
+        const systemPrompt = `Você é um Agente de IA com poder de execução total na página de Documentos do SGQ da Lynx.
 O usuário está escrevendo/editando um "Procedimento da Qualidade (PQ)" no editor de texto (SunEditor) e você pode interagir com a interface executando comandos.
 
 Sua resposta DEVE ser estritamente no formato JSON estruturado com o seguinte esquema:
@@ -298,7 +298,7 @@ router.post('/export-word', async (req, res) => {
         });
 
         const doc = new Document({
-            creator: "MetalFisa SGQ",
+            creator: "Lynx SGQ",
             title: title,
             sections: [{
                 properties: {},

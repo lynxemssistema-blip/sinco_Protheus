@@ -574,8 +574,7 @@ export default function ExecucaoModal({ isOpen, onClose, ordem, tecnicos, onSave
                                                 
                                                 {searchResults.length > 0 && (
                                                     <div className="border border-slate-200 rounded-lg max-h-48 overflow-y-auto">
-                                                        {searchResults.map(p => (
-                                                            <div key={p.codigo} className="p-3 border-b border-slate-100 flex justify-between items-center hover:bg-slate-50 group">
+                                                        {searchResults.map((p, idx) => (<div key={`${p.codigo}-${idx}`} className="p-3 border-b border-slate-100 flex justify-between items-center hover:bg-slate-50 group">
                                                                 <div>
                                                                     <div className="text-xs font-bold text-indigo-600">{p.codigo}</div>
                                                                     <div className="text-sm text-slate-800">{p.descricao}</div>

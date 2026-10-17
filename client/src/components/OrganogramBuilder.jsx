@@ -597,7 +597,7 @@ const OrganogramBuilder = () => {
                 {/* Print Container Wrapper (Invisible on screen, visible on print) */}
                 <div id="organogram-print-container" className="hidden print:flex flex-col h-full w-full">
                     <div className="technical-header">
-                        <div className="th-logo">METALFISA</div>
+                        <div className="th-logo">LYNX</div>
                         <div className="th-title">ORGANOGRAMA: {activeChart.name}</div>
                         <div className="th-info">
                             <div>{new Date().toLocaleDateString('pt-BR')}</div>

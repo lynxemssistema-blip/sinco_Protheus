@@ -20,7 +20,7 @@ export const generateFaturamentosExcel = (solicitacoesList, customFileName = nul
                 'Data Solicitação': sol.created_at ? new Date(sol.created_at).toLocaleString('pt-BR') : '',
                 'Solicitante': sol.usuario || '',
                 'Cliente': it.nome_cliente || '-',
-                'Pedido MetalFisa': it.pedido,
+                'Pedido Lynx': it.pedido,
                 'Item': it.item,
                 'Cód. Produto': it.codigo_produto,
                 'Qtd. Solicitada': Number(it.quantidade_solicitada) || 0,
@@ -28,7 +28,7 @@ export const generateFaturamentosExcel = (solicitacoesList, customFileName = nul
                 'Desenho Cliente': it.desenho_cliente || '-',
                 'Dt. Entrega PCP': fmtDate(it.pcp_data_entrega),
                 'Série Cliente': it.pcp_serie_cliente || '-',
-                'Série MetalFisa': it.pcp_serie_metalfisa || '-',
+                'Série Lynx': it.pcp_serie_lynx || it.pcp_serie_metalfisa || it.pcp_numero_serie || '-',
                 'Nº Série': it.pcp_numero_serie || '-',
                 'Lote': it.pcp_lote || '-',
                 'Nº Lote': it.pcp_numero_lote || '-',
@@ -54,7 +54,7 @@ export const generateFaturamentosExcel = (solicitacoesList, customFileName = nul
          { wch: 20 }, // Data Solicitação
          { wch: 18 }, // Solicitante
          { wch: 40 }, // Cliente
-         { wch: 18 }, // Pedido MetalFisa
+         { wch: 18 }, // Pedido Lynx
          { wch: 8 },  // Item
          { wch: 25 }, // Cód. Produto
          { wch: 18 }, // Qtd. Solicitada
@@ -62,7 +62,7 @@ export const generateFaturamentosExcel = (solicitacoesList, customFileName = nul
          { wch: 25 }, // Desenho Cliente
          { wch: 16 }, // Dt. Entrega PCP
          { wch: 18 }, // Série Cliente
-         { wch: 18 }, // Série MetalFisa
+         { wch: 18 }, // Série Lynx
          { wch: 20 }, // Nº Série
          { wch: 15 }, // Lote
          { wch: 18 }, // Nº Lote

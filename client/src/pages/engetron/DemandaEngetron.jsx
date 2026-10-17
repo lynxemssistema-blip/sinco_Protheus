@@ -311,7 +311,7 @@ const DemandaEngetron = () => {
                             </div>
                             <div className="flex items-start gap-2 text-xs">
                                 <div className="w-6 h-6 rounded bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0">E</div>
-                                <p className="text-amber-800 leading-tight pt-0.5"><strong className="font-bold">Produto:</strong> Código do produto na Metalfisa.</p>
+                                <p className="text-amber-800 leading-tight pt-0.5"><strong className="font-bold">Produto:</strong> Código do produto na Lynx.</p>
                             </div>
                             <div className="flex items-start gap-2 text-xs">
                                 <div className="w-6 h-6 rounded bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0">H</div>

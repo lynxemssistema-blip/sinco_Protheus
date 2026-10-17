@@ -285,7 +285,7 @@ export default function WabtecBOMTree({ items = [], onCriarProduto, onAbrirDocs 
                     {/* Divisor Visual Suave */}
                     <span className="text-slate-300 text-xs">/</span>
 
-                    {/* Código MetalFisa (Protheus) */}
+                    {/* Código Lynx (Protheus) */}
                     {node.protheus_cod ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-emerald-50 text-emerald-900 border border-emerald-300 shadow-2xs">
                             {node.protheus_cod}
@@ -314,7 +314,7 @@ export default function WabtecBOMTree({ items = [], onCriarProduto, onAbrirDocs 
                         </span>
                     ) : isDivergente ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs"
-                            title={`Cliente: ${node.rev_cliente_raw} (${node.rev_convertida}) ≠ MetalFisa: ${node.protheus_rev}`}>
+                            title={`Cliente: ${node.rev_cliente_raw} (${node.rev_convertida}) ≠ Lynx: ${node.protheus_rev}`}>
                             <AlertTriangle className="w-3 h-3 text-amber-600" />
                             Rev. Divergente ({node.rev_convertida} ≠ {node.protheus_rev})
                         </span>
@@ -356,7 +356,7 @@ export default function WabtecBOMTree({ items = [], onCriarProduto, onAbrirDocs 
                             node.protheus_tipo === 'PI' ? 'bg-amber-100 text-amber-900 border-amber-300' :
                             node.protheus_tipo === 'MP' ? 'bg-emerald-100 text-emerald-900 border-emerald-300' :
                             'bg-slate-100 text-slate-700 border-slate-300'
-                        }`} title={`Tipo Protheus: ${node.protheus_tipo}`}>
+                        }`} title={`Tipo SINCO: ${node.protheus_tipo}`}>
                             {node.protheus_tipo}
                         </span>
                     )}
@@ -599,16 +599,16 @@ export default function WabtecBOMTree({ items = [], onCriarProduto, onAbrirDocs 
                                     ) : (
                                         <>
                                             <XCircle className="w-4 h-4 text-rose-600" />
-                                            Item Não Cadastrado no Protheus
+                                            Item Não Cadastrado no SINCO
                                         </>
                                     )}
                                 </div>
                                 <p className="text-[11px] opacity-90">
-                                    {selectedItem.status_detalhe || 'Conferência executada contra tabelas SZ1 e SB1 do Protheus.'}
+                                    {selectedItem.status_detalhe || 'Conferência executada contra o cadastro do SINCO.'}
                                 </p>
                             </div>
 
-                            {/* Botão de Ação: Criar Produto no Protheus se não vinculado */}
+                            {/* Botão de Ação: Criar Produto no SINCO se não vinculado */}
                             {!selectedItem.protheus_cod && onCriarProduto && (
                                 <button
                                     type="button"
@@ -616,7 +616,7 @@ export default function WabtecBOMTree({ items = [], onCriarProduto, onAbrirDocs 
                                     className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all cursor-pointer"
                                 >
                                     <PlusCircle className="w-4 h-4" />
-                                    <span>Criar este Produto no Protheus</span>
+                                    <span>Criar este Produto no SINCO</span>
                                 </button>
                             )}
 
@@ -632,7 +632,7 @@ export default function WabtecBOMTree({ items = [], onCriarProduto, onAbrirDocs 
                                         <div className="font-bold font-mono text-indigo-950 mt-0.5">{selectedItem.desenho_cliente || '-'}</div>
                                     </div>
                                     <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-                                        <span className="text-[10px] text-slate-400 uppercase font-semibold">Número MetalFisa (B1_COD)</span>
+                                        <span className="text-[10px] text-slate-400 uppercase font-semibold">Número Lynx (B1_COD)</span>
                                         <div className="font-bold font-mono text-emerald-950 mt-0.5">{selectedItem.protheus_cod || '-'}</div>
                                     </div>
                                 </div>
@@ -646,7 +646,7 @@ export default function WabtecBOMTree({ items = [], onCriarProduto, onAbrirDocs 
                                         </div>
                                     </div>
                                     <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-                                        <span className="text-[10px] text-slate-400 uppercase font-semibold">Rev. MetalFisa (Z1_REV)</span>
+                                        <span className="text-[10px] text-slate-400 uppercase font-semibold">Rev. Lynx (Z1_REV)</span>
                                         <div className="font-bold font-mono text-slate-900 mt-0.5">{selectedItem.protheus_rev || '-'}</div>
                                     </div>
                                 </div>
@@ -657,13 +657,13 @@ export default function WabtecBOMTree({ items = [], onCriarProduto, onAbrirDocs 
                                         <div className="font-bold font-mono text-slate-900 mt-0.5">{selectedItem.uom || '-'}</div>
                                     </div>
                                     <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-                                        <span className="text-[10px] text-slate-400 uppercase font-semibold">Tipo Protheus (B1_TIPO)</span>
+                                        <span className="text-[10px] text-slate-400 uppercase font-semibold">Tipo SINCO (B1_TIPO)</span>
                                         <div className="font-bold font-mono text-blue-900 mt-0.5">{selectedItem.protheus_tipo || '-'}</div>
                                     </div>
                                 </div>
 
                                 <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-                                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Descrição MetalFisa</span>
+                                    <span className="text-[10px] text-slate-400 uppercase font-semibold">Descrição Lynx</span>
                                     <div className="font-medium text-slate-800 mt-0.5">{selectedItem.protheus_desc || '-'}</div>
                                 </div>
 

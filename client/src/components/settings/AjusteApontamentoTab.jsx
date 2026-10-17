@@ -556,13 +556,13 @@ export default function AjusteApontamentoTab() {
 
                     {/* Grade Completa e Scrollável de Recursos */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 max-h-60 overflow-y-auto p-1 bg-slate-50/50 rounded-xl border border-slate-200">
-                        {filteredRecursos.map(rec => {
+                        {filteredRecursos.map((rec, idx) => {
                             const isSelected = selectedRecursos.includes(rec.codigo);
                             const isInterno = rec.codigo.startsWith('MO');
 
                             return (
                                 <button
-                                    key={rec.codigo}
+                                    key={`${rec.codigo}-${idx}`}
                                     type="button"
                                     onClick={() => toggleRecurso(rec.codigo)}
                                     className={`flex items-start justify-between p-2.5 rounded-xl border text-left transition-all relative ${

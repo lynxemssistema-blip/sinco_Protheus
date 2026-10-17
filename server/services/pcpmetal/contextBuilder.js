@@ -37,7 +37,7 @@ function buildSchemaText(schemaRows) {
 
     for (const [banco, tables] of Object.entries(grouped)) {
         if (tables.length === 0) continue;
-        text += `\n### ${banco.toUpperCase()} (${banco === 'postgresql' ? 'Protheus ERP' : 'App MetalFisa Interno'})\n`;
+        text += `\n### ${banco.toUpperCase()} (${banco === 'postgresql' ? 'Protheus ERP' : 'App Lynx Interno'})\n`;
         tables.forEach(t => {
             text += `\n**Tabela: ${t.tabela}**\n${t.descricao}\n`;
             if (t.colunas_chave) {

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('../db');
+const mysqlPool = require('../services/mysqlService');
 const { hasFinancialAccess } = require('../util/permissionHelper');
 
 // Decode a base64-encoded PostgreSQL bytea field to a proper UTF-8 string.
@@ -22,6 +23,49 @@ const decField = (b64) => {
     if (!b64) return '';
     return Buffer.from(b64, 'base64').toString('utf8').trim();
 };
+
+// `filial` is interpolated into table names (e.g. SE2010), so it must be strictly validated.
+const safeFilial = (f) => (/^\d{3}$/.test(String(f ?? '')) ? String(f) : '010');
+
+// Protheus-layout finance tables used by this router that may not exist in a fresh SINCO database.
+const PROTHEUS_COMMON = `
+    d_e_l_e_t_ varchar(1) DEFAULT '',
+    r_e_c_n_o_ bigint(20) NOT NULL AUTO_INCREMENT,
+    r_e_c_d_e_l_ bigint(20) DEFAULT 0,
+    IdEmpresa int(11) NOT NULL DEFAULT 1,
+    PRIMARY KEY (r_e_c_n_o_),
+    KEY idx_del (d_e_l_e_t_),
+    KEY idx_emp (IdEmpresa)`;
+const FINANCE_TABLES = {
+    se1010: `e1_filial varchar(4) DEFAULT '', e1_prefixo varchar(3) DEFAULT '', e1_num varchar(9) DEFAULT '',
+        e1_parcela varchar(3) DEFAULT '', e1_tipo varchar(3) DEFAULT '', e1_naturez varchar(10) DEFAULT '',
+        e1_cliente varchar(8) DEFAULT '', e1_loja varchar(4) DEFAULT '', e1_nomcli varchar(20) DEFAULT '',
+        e1_emissao varchar(8) DEFAULT '', e1_vencto varchar(8) DEFAULT '', e1_vencrea varchar(8) DEFAULT '',
+        e1_baixa varchar(8) DEFAULT '', e1_valor double DEFAULT 0, e1_saldo double DEFAULT 0,
+        e1_moeda double DEFAULT 0, e1_hist varchar(25) DEFAULT '', KEY idx_e1_num (e1_num), KEY idx_e1_vencto (e1_vencto),`,
+    sed010: `ed_filial varchar(4) DEFAULT '', ed_codigo varchar(10) DEFAULT '', ed_descric varchar(30) DEFAULT '',
+        ed_cond varchar(1) DEFAULT '', ed_tipo varchar(1) DEFAULT '', KEY idx_ed_codigo (ed_codigo),`,
+    ct1010: `ct1_filial varchar(4) DEFAULT '', ct1_conta varchar(20) DEFAULT '', ct1_desc01 varchar(40) DEFAULT '',
+        ct1_classe varchar(1) DEFAULT '', ct1_normal varchar(1) DEFAULT '', ct1_ntsped varchar(2) DEFAULT '',
+        ct1_bloq varchar(1) DEFAULT '', ct1_ctasup varchar(20) DEFAULT '', KEY idx_ct1_conta (ct1_conta),`,
+    ct2010: `ct2_filial varchar(4) DEFAULT '', ct2_data varchar(8) DEFAULT '', ct2_lote varchar(6) DEFAULT '',
+        ct2_sblote varchar(3) DEFAULT '', ct2_doc varchar(6) DEFAULT '', ct2_linha varchar(3) DEFAULT '',
+        ct2_dc varchar(1) DEFAULT '', ct2_debito varchar(20) DEFAULT '', ct2_credit varchar(20) DEFAULT '',
+        ct2_valor double DEFAULT 0, ct2_hist varchar(40) DEFAULT '', ct2_moedlc varchar(2) DEFAULT '',
+        KEY idx_ct2_data (ct2_data), KEY idx_ct2_debito (ct2_debito), KEY idx_ct2_credit (ct2_credit),`
+};
+
+(async function ensureFinanceTables() {
+    try {
+        for (const [name, cols] of Object.entries(FINANCE_TABLES)) {
+            await mysqlPool.query(`CREATE TABLE IF NOT EXISTS ${name} (${cols} ${PROTHEUS_COMMON}
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+        }
+        console.log('✅ [Financeiro] Tabelas SE1/SED/CT1/CT2 verificadas/criadas.');
+    } catch (err) {
+        console.error('❌ [Financeiro] Falha ao criar tabelas financeiras:', err.message);
+    }
+})();
 
 // GET /api/financeiro/empresas
 router.get('/empresas', async (req, res) => {
@@ -46,7 +90,8 @@ router.get('/dashboard', async (req, res) => {
             return res.status(403).json({ error: 'Acesso não autorizado a dados financeiros.' });
         }
 
-        const { data_inicio, data_fim, filial = '010', date_filter_type = 'vencimento', filiais } = req.query;
+        const { data_inicio, data_fim, date_filter_type = 'vencimento', filiais } = req.query;
+        const filial = safeFilial(req.query.filial);
 
         let baseQuery = `
             SELECT
@@ -73,11 +118,8 @@ router.get('/dashboard', async (req, res) => {
                 SE2${filial} SE2
             LEFT JOIN
                 SA2${filial} SA2 ON SA2.A2_COD = SE2.E2_FORNECE AND SA2.A2_LOJA = SE2.E2_LOJA AND SA2.D_E_L_E_T_ = ' '
-            LEFT JOIN LATERAL (
-                SELECT ED_DESCRIC FROM SED${filial}
-                WHERE ED_CODIGO = SE2.E2_NATUREZ AND D_E_L_E_T_ = ' '
-                LIMIT 1
-            ) SED ON true
+            LEFT JOIN
+                SED${filial} SED ON SED.ED_CODIGO = SE2.E2_NATUREZ AND SED.D_E_L_E_T_ = ' '
             WHERE
                 SE2.D_E_L_E_T_ = ' '
         `;
@@ -141,7 +183,8 @@ router.get('/fluxo-caixa', async (req, res) => {
             return res.status(403).json({ error: 'Acesso não autorizado a dados financeiros.' });
         }
 
-        const { data_inicio, data_fim, filial = '010', filiais } = req.query;
+        const { data_inicio, data_fim, filiais } = req.query;
+        const filial = safeFilial(req.query.filial);
 
         // Query para Contas a Receber (SE1)
         let querySE1 = `
@@ -246,7 +289,7 @@ router.get('/fluxo-caixa', async (req, res) => {
 // GET /api/financeiro/plano-contas
 router.get('/plano-contas', async (req, res) => {
     try {
-        const { filial = '010' } = req.query;
+        const filial = safeFilial(req.query.filial);
 
         const baseQuery = `
             SELECT 
@@ -291,7 +334,8 @@ router.get('/balancete', async (req, res) => {
             return res.status(403).json({ error: 'Acesso não autorizado a dados financeiros.' });
         }
 
-        const { data_inicio, data_fim, filial = '010', filiais } = req.query;
+        const { data_inicio, data_fim, filiais } = req.query;
+        const filial = safeFilial(req.query.filial);
 
         let ct2JoinCond = `(CT2.CT2_DEBITO = CT1.CT1_CONTA OR CT2.CT2_CREDIT = CT1.CT1_CONTA) AND CT2.D_E_L_E_T_ = ' '`;
         const params = [];
@@ -367,7 +411,8 @@ router.get('/razonete', async (req, res) => {
             return res.status(403).json({ error: 'Acesso não autorizado a dados financeiros.' });
         }
 
-        const { conta, data_inicio, data_fim, filial = '010', filiais } = req.query;
+        const { conta, data_inicio, data_fim, filiais } = req.query;
+        const filial = safeFilial(req.query.filial);
 
         if (!conta) {
             return res.status(400).json({ error: 'Conta é obrigatória.' });

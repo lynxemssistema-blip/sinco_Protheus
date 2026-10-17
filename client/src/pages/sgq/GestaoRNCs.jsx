@@ -490,7 +490,7 @@ export default function GestaoRNCs() {
         if (s.includes('crít') || s.includes('crit')) return '#ef4444'; // Vermelho
         if (s.includes('grav')) return '#f97316'; // Laranja
         if (s.includes('mod')) return '#eab308'; // Amarelo
-        if (s.includes('lev')) return '#3b82f6'; // Azul
+        if (s.includes('lev')) return '#425750'; // Verde Institucional (Leve)
         return '#64748b'; // Slate
     };
 
@@ -1438,7 +1438,9 @@ export default function GestaoRNCs() {
                                                 setAberturaNc('');
                                             }} className="w-full border rounded p-1.5 text-xs bg-slate-50">
                                                 <option value="">-- Selecione o Setor --</option>
-                                                {recursos.map(r => <option key={r.codigo} value={r.codigo}>{r.codigo} {r.descricao ? `- ${r.descricao}` : ''}</option>)}
+                                                {recursos.map((r, idx) => (
+                                                    <option key={`${r.codigo}-${idx}`} value={r.codigo}>{r.codigo} {r.descricao ? `- ${r.descricao}` : ''}</option>
+                                                ))}
                                             </select>
                                         </div>
                                         <div>
@@ -1772,8 +1774,7 @@ export default function GestaoRNCs() {
                                             required
                                         >
                                             <option value="">-- Selecione o Setor --</option>
-                                            {recursos.map(r => (
-                                                <option key={r.codigo} value={r.codigo}>
+                                            {recursos.map((r, idx) => (<option key={`${r.codigo}-${idx}`} value={r.codigo}>
                                                     {r.codigo} {r.descricao ? `- ${r.descricao}` : ''}
                                                 </option>
                                             ))}

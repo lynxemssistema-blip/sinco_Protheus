@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logoBase64 } from './metalfisaLogoBase64';
+import { getCompanyShortName } from './companyBranding';
 
 // ─── Constantes de layout ────────────────────────────────────────────────────
 const ML = 10;
@@ -10,8 +11,8 @@ const BRAND_W = 42;    // largura do bloco azul (logo + nome)
 const LOGO_W  = 14;
 const LOGO_H  = 14;
 
-// ─── Cabeçalho padrão MetalFisa ──────────────────────────────────────────────
-const drawMetalfisaHeader = (doc, pageWidth, title, subtitle = '') => {
+// ─── Cabeçalho padrão Lynx ──────────────────────────────────────────────
+const drawLynxHeader = (doc, pageWidth, title, subtitle = '') => {
     const y0 = 6;
 
     // Bloco azul escuro com logo
@@ -21,7 +22,7 @@ const drawMetalfisaHeader = (doc, pageWidth, title, subtitle = '') => {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(255, 255, 255);
-    doc.text('METALFISA', ML + 18, y0 + 11);
+    doc.text(getCompanyShortName(), ML + 18, y0 + 11);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6);
     doc.text('Metalúrgica Ltda', ML + 18, y0 + 15.5);
@@ -127,7 +128,7 @@ export const generateProductionControlPdf = async (ops, filterText = []) => {
             const startPage = doc.internal.getNumberOfPages();
 
             // Cabeçalho da página
-            let startY = drawMetalfisaHeader(doc, pageWidth, 'CONTROLE DE PRODUÇÃO', 'Relatório por Recurso');
+            let startY = drawLynxHeader(doc, pageWidth, 'CONTROLE DE PRODUÇÃO', 'Relatório por Recurso');
 
             // Filtros ativos (só na primeira página)
             if (idx === 0 && filterText.length > 0) {
@@ -182,7 +183,7 @@ export const generateProductionControlPdf = async (ops, filterText = []) => {
                 didDrawPage: (data) => {
                     // Re-desenha cabeçalho em quebras de página automáticas
                     if (data.pageNumber > 1 || idx > 0) {
-                        drawMetalfisaHeader(doc, pageWidth, 'CONTROLE DE PRODUÇÃO', `Recurso: ${rec}`);
+                        drawLynxHeader(doc, pageWidth, 'CONTROLE DE PRODUÇÃO', `Recurso: ${rec}`);
                     }
                 },
             });
@@ -197,7 +198,7 @@ export const generateProductionControlPdf = async (ops, filterText = []) => {
             const remaining = pageHeight - lastY - 15;
             if (remaining < 12) {
                 doc.addPage();
-                drawMetalfisaHeader(doc, pageWidth, 'CONTROLE DE PRODUÇÃO', 'Resumo Geral');
+                drawLynxHeader(doc, pageWidth, 'CONTROLE DE PRODUÇÃO', 'Resumo Geral');
             }
             const pctGeral = sumTotalPlan > 0 ? Math.min(100, Math.round((sumTotalApont / sumTotalPlan) * 100)) : 0;
             autoTable(doc, {
@@ -231,7 +232,7 @@ export const generateProductionControlPdf = async (ops, filterText = []) => {
                 doc.text(`${opInfo.recurso}: Folha ${subPage} de ${opInfo.total}`, pageWidth / 2, pageHeight - 5, { align: 'center' });
             }
 
-            doc.text('MetalFisa — Controle de Produção', ML, pageHeight - 5);
+            doc.text('Lynx — Controle de Produção', ML, pageHeight - 5);
         }
 
         doc.save(`controle_producao_${new Date().getTime()}.pdf`);

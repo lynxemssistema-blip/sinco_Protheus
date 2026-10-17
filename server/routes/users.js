@@ -5,17 +5,8 @@ const mysqlPool = require('../services/mysqlService');
 const nodemailer = require('nodemailer');
 const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
 const { requirePermission } = require('../middlewares/rbac');
-
-const SMTP_CONFIG = {
-    host: 'smtp.task.com.br',
-    port: 587,
-    secure: false,
-    auth: {
-        user: 'sincometal@metalfisa.com.br',
-        pass: 'Pro1042@sm'
-    },
-    tls: { rejectUnauthorized: false }
-};
+const { isSuperAdminUser, getTenantContext } = require('../util/authHelper');
+const { sendMail, SMTP_CONFIG, DEFAULT_FROM } = require('../services/mailService');
 
 // Migration check skipped (MySQL 5.6 compatibility).
 
@@ -42,9 +33,17 @@ router.post('/run-migration-cliente', async (req, res) => {
 router.get('/', async (req, res) => {
     try {
         const { setor } = req.query;
-        let query = 'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone, whatsapp, idFornecedor, lojaFornecedor, idCliente, lojaCliente, tipoExterno, pedidos_autorizados FROM usuario';
+        let query = 'SELECT idUsuario, NomeCompleto, Login, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone, whatsapp, idFornecedor, lojaFornecedor, idCliente, lojaCliente, tipoExterno, pedidos_autorizados, IdEmpresa FROM usuario';
         const params = [];
         const conditions = [];
+
+        // Multi-tenant check: filter by company
+        const isSA = isSuperAdminUser(req.user) || req.isSuperAdmin;
+        const tenantId = getTenantContext(req);
+        if (tenantId && (!isSA || (req.headers['x-tenant-override'] && req.headers['x-tenant-override'] !== 'all'))) {
+            conditions.push('(IdEmpresa = ? OR IdEmpresa IS NULL OR IdEmpresa = 0)');
+            params.push(tenantId);
+        }
 
         if (setor) {
             conditions.push('Setor = ?');
@@ -80,7 +79,7 @@ router.post('/', requirePermission('config', 'create'), async (req, res) => {
         }
 
         // Only SA can create SA users
-        if (tipo === 'SA' && (!req.user || req.user.tipo !== 'SA')) {
+        if (tipo === 'SA' && (!req.user || !isSuperAdminUser(req.user))) {
             return res.status(403).json({ error: 'Apenas SuperAdmins (SA) podem criar novos usuários com o perfil SuperAdmin (SA).' });
         }
 
@@ -99,10 +98,64 @@ router.post('/', requirePermission('config', 'create'), async (req, res) => {
 
         const hashedPwd = await bcrypt.hash(senha, 10);
 
+        const tenantId = getTenantContext(req) || req.user?.IdEmpresa || 1;
+
         const [result] = await mysqlPool.query(
-            'INSERT INTO usuario (NomeCompleto, Login, Senha, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone, whatsapp, idFornecedor, lojaFornecedor, idCliente, lojaCliente, tipoExterno, pedidos_autorizados) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [nome, login, hashedPwd, tipo, req.body.setor || null, req.body.funcao || null, email || null, req.body.aprovado !== undefined ? req.body.aprovado : 1, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, idFornecedor || null, lojaFornecedor || null, idCliente || null, lojaCliente || null, tipoExterno || 'fornecedor', pedidos_autorizados || null]
+            'INSERT INTO usuario (NomeCompleto, Login, Senha, TipoUsuario, Setor, Funcao, email, aprovado, Observacoes, TemPC, fotoUsuario, telefone, whatsapp, idFornecedor, lojaFornecedor, idCliente, lojaCliente, tipoExterno, pedidos_autorizados, IdEmpresa) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [nome, login, hashedPwd, tipo, req.body.setor || null, req.body.funcao || null, email || null, req.body.aprovado !== undefined ? req.body.aprovado : 1, req.body.observacoes || null, req.body.tem_pc ? 1 : 0, req.body.foto || null, telefone || null, whatsapp || null, idFornecedor || null, lojaFornecedor || null, idCliente || null, lojaCliente || null, tipoExterno || 'fornecedor', pedidos_autorizados || null, tenantId]
         );
+
+        if (email && (req.body.enviarCredenciais || req.body.enviarEmail)) {
+            const serverUrl = process.env.APP_URL || 'https://lynxems.com.br/login';
+            const tipoLabel = {
+                'SA': 'SuperAdmin',
+                'A': 'Administrador',
+                'U': 'Usuário',
+                'C': 'Conferente',
+                'AP': 'Apontador',
+                'CLI': 'Cliente'
+            }[tipo] || tipo;
+
+            const emailHtml = `
+                <h2 style="color: #0284c7; margin-top: 0; font-family: 'Segoe UI', Arial, sans-serif;">Bem-vindo ao Sistema SINCO / Lynx</h2>
+                <p style="font-size: 15px;">Olá, <b>${nome}</b>!</p>
+                <p style="font-size: 15px; color: #475569;">Seu cadastro foi realizado com sucesso. Utilize as informações abaixo para efetuar seu primeiro acesso:</p>
+                
+                <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 24px; border-radius: 12px; margin: 25px 0; border: 1px solid #bae6fd;">
+                    <table style="border-collapse: collapse; width: 100%;">
+                        <tr>
+                            <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px; vertical-align: top;"><b>👤 Usuário / Login:</b></td>
+                            <td style="padding: 8px 0; font-size: 16px; color: #0f172a; font-weight: bold; font-family: 'Courier New', monospace; background: #ffffff; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">${login}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px; vertical-align: top;"><b>🔑 Senha:</b></td>
+                            <td style="padding: 8px 0; font-size: 16px; color: #0f172a; font-weight: bold; font-family: 'Courier New', monospace; background: #ffffff; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">${senha}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px;"><b>🏷️ Perfil:</b></td>
+                            <td style="padding: 8px 0; font-size: 14px; color: #334155;">${tipoLabel}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div style="background: #f8fafc; border-radius: 10px; padding: 16px 20px; margin: 20px 0; border-left: 4px solid #0ea5e9;">
+                    <p style="margin: 0 0 8px 0; font-size: 14px; font-weight: bold; color: #0369a1;">🌐 Como Acessar</p>
+                    <p style="margin: 0; font-size: 14px; color: #475569;">
+                        Abra o navegador e acesse: <a href="${serverUrl}" style="color: #0284c7; text-decoration: underline; font-weight: bold;">${serverUrl}</a>
+                    </p>
+                </div>
+            `;
+
+            try {
+                await sendMail({
+                    to: email,
+                    subject: '🎉 Bem-vindo ao Sistema — Suas Credenciais de Acesso (SINCO / Lynx)',
+                    html: getCorporateEmailTemplate(emailHtml)
+                });
+            } catch (mailErr) {
+                console.warn('[SMTP OFICIAL] Aviso: Falha ao enviar e-mail de boas-vindas:', mailErr.message);
+            }
+        }
 
         res.json({ message: 'Usuário cadastrado com sucesso!', id: result.insertId });
 
@@ -127,7 +180,7 @@ router.put('/bulk-profile', requirePermission('config', 'edit'), async (req, res
         }
 
         // Non-SAs cannot promote anyone to SA
-        if (tipo === 'SA' && (!req.user || req.user.tipo !== 'SA')) {
+        if (tipo === 'SA' && (!req.user || !isSuperAdminUser(req.user))) {
             return res.status(403).json({ error: 'Apenas SuperAdmins (SA) podem atribuir o perfil SuperAdmin (SA).' });
         }
 
@@ -145,7 +198,7 @@ router.put('/bulk-profile', requirePermission('config', 'edit'), async (req, res
                 return res.status(404).json({ error: 'Nenhum dos usuários selecionados foi encontrado.' });
             }
 
-            if (!req.user || req.user.tipo !== 'SA') {
+            if (!req.user || !isSuperAdminUser(req.user)) {
                 const saTarget = targetUsers.find(u => u.TipoUsuario === 'SA');
                 if (saTarget) {
                     await conn.rollback();
@@ -254,12 +307,12 @@ router.put('/:id', requirePermission('config', 'edit'), async (req, res) => {
         const currentTargetRole = targetUserRows[0].TipoUsuario;
 
         // Non-SAs cannot modify SA users
-        if (currentTargetRole === 'SA' && (!req.user || req.user.tipo !== 'SA')) {
+        if (currentTargetRole === 'SA' && (!req.user || !isSuperAdminUser(req.user))) {
             return res.status(403).json({ error: 'Apenas SuperAdmins (SA) podem modificar um usuário com o perfil SuperAdmin (SA).' });
         }
 
         // Non-SAs cannot promote someone to SA
-        if (tipo === 'SA' && (!req.user || req.user.tipo !== 'SA')) {
+        if (tipo === 'SA' && (!req.user || !isSuperAdminUser(req.user))) {
             return res.status(403).json({ error: 'Apenas SuperAdmins (SA) podem promover outros usuários para o perfil SuperAdmin (SA).' });
         }
 
@@ -330,7 +383,7 @@ router.delete('/:id', requirePermission('config', 'delete'), async (req, res) =>
             return res.status(404).json({ error: 'Usuário não encontrado.' });
         }
 
-        if (targetUserRows[0].TipoUsuario === 'SA' && (!req.user || req.user.tipo !== 'SA')) {
+        if (targetUserRows[0].TipoUsuario === 'SA' && (!req.user || !isSuperAdminUser(req.user))) {
             return res.status(403).json({ error: 'Apenas SuperAdmins (SA) podem desativar usuários com o perfil SuperAdmin (SA).' });
         }
 
@@ -392,11 +445,12 @@ router.put('/preferences/:key', async (req, res) => {
 
         const value = JSON.stringify(req.body.value);
 
+        const tenantId = req.tenantId || req.user?.IdEmpresa || 1;
         await mysqlPool.query(
-            `INSERT INTO app_user_preferences (user_id, pref_key, pref_value)
-             VALUES (?, ?, ?)
-             ON DUPLICATE KEY UPDATE pref_value = VALUES(pref_value)`,
-            [userId, req.params.key, value]
+            `INSERT INTO app_user_preferences (IdEmpresa, user_id, pref_key, pref_value)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE pref_value = VALUES(pref_value), IdEmpresa = VALUES(IdEmpresa)`,
+            [tenantId, userId, req.params.key, value]
         );
 
         res.json({ success: true });
@@ -445,8 +499,8 @@ router.put('/change-password', async (req, res) => {
             if (dbUser.whatsapp && dbUser.whatsapp.trim() !== '') {
                 try {
                     const { sendText } = require('../services/whatsapp');
-                    const serverUrl = process.env.APP_URL || 'http://192.168.1.77:3001/login';
-                    const textMessage = `*Alteração de Senha Realizada*\n\nOlá, *${dbUser.NomeCompleto}*!\nSua senha de acesso ao *ERP da Metalfisa* foi alterada com sucesso.\n\n👤 *Usuário:* ${dbUser.Login}\n🔑 *Nova Senha:* ${newPassword}\n\n🌐 *Como Acessar*\n${serverUrl}\n\n⚠️ _Se você não solicitou esta alteração, procure o administrador imediatamente._`;
+                    const serverUrl = process.env.APP_URL || 'https://lynxems.com.br/login';
+                    const textMessage = `*Alteração de Senha Realizada*\n\nOlá, *${dbUser.NomeCompleto}*!\nSua senha de acesso ao *Sistema SINCO* foi alterada com sucesso.\n\n👤 *Usuário:* ${dbUser.Login}\n🔑 *Nova Senha:* ${newPassword}\n\n🌐 *Como Acessar*\n${serverUrl}\n\n⚠️ _Se você não solicitou esta alteração, procure o administrador imediatamente._`;
                     
                     await sendText(dbUser.whatsapp, textMessage, 'Confirmação de Alteração de Senha');
                 } catch (waErr) {
@@ -616,7 +670,7 @@ router.post('/send-credentials', requirePermission('config', 'edit'), async (req
         }
 
         const results = { success: [], failed: [] };
-        const serverUrl = process.env.APP_URL || 'http://192.168.1.77:3001/login';
+        const serverUrl = process.env.APP_URL || 'https://lynxems.com.br/login';
 
         for (const user of users) {
             // Check delivery method contact info first to avoid resetting password if it will fail
@@ -649,7 +703,7 @@ router.post('/send-credentials', requirePermission('config', 'edit'), async (req
 
             if (method === 'whatsapp') {
                 const { sendText } = require('../services/whatsapp');
-                const textMessage = `*Seus Dados de Acesso ao Sistema*\n\nOlá, *${user.NomeCompleto}*!\nSua senha do *ERP da Metalfisa* foi redefinida.\n\n👤 *Usuário:* ${user.Login}\n🔑 *Senha:* ${newPassword}\n\n🌐 *Como Acessar*\nAbra o navegador e acesse: ${serverUrl}\n\n⚠️ _Importante: Estas credenciais são pessoais e intransferíveis._`;
+                const textMessage = `*Seus Dados de Acesso ao Sistema*\n\nOlá, *${user.NomeCompleto}*!\nSua senha do *Sistema SINCO* foi redefinida.\n\n👤 *Usuário:* ${user.Login}\n🔑 *Senha:* ${newPassword}\n\n🌐 *Como Acessar*\nAbra o navegador e acesse: ${serverUrl}\n\n⚠️ _Importante: Estas credenciais são pessoais e intransferíveis._`;
 
                 try {
                     const waResults = await sendText(user.whatsapp, textMessage, 'Recuperação de Senha');
@@ -666,16 +720,15 @@ router.post('/send-credentials', requirePermission('config', 'edit'), async (req
                     results.failed.push({ id: user.idUsuario, nome: user.NomeCompleto, reason: whatsErr.message });
                 }
             } else {
-                const transporter = nodemailer.createTransport(SMTP_CONFIG);
                 const emailHtml = `
-                    <h2 style="color: #0284c7; margin-top: 0; font-family: 'Segoe UI', Arial, sans-serif;">Recuperação de Senha</h2>
+                    <h2 style="color: #0284c7; margin-top: 0; font-family: 'Segoe UI', Arial, sans-serif;">Credenciais de Acesso ao Sistema</h2>
                     <p style="font-size: 15px;">Olá, <b>${user.NomeCompleto}</b>!</p>
-                    <p style="font-size: 15px; color: #475569;">Sua senha de acesso ao <b>Sistema ERP da Metalfisa</b> foi redefinida. Utilize as novas informações abaixo para efetuar seu login:</p>
+                    <p style="font-size: 15px; color: #475569;">Seus dados de acesso ao <b>Sistema SINCO / Lynx ERP</b> foram definidos. Utilize as credenciais abaixo para efetuar seu login oficial no aplicativo:</p>
                     
                     <div style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 24px; border-radius: 12px; margin: 25px 0; border: 1px solid #bae6fd;">
                         <table style="border-collapse: collapse; width: 100%;">
                             <tr>
-                                <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px; vertical-align: top;"><b>👤 Usuário:</b></td>
+                                <td style="padding: 8px 0; font-size: 14px; color: #64748b; width: 120px; vertical-align: top;"><b>👤 Usuário / Login:</b></td>
                                 <td style="padding: 8px 0; font-size: 16px; color: #0f172a; font-weight: bold; font-family: 'Courier New', monospace; background: #ffffff; padding: 6px 12px; border-radius: 6px; border: 1px solid #e2e8f0;">${user.Login}</td>
                             </tr>
                             <tr>
@@ -710,16 +763,15 @@ router.post('/send-credentials', requirePermission('config', 'edit'), async (req
                 `;
 
                 try {
-                    await transporter.sendMail({
-                        from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+                    await sendMail({
                         to: user.email,
-                        subject: '🔐 Nova Senha de Acesso — MetalFisa ERP',
+                        subject: '🔐 Credenciais de Acesso — SINCO / Lynx ERP',
                         html: getCorporateEmailTemplate(emailHtml)
                     });
 
                     results.success.push({ id: user.idUsuario, nome: user.NomeCompleto, email: user.email });
                 } catch (emailErr) {
-                    console.error(`[SMTP] Erro ao enviar credenciais para ${user.email}:`, emailErr.message);
+                    console.error(`[SMTP OFICIAL] Erro ao enviar credenciais para ${user.email}:`, emailErr.message);
                     results.failed.push({ id: user.idUsuario, nome: user.NomeCompleto, reason: emailErr.message });
                 }
             }

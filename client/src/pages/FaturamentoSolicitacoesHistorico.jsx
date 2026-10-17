@@ -31,9 +31,9 @@ const FaturamentoSolicitacoesHistorico = () => {
     const [loadingEmail, setLoadingEmail] = useState(false);
 
     // Simple filters
-    const [statusFilter, setStatusFilter] = useStickyState('', '@metalfisa:histFat_status');
-    const [viewMode, setViewMode] = useStickyState('solicitacoes', '@metalfisa:histFat_viewMode');
-    const [includePdfValues, setIncludePdfValues] = useStickyState(true, '@metalfisa:histFat_includePdfValues');
+    const [statusFilter, setStatusFilter] = useStickyState('', '@lynxems:histFat_status');
+    const [viewMode, setViewMode] = useStickyState('solicitacoes', '@lynxems:histFat_viewMode');
+    const [includePdfValues, setIncludePdfValues] = useStickyState(true, '@lynxems:histFat_includePdfValues');
     
     // Sort & Filter state for table
     const [sortConfig, setSortConfig] = useState({ key: 'emissao', direction: 'desc' });
@@ -53,8 +53,8 @@ const FaturamentoSolicitacoesHistorico = () => {
     };
 
     const initialDates = getInitialNfDates();
-    const [nfDataInicio, setNfDataInicio] = useStickyState(initialDates.dIni, '@metalfisa:histFat_nfDataInicio');
-    const [nfDataFim, setNfDataFim] = useStickyState(initialDates.dFim, '@metalfisa:histFat_nfDataFim');
+    const [nfDataInicio, setNfDataInicio] = useStickyState(initialDates.dIni, '@lynxems:histFat_nfDataInicio');
+    const [nfDataFim, setNfDataFim] = useStickyState(initialDates.dFim, '@lynxems:histFat_nfDataFim');
     const [nfSearchTerm, setNfSearchTerm] = useState('');
     const [nfClienteFilter, setNfClienteFilter] = useState('');
     const [nfProdutoFilter, setNfProdutoFilter] = useState('');

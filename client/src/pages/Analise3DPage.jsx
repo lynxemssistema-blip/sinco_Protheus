@@ -58,7 +58,7 @@ function useThreeScene(canvasRef, geometry, modelOpacity, viewMode, bgColor, sce
     renderer.shadowMap.enabled = true;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(bgColor || '#1e293b');
+    scene.background = new THREE.Color(bgColor || '#1E2825');
     const camera = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 5000);
     camera.position.set(0, 0, 200);
 
@@ -551,8 +551,8 @@ export default function Analise3DPage() {
       let page = pdfDoc.addPage();
       const { width, height } = page.getSize();
       
-      // Header MetalFisa
-      page.drawText('METALFISA - RELATÓRIO DE INSPEÇÃO METROLÓGICA (IA)', {
+      // Header Lynx
+      page.drawText('LYNX - RELATÓRIO DE INSPEÇÃO METROLÓGICA (IA)', {
         x: 50, y: height - 50, size: 16, font: boldFont, color: rgb(0.1, 0.1, 0.5)
       });
       page.drawText(`Data: ${new Date().toLocaleString('pt-BR')}`, {
@@ -674,7 +674,7 @@ export default function Analise3DPage() {
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `Laudo_Inspecao_${modelName || 'Metalfisa'}.pdf`;
+      link.download = `Laudo_Inspecao_${modelName || 'Lynx'}.pdf`;
       link.click();
     } catch (err) {
       alert("Erro ao gerar o PDF Oficial: " + err.message);

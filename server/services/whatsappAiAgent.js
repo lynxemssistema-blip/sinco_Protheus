@@ -52,7 +52,7 @@ async function generateGroupDailySummary(grupoNome, grupoJid, dateRef) {
         });
 
         const prompt = `
-Você é um agente de Inteligência Artificial monitorando grupos de conversa do WhatsApp de uma indústria metalúrgica (MetalFisa).
+Você é um agente de Inteligência Artificial monitorando grupos de conversa do WhatsApp de uma indústria metalúrgica (Lynx).
 Sua tarefa é analisar a transcrição das mensagens trocadas hoje no grupo e produzir um relatório estruturado.
 
 Aqui está a transcrição das mensagens de hoje do grupo "${grupoNome}":

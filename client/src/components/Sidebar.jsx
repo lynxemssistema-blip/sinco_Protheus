@@ -1,33 +1,97 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LogOut, ChevronLeft, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, HelpCircle, Search, Key, FileText } from 'lucide-react';
+import { LogOut, ChevronLeft, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, HelpCircle, Search, Key, FileText, Siren, Star, GripVertical } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useHelp } from '../contexts/HelpContext';
-import { getCompanySettings } from '../services/api';
+import api, { getCompanySettings } from '../services/api';
 import { MENU_GROUPS } from '../config/menuItems';
-import logo from '../assets/app-logo.png';
+import { AppLogo } from './ui/AppLogo';
 import ChangePasswordModal from './ChangePasswordModal';
+import AlertaEmergenciaModal from './sst/AlertaEmergenciaModal';
 import './Sidebar.css';
 
-const NavItem = ({ to, icon: Icon, label, isCollapsed, isActive, isMobile, setIsOpen }) => (
-    <Link
-        to={to}
-        title={isCollapsed ? label : ''} // Tooltip on collapse
-        className={`tech-nav-item ${isActive ? 'active' : ''} ${isCollapsed ? 'justify-center px-2' : ''}`}
-        onClick={() => isMobile && setIsOpen(false)}
+const NavItem = ({
+    to,
+    id,
+    icon: Icon,
+    label,
+    isCollapsed,
+    isActive,
+    isMobile,
+    setIsOpen,
+    isFavorite,
+    onToggleFavorite,
+    isDraggable,
+    onDragStart,
+    onDragOver,
+    onDrop,
+    onDragEnd,
+    isDragging,
+    isDragOver
+}) => (
+    <div
+        className={`relative group/nav flex items-center w-full transition-all ${isDragging ? 'opacity-30 scale-95' : ''} ${isDragOver ? 'border-t-2 border-amber-400 bg-amber-400/10' : ''}`}
+        draggable={isDraggable && !isCollapsed}
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        onDragEnd={onDragEnd}
     >
-        <Icon className={`tech-icon ${isCollapsed ? 'mr-0' : ''}`} strokeWidth={1.5} />
-        {!isCollapsed && <span>{label}</span>}
-    </Link>
+        <Link
+            to={to}
+            title={isCollapsed ? label : ''} // Tooltip on collapse
+            className={`tech-nav-item flex-1 w-full ${isActive ? 'active' : ''} ${isCollapsed ? 'justify-center px-2' : ''}`}
+            onClick={() => isMobile && setIsOpen(false)}
+        >
+            {!isCollapsed && isDraggable && (
+                <GripVertical
+                    className="w-3.5 h-3.5 -ml-3 mr-0.5 text-slate-500 opacity-0 group-hover/nav:opacity-100 cursor-grab active:cursor-grabbing transition-opacity flex-shrink-0"
+                    title="Arraste para reordenar favoritos"
+                />
+            )}
+            <Icon className={`tech-icon ${isCollapsed ? 'mr-0' : ''}`} strokeWidth={1.5} />
+            {!isCollapsed && <span className="truncate pr-8 flex-1">{label}</span>}
+        </Link>
+        {!isCollapsed && onToggleFavorite && id && (
+            <button
+                type="button"
+                className={`tech-fav-btn ${isFavorite ? 'is-favorite' : ''}`}
+                onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onToggleFavorite(id);
+                }}
+                title={isFavorite ? "Remover dos Favoritos" : "Adicionar aos Favoritos"}
+                aria-label={isFavorite ? "Remover dos Favoritos" : "Adicionar aos Favoritos"}
+            >
+                <Star
+                    className={`w-3.5 h-3.5 transition-all ${
+                        isFavorite 
+                            ? 'fill-amber-400 text-amber-400 drop-shadow-[0_0_6px_rgba(245,158,11,0.6)]' 
+                            : 'text-slate-500 hover:text-amber-400'
+                    }`}
+                />
+            </button>
+        )}
+    </div>
 );
 
-const GroupTitle = ({ label, id, isOpen, isCollapsed, onToggle }) => (
+const GroupTitle = ({ label, id, isOpen, isCollapsed, onToggle, badgeCount }) => (
     <div
         className={`tech-group-title flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'} cursor-pointer hover:text-white transition-colors`}
         onClick={() => onToggle(id)}
         title={isCollapsed ? label : ''}
     >
-        {!isCollapsed && <span>{label}</span>}
+        {!isCollapsed && (
+            <div className="flex items-center gap-1.5">
+                <span>{label}</span>
+                {badgeCount !== undefined && badgeCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        {badgeCount}
+                    </span>
+                )}
+            </div>
+        )}
         {isCollapsed ? (
             // Mini version: simple dot or line to indicate group
             <div className="w-full h-px bg-slate-700 my-2 relative group-hover:bg-slate-500">
@@ -52,6 +116,110 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
     const [isCollapsed, setIsCollapsed] = useState(window.innerWidth < 1100 && window.innerWidth >= 768); 
     const [searchTerm, setSearchTerm] = useState('');
     const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+    const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
+
+    // ── Favoritos do Usuário (Persistência em Nuvem + Fallback Local) ──────────
+    const [favoriteItemIds, setFavoriteItemIds] = useState(() => {
+        try {
+            const uid = user?.id || 'guest';
+            const local = localStorage.getItem(`metalfisa_fav_menu_${uid}`);
+            if (local) {
+                const parsed = JSON.parse(local);
+                if (Array.isArray(parsed)) return parsed;
+            }
+        } catch {
+            // fallback
+        }
+        return [];
+    });
+
+    const [draggedFavIdx, setDraggedFavIdx] = useState(null);
+    const [dragOverFavIdx, setDragOverFavIdx] = useState(null);
+
+    // Carregar favoritos da API e sincronizar com localStorage
+    useEffect(() => {
+        const uid = user?.id;
+        if (!uid) return;
+        const storageKey = `metalfisa_fav_menu_${uid}`;
+
+        try {
+            const local = localStorage.getItem(storageKey);
+            if (local) {
+                const parsed = JSON.parse(local);
+                if (Array.isArray(parsed)) setFavoriteItemIds(parsed);
+            }
+        } catch (e) {
+            console.warn('Erro ao ler favoritos locais:', e);
+        }
+
+        api.get('/users/preferences/user_favorite_menus')
+            .then(res => {
+                if (res.data && Array.isArray(res.data.value)) {
+                    setFavoriteItemIds(res.data.value);
+                    localStorage.setItem(storageKey, JSON.stringify(res.data.value));
+                }
+            })
+            .catch(() => {});
+    }, [user?.id]);
+
+    const saveFavorites = (newFavorites) => {
+        const uid = user?.id || 'guest';
+        try {
+            localStorage.setItem(`metalfisa_fav_menu_${uid}`, JSON.stringify(newFavorites));
+        } catch (e) {
+            console.warn('Erro ao salvar favoritos locais:', e);
+        }
+
+        if (user?.id) {
+            api.put('/users/preferences/user_favorite_menus', { value: newFavorites })
+                .catch(err => console.warn('Erro ao sincronizar favoritos na nuvem:', err.message));
+        }
+    };
+
+    const toggleFavorite = (itemId) => {
+        if (!itemId) return;
+        setFavoriteItemIds(prev => {
+            const next = prev.includes(itemId)
+                ? prev.filter(id => id !== itemId)
+                : [...prev, itemId];
+            saveFavorites(next);
+            return next;
+        });
+    };
+
+    // Drag and Drop handlers para reordenação arrastando
+    const handleFavDragStart = (e, index) => {
+        setDraggedFavIdx(index);
+        e.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handleFavDragOver = (e, index) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dragOverFavIdx !== index) {
+            setDragOverFavIdx(index);
+        }
+    };
+
+    const handleFavDrop = (e, targetIndex) => {
+        e.preventDefault();
+        setDragOverFavIdx(null);
+        if (draggedFavIdx === null || draggedFavIdx === targetIndex) return;
+
+        setFavoriteItemIds(prev => {
+            const next = [...prev];
+            const [movedItem] = next.splice(draggedFavIdx, 1);
+            next.splice(targetIndex, 0, movedItem);
+            saveFavorites(next);
+            return next;
+        });
+        setDraggedFavIdx(null);
+    };
+
+    const handleFavDragEnd = () => {
+        setDraggedFavIdx(null);
+        setDragOverFavIdx(null);
+    };
     
     // Acesso exclusivo Superadmin Lynx
     const userEmail = (user?.email || '').toLowerCase().trim();
@@ -90,11 +258,34 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
         return () => window.removeEventListener('resize', handleAutoCollapse);
     }, [isMobile]);
 
+    // Deduplicação defensiva de grupos de menu para garantir que nenhuma chave ou seção seja repetida
+    const uniqueMenuGroups = React.useMemo(() => {
+        const seen = new Set();
+        return MENU_GROUPS.filter(group => {
+            if (!group?.id || seen.has(group.id)) return false;
+            seen.add(group.id);
+            return true;
+        });
+    }, []);
+
+    // Mapa de todos os itens do menu para busca rápida e montagem dos favoritos
+    const allMenuItemsMap = useMemo(() => {
+        const map = new Map();
+        uniqueMenuGroups.forEach(group => {
+            group.items.forEach(item => {
+                if (!map.has(item.id)) {
+                    map.set(item.id, item);
+                }
+            });
+        });
+        return map;
+    }, [uniqueMenuGroups]);
+
     // Initialize expanded groups based on active route and device
     useEffect(() => {
         setExpandedGroups(prev => {
             const next = { ...prev };
-            MENU_GROUPS.forEach(group => {
+            uniqueMenuGroups.forEach(group => {
                 const hasActive = group.items.some(item => item.path === location.pathname);
                 if (hasActive) {
                     next[group.id] = true;
@@ -105,7 +296,7 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
             });
             return next;
         });
-    }, [isMobile, location.pathname]);
+    }, [isMobile, location.pathname, uniqueMenuGroups]);
 
     const toggleGroup = (groupId) => {
         setExpandedGroups(prev => ({
@@ -159,17 +350,12 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
 
     // Helper to check visibility (default true if config is empty/loading or key missing)
     const isVisible = (itemId) => {
-        const userTipo = (user?.tipo || '').trim();
-        const userLogin = (user?.login || '').toLowerCase();
-
-        // Super Admin (sinco, Edson, SA) tem visibilidade total de todos os links e páginas
-        if (userTipo === 'SA' || userLogin === 'sinco' || userLogin === 'edson') return true;
-
         // Company-level menu config: if explicitly hidden, hide it
         if (isConfigLoaded && Object.keys(visibleItems).length > 0) {
             if (visibleItems[itemId] === false) return false;
         }
 
+        const userTipo = (user?.tipo || '').trim();
         // Clients can always see the client portal
         if (userTipo === 'E' || user?.tipoExterno === 'cliente') {
             return itemId === 'canal_cliente';
@@ -193,7 +379,7 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
             <aside className={`
                 tech-sidebar 
                 z-50
-                ${isMobile ? 'fixed inset-y-0 left-0 w-72' : `relative h-screen ${isCollapsed ? 'w-20' : 'w-72'}`}
+                ${isMobile ? 'fixed inset-y-0 left-0 w-80' : `relative h-screen ${isCollapsed ? 'w-20' : 'w-80'}`}
                 transform transition-all duration-300 ease-out
                 ${isMobile ? (isOpen ? 'translate-x-0' : '-translate-x-full') : 'translate-x-0'}
                 print:hidden
@@ -202,23 +388,22 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                 <div className={`tech-header ${isCollapsed ? 'px-2 justify-center' : ''}`}>
                     <div className="flex items-center justify-between w-full">
                         {!isCollapsed && (
-                            <div>
-                                <div className="flex items-center gap-3">
-                                    <div className="bg-slate-800 p-1 rounded-lg border border-slate-700 shadow-sm">
-                                        <img src={logo} alt="Lynx EMS Sistemas" className="h-7 w-7 rounded object-cover" />
+                            <div className="min-w-0 flex-1 pr-2">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="bg-slate-800 p-1.5 rounded-lg border border-slate-700 shadow-xs flex items-center justify-center flex-shrink-0">
+                                        <AppLogo variant="icon-snow" size="xs" className="h-5 w-auto" />
                                     </div>
-                                    <div>
-                                        <h1 className="text-base font-black tracking-wider text-white uppercase font-mono leading-tight">
-                                            SINCO SUITE
+                                    <div className="min-w-0 flex-1">
+                                        <h1 className="text-sm font-black tracking-wide text-white uppercase font-mono truncate" title={user?.empresa?.nomeFantasia || user?.empresa?.razaoSocial || 'SINCO'}>
+                                            {user?.empresa?.nomeFantasia || user?.empresa?.razaoSocial || 'SINCO Industrial'}
                                         </h1>
-                                        <span className="text-[9px] text-blue-400 font-bold uppercase tracking-widest block">
-                                            Lynx EMS
-                                        </span>
+                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                                            <span className="text-[10px] text-slate-400 font-semibold tracking-wider uppercase truncate">
+                                                {user?.tipo === 'master' ? 'Master' : user?.tipo === 'superadmin' ? 'SuperAdmin' : 'Online'}
+                                            </span>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="flex items-center gap-2 mt-2">
-                                    <div className="h-1.5 w-1.5 rounded-none bg-green-500 animate-pulse"></div>
-                                    <span className="text-[10px] text-slate-500 uppercase tracking-widest">System Online</span>
                                 </div>
                             </div>
                         )}
@@ -263,26 +448,108 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                 <div className="px-4 py-3 border-b border-slate-700/50">
                     <Link 
                         to="/"
-                        className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-[#FFB536] hover:bg-[#e6a230] text-white font-bold transition-all shadow-md hover:-translate-y-0.5 ${isCollapsed ? 'px-0' : 'px-4'}`}
-                        title="Ir para o site Metalfisa"
+                        className={`w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-[#FFB536] hover:bg-[#e6a230] text-slate-900 font-bold transition-all shadow-md hover:-translate-y-0.5 ${isCollapsed ? 'px-0' : 'px-4'}`}
+                        title="Ir para a página inicial"
                     >
                         <ChevronLeft className="w-4 h-4 flex-shrink-0" />
-                        {!isCollapsed && <span className="uppercase text-xs tracking-wider">Site Metalfisa</span>}
+                        {!isCollapsed && <span className="uppercase text-xs tracking-wider font-extrabold">Página Inicial</span>}
                     </Link>
                 </div>
 
                 {/* Navigation Scroll Area */}
                 <nav className="flex-1 tech-scroll py-4 space-y-1 overflow-y-auto">
-                    {MENU_GROUPS.map((group, idx) => {
+                    {/* ── SEÇÃO DE FAVORITOS (Primeira seção do menu vertical) ── */}
+                    {(() => {
+                        const visibleFavoriteItems = favoriteItemIds
+                            .map(id => allMenuItemsMap.get(id))
+                            .filter(item => {
+                                if (!item || item.hidden) return false;
+                                if (!isVisible(item.id)) return false;
+                                if (searchTerm && !item.label.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+                                return true;
+                            });
+
+                        const isFavExpanded = searchTerm ? true : expandedGroups['favoritos'] !== false;
+
+                        return (
+                            <div key="group_favoritos" className="mb-2">
+                                <GroupTitle
+                                    label="⭐ Favoritos"
+                                    id="favoritos"
+                                    isOpen={isFavExpanded}
+                                    isCollapsed={isCollapsed}
+                                    onToggle={toggleGroup}
+                                    badgeCount={visibleFavoriteItems.length}
+                                />
+                                <div className={`overflow-hidden transition-all duration-300 ${isFavExpanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                                    {visibleFavoriteItems.length > 0 ? (
+                                        visibleFavoriteItems.map((item, favIdx) => (
+                                            <NavItem
+                                                key={`fav_${item.id}_${item.path}`}
+                                                to={item.path}
+                                                id={item.id}
+                                                icon={item.icon}
+                                                label={item.label}
+                                                isCollapsed={isCollapsed}
+                                                isActive={isActive(item.path)}
+                                                isMobile={isMobile}
+                                                setIsOpen={setIsOpen}
+                                                isFavorite={true}
+                                                onToggleFavorite={toggleFavorite}
+                                                isDraggable={true}
+                                                onDragStart={(e) => handleFavDragStart(e, favIdx)}
+                                                onDragOver={(e) => handleFavDragOver(e, favIdx)}
+                                                onDrop={(e) => handleFavDrop(e, favIdx)}
+                                                onDragEnd={handleFavDragEnd}
+                                                isDragging={draggedFavIdx === favIdx}
+                                                isDragOver={dragOverFavIdx === favIdx}
+                                            />
+                                        ))
+                                    ) : (
+                                        !isCollapsed && (
+                                            <div className="mx-4 my-1 p-2.5 rounded-lg border border-slate-800 bg-slate-800/40 text-slate-400 text-[11px] leading-relaxed flex items-start gap-2">
+                                                <Star className="w-3.5 h-3.5 text-amber-400/80 flex-shrink-0 mt-0.5" />
+                                                <span>
+                                                    Nenhum favorito fixado. Passe o mouse sobre qualquer página abaixo e clique na <strong className="text-slate-300">estrela ⭐</strong> para fixar aqui (arraste para ordenar).
+                                                </span>
+                                            </div>
+                                        )
+                                    )}
+                                </div>
+                                <div className="tech-divider"></div>
+                            </div>
+                        );
+                    })()}
+
+                    {uniqueMenuGroups.map((group, idx) => {
                         // Check if group is a controlled module
                         if (group.id === 'manutencao' && !generalConfig?.module_maintenance_active) return null;
                         if (group.id === 'qualidade' && !generalConfig?.module_sgq_active) return null;
                         if (group.id === 'analise_3d' && !generalConfig?.module_analise3d_active) return null;
                         if (group.id === 'pcp_refinado' && !generalConfig?.module_pcp_refinado_active) return null;
+                        if (group.id === 'rh' && generalConfig?.module_rh_active === false) return null;
+                        if (group.id === 'sst' && generalConfig?.module_sst_active === false) return null;
+                        if (group.id === 'portaria' && generalConfig?.module_portaria_active === false) return null;
+                        if (group.id === 'pcp' && generalConfig?.module_pcp_active === false) return null;
+                        if (group.id === 'op_fracionada' && generalConfig?.module_op_fracionada_active === false) return null;
+                        if (group.id === 'ronaldo' && generalConfig?.module_gestao_vista_active === false) return null;
+                        if (group.id === 'engenharia' && generalConfig?.module_engenharia_active === false) return null;
+                        if (group.id === 'comercial' && generalConfig?.module_comercial_active === false) return null;
+                        if (group.id === 'sinco_erp' && generalConfig?.module_erp_active === false) return null;
+                        if (group.id === 'cadastros_basicos' && generalConfig?.module_cadastros_basicos_active === false) return null;
+                        if (group.id === 'suprimentos' && generalConfig?.module_suprimentos_active === false) return null;
+                        if (group.id === 'logistica' && generalConfig?.module_logistica_active === false) return null;
+                        if (group.id === 'financeiro' && generalConfig?.module_financeiro_active === false) return null;
+                        if (group.id === 'corporativo' && generalConfig?.module_corporativo_active === false) return null;
+                        if (group.id === 'cliente' && generalConfig?.module_cliente_active === false) return null;
 
                         // Filter items based on visibility config and search term
                         const visibleGroupItems = group.items.filter(item => {
                             if (item.hidden) return false;
+                            if (item.id === 'sst_cipa' && generalConfig?.module_cipa_active === false) return false;
+                            if (item.id === 'sst_brigada' && generalConfig?.module_brigada_active === false) return false;
+                            const isControleDimensionalActive = generalConfig?.modules?.sgq_controle_dimensional !== false && generalConfig?.module_sgq_controle_dimensional !== false;
+                            if ((item.id === 'sgq_planos_inspecao' || item.id === 'sgq_inspecoes_historico') && !isControleDimensionalActive) return false;
                             if (!isVisible(item.id)) return false;
                             if (searchTerm && !item.label.toLowerCase().includes(searchTerm.toLowerCase())) return false;
                             return true;
@@ -294,7 +561,7 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                         const isExpanded = searchTerm ? true : expandedGroups[group.id] !== false; // Default true if undefined (safety)
 
                         return (
-                            <div key={group.id}>
+                            <div key={`${group.id}_${idx}`}>
                                 {idx > 0 && <div className="tech-divider"></div>}
                                 <GroupTitle
                                     label={group.label}
@@ -306,14 +573,17 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                                 <div className={`overflow-hidden transition-all duration-300 ${isExpanded ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
                                     {visibleGroupItems.map(item => (
                                         <NavItem
-                                            key={item.id}
+                                            key={`${item.id}_${item.path}`}
                                             to={item.path}
+                                            id={item.id}
                                             icon={item.icon}
                                             label={item.label}
                                             isCollapsed={isCollapsed}
                                             isActive={isActive(item.path)}
                                             isMobile={isMobile}
                                             setIsOpen={setIsOpen}
+                                            isFavorite={favoriteItemIds.includes(item.id)}
+                                            onToggleFavorite={toggleFavorite}
                                         />
                                     ))}
                                 </div>
@@ -339,6 +609,19 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                             )}
                         </Link>
                     )}
+
+                    {/* Alerta de Emergência - Acesso Rápido Global */}
+                    <button
+                        type="button"
+                        onClick={() => setIsEmergencyModalOpen(true)}
+                        title="Acionar Alerta de Emergência (Brigada & SESMT)"
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 mb-2 rounded-lg bg-red-600/20 border border-red-500/40 text-red-300 hover:bg-red-600 hover:text-white transition-all shadow-sm group ${isCollapsed ? 'justify-center px-2' : ''}`}
+                    >
+                        <Siren className="h-4 w-4 flex-shrink-0 text-red-400 group-hover:text-white animate-pulse" />
+                        {!isCollapsed && (
+                            <span className="text-xs font-black tracking-wider uppercase truncate">Emergência</span>
+                        )}
+                    </button>
 
                     {/* Help Button */}
                     <button
@@ -409,6 +692,11 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
             <ChangePasswordModal 
                 isOpen={isChangePasswordOpen}
                 onClose={() => setIsChangePasswordOpen(false)}
+            />
+
+            <AlertaEmergenciaModal
+                isOpen={isEmergencyModalOpen}
+                onClose={() => setIsEmergencyModalOpen(false)}
             />
         </>
     );

@@ -411,7 +411,7 @@ export default function AuditoriaPC() {
                                             <tr>
                                                 <th className="p-2 border-r border-slate-200 text-center w-10">Item</th>
                                                 <th className="p-2 border-r border-slate-200 w-24">Cod Forn.</th>
-                                                <th className="p-2 border-r border-slate-200 w-28 text-indigo-700">Cod MetalFisa</th>
+                                                <th className="p-2 border-r border-slate-200 w-28 text-indigo-700">Cod Lynx</th>
                                                 <th className="p-2 border-r border-slate-200 text-right w-20">Qtd NF</th>
                                                 <th className="p-2 border-r border-slate-200 text-right w-24 bg-amber-50">Qtd PC</th>
                                                 {canViewValues && <th className="p-2 border-r border-slate-200 text-right w-24">Vlr NF</th>}
@@ -517,7 +517,7 @@ export default function AuditoriaPC() {
                         <div className="p-6 space-y-4">
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Destinatarios</label>
-                                <input type="text" value={emailData.destinatarios} onChange={(e) => setEmailData({ ...emailData, destinatarios: e.target.value })} placeholder="ex: compras@metalfisa.com.br" className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500" />
+                                <input type="text" value={emailData.destinatarios} onChange={(e) => setEmailData({ ...emailData, destinatarios: e.target.value })} placeholder="ex: compras@lynxems.com.br" className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500" />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Assunto</label>

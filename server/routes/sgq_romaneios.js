@@ -218,41 +218,25 @@ router.post('/:id/send-email', uploadMemory.single('pdf'), async (req, res) => {
 
         if (!file || !email) return res.status(400).json({ error: 'PDF e email são obrigatórios.' });
 
-        const nodemailer = require('nodemailer');
+        const { sendMail } = require('../services/mailService');
         const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
-        
-        const SMTP_CONFIG = {
-            host: 'smtp.task.com.br',
-            port: 587,
-            secure: false,
-            auth: {
-                user: 'sincometal@metalfisa.com.br',
-                pass: 'Pro1042@sm'
-            },
-            tls: { rejectUnauthorized: false }
-        };
-
-        const transporter = nodemailer.createTransport(SMTP_CONFIG);
 
         const htmlContent = `
             <h2>Romaneio de Calibração</h2>
             <p>Olá,</p>
-            <p>Segue em anexo o romaneio de calibração enviado pela MetalFisa.</p>
+            <p>Segue em anexo o romaneio de calibração enviado pela Lynx.</p>
             <p>Por favor, acuse o recebimento.</p>
         `;
 
-        const mailOptions = {
-            from: '"MetalFisa SGQ" <sincometal@metalfisa.com.br>',
+        await sendMail({
             to: email,
-            subject: `MetalFisa - Romaneio SGQ #${id}`,
+            subject: `Lynx - Romaneio SGQ #${id}`,
             html: getCorporateEmailTemplate(htmlContent),
             attachments: [{
                 filename: `Romaneio_SGQ_${id}.pdf`,
                 content: file.buffer
             }]
-        };
-
-        await transporter.sendMail(mailOptions);
+        });
         
         await db.query('UPDATE sgq_romaneios SET email_enviado = 1 WHERE id = ?', [id]);
 

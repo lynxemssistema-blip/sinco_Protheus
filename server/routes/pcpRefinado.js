@@ -660,8 +660,8 @@ router.get('/rastreabilidade', async (req, res) => {
                 c6.c6_qtdven AS qtd_vendida,
                 c6.c6_qtdent AS qtd_entregue
             FROM public.sc6010 c6
-            JOIN public.sc5010 c5 ON TRIM(c5.c5_num) = TRIM(c6.c6_num) AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
-            LEFT JOIN public.sa1010 a1 ON TRIM(a1.a1_cod) = TRIM(c5.c5_cliente) AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
+            JOIN public.sc5010 c5 ON c5.c5_num = c6.c6_num AND COALESCE(c5.d_e_l_e_t_, '') IN ('', ' ')
+            LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND COALESCE(a1.d_e_l_e_t_, '') IN ('', ' ')
             WHERE ${whereSql}
             ORDER BY c6.c6_entreg ASC
             LIMIT 50
@@ -739,6 +739,19 @@ router.get('/rastreabilidade', async (req, res) => {
         }
 
         const pFilter = Object.keys(pedidosMap).map(p => `'${p}'`).join(',');
+        const rootOpsRes = await pgClient.query(`
+            SELECT DISTINCT TRIM(c2_num) as c2_num, TRIM(c2_pedido) as c2_pedido, TRIM(c2_itempv) as c2_itempv
+            FROM public.sc2010
+            WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ') AND TRIM(c2_pedido) IN (${pFilter})
+        `);
+        const opRootMap = {};
+        rootOpsRes.rows.forEach(r => {
+            if (r.c2_num) opRootMap[r.c2_num] = { pedido: r.c2_pedido, itempv: r.c2_itempv };
+        });
+
+        const opNumList = Object.keys(opRootMap);
+        const opFilter = opNumList.length > 0 ? opNumList.map(o => `'${o}'`).join(',') : "''";
+
         const opsQuery = `
             SELECT 
                 TRIM(c2.c2_num) AS op_num,
@@ -748,17 +761,11 @@ router.get('/rastreabilidade', async (req, res) => {
                 c2.c2_quant AS qtd_op,
                 c2.c2_quje AS qtd_feita,
                 TRIM(c2.c2_pedido) AS original_pedido,
-                COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),'')) AS pedido,
-                COALESCE(NULLIF(TRIM(c2.c2_itempv),''), NULLIF(TRIM(root_op.c2_itempv),'')) AS itempv
+                TRIM(c2.c2_pedido) AS c2_pedido,
+                TRIM(c2.c2_itempv) AS c2_itempv
             FROM public.sc2010 c2
-            LEFT JOIN (
-                SELECT c2_num, MAX(c2_pedido) as c2_pedido, MAX(c2_itempv) as c2_itempv
-                FROM public.sc2010
-                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ') AND TRIM(c2_pedido) != ''
-                GROUP BY c2_num
-            ) root_op ON root_op.c2_num = c2.c2_num
             WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
-              AND COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),'')) IN (${pFilter})
+              AND (TRIM(c2.c2_pedido) IN (${pFilter}) OR TRIM(c2.c2_num) IN (${opFilter}))
             ORDER BY op_num, op_item, op_seq
         `;
         const opsResult = await pgClient.query(opsQuery);
@@ -768,7 +775,13 @@ router.get('/rastreabilidade', async (req, res) => {
 
         for (const op of opsResult.rows) {
             allOpProdutos.add(op.produto);
-            const k = `${op.pedido}_${op.itempv}`;
+            const root = opRootMap[op.op_num] || {};
+            const ped = op.original_pedido || root.pedido || '';
+            const itempv = op.c2_itempv || root.itempv || '';
+            op.pedido = ped;
+            op.itempv = itempv;
+
+            const k = `${ped}_${itempv}`;
             if (!opsPorItemPedido[k]) opsPorItemPedido[k] = [];
 
             let statusOp = 'Não Iniciado';
@@ -858,8 +871,6 @@ router.get('/rastreabilidade', async (req, res) => {
                     status: 'pendente'
                 });
             }
-
-            const mysqlPool = require('../services/mysqlService');
 
             // Get opCodes and opCodOperacoes to fetch from MySQL
             const opCodes = [];
@@ -2206,7 +2217,7 @@ router.get('/estrutura-pedido', async (req, res) => {
                 const h = headerMap[`${r.num_pedido}_${r.item_pv}`] || headerMap[r.num_pedido] || {};
                 return {
                     ...r,
-                    cliente: h.cliente || 'CLIENTE METALFISA',
+                    cliente: h.cliente || 'CLIENTE LYNX',
                     cod_cliente: h.cod_cliente || '',
                     dt_entrega_pv: h.dt_entrega_pv || r.dt_prazo_op,
                     ped_cliente: h.ped_cliente || '',
@@ -2330,6 +2341,24 @@ router.get('/estrutura-pedido', async (req, res) => {
                 WHERE d4_op IN (?) OR SUBSTRING(d4_op, 1, 6) IN (?)
             `, [opKeys, mainOpNums]);
             sd4Rows = mySd4 || [];
+
+            // Complementar com dados nativos de erp_ordens_producao_materiais
+            try {
+                const [myMats] = await mysqlPool.query(`
+                    SELECT TRIM(numero_op) AS op_pai, TRIM(componente_codigo) AS componente,
+                           quantidade_necessaria AS qtde_orig, quantidade_empenhada AS qtde_pend
+                    FROM erp_ordens_producao_materiais
+                    WHERE numero_op IN (?) OR SUBSTRING(numero_op, 1, 6) IN (?)
+                `, [opKeys, mainOpNums]);
+
+                (myMats || []).forEach(m => {
+                    if (!sd4Rows.some(s => s.op_pai === m.op_pai && s.componente === m.componente)) {
+                        sd4Rows.push(m);
+                    }
+                });
+            } catch (matErr) {
+                console.warn('[pcpRefinado] Aviso ao buscar erp_ordens_producao_materiais:', matErr.message);
+            }
         } else {
             const sd4Res = await pgClient.query(`
                 SELECT TRIM(d4_op) AS op_pai, TRIM(d4_cod) AS componente,
@@ -2409,6 +2438,50 @@ router.get('/estrutura-pedido', async (req, res) => {
             if (!rotMap[r.produto]) rotMap[r.produto] = [];
             rotMap[r.produto].push(r);
         });
+
+        const rotOpMap = {};
+        if (isMysqlSource) {
+            // 3.1 Operações instanciadas da OP em erp_ordens_producao_operacoes
+            try {
+                const [opOps] = await mysqlPool.query(`
+                    SELECT TRIM(numero_op) AS op_num, TRIM(produto_codigo) AS produto, TRIM(operacao_seq) AS operac,
+                           TRIM(codigo_recurso) AS recurso,
+                           TRIM(COALESCE(NULLIF(descricao_operacao, ''), codigo_recurso)) AS desc_recurso,
+                           tempo_operacao_minutos AS tempo_padrao
+                    FROM erp_ordens_producao_operacoes
+                    WHERE numero_op IN (?) OR SUBSTRING(numero_op, 1, 6) IN (?)
+                    ORDER BY numero_op, CAST(REGEXP_REPLACE(operacao_seq, '[^0-9]', '') AS UNSIGNED) ASC, operacao_seq ASC
+                `, [opKeys, mainOpNums]);
+                (opOps || []).forEach(o => {
+                    if (!rotOpMap[o.op_num]) rotOpMap[o.op_num] = [];
+                    rotOpMap[o.op_num].push(o);
+                });
+            } catch (errOp) {
+                console.warn('[pcpRefinado] Aviso ao buscar erp_ordens_producao_operacoes:', errOp.message);
+            }
+
+            // 3.2 Roteiro padrão complementar do MySQL erp_roteiros_operacoes
+            try {
+                const [myErpRot] = await mysqlPool.query(`
+                    SELECT TRIM(o.codigo_produto) AS produto, TRIM(o.operacao_seq) AS operac,
+                           TRIM(o.codigo_recurso) AS recurso,
+                           COALESCE(NULLIF(TRIM(o.descricao_operacao), ''), NULLIF(TRIM(r.nome), ''), TRIM(o.codigo_recurso)) AS desc_recurso,
+                           o.tempo_operacao_minutos AS tempo_padrao
+                    FROM erp_roteiros_operacoes o
+                    LEFT JOIN pcp_recursos r ON r.codigo COLLATE utf8mb4_unicode_ci = o.codigo_recurso COLLATE utf8mb4_unicode_ci
+                    WHERE TRIM(o.codigo_produto) IN (?)
+                    ORDER BY o.codigo_produto, CAST(REGEXP_REPLACE(o.operacao_seq, '[^0-9]', '') AS UNSIGNED) ASC, o.operacao_seq ASC
+                `, [allComponentsArr]);
+                (myErpRot || []).forEach(r => {
+                    if (!rotMap[r.produto]) rotMap[r.produto] = [];
+                    if (!rotMap[r.produto].some(x => x.operac === r.operac)) {
+                        rotMap[r.produto].push(r);
+                    }
+                });
+            } catch (errRot) {
+                console.warn('[pcpRefinado] Aviso ao buscar erp_roteiros_operacoes:', errRot.message);
+            }
+        }
 
         // ── 3.5 Descrições (SB1010 / erp_produtos) ───────────────────────────
         let filhoDescMap = {};
@@ -2654,7 +2727,17 @@ router.get('/estrutura-pedido', async (req, res) => {
                 const fcs = fcsItemSummary[`${op.pedido}|${op.item_op}`] || {};
                 const fc = forecastMap.get(`${numPedido}|${op.item_pv || op.item_op}`) || forecastMap.get(`${op.pedido}|${op.item_op}`) || {};
 
-                const roteiro = (rotMap[op.produto] || []).map(r => {
+                const itemOpKey = `${op.pedido}${op.item_op}${op.sequen}`;
+                const itemOpNum = `${op.pedido}${op.item_op}`;
+                const opOperacoes = (rotOpMap[itemOpKey] && rotOpMap[itemOpKey].length > 0)
+                    ? rotOpMap[itemOpKey]
+                    : (rotOpMap[itemOpNum] && rotOpMap[itemOpNum].length > 0)
+                        ? rotOpMap[itemOpNum]
+                        : (rotOpMap[op.pedido] && rotOpMap[op.pedido].length > 0)
+                            ? rotOpMap[op.pedido]
+                            : (rotMap[op.produto] || []);
+
+                const roteiro = opOperacoes.map(r => {
                     const appt = apptMap[`${op.pedido}|${op.item_op}|${op.sequen}|${r.operac}`] || {};
                     const fcsOp = fcsMap[`${op.pedido}|${op.item_op}|${op.sequen}|${r.operac}`] || {};
                     const qtdeProd = Number(appt.total_produzido) || 0;
@@ -2688,7 +2771,8 @@ router.get('/estrutura-pedido', async (req, res) => {
                 }
 
                 const opKey = `${op.pedido}${op.item_op}${op.sequen}`;
-                let materiaisRows = sd4Map[opKey];
+                const opPrefix = `${op.pedido}${op.item_op}`;
+                let materiaisRows = sd4Map[opKey] || sd4Map[opPrefix] || sd4Map[op.pedido];
                 
                 // Fallback para SG1010 se não houver empenho transacional (SD4)
                 if ((!materiaisRows || materiaisRows.length === 0) && sg1Map[op.produto]) {

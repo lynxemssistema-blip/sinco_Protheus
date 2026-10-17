@@ -235,7 +235,7 @@ function RoutingGroupManager({ isOpen, onClose, onUpdated }) {
 // ============================================================================
 // [2] COMPONENTES DE APRESENTAÇÃO
 // ============================================================================
-const MetalfisaHeader = ({ title, subtitle, itemsCount, onClose }) => (
+const LynxHeader = ({ title, subtitle, itemsCount, onClose }) => (
     <div className="bg-indigo-600 px-6 py-4 flex items-center justify-between shadow-md z-10 shrink-0">
         <div className="flex items-center gap-3">
             <div className="bg-white/20 p-2 rounded-lg">
@@ -537,7 +537,7 @@ export default function CorteForecastModal({ isOpen, onClose, items, onSaveSucce
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-[95vw] max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
-                <MetalfisaHeader 
+                <LynxHeader 
                     title="Estratégia de Lotes (Plano de Fabricação)" 
                     subtitle="Agrupamento inteligente por Grupos de Recursos"
                     itemsCount={items?.length} 

@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const db = require('../db');
 const mysql = require('./mysqlService');
 const nodemailer = require('nodemailer');
+const { sendMail } = require('./mailService');
 const { sendText } = require('./whatsapp'); // evolution api wrapper
 
 // Map to prevent multiple runs in the same minute just in case
@@ -209,28 +210,11 @@ async function processDailyReport(users, waActive = true, emailActive = true) {
         }
 
         // WhatsApp Message
-        const waMsg = `*📊 RELATÓRIO DIÁRIO DE FATURAMENTO*\n📅 *Data:* ${dateBr}\n\n📦 *Total Geral de NFs:* ${qtdNFs}\n\n${detalhesWA}\n_Mensagem gerencial gerada pelo MetalFisa ERP_`;
+        const waMsg = `*📊 RELATÓRIO DIÁRIO DE FATURAMENTO*\n📅 *Data:* ${dateBr}\n\n📦 *Total Geral de NFs:* ${qtdNFs}\n\n${detalhesWA}\n_Mensagem gerencial gerada pelo Lynx ERP_`;
 
         // Busca dados de cada usuario para disparo
         const userIds = users.map(u => u.id);
         const [uRows] = await mysql.query(`SELECT idUsuario, email, telefone, NomeCompleto FROM usuario WHERE idUsuario IN (?)`, [userIds]);
-
-        // Configuração de Email
-        let transporter;
-        try {
-            transporter = nodemailer.createTransport({
-                host: 'smtp.task.com.br',
-                port: 587,
-                secure: false,
-                auth: {
-                    user: 'sincometal@metalfisa.com.br',
-                    pass: 'Pro1042@sm'
-                },
-                tls: { rejectUnauthorized: false }
-            });
-        } catch(e) {
-            console.error('[CRON FATURAMENTO] Erro ao configurar nodemailer', e);
-        }
 
         // Disparo
         for (const userConfig of users) {
@@ -249,12 +233,12 @@ async function processDailyReport(users, waActive = true, emailActive = true) {
                 }
             }
 
-            // Email
-            if (userConfig.email && dbUser.email && transporter && emailActive) {
+            // Email Oficial Hostinger
+            if (userConfig.email && dbUser.email && emailActive) {
                 try {
                     const htmlContent = `
                         <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-                            <div style="background-color: #2563eb; color: #fff; padding: 20px; text-align: center;">
+                            <div style="background-color: #0284c7; color: #fff; padding: 20px; text-align: center;">
                                 <h2 style="margin: 0;">Relatório Diário de Faturamento</h2>
                                 <p style="margin: 5px 0 0 0;">${dateBr}</p>
                             </div>
@@ -271,13 +255,12 @@ async function processDailyReport(users, waActive = true, emailActive = true) {
                                 ${resumoHTML}
                             </div>
                             <div style="background-color: #f8fafc; padding: 15px; text-align: center; font-size: 12px; color: #64748b;">
-                                <p>Este é um e-mail automático gerado pelo MetalFisa ERP. Por favor, não responda.</p>
+                                <p>Este é um e-mail automático gerado pelo Lynx ERP. Por favor, não responda.</p>
                             </div>
                         </div>
                     `;
 
-                    await transporter.sendMail({
-                        from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+                    await sendMail({
                         to: dbUser.email,
                         subject: `📊 Relatório Diário de Faturamento - ${dateBr}`,
                         html: htmlContent
@@ -362,27 +345,11 @@ async function processComprasReport(users, waActive = true, emailActive = true) 
             });
         }
 
-        const waMsg = `*🛒 RELATÓRIO DIÁRIO DE COMPRAS*\n📅 *Data:* ${dateBr}\n\n📦 *Total de Pedidos:* ${qtdPedidos}\n💰 *Valor Comprometido:* ${formatBRL(totalComprado)}\n\n${detalhesWA}\n_Mensagem gerencial gerada pelo MetalFisa ERP_`;
+        const waMsg = `*🛒 RELATÓRIO DIÁRIO DE COMPRAS*\n📅 *Data:* ${dateBr}\n\n📦 *Total de Pedidos:* ${qtdPedidos}\n💰 *Valor Comprometido:* ${formatBRL(totalComprado)}\n\n${detalhesWA}\n_Mensagem gerencial gerada pelo Lynx ERP_`;
 
         // Busca dados de cada usuario para disparo
         const userIds = users.map(u => u.id);
         const [uRows] = await mysql.query(`SELECT idUsuario, email, telefone, NomeCompleto FROM usuario WHERE idUsuario IN (?)`, [userIds]);
-
-        let transporter;
-        try {
-            transporter = nodemailer.createTransport({
-                host: 'smtp.task.com.br',
-                port: 587,
-                secure: false,
-                auth: {
-                    user: 'sincometal@metalfisa.com.br',
-                    pass: 'Pro1042@sm'
-                },
-                tls: { rejectUnauthorized: false }
-            });
-        } catch(e) {
-            console.error('[CRON COMPRAS] Erro ao configurar nodemailer', e);
-        }
 
         // Disparo
         for (const userConfig of users) {
@@ -391,7 +358,7 @@ async function processComprasReport(users, waActive = true, emailActive = true) 
 
             // WhatsApp
             if (userConfig.whatsapp && dbUser.telefone && waActive) {
-                let tel = dbUser.telefone.replace(/\\D/g, '');
+                let tel = dbUser.telefone.replace(/\D/g, '');
                 if (tel.length === 11 || tel.length === 10) tel = '55' + tel;
                 try {
                     await sendText(`${tel}@s.whatsapp.net`, waMsg);
@@ -401,8 +368,8 @@ async function processComprasReport(users, waActive = true, emailActive = true) 
                 }
             }
 
-            // Email
-            if (userConfig.email && dbUser.email && transporter && emailActive) {
+            // Email Oficial Hostinger
+            if (userConfig.email && dbUser.email && emailActive) {
                 try {
                     const htmlContent = `
                         <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
@@ -425,13 +392,12 @@ async function processComprasReport(users, waActive = true, emailActive = true) 
                                 ${detalhesHTML}
                             </div>
                             <div style="background-color: #f8fafc; padding: 15px; text-align: center; font-size: 12px; color: #64748b;">
-                                <p>Este é um e-mail automático gerado pelo MetalFisa ERP. Por favor, não responda.</p>
+                                <p>Este é um e-mail automático gerado pelo Lynx ERP. Por favor, não responda.</p>
                             </div>
                         </div>
                     `;
 
-                    await transporter.sendMail({
-                        from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+                    await sendMail({
                         to: dbUser.email,
                         subject: `🛒 Relatório Diário de Compras - ${dateBr}`,
                         html: htmlContent
@@ -571,27 +537,11 @@ async function processMonthlyAccumulatedReport(users, waActive = true, emailActi
             faturamentoDetalhesWA += `▪️ *${mapTipo(r.tipo)}* (${r.qtd_notas}): ${formatBRL(r.total_valor)}\n`;
         });
 
-        const waMsg = `*📈 ACUMULADO DO MÊS*\n📅 *Período:* ${periodBr}\n\n*🟢 FATURAMENTO*\n📦 *Total Emitido:* ${qtdGeralFaturamento} notas\n💰 *Valor Total:* ${formatBRL(totalGeralFaturamento)}\n\n_Detalhamento por tipo:_\n${faturamentoDetalhesWA}\n*🔴 DESPESAS (COMPRAS)*\n📦 *Total Pedidos:* ${qtdGeralCompras}\n💰 *Valor Comprometido:* ${formatBRL(totalGeralCompras)}\n\n_Mensagem gerencial gerada pelo MetalFisa ERP_`;
+        const waMsg = `*📈 ACUMULADO DO MÊS*\n📅 *Período:* ${periodBr}\n\n*🟢 FATURAMENTO*\n📦 *Total Emitido:* ${qtdGeralFaturamento} notas\n💰 *Valor Total:* ${formatBRL(totalGeralFaturamento)}\n\n_Detalhamento por tipo:_\n${faturamentoDetalhesWA}\n*🔴 DESPESAS (COMPRAS)*\n📦 *Total Pedidos:* ${qtdGeralCompras}\n💰 *Valor Comprometido:* ${formatBRL(totalGeralCompras)}\n\n_Mensagem gerencial gerada pelo Lynx ERP_`;
 
         // Busca dados de cada usuario para disparo
         const userIds = users.map(u => u.id);
         const [uRows] = await mysql.query(`SELECT idUsuario, email, telefone, NomeCompleto FROM usuario WHERE idUsuario IN (?)`, [userIds]);
-
-        let transporter;
-        try {
-            transporter = nodemailer.createTransport({
-                host: 'smtp.task.com.br',
-                port: 587,
-                secure: false,
-                auth: {
-                    user: 'sincometal@metalfisa.com.br',
-                    pass: 'Pro1042@sm'
-                },
-                tls: { rejectUnauthorized: false }
-            });
-        } catch(e) {
-            console.error('[CRON ACUMULADO] Erro ao configurar nodemailer', e);
-        }
 
         for (const userConfig of users) {
             const dbUser = uRows.find(u => u.idUsuario === userConfig.id);
@@ -609,12 +559,12 @@ async function processMonthlyAccumulatedReport(users, waActive = true, emailActi
                 }
             }
 
-            // Email
-            if (userConfig.email && dbUser.email && transporter && emailActive) {
+            // Email Oficial Hostinger
+            if (userConfig.email && dbUser.email && emailActive) {
                 try {
                     const htmlContent = `
                         <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-                            <div style="background-color: #6366f1; color: #fff; padding: 20px; text-align: center;">
+                            <div style="background-color: #0284c7; color: #fff; padding: 20px; text-align: center;">
                                 <h2 style="margin: 0;">Acumulado do Mês - Faturamento e Compras</h2>
                                 <p style="margin: 5px 0 0 0;">${periodBr}</p>
                             </div>
@@ -653,13 +603,12 @@ async function processMonthlyAccumulatedReport(users, waActive = true, emailActi
                     </table>
                 </div>
                 <div style="background-color: #f8fafc; padding: 15px; text-align: center; font-size: 12px; color: #64748b;">
-                                <p>Este é um e-mail automático gerado pelo MetalFisa ERP. Por favor, não responda.</p>
+                                <p>Este é um e-mail automático gerado pelo Lynx ERP. Por favor, não responda.</p>
                             </div>
                         </div>
                     `;
 
-                    await transporter.sendMail({
-                        from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+                    await sendMail({
                         to: dbUser.email,
                         subject: `📈 Acumulado do Mês (Faturamento e Compras) - ${periodBr}`,
                         html: htmlContent

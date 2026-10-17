@@ -86,60 +86,114 @@ router.get('/solicitacoes', async (req, res) => {
         params.push(pageSize); // $N
         params.push(offset);   // $N+1
 
-        const sql = `
+        const sqlSc1 = `
         SELECT
             sc1.c1_filial AS filial,
-            sc1.c1_num AS sc_numero,
-            sc1.c1_item AS sc_item,
-            CASE
-                WHEN sc1.c1_emissao ~ '^[0-9]{8}$' 
-                THEN to_date(sc1.c1_emissao, 'YYYYMMDD')
-                ELSE NULL
-            END AS sc_data_emissao,
-            sc1.c1_produto AS produto_codigo,
-            sb1.b1_desc AS produto_descricao,
+            TRIM(sc1.c1_num) AS sc_numero,
+            TRIM(sc1.c1_item) AS sc_item,
+            TRIM(sc1.c1_emissao) AS emissao_raw,
+            TRIM(sc1.c1_produto) AS produto_codigo,
             sc1.c1_quant AS sc_quantidade,
-            sc1.c1_um AS sc_unidade,
-            sc1.c1_cc AS centro_custo,
-            sc1.c1_obs AS observacao,
-            sc7.c7_num AS pedido_numero,
-            sc7.c7_item AS pedido_item,
-            CASE
-                WHEN sc7.c7_emissao ~ '^[0-9]{8}$' 
-                THEN to_date(sc7.c7_emissao, 'YYYYMMDD')
-                ELSE NULL
-            END AS pedido_data_emissao,
-            CASE
-                WHEN sc7.c7_datprf ~ '^[0-9]{8}$' 
-                THEN to_date(sc7.c7_datprf, 'YYYYMMDD')
-                ELSE NULL
-            END AS pedido_data_prevista,
-            sc7.c7_fornece AS fornecedor_codigo,
-            sa2.a2_nome AS fornecedor_nome,
-            CASE
-                WHEN (sc7.c7_num IS NULL OR sc7.c7_num = '') THEN 'PENDENTE'
-                WHEN sc1.c1_aprov != '' THEN 'EM_APROVACAO'
-                WHEN sc1.c1_cotacao != '' THEN 'EM_COTACAO'
-                WHEN sc7.c7_num IS NOT NULL AND sc7.c7_num != '' THEN 'GEROU_PEDIDO'
-                ELSE 'ABERTA'
-            END AS sc_status
+            TRIM(sc1.c1_um) AS sc_unidade,
+            TRIM(sc1.c1_cc) AS centro_custo,
+            TRIM(sc1.c1_obs) AS observacao,
+            TRIM(sc1.c1_aprov) AS c1_aprov,
+            TRIM(sc1.c1_cotacao) AS c1_cotacao
         FROM sc1010 sc1
-        LEFT JOIN sb1010 sb1 ON sb1.b1_cod = sc1.c1_produto
-            AND (sb1.d_e_l_e_t_ = '' OR sb1.d_e_l_e_t_ = ' ')
-        LEFT JOIN sc7010 sc7 ON sc7.c7_numsc = sc1.c1_num
-            AND sc7.c7_itemsc = sc1.c1_item
-            AND (sc7.d_e_l_e_t_ = '' OR sc7.d_e_l_e_t_ = ' ')
-        LEFT JOIN sa2010 sa2 ON sa2.a2_cod = sc7.c7_fornece
-            AND sa2.a2_loja = sc7.c7_loja
-            AND (sa2.d_e_l_e_t_ = '' OR sa2.d_e_l_e_t_ = ' ')
         WHERE (sc1.d_e_l_e_t_ = '' OR sc1.d_e_l_e_t_ = ' ')
         ${whereClause}
-        ORDER BY sc1.c1_emissao DESC, sc1.c1_num DESC
+        ORDER BY sc1.r_e_c_n_o_ DESC
         LIMIT $${paramCount} OFFSET $${paramCount + 1}
         `;
 
-        const result = await db.query(sql, params);
-        const rows = result.rows;
+        const result = await db.query(sqlSc1, params);
+        const sc1Rows = result.rows;
+
+        if (sc1Rows.length === 0) {
+            return res.json({ data: [], offset, page_size: pageSize, hasMore: false });
+        }
+
+        // Enrich with sb1010, sc7010, sa2010
+        const scNums = [...new Set(sc1Rows.map(r => r.sc_numero).filter(Boolean))];
+        const prodCodes = [...new Set(sc1Rows.map(r => r.produto_codigo).filter(Boolean))];
+
+        const [sb1Res, sc7Res] = await Promise.all([
+            prodCodes.length ? db.query(
+                `SELECT TRIM(b1_cod) as b1_cod, TRIM(b1_desc) as b1_desc FROM sb1010 WHERE TRIM(b1_cod) IN (?) AND COALESCE(d_e_l_e_t_, ' ') = ' '`,
+                [prodCodes]
+            ) : Promise.resolve({ rows: [] }),
+            scNums.length ? db.query(
+                `SELECT TRIM(c7_numsc) as c7_numsc, TRIM(c7_itemsc) as c7_itemsc, TRIM(c7_num) as c7_num, TRIM(c7_item) as c7_item,
+                        TRIM(c7_emissao) as c7_emissao, TRIM(c7_datprf) as c7_datprf, TRIM(c7_fornece) as c7_fornece, TRIM(c7_loja) as c7_loja
+                 FROM sc7010 WHERE TRIM(c7_numsc) IN (?) AND COALESCE(d_e_l_e_t_, ' ') = ' '`,
+                [scNums]
+            ) : Promise.resolve({ rows: [] })
+        ]);
+
+        const prodMap = {};
+        sb1Res.rows.forEach(p => { prodMap[p.b1_cod] = p.b1_desc; });
+
+        const sc7Map = {};
+        const fornecCodes = new Set();
+        sc7Res.rows.forEach(p => {
+            const key = `${p.c7_numsc}_${p.c7_itemsc}`;
+            sc7Map[key] = p;
+            if (p.c7_fornece) fornecCodes.add(p.c7_fornece);
+        });
+
+        let sa2Map = {};
+        if (fornecCodes.size > 0) {
+            const sa2Res = await db.query(
+                `SELECT TRIM(a2_cod) as a2_cod, TRIM(a2_nome) as a2_nome FROM sa2010 WHERE TRIM(a2_cod) IN (?) AND COALESCE(d_e_l_e_t_, ' ') = ' '`,
+                [[...fornecCodes]]
+            );
+            sa2Res.rows.forEach(f => { sa2Map[f.a2_cod] = f.a2_nome; });
+        }
+
+        const rows = sc1Rows.map(sc => {
+            const sc7Key = `${sc.sc_numero}_${sc.sc_item}`;
+            const sc7 = sc7Map[sc7Key] || {};
+            const fornecedorNome = sa2Map[sc7.c7_fornece] || '';
+
+            const formatDate = (raw) => {
+                if (raw && raw.length === 8) {
+                    return `${raw.substring(0, 4)}-${raw.substring(4, 6)}-${raw.substring(6, 8)}`;
+                }
+                return raw || null;
+            };
+
+            let status = 'ABERTA';
+            if (!sc7.c7_num) {
+                status = 'PENDENTE';
+            } else if (sc.c1_aprov) {
+                status = 'EM_APROVACAO';
+            } else if (sc.c1_cotacao) {
+                status = 'EM_COTACAO';
+            } else if (sc7.c7_num) {
+                status = 'GEROU_PEDIDO';
+            }
+
+            return {
+                filial: sc.filial,
+                sc_numero: sc.sc_numero,
+                sc_item: sc.sc_item,
+                sc_data_emissao: formatDate(sc.emissao_raw),
+                produto_codigo: sc.produto_codigo,
+                produto_descricao: prodMap[sc.produto_codigo] || '',
+                sc_quantidade: sc.sc_quantidade,
+                sc_unidade: sc.sc_unidade,
+                centro_custo: sc.centro_custo,
+                observacao: sc.observacao,
+                pedido_numero: sc7.c7_num || null,
+                pedido_item: sc7.c7_item || null,
+                pedido_data_emissao: formatDate(sc7.c7_emissao),
+                pedido_data_prevista: formatDate(sc7.c7_datprf),
+                fornecedor_codigo: sc7.c7_fornece || null,
+                fornecedor_nome: fornecedorNome,
+                sc_status: status
+            };
+        });
+
         const hasMore = rows.length === pageSize;
 
         res.json({

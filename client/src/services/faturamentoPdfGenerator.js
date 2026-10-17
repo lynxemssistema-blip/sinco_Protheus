@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { getCompanyShortName } from './companyBranding';
 
 const fmtQtd = (v) => parseFloat(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
 
@@ -19,8 +20,8 @@ export const generateFaturamentoPdf = async (solicitacao, currentUser, returnAsB
     // --- 1. CABEÇALHO ---
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(22);
-    doc.setTextColor(30, 58, 95); // Deep Blue MetalFisa
-    doc.text('METALFISA', ML, 20);
+    doc.setTextColor(30, 58, 95); // Deep Blue Lynx
+    doc.text(getCompanyShortName(), ML, 20);
 
     doc.setFontSize(14);
     doc.setTextColor(100, 100, 100);
@@ -157,7 +158,7 @@ export const generateFaturamentoPdf = async (solicitacao, currentUser, returnAsB
             doc.setTextColor(150, 150, 150);
             const str = `Página ${doc.internal.getCurrentPageInfo().pageNumber}`;
             doc.text(str, pageWidth - MR, doc.internal.pageSize.getHeight() - 10, { align: 'right' });
-            doc.text(`Emitido pelo App MetalFisa. Gerado por: ${currentUser?.nome || 'Sistema'}`, ML, doc.internal.pageSize.getHeight() - 10);
+            doc.text(`Emitido pelo App Lynx. Gerado por: ${currentUser?.nome || 'Sistema'}`, ML, doc.internal.pageSize.getHeight() - 10);
         }
     });
 

@@ -36,7 +36,7 @@ export default function PortalClienteEmailModal({ isOpen, onClose, selectedItems
             if (selectedItems && selectedItems.length > 0) {
                 const uniquePeds = [...new Set(selectedItems.map(i => i.pedido))].join(', ');
                 setSubject(`[PORTAL CLIENTE] Solicitação de Status - Pedido(s) MF: ${uniquePeds}`);
-                setObservacao(`Prezada equipe MetalFisa,
+                setObservacao(`Prezada equipe Lynx,
 
 Solicitamos a gentileza de nos enviar uma atualização referente ao andamento físico e previsão de faturamento do(s) item(ns) listado(s) abaixo.
 
@@ -136,7 +136,7 @@ ${user?.nome || 'Portal do Cliente'}`);
 
             htmlBody += `
                     <p style="color: #64748b; font-size: 11px; margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 10px;">
-                        E-mail gerado automaticamente pelo Portal do Cliente - MetalFisa Anty.
+                        E-mail gerado automaticamente pelo Portal do Cliente - Lynx Anty.
                     </p>
                 </div>
             `;
@@ -204,7 +204,7 @@ ${user?.nome || 'Portal do Cliente'}`);
                                 <div key={idx} className="flex gap-2">
                                     <input
                                         type="email"
-                                        placeholder="exemplo@metalfisa.com.br"
+                                        placeholder="exemplo@lynxems.com.br"
                                         value={email}
                                         onChange={(e) => handleEmailChange(idx, e.target.value)}
                                         className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

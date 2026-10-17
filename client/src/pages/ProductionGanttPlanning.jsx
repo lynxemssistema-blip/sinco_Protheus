@@ -6,7 +6,7 @@ import useStickyState from '../hooks/useStickyState';
 import { toast } from 'react-toastify';
 
 export default function ProductionGanttPlanning() {
-    const [pedido, setPedido] = useStickyState('', '@metalfisa:gantt_pedido');
+    const [pedido, setPedido] = useStickyState('', '@lynxems:gantt_pedido');
     const [filters, setFilters] = useStickyState({
         cliente: '',
         pedCliente: '',
@@ -14,8 +14,8 @@ export default function ProductionGanttPlanning() {
         produto: '',
         dataInicio: '',
         dateType: 'planejada' // 'planejada' or 'apontada'
-    }, '@metalfisa:gantt_filters');
-    const [data, setData] = useStickyState(null, '@metalfisa:gantt_data');
+    }, '@lynxems:gantt_filters');
+    const [data, setData] = useStickyState(null, '@lynxems:gantt_data');
     const [loading, setLoading] = useState(false);
     const [apiError, setApiError] = useState(null);
 

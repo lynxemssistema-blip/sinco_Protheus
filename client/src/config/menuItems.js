@@ -4,28 +4,12 @@ import {
     TrendingUp, Monitor, Network, Grid, Users, MessageSquare,
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
-    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck, Award, Smartphone, AlertOctagon, Sparkles
+    Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck, Award, Smartphone, AlertOctagon, Sparkles, Cpu,
+    Tag, Scale, Hash, Flame, Shield, Clock
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
 
-    {
-        id: 'cliente',
-        label: 'Acesso Cliente',
-        items: [
-            { id: 'canal_cliente', label: 'Meus Projetos (Portal)', path: '/portal-cliente', icon: Monitor },
-            { id: 'canal_cliente_tablet', label: 'Solicitação Rápida (Tablet)', path: '/portal-cliente/tablet', icon: Smartphone }
-        ]
-    },
-    {
-        id: 'pessoal',
-        label: 'Meu Painel',
-        items: [
-            { id: 'meu_canal', label: 'Meu Canal (KPIs)', path: '/dashboard', icon: BarChart2 },
-            { id: 'calendario_atividades', label: 'Calendário de Atividades', path: '/calendario-atividades', icon: Calendar },
-            { id: 'painel_tv', label: 'Painel de TV (Frontend)', path: '/painel-producao', icon: Monitor }
-        ]
-    },
     {
         id: 'sinco_erp',
         label: 'SINCO ERP Nativo',
@@ -34,6 +18,17 @@ export const MENU_GROUPS = [
             { id: 'erp_pedidos', label: 'Pedidos de Venda', path: '/erp/pedidos', icon: ShoppingCart },
             { id: 'erp_clientes', label: 'Cadastro de Clientes', path: '/erp/clientes', icon: Users },
             { id: 'erp_producao', label: 'Ordens de Produção', path: '/erp/producao', icon: Factory }
+        ]
+    },
+    {
+        id: 'cadastros_basicos',
+        label: 'Cadastros Básicos',
+        items: [
+            { id: 'cadastros_basicos_hub', label: 'Cadastros Básicos (Geral)', path: '/cadastros/basicos', icon: Database },
+            { id: 'cadastro_prefixos', label: 'Prefixos (Famílias)', path: '/cadastros/basicos?tab=prefixos', icon: Hash },
+            { id: 'cadastro_tipos', label: 'Tipos de Produto', path: '/cadastros/basicos?tab=tipos', icon: Tag },
+            { id: 'cadastro_unidades', label: 'Unidades de Medida', path: '/cadastros/basicos?tab=unidades', icon: Scale },
+            { id: 'cadastro_armazens', label: 'Armazéns / Locais', path: '/cadastros/basicos?tab=armazens', icon: Building2 }
         ]
     },
     {
@@ -54,33 +49,12 @@ export const MENU_GROUPS = [
         items: [
             { id: 'eng_pedidos', label: 'Painel de Itens (Engenharia)', path: '/engenharia/pedidos', icon: Layers },
             { id: 'produtos', label: 'Catálogo de Produtos', path: '/produtos', icon: Package },
-            { id: 'produtos_msmetal', label: 'Catálogo MS Metal', path: '/engenharia/msmetal/produtos', icon: Database },
             { id: 'bom', label: 'Gerador de BOM', path: '/bom-generator', icon: Database },
-            { id: 'sinco_estrutura', label: 'Verificar Estrutura SINCO', path: '/engenharia/sinco/estrutura', icon: Network },
+
             { id: 'sinco_formulario', label: 'SolidEdeg', path: '/engenharia/sinco/formulario', icon: Box },
             { id: 'sinco_estrutura_completa', label: 'SolidEdeg Estrutura', path: '/engenharia/sinco/estrutura-completa', icon: Layers },
             { id: 'controle_engenharia', label: 'Controle de Engenharia', path: '/engenharia/relatorio-controle', icon: FileText },
             { id: 'relatorio_liberacao', label: 'Relatório de Liberação', path: '/engenharia/relatorio-liberacao', icon: ClipboardList }
-        ]
-    },
-    {
-        id: 'analise_3d',
-        label: 'Análise 3D',
-        items: [
-            { id: 'visualizador_3d', label: 'Visualizador de Modelos', path: '/analise-3d', icon: Box }
-        ]
-    },
-    {
-        id: 'sinco',
-        label: 'SINCO',
-        items: [
-            { id: 'sinco_os', label: 'Ordens de Serviço (Sinco)', path: '/engenharia/sinco/os', icon: ClipboardList },
-            { id: 'sinco_apontamento', label: 'Apontamento de Produção - OS (Sinco)', path: '/engenharia/sinco/apontamento', icon: ClipboardCheck },
-            { id: 'sinco_apontamento_matriz', label: 'Apontamento Matriz - OS (Sinco)', path: '/engenharia/sinco/apontamento-matrix', icon: Grid },
-            { id: 'sinco_materiais', label: 'Materiais por OS (Sinco)', path: '/engenharia/sinco/materiais', icon: Database },
-            { id: 'sinco_desenho', label: 'Desenho Ativo SE', path: '/sinco/desenho-ativo', icon: Monitor },
-            { id: 'sworks', label: 'SolidWorks Connect', path: '/sworks', icon: Box },
-            { id: 'apontamento_usuario', label: 'Apontamento por Usuário', path: '/pcp/apontamento-por-usuario', icon: Users }
         ]
     },
 
@@ -89,10 +63,6 @@ export const MENU_GROUPS = [
         label: 'PCP Geral',
         items: [
             { id: 'visao_fabrica', label: 'Visão Global (Fábrica)', path: '/pcp/visao-fabrica', icon: Factory },
-            { id: 'producao', label: 'Ordens de Produção', path: '/producao', icon: Factory },
-            { id: 'relatorios_producao', label: 'Relatórios de Produção', path: '/producao/relatorios', icon: BarChart },
-            { id: 'pcp_conferencia', label: 'Conferência de Apont.', path: '/pcp/conferencia', icon: ClipboardCheck },
-            { id: 'evolucao_apontamentos', label: 'Evolução dos Apontamentos', path: '/pcp/evolucao-apontamento', icon: TrendingUp },
             { id: 'visao_producao', label: 'Visão de Produção', path: '/visao-producao', icon: Target },
             { id: 'curva_s_pedido', label: 'Curva S (Pedido)', path: '/pcp/curva-s', icon: TrendingUp },
             { id: 'planejamento_gantt', label: 'Planejamento Gantt', path: '/planejamento-gantt', icon: Calendar },
@@ -109,6 +79,7 @@ export const MENU_GROUPS = [
             { id: 'consulta_op', label: 'Consulta Detalhada OP', path: '/producao/op', icon: FileText },
             { id: 'visao_setores', label: 'Visão Gerencial por Setor', path: '/pcp/visao-setores', icon: PieChart },
             { id: 'setores_cadastro', label: 'Cadastro de Setores', path: '/pcp/setores', icon: Landmark },
+            { id: 'recursos_cadastro', label: 'Cadastro de Recursos', path: '/pcp/recursos', icon: Cpu },
             { id: 'setores_recursos', label: 'Recursos por Setor', path: '/pcp/setores/recursos', icon: Link },
             { id: 'pcp_fila_dependencias', label: 'Fila e Dependências (WIP)', path: '/pcp/fila-dependencias', icon: ArrowLeftRight },
             { id: 'pcp_controle_execucao', label: 'Controle de Execução', path: '/pcp/controle-execucao', icon: Play },
@@ -173,13 +144,6 @@ export const MENU_GROUPS = [
         ]
     },
     {
-        id: 'protheus',
-        label: 'Proteus (ERP)',
-        items: [
-            { id: 'protheus_dashboard', label: 'Visão Geral / Formulários', path: '/protheus', icon: Database }
-        ]
-    },
-    {
         id: 'qualidade',
         label: 'Qualidade',
         items: [
@@ -198,6 +162,8 @@ export const MENU_GROUPS = [
         id: 'rh',
         label: 'Recursos Humanos',
         items: [
+            { id: 'rh_pasta_colaborador', label: 'Pasta do Colaborador (360°)', path: '/rh/pasta-colaborador', icon: Award },
+            { id: 'rh_portal_colaborador', label: 'Portal Autoatendimento', path: '/rh/portal-colaborador', icon: Smartphone },
             { id: 'rh_vagas', label: 'Gestão de Vagas', path: '/rh/vagas', icon: ClipboardList },
             { id: 'rh_curriculos', label: 'Análise de Currículos (IA)', path: '/rh/curriculos', icon: FileText },
             { id: 'rh_offboarding', label: 'Offboarding (Custódia)', path: '/rh/offboarding', icon: UserMinus },
@@ -205,37 +171,33 @@ export const MENU_GROUPS = [
         ]
     },
     {
-        id: 'vmi',
-        label: 'VMI',
+        id: 'sst',
+        label: 'Segurança & Benefícios',
         items: [
-            { id: 'vmi_demanda', label: 'VMI Forecast', path: '/vmi/forecast', icon: ClipboardList },
-            { id: 'vmi_demanda_mes', label: 'Demanda Mês', path: '/vmi/demanda-mes', icon: Calendar },
-            { id: 'vmi_criticos', label: 'Tabela de Críticos', path: '/vmi/criticos', icon: AlertOctagon },
-            { id: 'vmi_pedido', label: 'VMI Pedido', path: '/vmi/pedido', icon: ListOrdered },
-            { id: 'vmi_leitura', label: 'Leitura de Planilha', path: '/vmi/leitura', icon: FileUp },
-            { id: 'vmi_dashboard', label: 'Visão de Entrega', path: '/vmi/dashboard', icon: Target },
-            { id: 'vmi_estrategia', label: 'Estratégia de Produção', path: '/vmi/estrategia', icon: GitMerge },
-            { id: 'vmi_historico', label: 'Histórico & Evolução', path: '/vmi/historico', icon: History }
+            { id: 'sst_central', label: 'Gestão SST (NR-06)', path: '/sst', icon: ShieldCheck },
+            { id: 'sst_cipa', label: 'CIPA & Eleição (NR-05)', path: '/sst/cipa', icon: Award },
+            { id: 'sst_brigada', label: 'Brigada de Incêndio (NR-23)', path: '/sst/brigada', icon: Flame },
+            { id: 'sst_cesta', label: 'Cesta Básica & Benefícios', path: '/sst/cesta-basica', icon: FileCheck }
+        ]
+    },
+    {
+        id: 'portaria',
+        label: 'Portaria & Acesso',
+        items: [
+            { id: 'portaria_guarita', label: 'Portaria (Guarita / Terminal)', path: '/portaria/guarita', icon: ShieldCheck },
+            { id: 'portaria_gerencial', label: 'Portaria Gerencial (Dashboard)', path: '/portaria/gerencial', icon: Shield },
+            { id: 'portaria_turnos', label: 'Cadastro de Turnos', path: '/portaria/turnos', icon: Clock }
+        ]
+    },
+    {
+        id: 'corporativo',
+        label: 'Salas & Suporte TI',
+        items: [
+            { id: 'salas_reuniao', label: 'Salas de Reunião & Totem', path: '/salas', icon: Calendar },
+            { id: 'suporte_central', label: 'Central de Suporte TI', path: '/suporte', icon: HelpCircle }
         ]
     },
 
-    {
-        id: 'wabtec',
-        label: 'WabTec',
-        items: [
-            { id: 'wabtec_ppaps', label: "PPAP's", path: '/wabtec/ppaps', icon: Award },
-            { id: 'wabtec_escopo', label: 'Escopo de Fornecimento', path: '/wabtec/escopo', icon: FileText },
-            { id: 'wabtec_estrutura', label: 'Estrutura (Importação)', path: '/wabtec/estrutura', icon: GitMerge },
-            { id: 'wabtec_datas_solicitacao', label: 'Datas de Solicitação', path: '/wabtec/datas-solicitacao', icon: Calendar }
-        ]
-    },
-    {
-        id: 'engetron',
-        label: 'Engetron',
-        items: [
-            { id: 'engetron_dashboard', label: 'Demandas Engetron', path: '/engetron/dashboard', icon: LayoutDashboard }
-        ]
-    },
     {
         id: 'manutencao',
         label: 'Manutenção de Equip.',
@@ -257,7 +219,6 @@ export const MENU_GROUPS = [
             { id: 'novas_funcionalidades', label: 'Novas Funcionalidades ✨', path: '/novas-funcionalidades', icon: Sparkles },
             { id: 'config', label: 'Configurações', path: '/configuracoes', icon: SettingsIcon },
             { id: 'config_etiquetas', label: 'Configurações: Aba Etiquetas', path: '#', icon: Printer, hidden: true },
-            { id: 'protheus-estudo', label: 'Estudo SQL Protheus', path: '/admin/protheus-estudo', icon: Database },
             { id: 'ajuda', label: 'Central de Ajuda', path: '/ajuda', icon: HelpCircle }
         ]
     },

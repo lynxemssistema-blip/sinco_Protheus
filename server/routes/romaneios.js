@@ -289,7 +289,7 @@ router.get('/relatorio-tratamento-excel', async (req, res) => {
         `, [fornecedoresFiltro, dataCorte]);
 
         const workbook = new ExcelJS.Workbook();
-        workbook.creator = 'MetalFisa ERP';
+        workbook.creator = 'Lynx ERP';
         workbook.created = new Date();
 
         const headerFillDark = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
@@ -312,7 +312,7 @@ router.get('/relatorio-tratamento-excel', async (req, res) => {
 
         // ════ ABA 1: RESUMO MENSAL (MATRIZ KG) ════
         const ws1 = workbook.addWorksheet('Resumo Mensal (KG)', { views: [{ showGridLines: true }] });
-        ws1.addRow(['METALFISA INDUSTRIAL - RELATÓRIO DE REMESSAS DE MATERIAIS PARA TRATAMENTO']);
+        ws1.addRow(['LYNX INDUSTRIAL - RELATÓRIO DE REMESSAS DE MATERIAIS PARA TRATAMENTO']);
         const colCountWs1 = includeFinancials ? 6 : 5;
         const lastColLetterWs1 = includeFinancials ? 'F' : 'E';
         ws1.mergeCells(`A1:${lastColLetterWs1}1`);
@@ -752,8 +752,11 @@ router.get('/relatorio-tratamento-excel', async (req, res) => {
 router.get('/portal/list', async (req, res) => {
     try {
         const user = req.user;
-        if (!user || user.tipo !== 'CLI') {
-            return res.status(403).json({ error: 'Acesso negado. Apenas fornecedores.' });
+        const userTipo = (user?.tipo || '').toUpperCase().trim();
+        const isAdminUser = userTipo === 'SA' || userTipo === 'A' || user?.isAdmin;
+
+        if (!user || (!isAdminUser && userTipo !== 'CLI' && user?.tipoExterno !== 'fornecedor')) {
+            return res.status(403).json({ error: 'Acesso negado. Apenas fornecedores ou administradores.' });
         }
 
         let params = [];
@@ -763,18 +766,21 @@ router.get('/portal/list', async (req, res) => {
             const pedidos = user.pedidos_autorizados.split(',').map(p => p.trim()).filter(p => p);
             if (pedidos.length > 0) {
                 const placeholders = pedidos.map(() => '?').join(',');
-                filterSql = `r.id IN (SELECT romaneio_id FROM app_romaneio_items WHERE pedido IN (${placeholders}))`;
+                filterSql = `WHERE r.id IN (SELECT romaneio_id FROM app_romaneio_items WHERE pedido IN (${placeholders}))`;
                 params.push(...pedidos);
             } else {
-                filterSql = "1=0";
+                filterSql = "WHERE 1=0";
             }
         } else if (user.idFornecedor) {
-            filterSql = "r.cliente_cod = ?";
+            filterSql = "WHERE r.cliente_cod = ?";
             params.push(user.idFornecedor);
             if (user.lojaFornecedor) {
                 filterSql += " AND r.cliente_loja = ?";
                 params.push(user.lojaFornecedor);
             }
+        } else if (isAdminUser) {
+            // Admin/Superadmin sem fornecedor associado tem visão completa para testes e gestão
+            filterSql = "";
         } else {
             return res.json([]);
         }
@@ -783,7 +789,7 @@ router.get('/portal/list', async (req, res) => {
             SELECT r.*,
                    (SELECT COUNT(*) FROM app_romaneio_items i WHERE i.romaneio_id = r.id) as itens_count
             FROM app_romaneios r
-            WHERE ${filterSql}
+            ${filterSql}
             ORDER BY r.data_liberacao DESC
             LIMIT 100
         `;
@@ -799,7 +805,10 @@ router.get('/portal/details/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const user = req.user;
-        if (!user || user.tipo !== 'CLI') {
+        const userTipo = (user?.tipo || '').toUpperCase().trim();
+        const isAdminUser = userTipo === 'SA' || userTipo === 'A' || user?.isAdmin;
+
+        if (!user || (!isAdminUser && userTipo !== 'CLI' && user?.tipoExterno !== 'fornecedor')) {
              return res.status(403).json({ error: 'Acesso negado.' });
         }
         
@@ -822,6 +831,8 @@ router.get('/portal/details/:id', async (req, res) => {
                 filterSql += " AND cliente_loja = ?";
                 params.push(user.lojaFornecedor);
             }
+        } else if (isAdminUser) {
+            filterSql = "";
         }
 
         const [romRows] = await mysqlPool.query(`SELECT * FROM app_romaneios WHERE id = ? ${filterSql}`, params);
@@ -1080,34 +1091,24 @@ router.post('/:id/send-email', requirePermission('romaneios', 'edit'), async (re
         const rev = rows.length > 0 ? (rows[0].current_revision || 1) : 1;
         const fileName = `Romaneio_${id}_REV${rev}.pdf`;
 
-        // 3. SMTP Config (Using same as email.js)
-        const SMTP_CONFIG = {
-            host: 'smtp.task.com.br',
-            port: 587,
-            secure: false,
-            auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
-            tls: { rejectUnauthorized: false }
-        };
-
-        const transporter = nodemailer.createTransport(SMTP_CONFIG);
-        const mailOptions = {
-            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+        // 3. Envio pelo SMTP Oficial Hostinger
+        const { sendMail } = require('../services/mailService');
+        const info = await sendMail({
             to: Array.isArray(to) ? to.join(', ') : to,
-            subject: subject || `Romaneio MetalFisa #${id} - Atualização de Status`,
+            subject: subject || `Romaneio Lynx #${id} - Atualização de Status`,
             html: getCorporateEmailTemplate(htmlBody || '<p>Segue em anexo o caderno do romaneio atualizado.</p>'),
             attachments: [
                 { filename: fileName, content: pdfBuffer },
                 ...attachments
             ]
-        };
-
-        const info = await transporter.sendMail(mailOptions);
+        });
 
         // 4. Log Email in History
+        const senderMail = process.env.SMTP_USER || 'suporte@lynxems.com.br';
         await mysqlPool.execute(
             `INSERT INTO app_emails (message_id, folder, sender_name, sender_email, recipient_email, subject, body_html, has_attachments, date)
-             VALUES (?, 'SENT', 'MetalFisa ERP', 'sincometal@metalfisa.com.br', ?, ?, ?, 1, NOW())`,
-            [info.messageId, Array.isArray(to) ? to.join(', ') : to, subject, htmlBody]
+             VALUES (?, 'SENT', 'Lynx ERP', ?, ?, ?, ?, 1, NOW())`,
+            [info.messageId, senderMail, Array.isArray(to) ? to.join(', ') : to, subject, htmlBody]
         );
 
         res.json({ message: 'E-mail enviado com sucesso!', messageId: info.messageId });
@@ -2305,34 +2306,23 @@ router.post('/recebimentos/batch-followup', requirePermission('romaneios', 'edit
         // 3. Gerar Corpo do E-mail
         const bodyContent = `
             <div style="font-family: Arial, sans-serif; color: #334155; line-height: 1.6;">
-                <h2 style="color: #0f172a;">Cobrança de Retorno - MetalFisa</h2>
+                <h2 style="color: #0f172a;">Cobrança de Retorno - Lynx</h2>
                 <p>Prezados, <b>${supplierName}</b>,</p>
                 ${customMessage ? `<p style="background: #f8fafc; padding: 15px; border-left: 4px solid #4f46e5; font-style: italic;">"${customMessage.replace(/\n/g, '<br>')}"</p>` : ''}
                 <p>Identificamos que os itens abaixo, enviados via romaneio, ainda não retornaram ou estão com a data de previsão ultrapassada. Solicitamos uma atualização sobre o status de entrega destes materiais:</p>
                 ${itemsHtml}
                 <p style="margin-top: 25px;">Por favor, nos responda com a previsão atualizada para que possamos alinhar nosso planejamento de produção.</p>
-                <p>Atenciosamente,<br><b>Equipe MetalFisa</b></p>
+                <p>Atenciosamente,<br><b>Equipe Lynx</b></p>
             </div>
         `;
 
-        // 4. Configuração SMTP e Envio
-        const SMTP_CONFIG = {
-            host: 'smtp.task.com.br',
-            port: 587,
-            secure: false,
-            auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
-            tls: { rejectUnauthorized: false }
-        };
-
-        const transporter = nodemailer.createTransport(SMTP_CONFIG);
-        const mailOptions = {
-            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+        // 4. Configuração SMTP Oficial Hostinger e Envio
+        const { sendMail } = require('../services/mailService');
+        const info = await sendMail({
             to: finalRecipients.join(', '),
-            subject: `[COBRANÇA] Pendências de Retorno - MetalFisa (${supplierName})`,
+            subject: `[COBRANÇA] Pendências de Retorno - Lynx (${supplierName})`,
             html: getCorporateEmailTemplate(bodyContent)
-        };
-
-        const info = await transporter.sendMail(mailOptions);
+        });
 
         // 5. Registrar Revisão/Histórico em cada Romaneio envolvido
         const romaneioIds = [...new Set(items.map(i => i.romaneio_id))];
@@ -2355,10 +2345,11 @@ router.post('/recebimentos/batch-followup', requirePermission('romaneios', 'edit
         }
 
         // 6. Registrar no log de e-mails geral
+        const senderMailCobranca = process.env.SMTP_USER || 'suporte@lynxems.com.br';
         await mysqlPool.execute(
             `INSERT INTO app_emails (message_id, folder, sender_name, sender_email, recipient_email, subject, body_html, has_attachments, date)
-             VALUES (?, 'SENT', 'MetalFisa ERP', 'sincometal@metalfisa.com.br', ?, ?, ?, 0, NOW())`,
-            [info.messageId, recipientsStr, mailOptions.subject, bodyContent]
+             VALUES (?, 'SENT', 'Lynx ERP', ?, ?, ?, ?, 0, NOW())`,
+            [info.messageId, senderMailCobranca, recipientsStr, mailOptions.subject, bodyContent]
         );
 
         res.json({ message: 'Cobrança enviada com sucesso!', messageId: info.messageId, recipients: recipientsStr });

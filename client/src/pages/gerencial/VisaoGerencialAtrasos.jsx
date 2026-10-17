@@ -8,7 +8,7 @@ import { Target, AlertTriangle, Calendar, DollarSign, Lock, ChevronDown, Chevron
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#14b8a6', '#ec4899', '#14b8a6', '#f97316'];
+const COLORS = ['#425750', '#10b981', '#f59e0b', '#ef4444', '#14b8a6', '#ec4899', '#14b8a6', '#f97316'];
 
 const VisaoGerencialAtrasos = () => {
     const { user, hasPermission } = useAuth();
@@ -301,7 +301,7 @@ const VisaoGerencialAtrasos = () => {
                                             />
                                             <YAxis dataKey="name" type="category" width={160} fontSize={10} tickFormatter={(name) => name && name.length > 20 ? name.substring(0, 20) + '...' : name} />
                                             <RechartsTooltip formatter={(value) => activeTab === 'financeiro' ? formatBRL(value) : `${value.toLocaleString('pt-BR')} peças`} cursor={{fill: '#f1f5f9'}} />
-                                            <Bar dataKey={activeTab === 'financeiro' ? 'Valor' : 'Qtd'} fill={activeTab === 'financeiro' ? '#4f46e5' : '#3b82f6'} radius={[0, 4, 4, 0]} barSize={20} />
+                                            <Bar dataKey={activeTab === 'financeiro' ? 'Valor' : 'Qtd'} fill={activeTab === 'financeiro' ? '#32423D' : '#425750'} radius={[0, 4, 4, 0]} barSize={20} />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>

@@ -37,7 +37,7 @@ router.post('/importar-pcp', upload.single('file'), async (req, res) => {
         for (let i = 0; i < parsedRows.length; i++) {
             const row = parsedRows[i];
             
-            // Coluna C: Pedido Metalfisa (padding 6)
+            // Coluna C: Pedido Lynx (padding 6)
             let pedido = String(row.pedido || '').trim();
             if (!pedido && !row.item && !row.data_pcp) {
                 detailedResults[i] = { status: 'warning', reason: 'Linha vazia' };
@@ -49,7 +49,7 @@ router.post('/importar-pcp', upload.single('file'), async (req, res) => {
             }
             pedido = pedido.padStart(6, '0');
 
-            // Coluna B: Item do Pedido Metalfisa (padding 2)
+            // Coluna B: Item do Pedido Lynx (padding 2)
             let item = String(row.item || '').trim();
             if (!item) {
                 detailedResults[i] = { status: 'error', reason: 'Sem Item' };

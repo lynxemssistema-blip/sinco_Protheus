@@ -95,7 +95,7 @@ const EngineeringTab = () => {
                 // Logo
                 doc.setFontSize(13);
                 doc.setFont('helvetica', 'bold');
-                doc.text('METALFISA', ML + 4, hY + 6);
+                doc.text('LYNX', ML + 4, hY + 6);
                 doc.setFontSize(5.5);
                 doc.setFont('helvetica', 'normal');
                 doc.text('Transformando metais em excelência', ML + 4, hY + 10);
@@ -103,7 +103,7 @@ const EngineeringTab = () => {
                 // Company
                 doc.setFontSize(7.5);
                 doc.setFont('helvetica', 'bold');
-                doc.text('METALFISA METALURGICA LTDA', col1 + 3, hY + 5.5);
+                doc.text('LYNX EMS SISTEMAS LTDA', col1 + 3, hY + 5.5);
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(6.5);
                 doc.text('CNPJ: 23.881.592/0001-01', col1 + 3, hY + 9.5);
@@ -468,7 +468,7 @@ const PCPTab = () => {
                 // Logo
                 doc.setFontSize(13);
                 doc.setFont('helvetica', 'bold');
-                doc.text('METALFISA', ML + 4, hY + 6);
+                doc.text('LYNX', ML + 4, hY + 6);
                 doc.setFontSize(5.5);
                 doc.setFont('helvetica', 'normal');
                 doc.text('Transformando metais em excelência', ML + 4, hY + 10);
@@ -476,7 +476,7 @@ const PCPTab = () => {
                 // Company
                 doc.setFontSize(7.5);
                 doc.setFont('helvetica', 'bold');
-                doc.text('METALFISA METALURGICA LTDA', col1 + 3, hY + 5.5);
+                doc.text('LYNX EMS SISTEMAS LTDA', col1 + 3, hY + 5.5);
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(6.5);
                 doc.text('CNPJ: 23.881.592/0001-01', col1 + 3, hY + 9.5);
@@ -1153,7 +1153,7 @@ const RomaneioHistoryTab = () => {
                                     <td className="px-5 py-4 text-center">
                                         <button
                                             onClick={() => {
-                                                const token = localStorage.getItem('@MetalFisa:token');
+                                                const token = localStorage.getItem('@Lynx:token');
                                                 window.open(`${api.defaults.baseURL}/romaneios/${h.romaneio_id}/generate-bundle?token=${token}`, '_blank');
                                             }}
                                             className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors group"

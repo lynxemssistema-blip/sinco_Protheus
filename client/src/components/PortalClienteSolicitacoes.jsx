@@ -19,7 +19,7 @@ const PortalClienteSolicitacoes = ({ user, allOrderItems = [], filters, onOpenDr
                 if (!name.includes(q)) return false;
             }
             
-            // 2. Pedido Metalfisa
+            // 2. Pedido Lynx
             if (filters.pedido) {
                 const q = filters.pedido.toLowerCase().trim();
                 const ped = (sol.pedido_metalfisa || '').toLowerCase();
@@ -249,7 +249,7 @@ const PortalClienteSolicitacoes = ({ user, allOrderItems = [], filters, onOpenDr
             const filterLabel = activeFilters.length > 0 ? activeFilters.join(' | ') : 'Sem Filtros Ativos';
 
             const metaHeader = [
-                ['METALFISA METALÚRGICA LTDA — SISTEMA DE GESTÃO INTEGRADO (PCP)'],
+                ['LYNX EMS SISTEMAS LTDA — SISTEMA DE GESTÃO INTEGRADO (PCP)'],
                 ['RELATÓRIO: PORTAL DO CLIENTE — HISTÓRICO DE SOLICITAÇÕES'],
                 [`Data de Emissão: ${dateStr}  |  Usuário: ${user?.nome || 'Portal Cliente'}  |  Filtros Aplicados: ${filterLabel}`],
                 [], // Linha em branco
@@ -263,7 +263,7 @@ const PortalClienteSolicitacoes = ({ user, allOrderItems = [], filters, onOpenDr
                 { wch: 18 }, { wch: 18 }, { wch: 10 }, { wch: 15 }, { wch: 35 }, { wch: 35 }, { wch: 15 }
             ];
             XLSX.utils.book_append_sheet(wb, ws, 'Solicitações');
-            XLSX.writeFile(wb, `MetalFisa_Portal_Cliente_Solicitacoes_${fileDate}.xlsx`);
+            XLSX.writeFile(wb, `Lynx_Portal_Cliente_Solicitacoes_${fileDate}.xlsx`);
         } catch (err) {
             console.error('Erro ao exportar para Excel:', err);
             alert('Não foi possível gerar a planilha Excel.');
@@ -297,7 +297,7 @@ const PortalClienteSolicitacoes = ({ user, allOrderItems = [], filters, onOpenDr
                 pageDoc.setLineWidth(0.2);
                 [col1, col2].forEach(x => pageDoc.line(x, hY, x, hY + hH));
 
-                // Logo Metalfisa
+                // Logo Lynx
                 try {
                     if (logoBase64) {
                         pageDoc.addImage(logoBase64, 'PNG', ML + 2, hY + 1, 38, 13);
@@ -305,13 +305,13 @@ const PortalClienteSolicitacoes = ({ user, allOrderItems = [], filters, onOpenDr
                         pageDoc.setFontSize(13);
                         pageDoc.setFont('helvetica', 'bold');
                         pageDoc.setTextColor(30, 58, 95);
-                        pageDoc.text('METALFISA', ML + 4, hY + 9);
+                        pageDoc.text('LYNX', ML + 4, hY + 9);
                     }
                 } catch(e) {
                     pageDoc.setFontSize(13);
                     pageDoc.setFont('helvetica', 'bold');
                     pageDoc.setTextColor(30, 58, 95);
-                    pageDoc.text('METALFISA', ML + 4, hY + 9);
+                    pageDoc.text('LYNX', ML + 4, hY + 9);
                 }
 
                 pageDoc.setTextColor(0, 0, 0);
@@ -398,7 +398,7 @@ const PortalClienteSolicitacoes = ({ user, allOrderItems = [], filters, onOpenDr
                 }
             });
 
-            doc.save(`MetalFisa_Portal_Cliente_Solicitacoes_${new Date().toISOString().slice(0,10)}.pdf`);
+            doc.save(`Lynx_Portal_Cliente_Solicitacoes_${new Date().toISOString().slice(0,10)}.pdf`);
         } catch (err) {
             console.error('Erro ao exportar para PDF:', err);
             alert('Não foi possível gerar o arquivo PDF.');
@@ -584,7 +584,7 @@ const PortalClienteSolicitacoes = ({ user, allOrderItems = [], filters, onOpenDr
                                                         <button
                                                             onClick={() => onOpenDrawing && onOpenDrawing(sol.desenho_url, sol.produto)}
                                                             className="inline-flex items-center gap-1.5 hover:text-blue-900 hover:underline cursor-pointer focus:outline-none text-left"
-                                                            title="Abrir desenho PDF/MetalFisa"
+                                                            title="Abrir desenho PDF/Lynx"
                                                         >
                                                             <FileText className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
                                                             <span>{sol.produto}</span>

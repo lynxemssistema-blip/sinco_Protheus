@@ -820,7 +820,7 @@ export default function DemandaMesPage() {
 
             const data = await selected.arrayBuffer();
             const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-            const sheetName = workbook.SheetNames.find(s => s.toUpperCase().includes('METALFISA')) || workbook.SheetNames[0];
+            const sheetName = workbook.SheetNames.find(s => s.toUpperCase().includes('LYNX')) || workbook.SheetNames[0];
             const sheet = workbook.Sheets[sheetName];
 
             if (!sheet) {
@@ -1081,7 +1081,7 @@ export default function DemandaMesPage() {
 
             const data = await selectedFile.arrayBuffer();
             const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-            const sheetName = workbook.SheetNames.find(s => s.toUpperCase().includes('METALFISA')) || workbook.SheetNames[0];
+            const sheetName = workbook.SheetNames.find(s => s.toUpperCase().includes('LYNX')) || workbook.SheetNames[0];
             const sheet = workbook.Sheets[sheetName];
 
             if (!sheet) {
@@ -1272,7 +1272,7 @@ export default function DemandaMesPage() {
 
                     const rowObj = {
                         'Ref. Cliente': item.ref_cliente,
-                        'Código Metalfisa': item.codigo_metalfisa,
+                        'Código Lynx': item.codigo_metalfisa,
                         'Descrição': item.descricao,
                         'Status': item.possui_saldo ? 'COM SALDO' : (item.totalmente_faturado ? '100% FATURADO' : 'SEM SALDO'),
                         'Total Saldo Faturar': item.total_saldo_faturar,
@@ -1285,7 +1285,7 @@ export default function DemandaMesPage() {
                     });
 
                     rowObj['PCP Agrupado por Mês'] = pcpMesesStr;
-                    rowObj['Pedido Metalfisa'] = p.pedido_metal;
+                    rowObj['Pedido Lynx'] = p.pedido_metal;
                     rowObj['Item'] = p.item_pedido;
                     rowObj['Pedido Cliente'] = p.pedido_cliente || '-';
                     rowObj['Qtd Pedida'] = p.qtd_pedida || 0;
@@ -1302,7 +1302,7 @@ export default function DemandaMesPage() {
 
                 const rowObj = {
                     'Ref. Cliente': item.ref_cliente,
-                    'Código Metalfisa': item.codigo_metalfisa,
+                    'Código Lynx': item.codigo_metalfisa,
                     'Descrição': item.descricao,
                     'Status': item.totalmente_faturado ? '100% FATURADO' : 'SEM SALDO',
                     'Total Saldo Faturar': 0,
@@ -1315,7 +1315,7 @@ export default function DemandaMesPage() {
                 });
 
                 rowObj['PCP Agrupado por Mês'] = '-';
-                rowObj['Pedido Metalfisa'] = '-';
+                rowObj['Pedido Lynx'] = '-';
                 rowObj['Item'] = '-';
                 rowObj['Pedido Cliente'] = '-';
                 rowObj['Qtd Pedida'] = item.total_pedido || 0;
@@ -1343,10 +1343,10 @@ export default function DemandaMesPage() {
         if (filterStatus === 'FATURADO_TOTAL') filterSuffix = 'FATURADO_TOTAL';
         if (filterMonth !== 'ALL') filterSuffix += `_${filterMonth.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-        XLSX.writeFile(wb, `Demanda_Mes_Metalfisa_${filterSuffix}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        XLSX.writeFile(wb, `Demanda_Mes_Lynx_${filterSuffix}_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
 
-    // Exportar Relatório PDF Oficial Metalfisa
+    // Exportar Relatório PDF Oficial Lynx
     const handleExportPdf = () => {
         if (!resultData?.itens || resultData.itens.length === 0) return;
         try {
@@ -1356,7 +1356,7 @@ export default function DemandaMesPage() {
                 totais: resultData.totais || {},
                 filterStatus,
                 filterMonth,
-                sheetName: resultData.sheetName || 'METALFISA'
+                sheetName: resultData.sheetName || 'LYNX'
             });
         } catch (err) {
             alert('Erro ao gerar relatório PDF: ' + err.message);
@@ -1377,7 +1377,7 @@ export default function DemandaMesPage() {
     // Gerar e Baixar Planilha Modelo de Exemplo
     const handleDownloadSampleExcel = () => {
         const sampleHeaders = [
-            ['CONTROLE DE DEMANDA MÊS - MODELO METALFISA'],
+            ['CONTROLE DE DEMANDA MÊS - MODELO LYNX'],
             [],
             ['DEMANDAS CLIENTE', '', '', 'DEMANDAS MENSAIS PREVISTAS', '', '', ''],
             ['PRODUTO', 'DESCRIÇÃO', 'ESTOQUE ATUAL', 'AGO/2026', 'SET/2026', 'OUT/2026', 'NOV/2026', 'DEZ/2026', 'TOTAL PREVISTO'],
@@ -1390,8 +1390,8 @@ export default function DemandaMesPage() {
 
         const ws = XLSX.utils.aoa_to_sheet(sampleHeaders);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'METALFISA');
-        XLSX.writeFile(wb, 'MODELO_PLANILHA_DEMANDA_METALFISA.xlsx');
+        XLSX.utils.book_append_sheet(wb, ws, 'LYNX');
+        XLSX.writeFile(wb, 'MODELO_PLANILHA_DEMANDA_LYNX.xlsx');
     };
 
     return (
@@ -1508,7 +1508,7 @@ export default function DemandaMesPage() {
                                 <span>Leitura & Rastreabilidade</span>
                             </div>
                             <p className="leading-relaxed">
-                                O app localiza a aba <strong>METALFISA</strong> (ou a primeira aba) e mapeia as referências do cliente com a tabela de De-Para (<strong>SZ1010 / app_demanda_vmi_map</strong>) para encontrar o código de produto Protheus (<strong>B1_COD</strong>).
+                                O app localiza a aba <strong>LYNX</strong> (ou a primeira aba) e mapeia as referências do cliente com a tabela de De-Para (<strong>SZ1010 / app_demanda_vmi_map</strong>) para encontrar o código de produto Protheus (<strong>B1_COD</strong>).
                             </p>
                         </div>
 
@@ -2102,7 +2102,7 @@ export default function DemandaMesPage() {
                                     type="button"
                                     onClick={handleExportPdf}
                                     className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer active:scale-95"
-                                    title="Gerar Relatório Oficial Metalfisa em PDF da visão atual com logotipo e resumo"
+                                    title="Gerar Relatório Oficial Lynx em PDF da visão atual com logotipo e resumo"
                                 >
                                     <Printer className="w-3.5 h-3.5" />
                                     <span>Gerar PDF ({filteredItems.length})</span>
@@ -2127,7 +2127,7 @@ export default function DemandaMesPage() {
                                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                                     <input
                                         type="text"
-                                        placeholder="Buscar por Ref. Cliente, Código Metalfisa, Descrição, Pedido ou OP..."
+                                        placeholder="Buscar por Ref. Cliente, Código Lynx, Descrição, Pedido ou OP..."
                                         value={filterText}
                                         onChange={e => setFilterText(e.target.value)}
                                         className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
@@ -2175,7 +2175,7 @@ export default function DemandaMesPage() {
                                 <thead>
                                     <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                                         <th className="py-3.5 px-3">Ref. Cliente</th>
-                                        <th className="py-3.5 px-3">Cód. Metalfisa</th>
+                                        <th className="py-3.5 px-3">Cód. Lynx</th>
                                         <th className="py-3.5 px-4">Descrição</th>
                                         <th className="py-3.5 px-3 text-center">Status</th>
                                         {resultData.mesesDemanda.map(m => (
@@ -2755,7 +2755,7 @@ export default function DemandaMesPage() {
                                 <span className="font-bold text-slate-900">{editingPcp.refCliente || '-'}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-slate-500 font-medium">Pedido Metalfisa:</span>
+                                <span className="text-slate-500 font-medium">Pedido Lynx:</span>
                                 <span className="font-bold text-indigo-700">{editingPcp.pedido} (Item {editingPcp.item})</span>
                             </div>
                             <div className="flex justify-between">
@@ -3004,7 +3004,7 @@ export default function DemandaMesPage() {
                                         <th className="py-2.5 px-2 text-center">Série</th>
                                         <th className="py-2.5 px-3">Data Emissão</th>
                                         <th className="py-2.5 px-3 text-right text-sky-900 font-extrabold">Qtd Faturada</th>
-                                        <th className="py-2.5 px-3">Pedido Metalfisa</th>
+                                        <th className="py-2.5 px-3">Pedido Lynx</th>
                                         <th className="py-2.5 px-2 text-center">Item</th>
                                     </tr>
                                 </thead>

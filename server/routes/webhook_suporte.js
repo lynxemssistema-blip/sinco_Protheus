@@ -47,7 +47,7 @@ const HISTORY_CACHE = {};
 
 const SUPORTE_INSTANCE = 'Suporte Lynx';
 const SUPORTE_APIKEY = '1C62EE90D11A-4C75-B1BA-383CDF634A39';
-const SUPORTE_GROUP_NAME = 'Metalfisa - Suporte Lynx';
+const SUPORTE_GROUP_NAME = 'Lynx - Suporte Lynx';
 
 router.post('/suporte-ia', async (req, res) => {
     try {
@@ -265,7 +265,7 @@ Regras OBRIGATÓRIAS:
 2. Seja sempre extremamente educado e profissional, utilizando emojis com moderação. 
 3. Sempre que possível, dirija-se ao usuário pelo PRIMEIRO NOME, com muito respeito. O nome completo dele é: ${userName}.
 4. Utilize formatação amigável para WhatsApp: listas e *negrito* para destaques.
-5. **RESTRIÇÃO TOTAL DE CONTEXTO**: Você foi programado única e exclusivamente para dar suporte e responder sobre o app MetalFisa SINCO. Se o usuário perguntar ou pedir qualquer coisa que seja fora deste escopo (assuntos gerais, programação, piadas, tradução, clima, etc.), você DEVE educadamente dizer que "sua função é limitada a ajudar com dados e dúvidas de como operar o sistema MetalFisa SINCO" e se recusar a responder.
+5. **RESTRIÇÃO TOTAL DE CONTEXTO**: Você foi programado única e exclusivamente para dar suporte e responder sobre o app Lynx SINCO. Se o usuário perguntar ou pedir qualquer coisa que seja fora deste escopo (assuntos gerais, programação, piadas, tradução, clima, etc.), você DEVE educadamente dizer que "sua função é limitada a ajudar com dados e dúvidas de como operar o sistema Lynx SINCO" e se recusar a responder.
 6. **Sua única base de inteligência sobre o ERP é o dicionário abaixo e a Inteligência Coletiva**. Não invente funções, rotas ou nomes de telas que não constem no documento.
 7. Se o usuário apontar um erro sistêmico que não está na base, oriente a verificar conexão, limpar o cache ou avisar o suporte nível 2.
 8. CUIDADO COM LINKS E PERMISSÕES: Se você sugerir um link ou módulo da base de conhecimento, lembre o usuário explicitamente de que ele deve ter permissão de acesso no sistema para abrir a referida página.

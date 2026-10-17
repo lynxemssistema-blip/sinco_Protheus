@@ -65,7 +65,7 @@ export const generateLoteExcel = async (release, user = null, onProgress = null)
         }
 
         const workbook = new ExcelJS.Workbook();
-        workbook.creator = user?.nome || 'MetalFisa PCP';
+        workbook.creator = user?.nome || 'Lynx PCP';
         workbook.created = new Date();
 
         // ─────────────────────────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ export const generateLoteExcel = async (release, user = null, onProgress = null)
         // Header Title
         wsSummary.mergeCells('A1:J1');
         const titleCell = wsSummary.getCell('A1');
-        titleCell.value = `METALFISA — ÍNDICE GERAL E RESUMO MESTRE / LOTE: ${lotCode}`;
+        titleCell.value = `LYNX — ÍNDICE GERAL E RESUMO MESTRE / LOTE: ${lotCode}`;
         titleCell.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
         titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF166534' } }; // Dark green
         titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -178,7 +178,7 @@ export const generateLoteExcel = async (release, user = null, onProgress = null)
         // Header Title
         wsOps.mergeCells('A1:L1');
         const titleOps = wsOps.getCell('A1');
-        titleOps.value = `METALFISA — ROTEIROS DE FABRICAÇÃO E OPERAÇÕES / LOTE: ${lotCode}`;
+        titleOps.value = `LYNX — ROTEIROS DE FABRICAÇÃO E OPERAÇÕES / LOTE: ${lotCode}`;
         titleOps.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
         titleOps.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } }; // Navy Blue
         titleOps.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -318,7 +318,7 @@ export const generateLoteExcel = async (release, user = null, onProgress = null)
         // Header Title
         wsBom.mergeCells('A1:K1');
         const titleBom = wsBom.getCell('A1');
-        titleBom.value = `METALFISA — ESTRUTURA COMPLETA MULTI-NÍVEL DAS OPS / LOTE: ${lotCode}`;
+        titleBom.value = `LYNX — ESTRUTURA COMPLETA MULTI-NÍVEL DAS OPS / LOTE: ${lotCode}`;
         titleBom.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
         titleBom.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF7C2D12' } }; // Brown / Bronze
         titleBom.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -446,7 +446,7 @@ export const generateLoteExcel = async (release, user = null, onProgress = null)
         // Header Title
         wsConsolidated.mergeCells('A1:H1');
         const titleCons = wsConsolidated.getCell('A1');
-        titleCons.value = `METALFISA — CONSOLIDAÇÃO TOTAL DE PEÇAS E MATERIAIS SOMADOS / LOTE: ${lotCode}`;
+        titleCons.value = `LYNX — CONSOLIDAÇÃO TOTAL DE PEÇAS E MATERIAIS SOMADOS / LOTE: ${lotCode}`;
         titleCons.font = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
         titleCons.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF065F46' } }; // Deep Emerald
         titleCons.alignment = { horizontal: 'center', vertical: 'middle' };

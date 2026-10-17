@@ -190,7 +190,7 @@ export default function WabtecEstruturaMapeamentoPage({ selectedLote }) {
                                                         <span className="font-bold text-slate-800">{item.protheus_cod}</span>
                                                         {item.protheus_rev && (
                                                             <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${item.status_mapeamento === 'ENCONTRADO' ? 'bg-green-100 text-green-700 border-green-300' : 'bg-yellow-100 text-yellow-700 border-yellow-300'}`}>
-                                                                Rev. MetalFisa: {item.protheus_rev}
+                                                                Rev. Lynx: {item.protheus_rev}
                                                             </span>
                                                         )}
                                                     </div>

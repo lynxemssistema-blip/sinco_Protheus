@@ -8,7 +8,7 @@
  */
 
 const MIN_PER_DAY = 480; // Assumindo 8 horas úteis por dia (8 * 60)
-const LAG_MINUTES = 50;  // 1 hora produtiva = 50 minutos na regra da MetalFisa
+const LAG_MINUTES = 50;  // 1 hora produtiva = 50 minutos na regra da Lynx
 
 function addWorkingDays(startDateStr, totalMinutes) {
     const daysToAdd = Math.floor(totalMinutes / MIN_PER_DAY);

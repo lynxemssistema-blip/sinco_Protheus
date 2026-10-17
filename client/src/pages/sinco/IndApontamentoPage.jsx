@@ -31,7 +31,7 @@ export default function IndApontamentoPage({ embedded = false }) {
     const [loadingMacro, setLoadingMacro] = useState(false);
     const [showLegend, setShowLegend] = useState(false);
     const [total, setTotal] = useState(0);
-    const [calcType, setCalcType] = useStickyState('op_specific', '@metalfisa:prod_calcType');
+    const [calcType, setCalcType] = useStickyState('op_specific', '@lynxems:prod_calcType');
 
     const STATUS_OPTIONS = [
         { value: 'in_progress', label: 'Em Andamento', color: 'text-blue-700 bg-blue-100 border-blue-300' },
@@ -50,7 +50,7 @@ export default function IndApontamentoPage({ embedded = false }) {
         operacao: '',
         status: [],
         pending_delivery: true // Default: Only show items with balance to deliver
-    }, '@metalfisa:prod_filters');
+    }, '@lynxems:prod_filters');
 
     // Migrate stale/invalid status values from localStorage
     useEffect(() => {
@@ -71,7 +71,7 @@ export default function IndApontamentoPage({ embedded = false }) {
         });
     };
 
-    const [sortConfig, setSortConfig] = useStickyState(null, '@metalfisa:prod_sortConfig');
+    const [sortConfig, setSortConfig] = useStickyState(null, '@lynxems:prod_sortConfig');
     // Map of cod_produto_op -> { hasDoc: bool, url: string|null }
     const [productDocs, setProductDocs] = useState({});
     const [expandedRows, setExpandedRows] = useState({});
@@ -100,7 +100,7 @@ export default function IndApontamentoPage({ embedded = false }) {
     };
 
     const [sectors, setSectors] = useState([]);
-    const [activeTab, setActiveTab] = useStickyState('tabela', '@metalfisa:prod_activeTab');
+    const [activeTab, setActiveTab] = useStickyState('tabela', '@lynxems:prod_activeTab');
     const abortControllerRef = useRef(null);
     const tableContainerRef = useRef(null);
     const [visibleCount, setVisibleCount] = useState(100);

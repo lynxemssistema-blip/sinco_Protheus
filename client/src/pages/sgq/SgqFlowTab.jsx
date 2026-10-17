@@ -11,10 +11,10 @@ const SgqFlowTab = ({ data, onNodeClick }) => {
         if (!data || data.length === 0) return { nodes: [], edges: [] };
 
         // 1. Agrupar por Categorias
-        // A raiz é 'MetalFisa'
+        // A raiz é 'Lynx'
         const hierarchyData = {
             id: 'root',
-            name: 'MetalFisa Sistema',
+            name: 'Lynx Sistema',
             type: 'root',
             children: []
         };
@@ -80,7 +80,7 @@ const SgqFlowTab = ({ data, onNodeClick }) => {
                 },
                 style: {
                     width: 180,
-                    backgroundColor: isRoot ? '#0f172a' : isCategory ? (d.data.color || '#3b82f6') : '#ffffff',
+                    backgroundColor: isRoot ? '#0f172a' : isCategory ? (d.data.color || '#425750') : '#ffffff',
                     color: isCategory || isRoot ? '#ffffff' : '#0f172a',
                     border: isCategory || isRoot ? 'none' : '2px solid #e2e8f0',
                     borderRadius: isRoot ? '12px' : '8px',

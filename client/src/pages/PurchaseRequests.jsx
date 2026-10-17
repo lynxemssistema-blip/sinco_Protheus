@@ -22,7 +22,7 @@ export default function PurchaseRequests() {
         numero_pedido: '',
         data_de: '',
         data_ate: '',
-    }, '@metalfisa:purchase_requests_filters_v2');
+    }, '@lynxems:purchase_requests_filters_v2');
 
     const handleSearch = async (e) => {
         e?.preventDefault();

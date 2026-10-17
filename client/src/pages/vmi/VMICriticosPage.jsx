@@ -243,7 +243,7 @@ export default function VMICriticosPage() {
         if (activeItens.length === 0) return;
         const rows = activeItens.map(it => ({
             'Código VMI': it.codVmi,
-            'Código MetalFisa': it.b1Cod || it.codMetalfisa,
+            'Código Lynx': it.b1Cod || it.codLynx,
             'Descrição': it.descricao,
             'Prioridade': it.prioridade || '-',
             'WK 01': it.wk01,
@@ -257,8 +257,8 @@ export default function VMICriticosPage() {
             'Status Entrega': it.statusEntrega,
             'Follow-up': it.followUp || '-',
             'Previsão Entrega': it.previsaoEntrega || '-',
-            'Saldo Pedidos MetalFisa': it.saldoPedidosMetalFisa,
-            'Faturado MetalFisa': it.faturadoMetalFisa,
+            'Saldo Pedidos Lynx': it.saldoPedidosLynx,
+            'Faturado Lynx': it.faturadoLynx,
             'Qtd Pedidos Vinculados': it.pedidos?.length || 0,
             'Qtd NFs Emitidas': it.nfs?.length || 0
         }));
@@ -280,7 +280,7 @@ export default function VMICriticosPage() {
             if (filterText) {
                 const search = filterText.toLowerCase();
                 const vmi = String(it.codVmi || '').toLowerCase();
-                const metal = String(it.b1Cod || it.codMetalfisa || '').toLowerCase();
+                const metal = String(it.b1Cod || it.codLynx || '').toLowerCase();
                 const desc = String(it.descricao || '').toLowerCase();
                 const follow = String(it.followUp || '').toLowerCase();
                 return vmi.includes(search) || metal.includes(search) || desc.includes(search) || follow.includes(search);
@@ -298,8 +298,8 @@ export default function VMICriticosPage() {
         const pendenteCount = activeItens.filter(it => it.statusEntrega !== 'MATERIAL OK').length;
         const comPedidoCount = activeItens.filter(it => it.pedidos && it.pedidos.length > 0).length;
         const comNfCount = activeItens.filter(it => it.nfs && it.nfs.length > 0).length;
-        const saldoMetal = activeItens.reduce((acc, it) => acc + (Number(it.saldoPedidosMetalFisa) || 0), 0);
-        const fatMetal = activeItens.reduce((acc, it) => acc + (Number(it.faturadoMetalFisa) || 0), 0);
+        const saldoMetal = activeItens.reduce((acc, it) => acc + (Number(it.saldoPedidosLynx) || 0), 0);
+        const fatMetal = activeItens.reduce((acc, it) => acc + (Number(it.faturadoLynx) || 0), 0);
 
         return {
             total,
@@ -342,7 +342,7 @@ export default function VMICriticosPage() {
                             </span>
                         </div>
                         <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                            Espelho de faltantes, cruzamento automático com pedidos e notas fiscais MetalFisa, comparador de versões e curva de evolução.
+                            Espelho de faltantes, cruzamento automático com pedidos e notas fiscais Lynx, comparador de versões e curva de evolução.
                         </p>
                     </div>
                 </div>
@@ -497,7 +497,7 @@ export default function VMICriticosPage() {
                         </div>
 
                         <div className="bg-white p-4 rounded-xl border border-indigo-200/80 shadow-2xs">
-                            <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider block">Faturado MetalFisa</span>
+                            <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider block">Faturado Lynx</span>
                             <div className="flex items-baseline justify-between mt-1">
                                 <span className="text-2xl font-black text-indigo-700">{resumoAtivo.fatMetal.toLocaleString('pt-BR')}</span>
                                 <span className="text-xs text-slate-400">peças</span>
@@ -520,7 +520,7 @@ export default function VMICriticosPage() {
                                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                 <input
                                     type="text"
-                                    placeholder="Buscar por código VMI, código MetalFisa, descrição ou follow-up..."
+                                    placeholder="Buscar por código VMI, código Lynx, descrição ou follow-up..."
                                     value={filterText}
                                     onChange={(e) => setFilterText(e.target.value)}
                                     className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
@@ -535,7 +535,7 @@ export default function VMICriticosPage() {
                                 <option value="ALL">Todos os Status ({activeItens.length})</option>
                                 <option value="FALTA_ENTREGA">⚠️ Falta Entrega ({resumoAtivo.pendenteCount})</option>
                                 <option value="MATERIAL_OK">✅ Material OK ({resumoAtivo.okCount})</option>
-                                <option value="COM_PEDIDO">📦 Com Pedido MetalFisa ({resumoAtivo.comPedidoCount})</option>
+                                <option value="COM_PEDIDO">📦 Com Pedido Lynx ({resumoAtivo.comPedidoCount})</option>
                                 <option value="COM_NF">📑 Com NF Emitida ({resumoAtivo.comNfCount})</option>
                             </select>
                         </div>
@@ -572,7 +572,7 @@ export default function VMICriticosPage() {
                                         <tr>
                                             <th className="w-10 px-3 py-3 text-center"></th>
                                             <th className="px-3 py-3">Cód. VMI (Col C)</th>
-                                            <th className="px-3 py-3">Cód. MetalFisa (Col B)</th>
+                                            <th className="px-3 py-3">Cód. Lynx (Col B)</th>
                                             <th className="px-4 py-3 min-w-[220px]">Descrição do Produto</th>
                                             <th className="px-2.5 py-3 text-right">WK 01</th>
                                             <th className="px-2.5 py-3 text-right">WK 02</th>
@@ -588,7 +588,7 @@ export default function VMICriticosPage() {
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {filteredItens.map((it, idx) => {
-                                            const itemKey = `${it.codVmi}_${it.codMetalfisa}_${idx}`;
+                                            const itemKey = `${it.codVmi}_${it.codLynx}_${idx}`;
                                             const isExpanded = !!expandedItemKeys[itemKey];
                                             const isOk = it.statusEntrega === 'MATERIAL OK';
 
@@ -611,7 +611,7 @@ export default function VMICriticosPage() {
                                                             {it.codVmi}
                                                         </td>
                                                         <td className="px-3 py-3 font-mono font-bold text-blue-700">
-                                                            {it.b1Cod || it.codMetalfisa || (
+                                                            {it.b1Cod || it.codLynx || (
                                                                 <span className="text-slate-400 font-normal italic text-[11px]">Não mapeado</span>
                                                             )}
                                                         </td>
@@ -647,11 +647,11 @@ export default function VMICriticosPage() {
                                                         </td>
 
                                                         <td className="px-3 py-3 text-right font-mono font-bold text-blue-700 bg-blue-50/20">
-                                                            {it.saldoPedidosMetalFisa > 0 ? it.saldoPedidosMetalFisa.toLocaleString('pt-BR') : '-'}
+                                                            {it.saldoPedidosLynx > 0 ? it.saldoPedidosLynx.toLocaleString('pt-BR') : '-'}
                                                         </td>
 
                                                         <td className="px-3 py-3 text-right font-mono font-bold text-emerald-700 bg-emerald-50/20">
-                                                            {it.faturadoMetalFisa > 0 ? it.faturadoMetalFisa.toLocaleString('pt-BR') : '-'}
+                                                            {it.faturadoLynx > 0 ? it.faturadoLynx.toLocaleString('pt-BR') : '-'}
                                                         </td>
 
                                                         <td className="px-3 py-3 max-w-[200px]">
@@ -675,12 +675,12 @@ export default function VMICriticosPage() {
                                                             <td colSpan={14} className="p-0 bg-slate-50/80">
                                                                 <div className="p-4 pl-12 pr-6 border-y border-blue-100 bg-gradient-to-r from-blue-50/30 to-slate-50 space-y-4">
                                                                     
-                                                                    {/* 1. PEDIDOS DE VENDA METALFISA */}
+                                                                    {/* 1. PEDIDOS DE VENDA LYNX */}
                                                                     <div className="space-y-2">
                                                                         <div className="flex items-center justify-between">
                                                                             <span className="text-xs font-black text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
                                                                                 <Package className="w-3.5 h-3.5 text-blue-600" />
-                                                                                Pedidos de Venda MetalFisa (SC6010 / SC5010) — {it.pedidos?.length || 0} encontrado(s)
+                                                                                Pedidos de Venda Lynx (SC6010 / SC5010) — {it.pedidos?.length || 0} encontrado(s)
                                                                             </span>
                                                                         </div>
 
@@ -930,7 +930,7 @@ export default function VMICriticosPage() {
                                             {filteredCompareItens.map((it, idx) => (
                                                 <tr key={idx} className="hover:bg-slate-50">
                                                     <td className="px-3 py-2.5 font-mono font-bold text-slate-900">{it.codVmi}</td>
-                                                    <td className="px-3 py-2.5 font-mono font-bold text-blue-700">{it.codMetalfisa || '-'}</td>
+                                                    <td className="px-3 py-2.5 font-mono font-bold text-blue-700">{it.codLynx || '-'}</td>
                                                     <td className="px-4 py-2.5 max-w-[250px] truncate" title={it.descricao}>{it.descricao || '-'}</td>
                                                     
                                                     <td className="px-3 py-2.5 text-center">

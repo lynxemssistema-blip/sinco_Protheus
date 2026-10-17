@@ -6,6 +6,7 @@ const cors = require('cors');
 const pedidosRouter = require('./routes/pedidos');
 const corteRouter = require('./routes/corte');
 const { authenticateToken } = require('./routes/auth');
+const { tenantMiddleware } = require('./middlewares/tenantMiddleware');
 
 const http = require('http');
 const { Server } = require('socket.io');
@@ -15,6 +16,7 @@ const nodemailer = require('nodemailer');
 const { getCorporateEmailTemplate } = require('./utils/emailTemplate');
 const mysqlService = require('./services/mysqlService');
 const { calcularKPIMeuCanal } = require('./routes/meucanal');
+const { sendMail } = require('./services/mailService');
 const { sendText: waSend, logEmailSent, msgMeuCanal } = require('./services/whatsapp');
 const whatsappAiAgent = require('./services/whatsappAiAgent');
 
@@ -69,6 +71,16 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Sala da empresa (multi-tenant). O IdEmpresa vem do JWT validado, nunca do cliente.
+    socket.on('join_tenant', (token) => {
+        try {
+            const decoded = require('jsonwebtoken').verify(token, process.env.JWT_SECRET);
+            socket.join(`tenant_${decoded.IdEmpresa ?? 'global'}`);
+        } catch {
+            socket.emit('join_tenant_error', 'Token inválido');
+        }
+    });
+
     // Entrar em uma sala de grupo
     socket.on('join_group', (groupId) => {
         if (groupId) {
@@ -99,23 +111,28 @@ app.use(cors({
     origin: function (origin, callback) {
         const allowedOrigins = [
             process.env.CORS_ORIGIN,
-            'https://metalfisa.lynxems.com.br',
-            'https://sincometal.metalfisa.com.br',
-            'http://sincometal.metalfisa.com.br',
-            'http://192.168.1.77:3001',
+            'https://lynxems.com.br',
+            'https://www.lynxems.com.br',
+            'http://lynxems.com.br',
             'http://localhost:5173',
             'http://localhost:5174',
             'http://localhost:3000',
-            'http://192.168.1.167:5173'
-        ];
-        if (!origin || allowedOrigins.includes(origin)) {
+            'http://localhost:3001',
+            'http://localhost:3002'
+        ].filter(Boolean);
+
+        const isLocalOrLan = origin && /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin);
+
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.lynxems.com.br') || isLocalOrLan) {
             callback(null, true);
         } else {
-            callback(new Error('Not allowed by CORS'));
+            console.warn(`[CORS] Origem não permitida: ${origin}`);
+            callback(null, false);
         }
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-tenant-override'],
+    credentials: true
 }));
 
 // Logging Middleware — reduced in production
@@ -187,6 +204,12 @@ app.use((req, res, next) => {
 // Auth — public routes (no token required)
 app.use('/api/auth', require('./routes/auth'));
 
+// Multi-Tenant: Gestão de Usuários da Empresa e Planos
+app.use('/api/empresa', require('./routes/empresaUsuarios'));
+
+// Multi-Tenant: Painel do Superadmin e Impersonation (edsonmanoel2012@gmail.com)
+app.use('/api/superadmin', require('./routes/superadmin'));
+
 // SINCO Formulário Web — público (chamado pelo desktop Solid Edge sem autenticação)
 let _dadosCorrenteSE = null;
 app.post('/api/sinco/dados-correntes', (req, res) => {
@@ -218,15 +241,16 @@ app.get('/api/rh/curriculos/download/:filename', (req, res) => {
 // ── Rota pública: download do Print Agent (sem auth — navegador não envia JWT em <a download>) ──
 app.get('/api/labels/download-agent', (req, res) => {
     const fs = require('fs');
-    const agentPath = path.resolve(__dirname, '../client/public/MetalFisa-Print-Agent.ems');
+    const agentPath = path.resolve(__dirname, '../client/public/Lynx-Print-Agent.ems');
     if (!fs.existsSync(agentPath)) {
-        return res.status(404).json({ error: 'MetalFisa-Print-Agent.ems não encontrado.' });
+        return res.status(404).json({ error: 'Lynx-Print-Agent.ems não encontrado.' });
     }
-    res.download(agentPath, 'MetalFisa-Print-Agent.ems');
+    res.download(agentPath, 'Lynx-Print-Agent.ems');
 });
 
-// Protected API routes — require valid JWT token
+// Protected API routes — require valid JWT token and inject tenant context
 app.use('/api', authenticateToken);
+app.use('/api', tenantMiddleware);
 
 // Routes (all protected by auth middleware above)
 app.use('/api/pedidos', pedidosRouter);
@@ -271,6 +295,25 @@ app.use('/api/stock', require('./routes/stock'));
 // Company Route
 app.use('/api/company', require('./routes/company'));
 
+// Propostas Comerciais (Módulo Exclusivo SuperAdmin)
+app.use('/api/propostas', require('./routes/propostasComerciais'));
+
+// Suíte de Módulos Corporativos (100% MySQL & Multi-Tenant)
+app.use('/api/cadastros-basicos', require('./routes/cadastrosBasicos'));
+app.use('/api/salas-reuniao', require('./routes/salasReuniao'));
+app.use('/api/salas', require('./routes/salasReuniao'));
+app.use('/api/reunioes', require('./routes/salasReuniao'));
+app.use('/api/sst/brigada', require('./routes/sstBrigada'));
+app.use('/api/sst', require('./routes/sst'));
+app.use('/api/sst/cesta', require('./routes/sstCestaBasica'));
+app.use('/api/rh/pasta', require('./routes/rhPastaColaborador'));
+app.use('/api/rh/autoatendimento', require('./routes/rhAutoatendimento'));
+app.use('/api/suporte', require('./routes/suporte'));
+app.use('/api/sistema', require('./routes/backupConfig'));
+app.use('/api/cipa', require('./routes/cipa'));
+app.use('/api/portaria', require('./routes/portaria'));
+app.use('/api/sst-brigada', require('./routes/sstBrigada'));
+
 // Materials Management Routes
 console.log('🔄 [DEBUG] Montando rota /api/materials...');
 app.use('/api/materials', require('./routes/materials'));
@@ -279,7 +322,6 @@ app.use('/api/engineering-releases', require('./routes/engineering_releases'));
 app.use('/api/product-status', require('./routes/product_status'));
 app.use('/api/pcp-releases', require('./routes/pcp_releases'));
 app.use('/api/engineering-controls', require('./routes/engineering_controls'));
-app.use('/api/proposta-comercial', require('./routes/propostaComercial'));
 app.use('/api/engineering-timesheets', require('./routes/engineering_timesheets'));
 app.use('/api/almoxarifado', require('./routes/almoxarifado'));
 console.log('✅ [DEBUG] Rotas de Materiais montadas.');
@@ -400,6 +442,7 @@ app.use('/uploads/certificados', express.static(path.join(__dirname, 'uploads/ce
 app.use('/uploads/sgq_ajuda', express.static(path.join(__dirname, 'uploads/sgq_ajuda'), { maxAge: '7d' }));
 app.use('/uploads/whatsapp', express.static(path.join(__dirname, 'uploads/whatsapp'), { maxAge: '7d' }));
 app.use('/uploads/checklists', express.static(path.join(__dirname, 'uploads/checklists'), { maxAge: '7d' }));
+app.use('/uploads/portaria', express.static(path.join(__dirname, 'uploads/portaria'), { maxAge: '7d' }));
 app.use('/api/avisos', require('./routes/avisos'));
 app.use('/api/montagem', require('./routes/montagem'));
 
@@ -418,8 +461,20 @@ app.use('/uploads', (req, res) => {
     res.status(404).send('Arquivo não encontrado no servidor.');
 });
 
+// Detectar caminho do build do frontend (compatível com raiz ou subpastas)
+const clientDistCandidates = [
+    path.join(__dirname, '..'),           // Quando index.html está na raiz do public_html
+    path.join(__dirname, '../client/dist'),
+    path.join(__dirname, 'client/dist'),
+    path.join(__dirname, '../dist'),
+    path.join(__dirname, 'dist'),
+    path.join(__dirname, 'public')
+];
+const clientDistPath = clientDistCandidates.find(p => fs.existsSync(path.join(p, 'index.html'))) || path.join(__dirname, '../client/dist');
+console.log(`📂 [Frontend Static] Servindo arquivos do cliente a partir de: ${clientDistPath}`);
+
 // Serve static files from React app with cache control
-app.use(express.static(path.join(__dirname, '../client/dist'), {
+app.use(express.static(clientDistPath, {
     maxAge: '1d', // Assets com hash no nome podem ser cacheados por 1 dia
     setHeaders: (res, filePath) => {
         // HTML nunca deve ser cacheado para garantir última versão
@@ -436,7 +491,7 @@ app.get(/(.*)/, (req, res) => {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
-    res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+    res.sendFile(path.join(clientDistPath, 'index.html'));
 });
 
 
@@ -542,23 +597,18 @@ cron.schedule('0 6,15 * * *', async () => {
 
                 bodyHtml += `</div>`;
 
-                const transporter = nodemailer.createTransport({
-                    host: 'smtp.task.com.br',
-                    port: 587,
-                    secure: false,
-                    auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
-                    tls: { rejectUnauthorized: false }
-                });
-
                 if (user.email && cfg?.automations?.meu_canal_email_active !== false) {
                     const emailSubject = 'Meu Canal - Performance Diária do Setor';
-                    await transporter.sendMail({
-                        from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
-                        to: user.email,
-                        subject: emailSubject,
-                        html: getCorporateEmailTemplate(bodyHtml)
-                    });
-                    logEmailSent({ recipients: [user.email], subject: emailSubject, body: bodyHtml }).catch(() => {});
+                    try {
+                        await sendMail({
+                            to: user.email,
+                            subject: emailSubject,
+                            html: getCorporateEmailTemplate(bodyHtml)
+                        });
+                        logEmailSent({ recipients: [user.email], subject: emailSubject, body: bodyHtml }).catch(() => {});
+                    } catch (mErr) {
+                        console.error('[SMTP OFICIAL] Erro ao enviar Meu Canal email:', mErr.message);
+                    }
                 }
 
                 if (user.whatsapp && cfg?.automations?.meu_canal_active !== false) {
@@ -617,11 +667,9 @@ server.listen(PORT, '0.0.0.0', () => {
         });
     });
 
-    console.log(`📡 Acesso na rede: http://${serverIP}:${PORT}`);
-
-    // DEBUG: Print all registered routes to console to verify loading
-    console.log('\n🔍 [DEBUG] Rotas Registradas (Updated):');
-    printRoutes(app);
+    // Sincroniza dados nativos do ERP para compatibilidade com rotas Protheus (SC5, SC6, SA1, SB1)
+    const { syncErpToProtheus } = require('./scripts/sync_erp_to_protheus');
+    syncErpToProtheus().catch(e => console.warn('⚠️ [SYNC] Falha ao sincronizar ERP -> Protheus:', e.message));
 });
 
 function printRoutes(app) {

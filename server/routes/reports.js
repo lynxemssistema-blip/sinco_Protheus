@@ -1300,7 +1300,7 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         }
         // ── Build Workbook ────────────────────────────────────────────────────
         const workbook = new ExcelJS.Workbook();
-        workbook.creator  = 'MetalFisa Sistema';
+        workbook.creator  = 'Lynx Sistema';
         workbook.created  = new Date();
         workbook.modified = new Date();
 
@@ -1346,7 +1346,7 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         // ── Banda de topo (empresa) — linhas 1-3 ────────────────────────────────
         sheetCapa.mergeCells('A1:L3');
         const titleCell = cell(sheetCapa, 'A1');
-        titleCell.value = 'METALFISA INDÚSTRIA E COMÉRCIO LTDA';
+        titleCell.value = 'LYNX INDÚSTRIA E COMÉRCIO LTDA';
         setFill(titleCell, NAVY);
         setFont(titleCell, { bold: true, size: 18, color: { argb: WHITE } });
         setAlign(titleCell, 'center', 'middle');
@@ -1381,7 +1381,7 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         const totalSaldo   = rows.reduce((s, o) => s + (o.itens || []).reduce((si, it) => si + (parseFloat(it.qtd_faturar) || 0), 0), 0);
         const clientes     = [...new Set(rows.map(o => (o.cliente || '').trim()))].filter(Boolean);
 
-        const usuarioNome = req.user?.nome || req.user?.login || 'Sistema MetalFisa';
+        const usuarioNome = req.user?.nome || req.user?.login || 'Sistema Lynx';
         const infoRows = [
             ['Gerado em:',       geradoEm],
             ['Gerado por:',      usuarioNome],
@@ -1509,7 +1509,7 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         sheetCapa.getRow(footerRow).height = 12;
         sheetCapa.mergeCells(`A${footerRow}:L${footerRow}`);
         const footerCell = cell(sheetCapa, `A${footerRow}`);
-        footerCell.value = `Documento gerado automaticamente pelo Sistema MetalFisa  |  ${geradoEm}  |  CONFIDENCIAL — USO INTERNO`;
+        footerCell.value = `Documento gerado automaticamente pelo Sistema Lynx  |  ${geradoEm}  |  CONFIDENCIAL — USO INTERNO`;
         setFill(footerCell, NAVY);
         setFont(footerCell, { size: 8, italic: true, color: { argb: ACCENT } });
         setAlign(footerCell, 'center');
@@ -1581,7 +1581,7 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         nextDocRow = writeDocBlock(nextDocRow, 'UNIDADES DE MEDIDA E REGRAS DE TEMPO', [
             { label: 'Minutos (Abas Carga, Execução OP e Capacidade)', desc: 'Nestas abas, os valores de tempo nas colunas de máquinas/recursos estão estritamente em MINUTOS.' },
             { label: 'Horas (Abas Pedidos e Resumo)', desc: 'Nestas abas, os valores de tempo foram convertidos para HORAS PRODUTIVAS para facilitar a visualização de prazos e cargas de trabalho macro.' },
-            { label: 'Regra de 50 Minutos', desc: 'ATENÇÃO: Para a conversão de horas na aba Pedidos e Resumo, é utilizada a métrica padrão da MetalFisa de eficiência. Sendo assim, 1 HORA PRODUTIVA = 50 MINUTOS de trabalho líquido. Exemplo: 100 minutos de carga aparecerão como 2.00 horas.' },
+            { label: 'Regra de 50 Minutos', desc: 'ATENÇÃO: Para a conversão de horas na aba Pedidos e Resumo, é utilizada a métrica padrão da Lynx de eficiência. Sendo assim, 1 HORA PRODUTIVA = 50 MINUTOS de trabalho líquido. Exemplo: 100 minutos de carga aparecerão como 2.00 horas.' },
             { label: 'Explosão da Estrutura (BOM)', desc: 'O tempo total alocado considera não apenas a operação direta do produto principal, mas SOMA AUTOMATICAMENTE o tempo de TODOS os componentes filhos necessários para a fabricação, percorrendo recursivamente a Engenharia (nível 0, nível 1, etc).' },
             { label: 'Soma de Tempo Nível 0', desc: 'O tempo gasto na montagem ou operação do próprio produto pai (nível 0) também é somado aos tempos dos componentes filhos para compor a carga total.' }
         ]) + 2;
@@ -2332,14 +2332,14 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
             sheetMateriais.getColumn('custoTotal').numFmt = 'R$ #,##0.00';
         }
 
-        // ── Aplicar estilo MetalFisa em todas as abas de dados ─────────────────
+        // ── Aplicar estilo Lynx em todas as abas de dados ─────────────────
         /**
-         * applyMetalFisaSheet — formatação padrão para abas de dados.
+         * applyLynxSheet — formatação padrão para abas de dados.
          * @param {ExcelJS.Worksheet} sheet
          * @param {number} numFixedCols  - qtd de colunas fixas (navy);
          *                                 colunas adicionais ficam azul
          */
-        const applyMetalFisaSheet = async (sheet, numFixedCols = sheet.columnCount) => {
+        const applyLynxSheet = async (sheet, numFixedCols = sheet.columnCount) => {
             const totalCols = sheet.columnCount;
             const lastRow   = sheet.rowCount;
 
@@ -2401,15 +2401,15 @@ router.get(['/sales-planning/excel', '/sales-planning/xlsx', '/sales-planning/fa
         };
 
         // Aplicar nas abas de dados
-        await applyMetalFisaSheet(sheetOrders, ordersFixedCols.length);
-        await applyMetalFisaSheet(sheetResumo, 1);
-        await applyMetalFisaSheet(sheetItems);
-        await applyMetalFisaSheet(sheetBom, 1);
-        await applyMetalFisaSheet(sheetCarga, fixedCols.length);
-        await applyMetalFisaSheet(sheetCapacidade, 1);
-        await applyMetalFisaSheet(sheetExecucao, execFixedCols.length);
-        await applyMetalFisaSheet(sheetEntregas, 7);
-        await applyMetalFisaSheet(sheetMateriais);
+        await applyLynxSheet(sheetOrders, ordersFixedCols.length);
+        await applyLynxSheet(sheetResumo, 1);
+        await applyLynxSheet(sheetItems);
+        await applyLynxSheet(sheetBom, 1);
+        await applyLynxSheet(sheetCarga, fixedCols.length);
+        await applyLynxSheet(sheetCapacidade, 1);
+        await applyLynxSheet(sheetExecucao, execFixedCols.length);
+        await applyLynxSheet(sheetEntregas, 7);
+        await applyLynxSheet(sheetMateriais);
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', 'attachment; filename=planejamento_vendas.xlsx');

@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db'); // Changed db to pool
 const mysqlPool = require('../services/mysqlService'); // Importar conexão MySQL
 const { hasFinancialAccess } = require('../util/permissionHelper');
+const { getTenantContext } = require('../util/authHelper');
 
 // --- VERIFICAÇÃO DE TABELA (ATA VIVA) ---
 // Garante que a tabela exista para evitar erros nas rotas
@@ -37,22 +38,28 @@ const { hasFinancialAccess } = require('../util/permissionHelper');
 router.get('/', async (req, res) => {
     try {
         let { page = 1, limit = 20, search = '', code = '', type = '' } = req.query;
+        limit = parseInt(limit, 10) || 20;
+        page = parseInt(page, 10) || 1;
         if (Array.isArray(search)) search = search[0];
         if (Array.isArray(code)) code = code[0];
         if (Array.isArray(type)) type = type[0];
         const offset = (page - 1) * limit;
 
-        // Definição da Query Base e Colunas
+        // Product master: erp_produtos (tenant isolation injected by the db adapter)
         const columns = `
-            TRIM(sb1.b1_cod) AS codigo,
-            sb1.b1_desc AS descricao,
-            sb1.b1_tipo AS tipo,
-            sb1.b1_um AS unidade,
-            sb1.b1_grupo AS grupo,
-            sb1.b1_custd AS custo_padrao
+            TRIM(p.codigo) AS codigo,
+            p.descricao AS descricao,
+            p.tipo AS tipo,
+            p.unidade_medida AS unidade,
+            p.armazem_padrao AS grupo,
+            p.custo_standard AS custo_padrao,
+            p.preco_venda AS preco_venda,
+            p.peso_liquido AS peso_liquido,
+            p.revisao_atual AS revisao_atual,
+            p.status AS status
         `;
 
-        let baseQuery = "FROM public.sb1010 sb1 WHERE TRIM(COALESCE(sb1.d_e_l_e_t_, '')) <> '*'";
+        let baseQuery = "FROM erp_produtos p WHERE COALESCE(p.status, 'ativo') <> 'inativo'";
         let params = [];
         let paramIndex = 1;
 
@@ -66,11 +73,11 @@ router.get('/', async (req, res) => {
                 // Logic: ( (desc LIKE t1 AND desc LIKE t2...) OR (cod LIKE search) )
 
                 // Description part: ALL terms must match
-                let descConditions = terms.map(() => `sb1.b1_desc ILIKE $${paramIndex++}`).join(' AND ');
+                let descConditions = terms.map(() => `p.descricao ILIKE $${paramIndex++}`).join(' AND ');
 
                 // Code part: Exact or partial match of the full string? Usually Code is single token. 
                 // Let's just check if the FULL search string matches code OR if the breakdown matches description.
-                let codeCondition = `TRIM(sb1.b1_cod) ILIKE $${paramIndex++}`;
+                let codeCondition = `TRIM(p.codigo) ILIKE $${paramIndex++}`;
 
                 baseQuery += `(${descConditions}) OR ${codeCondition})`;
 
@@ -82,46 +89,46 @@ router.get('/', async (req, res) => {
 
         // 2. Specific Code Filter
         if (code) {
-            baseQuery += ` AND TRIM(sb1.b1_cod) ILIKE $${paramIndex++}`;
+            baseQuery += ` AND TRIM(p.codigo) ILIKE $${paramIndex++}`;
             params.push(`%${code}%`);
         }
 
         // 3. Specific Type Filter
         if (type) {
-            baseQuery += ` AND TRIM(sb1.b1_tipo) = $${paramIndex++}`;
+            baseQuery += ` AND TRIM(p.tipo) = $${paramIndex++}`;
             params.push(type);
         }
 
-        // 3.1 Specific Group Filter
+        // 3.1 Group filter (warehouse is the closest grouping available on erp_produtos)
         if (req.query.group) {
-            baseQuery += ` AND TRIM(sb1.b1_grupo) = $${paramIndex++}`;
+            baseQuery += ` AND TRIM(p.armazem_padrao) = $${paramIndex++}`;
             params.push(req.query.group);
         }
 
-        // 4. Client Name Filter (Search in SZ1010)
+        // 4. Client Name Filter: products already sold to the client (sales orders)
         if (req.query.client) {
             const clientTerm = `%${req.query.client}%`;
             baseQuery += ` AND EXISTS (
-                SELECT 1 FROM public.sz1010 z1 
-                WHERE TRIM(z1.z1_produto) = TRIM(sb1.b1_cod) 
-                AND TRIM(COALESCE(z1.d_e_l_e_t_, '')) <> '*'
-                AND z1.z1_nomecli ILIKE $${paramIndex++}
+                SELECT 1 FROM erp_pedidos_itens pi_c
+                JOIN erp_pedidos_venda pv_c ON pv_c.numero_pedido = pi_c.pedido_numero AND pv_c.IdEmpresa = pi_c.IdEmpresa
+                JOIN erp_clientes cl_c ON cl_c.codigo = pv_c.cliente_codigo AND cl_c.IdEmpresa = pv_c.IdEmpresa
+                WHERE TRIM(pi_c.produto_codigo) = TRIM(p.codigo)
+                AND (cl_c.razao_social ILIKE $${paramIndex} OR cl_c.nome_fantasia ILIKE $${paramIndex})
              )`;
+            paramIndex++;
             params.push(clientTerm);
         }
 
-        // 5. Client Code Filter (Search in SZ1010)
-        // Normaliza o termo buscado e o campo z1_codcli (remove caracteres não-alfanuméricos)
-        // para que "33.11.10572" encontre "33111057204" e vice-versa
+        // 5. Client Code Filter: matches the client code on sales orders
         if (req.query.client_code) {
             const clientCodeStr = Array.isArray(req.query.client_code) ? req.query.client_code[0] : req.query.client_code;
-            const cleanedTerm = String(clientCodeStr).replace(/[^a-zA-Z0-9]/g, '');
+            const cleanedTerm = String(clientCodeStr).trim();
             if (cleanedTerm.length > 0) {
                 baseQuery += ` AND EXISTS (
-                    SELECT 1 FROM public.sz1010 z1
-                    WHERE TRIM(z1.z1_produto) = TRIM(sb1.b1_cod)
-                    AND TRIM(COALESCE(z1.d_e_l_e_t_, '')) <> '*'
-                    AND regexp_replace(trim(z1.z1_codcli), '[^a-zA-Z0-9]', '', 'g') ILIKE $${paramIndex++}
+                    SELECT 1 FROM erp_pedidos_itens pi_k
+                    JOIN erp_pedidos_venda pv_k ON pv_k.numero_pedido = pi_k.pedido_numero AND pv_k.IdEmpresa = pi_k.IdEmpresa
+                    WHERE TRIM(pi_k.produto_codigo) = TRIM(p.codigo)
+                    AND pv_k.cliente_codigo ILIKE $${paramIndex++}
                 )`;
                 params.push(`%${cleanedTerm}%`);
             }
@@ -164,13 +171,13 @@ router.get('/', async (req, res) => {
                     baseQuery += ' AND 1=0';
                 } else {
                     // Postgres ANY param
-                    baseQuery += ` AND TRIM(sb1.b1_cod) = ANY($${paramIndex++})`;
+                    baseQuery += ` AND TRIM(p.codigo) = ANY($${paramIndex++})`;
                     params.push(codesWithDocs);
                 }
             } else if (status === 'without_pdf') {
                 if (codesWithDocs.length > 0) {
                     // Exclude those that have docs
-                    baseQuery += ` AND NOT (TRIM(sb1.b1_cod) = ANY($${paramIndex++}))`;
+                    baseQuery += ` AND NOT (TRIM(p.codigo) = ANY($${paramIndex++}))`;
                     params.push(codesWithDocs);
                 }
                 // If length is 0, then ALL products are "without_pdf", so no filter needed.
@@ -193,24 +200,24 @@ router.get('/', async (req, res) => {
                 if (codesWithStock.length === 0) {
                     baseQuery += ' AND 1=0';
                 } else {
-                    baseQuery += ` AND TRIM(sb1.b1_cod) = ANY($${paramIndex++})`;
+                    baseQuery += ` AND TRIM(p.codigo) = ANY($${paramIndex++})`;
                     params.push(codesWithStock);
                 }
             } else if (stockStatus === 'without_stock') {
                 if (codesWithStock.length > 0) {
-                    baseQuery += ` AND NOT (TRIM(sb1.b1_cod) = ANY($${paramIndex++}))`;
+                    baseQuery += ` AND NOT (TRIM(p.codigo) = ANY($${paramIndex++}))`;
                     params.push(codesWithStock);
                 }
             }
         }
 
-        const query = `SELECT ${columns} ${baseQuery} ORDER BY sb1.b1_cod LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+        const query = `SELECT ${columns} ${baseQuery} ORDER BY p.codigo LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
         const countQuery = `SELECT COUNT(*) AS total ${baseQuery}`;
 
         const productsResult = await pool.query(query, [...params, limit, offset]);
         const countResult = await pool.query(countQuery, params);
 
-        const produtos = productsResult.rows;
+        let produtos = productsResult.rows;
 
         // --- PARALLEL ENRICHMENT (4 independent queries at once) ---
         if (produtos.length > 0) {
@@ -219,34 +226,31 @@ router.get('/', async (req, res) => {
             const mysqlPlaceholders = codigos.map(() => '?').join(',');
 
             const [szResult, sgResult, protheusStockResult, stockResult, imgsAssocsResult] = await Promise.allSettled([
-                // 1. Referências Cliente (PG - SZ1010)
+                // 1. Client references: clients that ordered the product
                 pool.query(`
-                    SELECT TRIM(z1_produto) as produto, TRIM(z1_codcli) as desenho,
-                           TRIM(z1_nomecli) as cliente, TRIM(z1_revisao) as revisao
-                    FROM public.sz1010
-                    WHERE TRIM(z1_produto) IN (${pgPlaceholders})
-                    AND TRIM(COALESCE(d_e_l_e_t_, '')) <> '*'
+                    SELECT DISTINCT TRIM(pi_r.produto_codigo) as produto, '' as desenho,
+                           TRIM(cl_r.razao_social) as cliente, '' as revisao
+                    FROM erp_pedidos_itens pi_r
+                    JOIN erp_pedidos_venda pv_r ON pv_r.numero_pedido = pi_r.pedido_numero AND pv_r.IdEmpresa = pi_r.IdEmpresa
+                    JOIN erp_clientes cl_r ON cl_r.codigo = pv_r.cliente_codigo AND cl_r.IdEmpresa = pv_r.IdEmpresa
+                    WHERE TRIM(pi_r.produto_codigo) IN (${pgPlaceholders})
                 `, codigos),
 
-                // 2. Estrutura (PG - SG1010)
+                // 2. Structure (BOM)
                 pool.query(`
-                    SELECT TRIM(g1_cod) as codigo
-                    FROM public.sg1010
-                    WHERE TRIM(g1_cod) IN (${pgPlaceholders})
-                    AND TRIM(COALESCE(d_e_l_e_t_, '')) <> '*'
-                    GROUP BY g1_cod
+                    SELECT TRIM(produto_pai_codigo) as codigo
+                    FROM erp_estruturas_bom
+                    WHERE TRIM(produto_pai_codigo) IN (${pgPlaceholders})
+                    GROUP BY produto_pai_codigo
                 `, codigos),
 
-                // 3. Saldo ERP Protheus (PG - SB2010 + SB2990)
+                // 3. ERP stock balance
                 pool.query(`
-                    SELECT TRIM(b2_cod) as codigo, COALESCE(SUM(b2_qatu), 0) as saldo
-                    FROM (
-                        SELECT b2_cod, b2_qatu FROM public.sb2010 WHERE TRIM(b2_cod) = ANY($1::text[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
-                        UNION ALL
-                        SELECT b2_cod, b2_qatu FROM public.sb2990 WHERE TRIM(b2_cod) = ANY($1::text[]) AND COALESCE(d_e_l_e_t_, '') <> '*'
-                    ) sb2
-                    GROUP BY TRIM(b2_cod)
-                `, [codigos]),
+                    SELECT TRIM(produto_codigo) as codigo, COALESCE(SUM(saldo_atual), 0) as saldo
+                    FROM erp_estoque_saldos
+                    WHERE TRIM(produto_codigo) IN (${pgPlaceholders})
+                    GROUP BY TRIM(produto_codigo)
+                `, codigos),
 
                 // 4. Estoque Local / Levantamento de Fábrica (MySQL - app_estoque_movimentos)
                 mysqlPool.execute(`
@@ -666,37 +670,59 @@ router.get('/:codigo/roteiro', async (req, res) => {
         const { codigo } = req.params;
         const codClean = decodeURIComponent(codigo).trim();
 
-        const query = `
-            SELECT
-                g2.g2_operac                    AS operacao,
-                TRIM(h1.h1_descri)              AS descricao,
-                TRIM(g2.g2_recurso)             AS recurso,
-                g2.g2_setup                     AS tempo_setup,
-                ROUND(g2.g2_tempad::numeric, 3) AS tempo_padrao,
-                g2.g2_ferram                    AS ferramentas,
-                g2.g2_depto                     AS departamento
-            FROM public.sg2010 g2
-            LEFT JOIN public.sh1010 h1
-                ON h1.h1_codigo = g2.g2_recurso
-                AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
-            WHERE TRIM(g2.g2_produto) = $1
-            AND (g2.d_e_l_e_t_ = '' OR g2.d_e_l_e_t_ = ' ')
-            AND g2.g2_codigo = (
-                SELECT MAX(g2_sub.g2_codigo)
-                FROM public.sg2010 g2_sub
-                WHERE TRIM(g2_sub.g2_produto) = TRIM(g2.g2_produto)
-                AND (g2_sub.d_e_l_e_t_ = '' OR g2_sub.d_e_l_e_t_ = ' ')
-            )
-            ORDER BY g2.g2_operac
-        `;
+        const tenantId = getTenantContext(req) || req.user?.IdEmpresa || 1;
+        let [opRows] = await mysqlPool.query(
+            `SELECT
+                o.operacao_seq                                   AS operacao,
+                COALESCE(NULLIF(o.descricao_operacao, ''), r.nome, '') AS descricao,
+                o.codigo_recurso                                 AS recurso,
+                COALESCE(r.nome, o.codigo_recurso)               AS recurso_descricao,
+                COALESCE(o.tempo_setup_minutos, 0)               AS tempo_setup,
+                ROUND(COALESCE(o.tempo_operacao_minutos, 0), 3)  AS tempo_padrao,
+                ''                                               AS ferramentas,
+                COALESCE(o.centro_custo, '')                     AS departamento,
+                o.instrucoes_trabalho                            AS instrucoes
+             FROM erp_roteiros_operacoes o
+             LEFT JOIN pcp_recursos r
+                ON r.codigo COLLATE utf8mb4_unicode_ci = o.codigo_recurso COLLATE utf8mb4_unicode_ci
+               AND r.IdEmpresa = o.IdEmpresa
+             WHERE o.IdEmpresa = ? AND TRIM(o.codigo_produto) = ?
+             ORDER BY CAST(o.operacao_seq AS UNSIGNED), o.operacao_seq`,
+            [tenantId, codClean]
+        );
+        if (!opRows || opRows.length === 0) {
+            const [sg2Rows] = await mysqlPool.query(
+                `SELECT
+                    TRIM(g2.g2_operac)                                  AS operacao,
+                    TRIM(COALESCE(NULLIF(g2.g2_descri, ''), r.nome, h1.h1_descri, '')) AS descricao,
+                    TRIM(g2.g2_recurso)                                 AS recurso,
+                    TRIM(COALESCE(r.nome, h1.h1_descri, g2.g2_recurso)) AS recurso_descricao,
+                    COALESCE(g2.g2_setup, 0)                            AS tempo_setup,
+                    ROUND(COALESCE(g2.g2_tempad, 0), 3)                 AS tempo_padrao,
+                    ''                                                  AS ferramentas,
+                    ''                                                  AS departamento,
+                    ''                                                  AS instrucoes
+                 FROM sg2010 g2
+                 LEFT JOIN pcp_recursos r
+                    ON r.codigo COLLATE utf8mb4_unicode_ci = TRIM(g2.g2_recurso) COLLATE utf8mb4_unicode_ci
+                 LEFT JOIN sh1010 h1 ON TRIM(h1.h1_codigo) = TRIM(g2.g2_recurso) AND h1.d_e_l_e_t_ = ''
+                 WHERE TRIM(g2.g2_produto) = ? AND g2.d_e_l_e_t_ = ''
+                 ORDER BY CAST(REGEXP_REPLACE(g2.g2_operac, '[^0-9]', '') AS UNSIGNED), g2.g2_operac`,
+                [codClean]
+            );
+            if (sg2Rows && sg2Rows.length > 0) {
+                opRows = sg2Rows;
+            }
+        }
+        const result = { rows: opRows };
 
-        const result = await pool.query(query, [codClean]);
-
-        // Join MySQL resource rates from app_recursos_capacidade
+        // Resource cost rates (per minute) from app_recursos_capacidade
         let recursoRates = {};
         try {
-            const mysqlPool = require('../services/mysqlService');
-            const [recursoRows] = await mysqlPool.query('SELECT recurso_codigo, taxa_setup_min, taxa_padrao_min FROM app_recursos_capacidade');
+            const [recursoRows] = await mysqlPool.query(
+                'SELECT recurso_codigo, taxa_setup_min, taxa_padrao_min FROM app_recursos_capacidade WHERE IdEmpresa = ?',
+                [tenantId]
+            );
             recursoRows.forEach(r => {
                 if (r.recurso_codigo) {
                     recursoRates[r.recurso_codigo.trim().toUpperCase()] = {

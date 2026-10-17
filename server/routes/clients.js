@@ -7,100 +7,160 @@ const mysqlPool = require('../services/mysqlService');
 router.get('/search', async (req, res) => {
     try {
         const { q } = req.query;
-
         const cleanQ = (q || '').trim();
 
+        // 1. Busca nativa no SINCO (erp_clientes e erp_fornecedores no MySQL)
         if (!cleanQ || cleanQ.length < 2) {
-            const queryTop = `
-                WITH TopClientes AS (
-                    SELECT TRIM(z1_cliente) AS z1_cliente
-                    FROM public.sz1010
-                    WHERE COALESCE(d_e_l_e_t_, '') <> '*'
-                    GROUP BY TRIM(z1_cliente)
-                    ORDER BY COUNT(*) DESC
-                    LIMIT 20
-                )
+            const [topClients] = await mysqlPool.query(`
                 SELECT 
-                    TRIM(a1_cod) AS codigo,
-                    TRIM(a1_loja) AS loja,
-                    TRIM(a1_nome) AS nome,
-                    TRIM(a1_nreduz) AS nreduz,
+                    codigo,
+                    loja,
+                    razao_social AS nome,
+                    nome_fantasia AS nreduz,
                     'Cliente' AS tipo
-                FROM public.sa1010
-                INNER JOIN TopClientes ON TRIM(a1_cod) = TopClientes.z1_cliente
-                WHERE COALESCE(d_e_l_e_t_, '') <> '*'
-                ORDER BY a1_nome
-            `;
-            const resultTop = await db.query(queryTop);
-            return res.json(resultTop.rows);
-        }
-
-        const searchTerm = `%${cleanQ}%`;
-        const escaped = cleanQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const flexiblePattern = escaped.replace(/(.)\1*/gi, '$1+');
-
-        const query = `
-            WITH partners AS (
+                FROM erp_clientes
+                WHERE status = 'ATIVO' OR status IS NULL
+                ORDER BY razao_social ASC
+                LIMIT 50
+            `);
+            if (topClients && topClients.length > 0) {
+                return res.json(topClients);
+            }
+        } else {
+            const term = `%${cleanQ}%`;
+            const [partners] = await mysqlPool.query(`
                 SELECT 
-                    TRIM(a1_cod) AS codigo,
-                    TRIM(a1_loja) AS loja,
-                    TRIM(a1_nome) AS nome,
-                    TRIM(a1_nreduz) AS nreduz,
-                    TRIM(a1_end) AS endereco,
-                    TRIM(a1_bairro) AS bairro,
-                    TRIM(a1_mun) AS cidade,
-                    TRIM(a1_est) AS uf,
-                    TRIM(a1_cep) AS cep,
-                    TRIM(a1_tel) AS telefone,
+                    codigo,
+                    loja,
+                    razao_social AS nome,
+                    nome_fantasia AS nreduz,
+                    endereco,
+                    bairro,
+                    cidade,
+                    uf,
+                    cep,
+                    telefone,
                     'Cliente' AS tipo
-                FROM public.sa1010
-                WHERE 
-                    COALESCE(d_e_l_e_t_, '') <> '*'
-                    AND (
-                        a1_cod ILIKE $1 
-                        OR a1_nome ILIKE $1 
-                        OR a1_nreduz ILIKE $1
-                        OR a1_nome ~* $2
-                        OR a1_nreduz ~* $2
-                    )
+                FROM erp_clientes
+                WHERE (codigo LIKE ? OR razao_social LIKE ? OR nome_fantasia LIKE ?)
                 UNION ALL
                 SELECT 
-                    TRIM(a2_cod) AS codigo,
-                    TRIM(a2_loja) AS loja,
-                    TRIM(a2_nome) AS nome,
-                    TRIM(a2_nreduz) AS nreduz,
-                    TRIM(a2_end) AS endereco,
-                    TRIM(a2_bairro) AS bairro,
-                    TRIM(a2_mun) AS cidade,
-                    TRIM(a2_est) AS uf,
-                    TRIM(a2_cep) AS cep,
-                    TRIM(a2_tel) AS telefone,
+                    codigo,
+                    loja,
+                    razao_social AS nome,
+                    nome_fantasia AS nreduz,
+                    endereco,
+                    bairro,
+                    cidade,
+                    uf,
+                    cep,
+                    telefone,
                     'Fornecedor' AS tipo
-                FROM public.sa2010
-                WHERE 
-                    COALESCE(d_e_l_e_t_, '') <> '*'
-                    AND (
-                        a2_cod ILIKE $1 
-                        OR a2_nome ILIKE $1 
-                        OR a2_nreduz ILIKE $1
-                        OR a2_nome ~* $2
-                        OR a2_nreduz ~* $2
-                    )
-            )
-            SELECT * FROM partners
-            ORDER BY 
-                CASE 
-                    WHEN codigo = $3 THEN 1
-                    WHEN nome ILIKE $1 THEN 2
-                    WHEN nreduz ILIKE $1 THEN 3
-                    ELSE 4
-                END,
-                nome
-            LIMIT 50
-        `;
+                FROM erp_fornecedores
+                WHERE (codigo LIKE ? OR razao_social LIKE ? OR nome_fantasia LIKE ?)
+                LIMIT 50
+            `, [term, term, term, term, term, term]);
 
-        const result = await db.query(query, [searchTerm, flexiblePattern, cleanQ]);
-        res.json(result.rows);
+            if (partners && partners.length > 0) {
+                return res.json(partners);
+            }
+        }
+
+        // 2. Fallback no Protheus legado se Postgres estiver acessível
+        try {
+            if (!cleanQ || cleanQ.length < 2) {
+                const queryTop = `
+                    WITH TopClientes AS (
+                        SELECT TRIM(z1_cliente) AS z1_cliente
+                        FROM public.sz1010
+                        WHERE COALESCE(d_e_l_e_t_, '') <> '*'
+                        GROUP BY TRIM(z1_cliente)
+                        ORDER BY COUNT(*) DESC
+                        LIMIT 20
+                    )
+                    SELECT 
+                        TRIM(a1_cod) AS codigo,
+                        TRIM(a1_loja) AS loja,
+                        TRIM(a1_nome) AS nome,
+                        TRIM(a1_nreduz) AS nreduz,
+                        'Cliente' AS tipo
+                    FROM public.sa1010
+                    INNER JOIN TopClientes ON TRIM(a1_cod) = TopClientes.z1_cliente
+                    WHERE COALESCE(d_e_l_e_t_, '') <> '*'
+                    ORDER BY a1_nome
+                `;
+                const resultTop = await db.query(queryTop);
+                return res.json(resultTop.rows);
+            }
+
+            const searchTerm = `%${cleanQ}%`;
+            const escaped = cleanQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const flexiblePattern = escaped.replace(/(.)\1*/gi, '$1+');
+
+            const query = `
+                WITH partners AS (
+                    SELECT 
+                        TRIM(a1_cod) AS codigo,
+                        TRIM(a1_loja) AS loja,
+                        TRIM(a1_nome) AS nome,
+                        TRIM(a1_nreduz) AS nreduz,
+                        TRIM(a1_end) AS endereco,
+                        TRIM(a1_bairro) AS bairro,
+                        TRIM(a1_mun) AS cidade,
+                        TRIM(a1_est) AS uf,
+                        TRIM(a1_cep) AS cep,
+                        TRIM(a1_tel) AS telefone,
+                        'Cliente' AS tipo
+                    FROM public.sa1010
+                    WHERE 
+                        COALESCE(d_e_l_e_t_, '') <> '*'
+                        AND (
+                            a1_cod ILIKE $1 
+                            OR a1_nome ILIKE $1 
+                            OR a1_nreduz ILIKE $1
+                            OR a1_nome ~* $2
+                            OR a1_nreduz ~* $2
+                        )
+                    UNION ALL
+                    SELECT 
+                        TRIM(a2_cod) AS codigo,
+                        TRIM(a2_loja) AS loja,
+                        TRIM(a2_nome) AS nome,
+                        TRIM(a2_nreduz) AS nreduz,
+                        TRIM(a2_end) AS endereco,
+                        TRIM(a2_bairro) AS bairro,
+                        TRIM(a2_mun) AS cidade,
+                        TRIM(a2_est) AS uf,
+                        TRIM(a2_cep) AS cep,
+                        TRIM(a2_tel) AS telefone,
+                        'Fornecedor' AS tipo
+                    FROM public.sa2010
+                    WHERE 
+                        COALESCE(d_e_l_e_t_, '') <> '*'
+                        AND (
+                            a2_cod ILIKE $1 
+                            OR a2_nome ILIKE $1 
+                            OR a2_nreduz ILIKE $1
+                            OR a2_nome ~* $2
+                            OR a2_nreduz ~* $2
+                        )
+                )
+                SELECT * FROM partners
+                ORDER BY 
+                    CASE 
+                        WHEN codigo = $3 THEN 1
+                        WHEN nome ILIKE $1 THEN 2
+                        WHEN nreduz ILIKE $1 THEN 3
+                        ELSE 4
+                    END,
+                    nome
+                LIMIT 50
+            `;
+            const result = await db.query(query, [searchTerm, flexiblePattern, cleanQ]);
+            return res.json(result.rows);
+        } catch (_) {
+            return res.json([]);
+        }
 
     } catch (err) {
         console.error('Error searching clients:', err);

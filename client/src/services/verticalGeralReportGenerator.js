@@ -1,13 +1,14 @@
 ﻿/**
  * verticalGeralReportGenerator.js
  * Relatório Geral — Fila de Produção por Setor (Vertical)
- * PDF A4 Landscape — padrão MetalFisa + Excel
+ * PDF A4 Landscape — padrão Lynx + Excel
  */
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { logoBase64 } from './metalfisaLogoBase64';
+import { getCompanyShortName } from './companyBranding';
 
 const ML = 8;
 const MR = 8;
@@ -73,7 +74,7 @@ const drawHeader = (doc, pageWidth, recurso, filtrosText, emissao) => {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(10);
         doc.setTextColor(255, 255, 255);
-        doc.text('METALFISA', ML + 4, y0 + 10);
+        doc.text(getCompanyShortName(), ML + 4, y0 + 10);
     }
 
     doc.setFillColor(245, 247, 250);
@@ -255,7 +256,7 @@ export const generateVerticalGeralPdf = (rows, recurso, filters, user) => {
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(150, 150, 150);
         doc.text(`Pagina ${i} de ${pageCount}`, pageWidth - MR, pageHeight - 5, { align: 'right' });
-        doc.text('MetalFisa - Relatorio Geral de Apontamento Vertical', ML, pageHeight - 5);
+        doc.text('Lynx - Relatorio Geral de Apontamento Vertical', ML, pageHeight - 5);
     }
 
     const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 16);
@@ -337,7 +338,7 @@ export const generateVerticalGeralExcel = (rows, recurso, filters, user) => {
     ];
 
     const aoa = [
-        [`MetalFisa - Relatorio Geral de Apontamento Vertical - Recurso: ${recurso || 'Todos'}`],
+        [`Lynx - Relatorio Geral de Apontamento Vertical - Recurso: ${recurso || 'Todos'}`],
         [`Emissao: ${emissao}   |   Emitido por: ${user?.nome || 'Sistema'}`],
         [`Filtros: ${filterParts.length > 0 ? filterParts.join(' | ') : 'Nenhum'}`],
         [],
@@ -366,7 +367,7 @@ export const generateVerticalGeralExcel = (rows, recurso, filters, user) => {
     const abertos = rows.filter(r => r.status !== 'CONCLUIDO');
     if (abertos.length > 0) {
         const wsAberto = XLSX.utils.aoa_to_sheet([
-            [`MetalFisa - OPs Em Aberto - Recurso: ${recurso || 'Todos'}`],
+            [`Lynx - OPs Em Aberto - Recurso: ${recurso || 'Todos'}`],
             [`Emissao: ${emissao}`],
             [],
             ['OP', 'Item', 'Seq', 'Pedido', 'Cliente', 'Produto', 'Desc. Produto', 'Planejamento', 'Qtd Plan.', 'Qtd Apont.', '%', 'Status'],

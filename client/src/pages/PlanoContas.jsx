@@ -170,8 +170,8 @@ const PlanoContas = () => {
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-slate-200">
-                                        {contasFiltradas.map((conta) => (
-                                            <tr key={conta.codigo} className="hover:bg-slate-50 transition-colors">
+                                        {contasFiltradas.map((conta, idx) => (
+                                            <tr key={`${conta.codigo}-${idx}`} className="hover:bg-slate-50 transition-colors">
                                                 <td className="px-6 py-3 whitespace-nowrap text-sm font-medium text-slate-900">{conta.codigo}</td>
                                                 <td className="px-6 py-3 whitespace-nowrap text-sm text-slate-600">{conta.descricao}</td>
                                                 <td className="px-6 py-3 whitespace-nowrap text-sm text-slate-500">{renderChipClasse(conta.classe)}</td>
@@ -188,9 +188,7 @@ const PlanoContas = () => {
 
                     {!loading && contasFiltradas.length > 0 && activeTab === 'estrutural' && (
                         <div className="flex flex-col space-y-2 pb-8">
-                            {arvoreJS.map(conta => (
-                                <div 
-                                    key={conta.codigo}
+                            {arvoreJS.map((conta, idx) => (<div key={`${conta.codigo}-${idx}`}
                                     style={{ marginLeft: `${conta.treeLevel * 2}rem` }}
                                     className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
                                         conta.classe === '1' 

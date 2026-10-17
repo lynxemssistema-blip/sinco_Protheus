@@ -83,6 +83,12 @@ server/check_*.js
 tmp/
 *.tmp
 prod_*.xlsx
+producao-hostinger/
+scratch_*.png
+server/relatorio_tabelas_lixo.json
+*.docx
+*.pptx
+!client/public/**/*.pptx
 server/watchdog_state.json
 server/data/*_backup_*.json
 

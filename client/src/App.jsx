@@ -18,16 +18,27 @@ import HelpDrawer from './components/HelpDrawer';
 import EmailBlockerModal from './components/EmailBlockerModal';
 import HermesFeed from './components/HermesFeed';
 import PCPMetalDrawer from './components/PCPMetalDrawer';
+import TenantTopBar from './components/TenantTopBar';
+
+const GestaoColaboradores = React.lazy(() => import('./pages/empresa/GestaoColaboradores'));
+const SuperadminEmpresas = React.lazy(() => import('./pages/admin/SuperadminEmpresas'));
+
+// Módulos Corporativos (100% MySQL)
+const SalasReuniaoCentral = React.lazy(() => import('./pages/reunioes/SalasReuniaoCentral'));
+const TotemPortaModal = React.lazy(() => import('./pages/reunioes/TotemPortaModal'));
+const SSTCentral = React.lazy(() => import('./pages/sst/SSTCentral'));
+const SSTCestaBasica = React.lazy(() => import('./pages/sst/SSTCestaBasica'));
+const PastaColaborador = React.lazy(() => import('./pages/rh/PastaColaborador'));
+const PortalColaborador = React.lazy(() => import('./pages/rh/PortalColaborador'));
+const SuporteCentral = React.lazy(() => import('./pages/suporte/SuporteCentral'));
 
 // Lazy-loaded pages (code splitting — each becomes a separate chunk)
 const OrdersTable = React.lazy(() => import('./components/OrdersTable'));
 const VisaoGerencialAtrasos = React.lazy(() => import('./pages/gerencial/VisaoGerencialAtrasos'));
 const VisaoGerencialProdutos = React.lazy(() => import('./pages/gerencial/VisaoGerencialProdutos'));
 const ProductStructure = React.lazy(() => import('./pages/ProductStructure'));
-const ProductionOrders = React.lazy(() => import('./pages/ProductionOrders'));
 const ProductionOrdersByOp = React.lazy(() => import('./pages/ProductionOrdersByOp'));
 const ProductCatalog = React.lazy(() => import('./pages/ProductCatalog'));
-const MSMetalProductCatalog = React.lazy(() => import('./pages/msmetal/MSMetalProductCatalog'));
 const MSMetalProductStructure = React.lazy(() => import('./pages/msmetal/MSMetalProductStructure'));
 const Romaneios = React.lazy(() => import('./pages/Romaneios'));
 const RecebimentoRomaneios = React.lazy(() => import('./pages/RecebimentoRomaneios'));
@@ -41,7 +52,6 @@ const ProductionAnalytics = React.lazy(() => import('./pages/ProductionAnalytics
 const ProductionMatrixPage = React.lazy(() => import('./pages/ProductionMatrixPage'));
 const BOMAppointmentPage   = React.lazy(() => import('./pages/BOMAppointmentPage'));
 const VerticalAppointmentPage = React.lazy(() => import('./pages/VerticalAppointmentPage'));
-const ConferenciaPage = React.lazy(() => import('./pages/ConferenciaPage'));
 const EngineeringOrdersPage = React.lazy(() => import('./pages/EngineeringOrdersPage'));
 const ProductionGanttPlanning = React.lazy(() => import('./pages/ProductionGanttPlanning'));
 const StockBalances = React.lazy(() => import('./pages/StockBalances'));
@@ -67,51 +77,36 @@ const HelpCenter = React.lazy(() => import('./pages/HelpCenter'));
 const NovasFuncionalidades = React.lazy(() => import('./pages/NovasFuncionalidades'));
 const MaterialManagementPage = React.lazy(() => import('./pages/MaterialManagementPage'));
 const WhereUsedPage = React.lazy(() => import('./pages/WhereUsedPage'));
-const ServiceOrdersPage = React.lazy(() => import('./pages/sinco/ServiceOrdersPage'));
-const ServiceOrderProductionAppointmentPage = React.lazy(() => import('./pages/sinco/ServiceOrderProductionAppointmentPage'));
-const ServiceOrderProductionMatrixPage = React.lazy(() => import('./pages/sinco/ServiceOrderProductionMatrixPage'));
-const ServiceOrderMaterialsPage = React.lazy(() => import('./pages/sinco/ServiceOrderMaterialsPage'));
-const SINCOActiveDrawing = React.lazy(() => import('./pages/sinco/SINCOActiveDrawing'));
-const TrackingEvolution = React.lazy(() => import('./pages/production/TrackingEvolution'));
 const SINCOFormularioPrincipal = React.lazy(() => import('./pages/sinco/SINCOFormularioPrincipal'));
 const SolidEdeg_Estrutura_Produto = React.lazy(() => import('./pages/sinco/SolidEdeg_Estrutura_Produto'));
 const DashboardFinanceiro = React.lazy(() => import('./pages/financeiro/DashboardFinanceiro'));
 const ProductionEvolution = React.lazy(() => import('./pages/ProductionEvolution'));
 const InternalRequestsPage = React.lazy(() => import('./pages/InternalRequestsPage'));
-const SincoApontamentoPorUsuarioPage = React.lazy(() => import('./pages/sinco/SincoApontamentoPorUsuarioPage'));
 const ApontamentoPorUsuarioOpPage = React.lazy(() => import('./pages/pcp/ApontamentoPorUsuarioOpPage'));
 const IndPcpReleasePage = React.lazy(() => import('./pages/sinco/IndPcpReleasePage'));
 const IndFactoryFloorPage = React.lazy(() => import('./pages/sinco/IndFactoryFloorPage'));
 const IndApontamentoPage = React.lazy(() => import('./pages/sinco/IndApontamentoPage'));
 const AvisosHistorico = React.lazy(() => import('./pages/AvisosHistorico'));
-const SINCOProductStructure = React.lazy(() => import('./pages/sinco/SINCOProductStructure'));
-const VMIUploadPage = React.lazy(() => import('./pages/vmi/VMIUploadPage'));
-const VMIDashboardPage = React.lazy(() => import('./pages/vmi/VMIDashboardPage'));
-const VMIEstrategiaPage = React.lazy(() => import('./pages/vmi/VMIEstrategiaPage'));
-const VMIHistoricoPage = React.lazy(() => import('./pages/vmi/VMIHistoricoPage'));
-const DemandaVMIContainer = React.lazy(() => import('./pages/vmi/DemandaVMIContainer'));
-const DemandaMesPage = React.lazy(() => import('./pages/vmi/DemandaMesPage'));
-const VMICriticosPage = React.lazy(() => import('./pages/vmi/VMICriticosPage'));
-const VMIPedidosContainer = React.lazy(() => import('./pages/vmi/VMIPedidosContainer'));
-const SWorks = React.lazy(() => import('./pages/SWorks'));
+
+
 const ItensAFaturar = React.lazy(() => import('./pages/ItensAFaturar'));
 const GestaoOPsPage = React.lazy(() => import('./pages/GestaoOPsPage'));
 const FaturamentoSolicitacoesHistorico = React.lazy(() => import('./pages/FaturamentoSolicitacoesHistorico'));
 const FaturamentoPainel = React.lazy(() => import('./pages/FaturamentoPainel'));
 const ErpProdutosPage = React.lazy(() => import('./pages/erp/ErpProdutosPage'));
+const CadastrosBasicosPage = React.lazy(() => import('./pages/cadastros/CadastrosBasicosPage'));
 const ErpPedidosPage = React.lazy(() => import('./pages/erp/ErpPedidosPage'));
 const ErpClientesPage = React.lazy(() => import('./pages/erp/ErpClientesPage'));
 const ErpProducaoPage = React.lazy(() => import('./pages/erp/ErpProducaoPage'));
 const ControleFaturamento = React.lazy(() => import('./pages/ControleFaturamento'));
 const DashboardFaturamento = React.lazy(() => import('./pages/comercial/DashboardFaturamento'));
-const PropostaComercialPage = React.lazy(() => import('./pages/admin/PropostaComercialPage'));
 const FluxoCaixa = React.lazy(() => import('./pages/financeiro/FluxoCaixa'));
-const ProtheusOverview = React.lazy(() => import('./pages/protheus/ProtheusOverview'));
 const EngineeringReleaseReport = React.lazy(() => import('./pages/EngineeringReleaseReport'));
 const PlanejamentoEstruturaRouting = React.lazy(() => import('./pages/pcp/PlanejamentoEstruturaRouting'));
 const EngineeringControlReport = React.lazy(() => import('./pages/EngineeringControlReport'));
 const PlanejamentoAvancado = React.lazy(() => import('./pages/pcp/PlanejamentoAvancado'));
 const SetoresCadastro = React.lazy(() => import('./pages/pcp/SetoresCadastro'));
+const RecursosCadastro = React.lazy(() => import('./pages/pcp/RecursosCadastro'));
 const SetoresRecursos = React.lazy(() => import('./pages/pcp/SetoresRecursos'));
 const VisaoSetores = React.lazy(() => import('./pages/pcp/VisaoSetores'));
 const CurvaSPedido = React.lazy(() => import('./pages/pcp/CurvaSPedido'));
@@ -125,17 +120,21 @@ const PlanoContas = React.lazy(() => import('./pages/PlanoContas'));
 const Balancete = React.lazy(() => import('./pages/financeiro/Balancete'));
 const PPAPsBuscarProduto = React.lazy(() => import('./pages/PPAPsBuscarProduto'));
 const MeuCanal = React.lazy(() => import('./pages/MeuCanal'));
-const WabtecPPAPsPage = React.lazy(() => import('./pages/wabtec/WabtecPPAPsPage'));
-const WabtecEscopoPage = React.lazy(() => import('./pages/wabtec/WabtecEscopoPage'));
-const WabtecEstruturaContainer = React.lazy(() => import('./pages/wabtec/WabtecEstruturaContainer'));
-const WabtecDatasSolicitacaoPage = React.lazy(() => import('./pages/wabtec/WabtecDatasSolicitacaoPage'));
-const DemandaEngetron = React.lazy(() => import('./pages/engetron/DemandaEngetron'));
+
 const Analise3DPage = React.lazy(() => import('./pages/Analise3DPage'));
 const CapacidadeRecursos = React.lazy(() => import('./pages/pcp-refinado/CapacidadeRecursos'));
 const TaxaOcupacao = React.lazy(() => import('./pages/pcp-refinado/TaxaOcupacao'));
 const RastreabilidadePCP = React.lazy(() => import('./pages/pcp-refinado/RastreabilidadePCP'));
 const TVDashboard = React.lazy(() => import('./pages/TVDashboard'));
 const CalendarioAtividades = React.lazy(() => import('./pages/CalendarioAtividades'));
+const PropostaComercialSuperAdmin = React.lazy(() => import('./pages/admin/PropostaComercialSuperAdmin'));
+const PortariaGuaritaPage = React.lazy(() => import('./pages/portaria/PortariaGuaritaPage'));
+const PortariaGerencialPage = React.lazy(() => import('./pages/portaria/PortariaGerencialPage'));
+const PortariaTurnosPage = React.lazy(() => import('./pages/portaria/PortariaTurnosPage'));
+const CIPACentralPage = React.lazy(() => import('./pages/sst/cipa/CIPACentralPage'));
+const CIPAUrnaTotemPage = React.lazy(() => import('./pages/sst/cipa/CIPAUrnaTotemPage'));
+const BrigadaCentralPage = React.lazy(() => import('./pages/sst/brigada/BrigadaCentralPage'));
+const BrigadaInspecaoRapidaPage = React.lazy(() => import('./pages/sst/brigada/BrigadaInspecaoRapidaPage'));
 
 
 import { MENU_GROUPS } from './config/menuItems';
@@ -151,7 +150,7 @@ MENU_GROUPS.forEach(group => {
 // Private Route Component with permission guard
 const EspelhoNFViewer = React.lazy(() => import('./pages/suprimentos/EspelhoNFViewer'));
 const AuditoriaPC = React.lazy(() => import('./pages/suprimentos/AuditoriaPC'));
-import MetalfisaPresentation from './components/MetalfisaPresentation';
+import LynxPresentation from './components/LynxPresentation';
 
 const PrivateRoute = () => {
     const { signed, loading, user, hasPermission, isAdmin } = useAuth();
@@ -174,7 +173,7 @@ const PrivateRoute = () => {
         return (
             <Layout>
                 {isClient ? (
-                    <MetalfisaPresentation />
+                    <LynxPresentation />
                 ) : (
                     <div className="flex flex-col items-center justify-center h-[60vh] text-center p-8">
                         <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
@@ -236,6 +235,7 @@ const Layout = ({ children, fullWidth = true }) => {
 
             {/* Main Content */}
             <main className={`flex-1 flex flex-col h-screen overflow-hidden w-full transition-all duration-300 relative ${isOpen && isPinned && !isMobile ? 'pr-[420px]' : ''}`}>
+                <TenantTopBar />
                 <EmailBlockerModal />
                 {!isPortalCliente && <FloatingAvisos />}
                 <HelpDrawer />
@@ -254,7 +254,7 @@ const Layout = ({ children, fullWidth = true }) => {
 
                 {/* Topbar Mobile */}
                 <header className="md:hidden bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-30 print:hidden">
-                    <h1 className="text-lg font-bold text-slate-900">MetalFisa PCP</h1>
+                    <h1 className="text-lg font-bold text-slate-900">Lynx PCP</h1>
                     <button
                         className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
                         onClick={() => setIsSidebarOpen(true)}
@@ -289,6 +289,25 @@ const Layout = ({ children, fullWidth = true }) => {
 const LandingPage = React.lazy(() => import('./pages/LandingPage'));
 const PortalCliente = React.lazy(() => import('./pages/PortalCliente'));
 
+const HelpRoute = () => {
+    const { user, loading } = useAuth();
+    if (loading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <div className="h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+            </div>
+        );
+    }
+    if (user) {
+        return (
+            <Layout>
+                <HelpCenter />
+            </Layout>
+        );
+    }
+    return <HelpCenter isPublic={true} />;
+};
+
 function App() {
     return (
         <AuthProvider>
@@ -307,33 +326,25 @@ function App() {
                                 <Routes>
                                     <Route path="/" element={<LandingPage />} />
                                     <Route path="/login" element={<Login />} />
-                                    <Route path="/painel-producao" element={<TVDashboard />} />
+                                    <Route path="/painel-producao" element={<Navigate to="/visao-geral" replace />} />
+                                    <Route path="/ajuda" element={<HelpRoute />} />
 
                                     <Route element={<PrivateRoute />}>
+                                        <Route path="/empresa/colaboradores" element={<Layout><GestaoColaboradores /></Layout>} />
+                                        <Route path="/admin/super-empresas" element={<Layout><SuperadminEmpresas /></Layout>} />
+                                        <Route path="/admin/proposta-comercial" element={<Layout fullWidth={true}><PropostaComercialSuperAdmin /></Layout>} />
                                         <Route path="/manutencao/maquinas" element={<Layout><ManutencaoMaquinas /></Layout>} />
                                         <Route path="/manutencao/checklists" element={<Layout><ManutencaoChecklists /></Layout>} />
                                         <Route path="/manutencao/ordens" element={<Layout><ManutencaoOrdens /></Layout>} />
                                         <Route path="/manutencao/tecnicos" element={<Layout><ManutencaoTecnicos /></Layout>} />
-                                        <Route path="/dashboard" element={
-                                            <Layout fullWidth={true}>
-                                                <MeuCanal />
-                                            </Layout>
-                                        } />
+                                        <Route path="/dashboard" element={<Navigate to="/visao-geral" replace />} />
                                         <Route path="/visao-geral" element={
                                             <Layout fullWidth={true}>
                                                 <OrdersTable />
                                             </Layout>
                                         } />
-                                        <Route path="/portal-cliente" element={
-                                            <Layout fullWidth={true}>
-                                                <PortalCliente />
-                                            </Layout>
-                                        } />
-                                        <Route path="/portal-cliente/tablet" element={
-                                            <Layout fullWidth={true}>
-                                                <PortalCliente defaultTab="solicitacao_tablet" />
-                                            </Layout>
-                                        } />
+                                        <Route path="/portal-cliente" element={<Navigate to="/visao-geral" replace />} />
+                                        <Route path="/portal-cliente/tablet" element={<Navigate to="/visao-geral" replace />} />
                                         <Route path="/comercial/gestao-ops" element={
                                             <Layout fullWidth={true}>
                                                 <GestaoOPsPage />
@@ -354,6 +365,31 @@ function App() {
                                         <Route path="/erp/produtos" element={
                                             <Layout fullWidth={true}>
                                                 <ErpProdutosPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/cadastros/basicos" element={
+                                            <Layout fullWidth={true}>
+                                                <CadastrosBasicosPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/cadastros/prefixos" element={
+                                            <Layout fullWidth={true}>
+                                                <CadastrosBasicosPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/cadastros/tipos-produto" element={
+                                            <Layout fullWidth={true}>
+                                                <CadastrosBasicosPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/cadastros/unidades-medida" element={
+                                            <Layout fullWidth={true}>
+                                                <CadastrosBasicosPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/cadastros/armazens" element={
+                                            <Layout fullWidth={true}>
+                                                <CadastrosBasicosPage />
                                             </Layout>
                                         } />
                                         <Route path="/erp/pedidos" element={
@@ -377,21 +413,13 @@ function App() {
                                                 <ProductCatalog />
                                             </Layout>
                                         } />
-                                        <Route path="/engenharia/msmetal/produtos" element={
-                                            <Layout fullWidth={true}>
-                                                <MSMetalProductCatalog />
-                                            </Layout>
-                                        } />
+                                        <Route path="/engenharia/msmetal/produtos" element={<Navigate to="/produtos" replace />} />
                                         <Route path="/engenharia/msmetal/estrutura/:id" element={
                                             <Layout fullWidth={true}>
                                                 <MSMetalProductStructure />
                                             </Layout>
                                         } />
-                                        <Route path="/producao" element={
-                                            <Layout>
-                                                <ProductionOrders />
-                                            </Layout>
-                                        } />
+                                        <Route path="/producao" element={<Navigate to="/visao-geral" replace />} />
                                         <Route path="/producao/op" element={
                                             <Layout>
                                                 <ProductionOrdersByOp />
@@ -522,21 +550,18 @@ function App() {
                                                 <VerticalAppointmentPage />
                                             </Layout>
                                         } />
-                                        <Route path="/pcp/conferencia" element={
-                                            <Layout>
-                                                <ConferenciaPage />
-                                            </Layout>
-                                        } />
+                                        <Route path="/pcp/conferencia" element={<Navigate to="/visao-geral" replace />} />
                                         <Route path="/visao-producao" element={
                                             <Layout>
                                                 <ProductionAnalytics />
                                             </Layout>
                                         } />
-                                        <Route path="/pcp/evolucao-apontamento" element={
+                                        <Route path="/pcp/analytics" element={
                                             <Layout fullWidth={true}>
-                                                <TrackingEvolution />
+                                                <ProductionAnalytics />
                                             </Layout>
                                         } />
+                                        <Route path="/pcp/evolucao-apontamento" element={<Navigate to="/visao-geral" replace />} />
                                         <Route path="/analytics/evolucao" element={
                                             <Layout fullWidth={true}>
                                                 <ProductionEvolution />
@@ -552,22 +577,13 @@ function App() {
                                                 <Settings />
                                             </Layout>
                                         } />
-                                        <Route path="/admin/protheus-estudo" element={
-                                            <Layout fullWidth={true}>
-                                                <ProtheusOverview />
-                                            </Layout>
-                                        } />
 
                                         <Route path="/pcp-refinado/rastreabilidade" element={
                                             <Layout fullWidth={true}>
                                                 <RastreabilidadePCP />
                                             </Layout>
                                         } />
-                                        <Route path="/producao/relatorios" element={
-                                            <Layout>
-                                                <Reports />
-                                            </Layout>
-                                        } />
+                                        <Route path="/producao/relatorios" element={<Navigate to="/visao-geral" replace />} />
                                         <Route path="/relatorios" element={
                                             <Layout>
                                                 <Reports />
@@ -634,11 +650,6 @@ function App() {
                                         <Route path="/sgq/indicadores" element={
                                             <Layout>
                                                 <div className="p-8 text-center text-gray-500">Módulo em desenvolvimento: Indicadores</div>
-                                            </Layout>
-                                        } />
-                                        <Route path="/ajuda" element={
-                                            <Layout>
-                                                <HelpCenter />
                                             </Layout>
                                         } />
                                         <Route path="/novas-funcionalidades" element={
@@ -726,37 +737,7 @@ function App() {
                                         <Route path="/pcp/gestao-materiais" element={<MaterialManagementPage />} />
                                         <Route path="/pcp/onde-usado" element={<WhereUsedPage />} />
 
-                                        {/* Sinco Routs */}
-                                        <Route path="/engenharia/sinco/os" element={
-                                            <Layout>
-                                                <ServiceOrdersPage />
-                                            </Layout>
-                                        } />
-                                        <Route path="/engenharia/sinco/estrutura" element={
-                                            <Layout fullWidth={true}>
-                                                <SINCOProductStructure />
-                                            </Layout>
-                                        } />
-                                        <Route path="/engenharia/sinco/apontamento" element={
-                                            <Layout fullWidth={true}>
-                                                <ServiceOrderProductionAppointmentPage />
-                                            </Layout>
-                                        } />
-                                        <Route path="/engenharia/sinco/apontamento-matrix" element={
-                                            <Layout fullWidth={true}>
-                                                <ServiceOrderProductionMatrixPage />
-                                            </Layout>
-                                        } />
-                                        <Route path="/engenharia/sinco/materiais" element={
-                                            <Layout fullWidth={true}>
-                                                <ServiceOrderMaterialsPage />
-                                            </Layout>
-                                        } />
-                                        <Route path="/sinco/desenho-ativo" element={
-                                            <Layout>
-                                                <SINCOActiveDrawing />
-                                            </Layout>
-                                        } />
+
                                         <Route path="/engenharia/sinco/formulario" element={
                                             <Layout fullWidth={true}>
                                                 <SINCOFormularioPrincipal />
@@ -765,11 +746,6 @@ function App() {
                                         <Route path="/engenharia/sinco/estrutura-completa" element={
                                             <Layout fullWidth={true}>
                                                 <SolidEdeg_Estrutura_Produto />
-                                            </Layout>
-                                        } />
-                                        <Route path="/pcp/apontamento-por-usuario" element={
-                                            <Layout fullWidth={true}>
-                                                <SincoApontamentoPorUsuarioPage />
                                             </Layout>
                                         } />
                                         <Route path="/pcp/extrato-op" element={
@@ -787,98 +763,14 @@ function App() {
                                                 <PlanejamentoEstruturaRouting />
                                             </Layout>
                                         } />
-                                        <Route path="/sworks" element={
-                                            <Layout fullWidth={true}>
-                                                <SWorks />
-                                            </Layout>
-                                        } />
 
-                                        {/* VMI Routes */}
-                                        <Route path="/vmi/forecast" element={
-                                            <Layout fullWidth={true}>
-                                                <DemandaVMIContainer />
-                                            </Layout>
-                                        } />
-                                        <Route path="/vmi/demanda-mes" element={
-                                            <Layout fullWidth={true}>
-                                                <DemandaMesPage />
-                                            </Layout>
-                                        } />
-                                        <Route path="/vmi/criticos" element={
-                                            <Layout fullWidth={true}>
-                                                <VMICriticosPage />
-                                            </Layout>
-                                        } />
-                                        <Route path="/vmi/pedido" element={
-                                            <Layout fullWidth={true}>
-                                                <VMIPedidosContainer />
-                                            </Layout>
-                                        } />
-                                        <Route path="/vmi/leitura" element={
-                                            <Layout fullWidth={true}>
-                                                <VMIUploadPage />
-                                            </Layout>
-                                        } />
-                                        <Route path="/vmi/dashboard" element={
-                                            <Layout fullWidth={true}>
-                                                <VMIDashboardPage />
-                                            </Layout>
-                                        } />
-                                        <Route path="/vmi/estrategia" element={
-                                            <Layout fullWidth={true}>
-                                                <VMIEstrategiaPage />
-                                            </Layout>
-                                        } />
-                                        <Route path="/vmi/historico" element={
-                                            <Layout fullWidth={true}>
-                                                <VMIHistoricoPage />
-                                            </Layout>
-                                        } />
+
 
                                         {/* Calendário de Atividades Route */}
-                                        <Route path="/calendario-atividades" element={
-                                            <Layout fullWidth={true}>
-                                                <CalendarioAtividades />
-                                            </Layout>
-                                        } />
-
-                                        {/* WabTec Routes */}
-                                        <Route path="/wabtec/ppaps" element={
-                                            <Layout fullWidth={true}>
-                                                <Suspense fallback={<div className="p-8 text-center text-gray-500">Carregando PPAP's...</div>}>
-                                                    <WabtecPPAPsPage />
-                                                </Suspense>
-                                            </Layout>
-                                        } />
-                                        <Route path="/wabtec/escopo" element={
-                                            <Layout fullWidth={true}>
-                                                <WabtecEscopoPage />
-                                            </Layout>
-                                        } />
-                                        <Route path="/wabtec/estrutura" element={
-                                            <Layout fullWidth={true}>
-                                                <WabtecEstruturaContainer />
-                                            </Layout>
-                                        } />
-                                        <Route path="/wabtec/datas-solicitacao" element={
-                                            <Layout fullWidth={true}>
-                                                <WabtecDatasSolicitacaoPage />
-                                            </Layout>
-                                        } />
-
-                                        {/* Engetron Routes */}
-                                        <Route path="/engetron/dashboard" element={
-                                            <Layout fullWidth={true}>
-                                                <DemandaEngetron />
-                                            </Layout>
-                                        } />
+                                        <Route path="/calendario-atividades" element={<Navigate to="/visao-geral" replace />} />
 
                                         {/* Analise 3D Route */}
-                                        <Route path="/analise-3d" element={
-                                            <Layout fullWidth={true}>
-                                                <Analise3DPage />
-                                            </Layout>
-                                        } />
+                                        <Route path="/analise-3d" element={<Navigate to="/visao-geral" replace />} />
 
                                         {/* Modulo Independente Fracionamento */}
                                         <Route path="/ind-pcp-release" element={
@@ -897,16 +789,15 @@ function App() {
                                             </Layout>
                                         } />
 
-                                        {/* Protheus Forms */}
-                                        <Route path="/protheus" element={
-                                            <Layout>
-                                                <ProtheusOverview />
-                                            </Layout>
-                                        } />
                                         {/* PCP Setor — Cadastro, Recursos e Visão Gerencial */}
                                         <Route path="/pcp/setores" element={
                                             <Layout fullWidth={true}>
                                                 <SetoresCadastro />
+                                            </Layout>
+                                        } />
+                                        <Route path="/pcp/recursos" element={
+                                            <Layout fullWidth={true}>
+                                                <RecursosCadastro />
                                             </Layout>
                                         } />
                                         <Route path="/pcp/setores/recursos" element={
@@ -995,12 +886,94 @@ function App() {
                                             </Layout>
                                         } />
 
-                                        {/* Proposta Comercial Lynx / Metalfisa (Exclusivo Superadmin) */}
+                                        {/* MÓDULO EXCLUSIVO SUPERADMIN: PROPOSTA COMERCIAL */}
                                         <Route path="/admin/proposta-comercial" element={
                                             <Layout fullWidth={true}>
-                                                <Suspense fallback={<div className="p-8 text-center text-slate-500">Carregando Proposta Comercial...</div>}>
-                                                    <PropostaComercialPage />
+                                                <Suspense fallback={<div className="p-8 text-center text-slate-500 font-semibold">Carregando Proposta Comercial...</div>}>
+                                                    <PropostaComercialSuperAdmin />
                                                 </Suspense>
+                                            </Layout>
+                                        } />
+
+                                        {/* SUÍTE CORPORATIVA 100% MYSQL */}
+                                        <Route path="/salas" element={
+                                            <Layout fullWidth={true}>
+                                                <SalasReuniaoCentral />
+                                            </Layout>
+                                        } />
+                                        <Route path="/salas-reuniao" element={
+                                            <Layout fullWidth={true}>
+                                                <SalasReuniaoCentral />
+                                            </Layout>
+                                        } />
+                                        <Route path="/salas/totem/:salaId" element={<TotemPortaModal />} />
+
+                                        <Route path="/sst" element={
+                                            <Layout fullWidth={true}>
+                                                <SSTCentral />
+                                            </Layout>
+                                        } />
+                                        <Route path="/sst/cesta-basica" element={
+                                            <Layout fullWidth={true}>
+                                                <SSTCestaBasica />
+                                            </Layout>
+                                        } />
+
+                                        {/* MÓDULO SST - CIPA & ELEIÇÃO (NR-05) */}
+                                        <Route path="/sst/cipa" element={
+                                            <Layout fullWidth={true}>
+                                                <CIPACentralPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/sst/cipa/urna" element={
+                                            <CIPAUrnaTotemPage />
+                                        } />
+
+                                        {/* MÓDULO SST - BRIGADA DE INCÊNDIO & EMERGÊNCIAS (NR-23 / NBR 14276) */}
+                                        <Route path="/sst/brigada" element={
+                                            <Layout fullWidth={true}>
+                                                <BrigadaCentralPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/sst/brigada/inspecao" element={
+                                            <Layout fullWidth={true}>
+                                                <BrigadaInspecaoRapidaPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/sst/brigada/inspecao-rapida" element={
+                                            <Layout fullWidth={true}>
+                                                <BrigadaInspecaoRapidaPage />
+                                            </Layout>
+                                        } />
+
+                                        {/* MÓDULO DE PORTARIA & CONTROLE DE ACESSO */}
+                                        <Route path="/portaria" element={<Navigate to="/portaria/guarita" replace />} />
+                                        <Route path="/portaria/guarita" element={
+                                            <Layout fullWidth={true}>
+                                                <PortariaGuaritaPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/portaria/gerencial" element={
+                                            <Layout fullWidth={true}>
+                                                <PortariaGerencialPage />
+                                            </Layout>
+                                        } />
+                                        <Route path="/portaria/turnos" element={
+                                            <Layout fullWidth={true}>
+                                                <PortariaTurnosPage />
+                                            </Layout>
+                                        } />
+
+                                        <Route path="/rh/pasta-colaborador" element={
+                                            <Layout fullWidth={true}>
+                                                <PastaColaborador />
+                                            </Layout>
+                                        } />
+                                        <Route path="/rh/portal-colaborador" element={<PortalColaborador />} />
+
+                                        <Route path="/suporte" element={
+                                            <Layout fullWidth={true}>
+                                                <SuporteCentral />
                                             </Layout>
                                         } />
 

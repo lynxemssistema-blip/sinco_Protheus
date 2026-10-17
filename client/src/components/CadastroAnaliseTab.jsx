@@ -154,22 +154,22 @@ function CandidatoMpCard({ cand, onConfirmar, onIgnorar }) {
     }, [cand._candidato_id]);
 
     return (
-        <div className="bg-slate-700/50 border border-slate-600 rounded-lg p-2 space-y-2">
+        <div className="bg-[#24312D] border border-[#425750]/60 rounded-lg p-2.5 space-y-2.5 shadow-md">
             
-            <div className="overflow-x-auto rounded border border-slate-600/50">
-                <table className="w-full text-left text-xs text-slate-300">
-                    <thead className="text-[10px] uppercase text-slate-400 bg-slate-800/80 border-b border-slate-600">
+            <div className="overflow-x-auto rounded border border-[#425750]/40">
+                <table className="w-full text-left text-xs text-[#EAE8E0]">
+                    <thead className="text-[10px] uppercase text-[#8E9F97] bg-[#1E2825] border-b border-[#425750]/40">
                         <tr>
-                            <th className="px-2 py-1.5 font-bold whitespace-nowrap">Código</th>
-                            <th className="px-2 py-1.5 font-bold">Descrição</th>
-                            <th className="px-2 py-1.5 font-bold w-32 whitespace-nowrap"><ShoppingCart className="w-3 h-3 inline mr-1" /> Últ. Compra</th>
-                            <th className="px-2 py-1.5 font-bold w-64"><Network className="w-3 h-3 inline mr-1" /> Onde é Usado</th>
+                            <th className="px-2.5 py-2 font-bold whitespace-nowrap">Código</th>
+                            <th className="px-2.5 py-2 font-bold">Descrição</th>
+                            <th className="px-2.5 py-2 font-bold w-32 whitespace-nowrap"><ShoppingCart className="w-3 h-3 inline mr-1" /> Últ. Compra</th>
+                            <th className="px-2.5 py-2 font-bold w-64"><Network className="w-3 h-3 inline mr-1" /> Onde é Usado</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-600/50">
-                        {cand.produtos.map(p => (
-                            <tr key={p.codigo} className="hover:bg-slate-700/30 transition-colors">
-                                <td className="px-2 py-2 font-mono text-amber-300 font-bold whitespace-nowrap align-top">
+                    <tbody className="divide-y divide-[#425750]/30">
+                        {cand.produtos.map((p, idx) => (
+                            <tr key={`${p.codigo}-${p.empresa || ''}-${idx}`} className="hover:bg-[#2D3C37]/50 transition-colors">
+                                <td className="px-2.5 py-2 font-mono text-[#E0E800] font-bold whitespace-nowrap align-top">
                                     {p.codigo}
                                     {p.bloqueado === '1' && (
                                         <span className="ml-2 text-[9px] bg-red-900/50 text-red-400 px-1 py-0.5 rounded border border-red-700/50" title="Produto bloqueado no Protheus">
@@ -177,18 +177,18 @@ function CandidatoMpCard({ cand, onConfirmar, onIgnorar }) {
                                         </span>
                                     )}
                                 </td>
-                                <td className="px-2 py-2 align-top text-slate-200">{p.descricao}</td>
-                                <td className="px-2 py-2 align-top">
+                                <td className="px-2.5 py-2 align-top text-[#F9F8F3]">{p.descricao}</td>
+                                <td className="px-2.5 py-2 align-top">
                                     {ultimasCompras[p.codigo] ? (
                                         <span className="text-emerald-400 block leading-tight">
                                             {ultimasCompras[p.codigo].ultima_data_fmt}
                                             <span className="block text-[10px] text-emerald-500/70 mt-0.5">{Number(ultimasCompras[p.codigo].quantidade).toLocaleString('pt-BR')} un</span>
                                         </span>
                                     ) : (
-                                        <span className="text-slate-500 italic">Sem registro</span>
+                                        <span className="text-[#8E9F97] italic">Sem registro</span>
                                     )}
                                 </td>
-                                <td className="px-2 py-2 align-top break-words max-w-[250px]">
+                                <td className="px-2.5 py-2 align-top break-words max-w-[250px]">
                                     <OndeEUsadoSimples codigo={p.codigo} />
                                 </td>
                             </tr>
@@ -204,17 +204,17 @@ function CandidatoMpCard({ cand, onConfirmar, onIgnorar }) {
                 <button
                     onClick={() => onConfirmar(cand)}
                     disabled={cand.status === 'confirmando'}
-                    className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors shadow-sm"
+                    className="flex items-center gap-1.5 text-xs bg-[#425750] hover:bg-[#32423D] text-white px-3.5 py-1.5 rounded-lg disabled:opacity-50 transition-colors shadow-sm font-bold border border-[#425750]"
                 >
                     {cand.status === 'confirmando'
                         ? <><Loader2 className="w-3 h-3 animate-spin" /> Confirmando...</>
-                        : <><Bot className="w-3 h-3" /> Confirmar com IA</>
+                        : <><Bot className="w-3 h-3 text-[#E0E800]" /> Confirmar com IA</>
                     }
                 </button>
                 <button
                     onClick={() => onIgnorar(cand._candidato_id)}
                     disabled={cand.status === 'confirmando'}
-                    className="text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors"
+                    className="text-xs text-[#8E9F97] hover:text-[#F9F8F3] hover:bg-[#2D3C37] px-3 py-1.5 rounded-lg transition-colors"
                 >
                     Ignorar
                 </button>
@@ -287,8 +287,8 @@ function GrupoSugeridoCard({ grupo, onSalvar, jaSalvo }) {
             </div>
             {grupo.motivo && <p className="text-sm text-slate-600">{grupo.motivo}</p>}
             <div className="space-y-2">
-                {produtosAtivos.map(p => (
-                    <div key={p.codigo} className="flex flex-col border rounded p-2 gap-1">
+                {produtosAtivos.map((p, idx) => (
+                    <div key={`${p.codigo}-${p.empresa || ''}-${idx}`} className="flex flex-col border rounded p-2 gap-1">
                         <div className="flex items-center gap-3">
                             {tipo === 'duplicado' && !jaSalvo && (
                                 <input
@@ -351,9 +351,9 @@ function GrupoSugeridoCard({ grupo, onSalvar, jaSalvo }) {
                     <button
                         onClick={handleSalvar}
                         disabled={salvando || produtosAtivos.length < 2}
-                        className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-lg disabled:opacity-50 flex items-center gap-2"
+                        className="bg-[#425750] hover:bg-[#32423D] text-white text-xs font-bold px-4 py-2 rounded-lg disabled:opacity-50 flex items-center gap-2 border border-[#425750] shadow-sm transition-colors"
                     >
-                        {salvando && <Loader2 className="w-3 h-3 animate-spin" />}
+                        {salvando && <Loader2 className="w-3 h-3 animate-spin text-[#E0E800]" />}
                         Salvar decisão
                     </button>
                 )}
@@ -631,27 +631,27 @@ export default function CadastroAnaliseTab() {
             {/* ================================================== */}
             {/* ANÁLISE DE REDUNDÂNCIAS MP                          */}
             {/* ================================================== */}
-            <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-5 rounded-xl shadow-lg border border-slate-700 space-y-4">
+            <div className="bg-gradient-to-br from-[#1E2825] via-[#24312D] to-[#1E2825] p-5 rounded-xl shadow-lg border border-[#425750]/60 space-y-4">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-amber-500/20 rounded-lg">
-                        <PackageSearch className="w-5 h-5 text-amber-400" />
+                    <div className="p-2 bg-[#E0E800]/15 rounded-lg border border-[#E0E800]/30">
+                        <PackageSearch className="w-5 h-5 text-[#E0E800]" />
                     </div>
                     <div>
                         <h2 className="text-sm font-bold text-white flex items-center gap-2">
                             Análise de Redundâncias MP
-                            <span className="text-xs font-normal bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">Empresa 010 · Matriz</span>
+                            <span className="text-xs font-normal bg-[#425750]/40 text-[#E0E800] border border-[#E0E800]/25 px-2 py-0.5 rounded-full">Empresa 010 · Matriz</span>
                         </h2>
-                        <p className="text-xs text-slate-400 mt-0.5">Detecta matérias-primas duplicadas ou equivalentes mesmo quando descritas de formas diferentes.</p>
+                        <p className="text-xs text-[#8E9F97] mt-0.5">Detecta matérias-primas duplicadas ou equivalentes mesmo quando descritas de formas diferentes.</p>
                     </div>
                 </div>
 
                 {/* Filtro de Grupo */}
                 <div className="flex flex-col sm:flex-row gap-3 items-end">
                     <div className="flex-1">
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">Grupo de Material (opcional)</label>
+                        <label className="block text-xs font-semibold text-[#8E9F97] mb-1">Grupo de Material (opcional)</label>
                         <div className="relative">
                             <select
-                                className="w-full bg-slate-700 border border-slate-600 text-white rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                className="w-full bg-[#24312D] border border-[#425750]/70 text-[#F9F8F3] rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-[#E0E800]"
                                 value={grupoMpSelecionado}
                                 onChange={e => {
                                     setGrupoMpSelecionado(e.target.value);
@@ -670,7 +670,7 @@ export default function CadastroAnaliseTab() {
                                     </option>
                                 ))}
                             </select>
-                            <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
+                            <ChevronDown className="absolute right-2 top-2.5 w-4 h-4 text-[#8E9F97] pointer-events-none" />
                         </div>
                     </div>
 
@@ -678,9 +678,9 @@ export default function CadastroAnaliseTab() {
                         <button
                             onClick={handleAnalisarRedundanciasMp}
                             disabled={rodandoMp}
-                            className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-white font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 whitespace-nowrap transition-colors"
+                            className="bg-[#425750] hover:bg-[#32423D] border border-[#425750] disabled:opacity-50 text-white font-bold px-5 py-2 rounded-lg text-sm flex items-center gap-2 whitespace-nowrap transition-colors shadow-md"
                         >
-                            <Sparkles className="w-4 h-4" />
+                            <Sparkles className="w-4 h-4 text-[#E0E800]" />
                             {concluido ? 'Nova análise' : 'Analisar Redundâncias MP'}
                         </button>
                     ) : (
@@ -695,26 +695,26 @@ export default function CadastroAnaliseTab() {
 
                 {/* Progresso em lotes */}
                 {(rodandoMp || progressoMp) && (
-                    <div className="bg-slate-700/60 rounded-lg p-4 border border-slate-600 space-y-3">
+                    <div className="bg-[#24312D]/90 rounded-lg p-4 border border-[#425750]/50 space-y-3">
                         <div className="flex items-center justify-between">
-                            <span className="text-xs text-slate-300 flex items-center gap-1">
-                                {rodandoMp && <Loader2 className="w-3 h-3 animate-spin inline" />}
+                            <span className="text-xs text-[#F9F8F3] flex items-center gap-1">
+                                {rodandoMp && <Loader2 className="w-3 h-3 animate-spin inline text-[#E0E800]" />}
                                 {rodandoMp
                                     ? `Escaneando lote ${progressoMp?.lote || 1}...`
                                     : `✓ Scan concluído — ${progressoMp?.lote || '?'} lote(s)`
                                 }
                             </span>
                             {progressoMp?.total && (
-                                <span className="text-xs text-slate-400">
+                                <span className="text-xs text-[#8E9F97]">
                                     {Math.min(progressoMp.atual, progressoMp.total)} / {progressoMp.total} MPs
                                 </span>
                             )}
                         </div>
                             {/* Barra de progresso */}
                             {progressoMp?.total && (
-                                <div className="w-full bg-slate-600 rounded-full h-2">
+                                <div className="w-full bg-[#1E2825] rounded-full h-2">
                                     <div
-                                        className="bg-amber-500 h-2 rounded-full transition-all duration-500"
+                                        className="bg-[#E0E800] h-2 rounded-full transition-all duration-500"
                                         style={{ width: `${Math.min(100, Math.round((progressoMp.atual / progressoMp.total) * 100))}%` }}
                                     />
                                 </div>
@@ -724,15 +724,15 @@ export default function CadastroAnaliseTab() {
                                 <div className="grid grid-cols-3 gap-2 pt-1">
                                     <div className="text-center">
                                         <div className="text-lg font-bold text-white">{statsMpTotal.total_mp}</div>
-                                        <div className="text-xs text-slate-400">MPs escaneados</div>
+                                        <div className="text-xs text-[#8E9F97]">MPs escaneados</div>
                                     </div>
                                     <div className="text-center">
                                         <div className="text-lg font-bold text-amber-400">{statsMpTotal.candidatos}</div>
-                                        <div className="text-xs text-slate-400">Candidatos</div>
+                                        <div className="text-xs text-[#8E9F97]">Candidatos</div>
                                     </div>
                                     <div className="text-center">
-                                        <div className="text-lg font-bold text-blue-400">{statsMpTotal.grupos_ia}</div>
-                                        <div className="text-xs text-slate-400">Confirmados IA</div>
+                                        <div className="text-lg font-bold text-[#E0E800]">{statsMpTotal.grupos_ia}</div>
+                                        <div className="text-xs text-[#8E9F97]">Confirmados IA</div>
                                     </div>
                                 </div>
                             )}
@@ -824,9 +824,9 @@ export default function CadastroAnaliseTab() {
                     <button
                         onClick={handleConsultar}
                         disabled={loadingConsulta || (!pergunta.trim() && !codigoConsulta.trim())}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50 whitespace-nowrap"
+                        className="bg-[#425750] hover:bg-[#32423D] text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50 whitespace-nowrap shadow-sm border border-[#425750] transition-colors"
                     >
-                        {loadingConsulta ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                        {loadingConsulta ? <Loader2 className="w-4 h-4 animate-spin text-[#E0E800]" /> : <Search className="w-4 h-4 text-[#E0E800]" />}
                         Perguntar à IA
                     </button>
                 </div>
@@ -914,9 +914,9 @@ export default function CadastroAnaliseTab() {
                     <button
                         onClick={handleAnalisarLote}
                         disabled={loadingLote}
-                        className="bg-slate-800 text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50"
+                        className="bg-[#425750] hover:bg-[#32423D] text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 disabled:opacity-50 shadow-sm border border-[#425750] transition-colors"
                     >
-                        {loadingLote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                        {loadingLote ? <Loader2 className="w-4 h-4 animate-spin text-[#E0E800]" /> : <Sparkles className="w-4 h-4 text-[#E0E800]" />}
                         Analisar com IA
                     </button>
                 </div>
@@ -986,9 +986,9 @@ export default function CadastroAnaliseTab() {
                                     )}
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                    {grupo.itens.map(item => (
+                                    {grupo.itens.map((item, idx) => (
                                         <span
-                                            key={item.id}
+                                            key={`${item.id || item.codigo}-${idx}`}
                                             className={`text-xs font-mono px-2 py-1 rounded border ${
                                                 item.papel === 'correto' ? 'border-green-300 bg-green-50 text-green-700' :
                                                 item.papel === 'bloquear' ? 'border-red-300 bg-red-50 text-red-700 line-through' :

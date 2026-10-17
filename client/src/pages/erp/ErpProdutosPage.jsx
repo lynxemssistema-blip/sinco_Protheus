@@ -7,7 +7,8 @@ import {
     Package, Plus, Search, RefreshCw, Layers, CheckCircle2, AlertCircle, 
     ArrowDownToLine, Tag, DollarSign, Scale, X, Database, Sparkles, 
     Clock, Building2, ShieldCheck, ChevronLeft, ChevronRight, Hash,
-    Eye, ExternalLink, Box, FileText, Check
+    Eye, ExternalLink, Box, FileText, Check, Camera, Image, Paperclip,
+    FileCode, Upload, Download, Trash2, Edit2, ZoomIn
 } from 'lucide-react';
 
 export default function ErpProdutosPage() {
@@ -16,7 +17,7 @@ export default function ErpProdutosPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const debouncedSearch = useDebounce(searchTerm, 350);
     const [tipoFilter, setTipoFilter] = useState('');
-    const [stats, setStats] = useState({ produtos: 0, clientes: 0, fornecedores: 0, pedidos: 0, ops_ativas: 0 });
+    const [stats, setStats] = useState({ produtos: 0, pa: 0, pi: 0, mp: 0, clientes: 0, fornecedores: 0, pedidos: 0, ops_ativas: 0 });
     const [page, setPage] = useState(0);
     const limit = 50;
 
@@ -28,6 +29,9 @@ export default function ErpProdutosPage() {
     const [quickStructureLoading, setQuickStructureLoading] = useState(false);
     const [quickStructureData, setQuickStructureData] = useState([]);
     const [quickStructureError, setQuickStructureError] = useState(null);
+
+    // Modal de Zoom da Imagem do Produto
+    const [previewImage, setPreviewImage] = useState(null);
 
     const handleOpenQuickStructure = async (prod) => {
         setQuickStructureProduct(prod);
@@ -47,12 +51,13 @@ export default function ErpProdutosPage() {
 
     // Modal states
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
     const [modalError, setModalError] = useState(null);
     const [modalSuccess, setModalSuccess] = useState(null);
     const [saving, setSaving] = useState(false);
     const [generatingCode, setGeneratingCode] = useState(false);
 
-    // Form state com campos completos da filosofia MATA010 Protheus (SB1)
+    // Form state com campos completos Protheus (SB1)
     const [formData, setFormData] = useState({
         codigo: '',
         descricao: '',
@@ -66,8 +71,112 @@ export default function ErpProdutosPage() {
         custo_standard: '',
         preco_venda: '',
         lead_time_dias: '5',
-        status: 'ativo'
+        status: 'ativo',
+        foto_url: '',
+        desenho_url: '',
+        desenho_nome: '',
+        desenho_tipo: '',
+        b1_xrevm: '0',
+        b1_xproc1: '',
+        b1_xrevc: '0'
     });
+
+    // Helper para converter string decimal (com vírgula ou ponto) em float seguro
+    const parseDecimal = (val) => {
+        if (val === null || val === undefined || val === '') return 0;
+        const str = String(val).trim().replace(/\s/g, '').replace(',', '.');
+        const parsed = parseFloat(str);
+        return isNaN(parsed) ? 0 : parsed;
+    };
+
+    // Helper para permitir digitação natural de números com vírgula ou ponto no Brasil
+    const handleDecimalChange = (field, value) => {
+        let cleaned = value.replace(/[^0-9.,]/g, '');
+        const matches = cleaned.match(/[.,]/g);
+        if (matches && matches.length > 1) {
+            let first = true;
+            cleaned = cleaned.replace(/[.,]/g, (match) => {
+                if (first) {
+                    first = false;
+                    return match;
+                }
+                return '';
+            });
+        }
+        setFormData(prev => ({ ...prev, [field]: cleaned }));
+    };
+
+    // Upload da foto do produto (Base64)
+    const handleFotoUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) {
+            alert('A foto deve ter no máximo 5MB.');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            setFormData(prev => ({ ...prev, foto_url: event.target.result }));
+        };
+        reader.readAsDataURL(file);
+    };
+
+    // Upload de desenho técnico (PDF, DWG, DXF)
+    const handleDesenhoUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 25 * 1024 * 1024) {
+            alert('O arquivo de desenho deve ter no máximo 25MB.');
+            return;
+        }
+        const ext = file.name.split('.').pop().toLowerCase();
+        let tipo = 'outro';
+        if (ext === 'pdf') tipo = 'pdf';
+        else if (ext === 'dwg') tipo = 'dwg';
+        else if (ext === 'dxf') tipo = 'dxf';
+        else if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) tipo = 'image';
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            setFormData(prev => ({
+                ...prev,
+                desenho_url: event.target.result,
+                desenho_nome: file.name,
+                desenho_tipo: tipo
+            }));
+        };
+        reader.readAsDataURL(file);
+    };
+
+    // Visualizar ou baixar desenho técnico
+    const handleOpenDrawing = (p) => {
+        if (!p.desenho_url) return;
+        if (p.desenho_url.startsWith('data:')) {
+            const parts = p.desenho_url.split(',');
+            const byteCharacters = atob(parts[1]);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const mime = p.desenho_tipo === 'pdf' ? 'application/pdf' : 'application/octet-stream';
+            const blob = new Blob([byteArray], { type: mime });
+            const blobUrl = URL.createObjectURL(blob);
+            
+            if (p.desenho_tipo === 'pdf') {
+                window.open(blobUrl, '_blank');
+            } else {
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = p.desenho_nome || `${p.codigo}-desenho.${p.desenho_tipo || 'dwg'}`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        } else {
+            window.open(p.desenho_url, '_blank');
+        }
+    };
 
     const loadData = async () => {
         setLoading(true);
@@ -87,7 +196,27 @@ export default function ErpProdutosPage() {
 
     useEffect(() => {
         loadData();
+        fetchCadastrosBasicos();
     }, [debouncedSearch, tipoFilter, page]);
+
+    // Cadastros Básicos (Prefixos, Tipos, Unidades e Armazéns)
+    const [cadastrosBasicos, setCadastrosBasicos] = useState({
+        prefixos: [],
+        tipos: [],
+        unidades: [],
+        armazens: []
+    });
+
+    const fetchCadastrosBasicos = async () => {
+        try {
+            const res = await api.get('/cadastros-basicos/todos');
+            if (res.data) {
+                setCadastrosBasicos(res.data);
+            }
+        } catch (err) {
+            console.warn('Falha ao carregar cadastros básicos unificados:', err);
+        }
+    };
 
     // Prefixos do Produto (Padrão Protheus MT2, MT3, MT4, SCL...)
     const [selectedPrefixo, setSelectedPrefixo] = useState('MT2');
@@ -105,7 +234,7 @@ export default function ErpProdutosPage() {
         }
     };
 
-    // Função para gerar automaticamente o próximo código no padrão Protheus (MATA010) com base no prefixo (mínimo 4 dígitos)
+    // Função para gerar automaticamente o próximo código com base no prefixo (mínimo 4 dígitos)
     const fetchNextProductCode = async (prefixoEscolhido = selectedPrefixo) => {
         setGeneratingCode(true);
         try {
@@ -128,13 +257,68 @@ export default function ErpProdutosPage() {
         }
     };
 
-    // Ao abrir o modal, carregar prefixos e gerar automaticamente o próximo código
-    const handleOpenModal = () => {
+    // Ao abrir o modal para criação de novo produto
+    const handleOpenCreateModal = () => {
+        setIsEditing(false);
+        setFormData({
+            codigo: '',
+            descricao: '',
+            tipo: 'PA',
+            unidade_medida: 'UN',
+            ncm: '',
+            armazem_padrao: '01',
+            origem: '0',
+            peso_liquido: '',
+            peso_bruto: '',
+            custo_standard: '',
+            preco_venda: '',
+            lead_time_dias: '5',
+            status: 'ativo',
+            foto_url: '',
+            desenho_url: '',
+            desenho_nome: '',
+            desenho_tipo: '',
+            b1_xrevm: '0',
+            b1_xproc1: '',
+            b1_xrevc: '0'
+        });
         setModalError(null);
         setModalSuccess(null);
         setIsModalOpen(true);
+        fetchCadastrosBasicos();
         fetchAvailablePrefixos();
         fetchNextProductCode(selectedPrefixo);
+    };
+
+    // Ao abrir o modal para edição de produto existente
+    const handleOpenEditModal = (p) => {
+        setIsEditing(true);
+        setFormData({
+            codigo: p.codigo || '',
+            descricao: p.descricao || '',
+            tipo: p.tipo || 'PA',
+            unidade_medida: p.unidade_medida || 'UN',
+            ncm: p.ncm || '',
+            armazem_padrao: p.armazem_padrao || '01',
+            origem: p.origem || '0',
+            peso_liquido: p.peso_liquido !== undefined && p.peso_liquido !== null ? String(p.peso_liquido).replace('.', ',') : '',
+            peso_bruto: p.peso_bruto !== undefined && p.peso_bruto !== null ? String(p.peso_bruto).replace('.', ',') : '',
+            custo_standard: p.custo_standard !== undefined && p.custo_standard !== null ? String(p.custo_standard).replace('.', ',') : '',
+            preco_venda: p.preco_venda !== undefined && p.preco_venda !== null ? String(p.preco_venda).replace('.', ',') : '',
+            lead_time_dias: p.lead_time_dias !== undefined && p.lead_time_dias !== null ? String(p.lead_time_dias) : '5',
+            status: p.status || 'ativo',
+            foto_url: p.foto_url || '',
+            desenho_url: p.desenho_url || '',
+            desenho_nome: p.desenho_nome || '',
+            desenho_tipo: p.desenho_tipo || '',
+            b1_xrevm: p.b1_xrevm !== undefined && p.b1_xrevm !== null && String(p.b1_xrevm).trim() !== '' ? String(p.b1_xrevm) : '0',
+            b1_xproc1: p.b1_xproc1 || '',
+            b1_xrevc: p.b1_xrevc !== undefined && p.b1_xrevc !== null && String(p.b1_xrevc).trim() !== '' ? String(p.b1_xrevc) : '0'
+        });
+        setModalError(null);
+        setModalSuccess(null);
+        setIsModalOpen(true);
+        fetchCadastrosBasicos();
     };
 
     // Ao mudar o tipo no formulário
@@ -142,32 +326,40 @@ export default function ErpProdutosPage() {
         setFormData(prev => ({ ...prev, tipo: newTipo }));
     };
 
-    const handleCreateProduct = async (e) => {
+    const handleSaveProduct = async (e) => {
         e.preventDefault();
         setSaving(true);
         setModalError(null);
         setModalSuccess(null);
 
-        try {
-            await api.post('/erp/produtos', {
-                ...formData,
-                peso_liquido: parseFloat(formData.peso_liquido) || 0,
-                peso_bruto: parseFloat(formData.peso_bruto) || 0,
-                custo_standard: parseFloat(formData.custo_standard) || 0,
-                preco_venda: parseFloat(formData.preco_venda) || 0,
-                lead_time_dias: parseInt(formData.lead_time_dias, 10) || 0
-            });
+        const payload = {
+            ...formData,
+            peso_liquido: parseDecimal(formData.peso_liquido),
+            peso_bruto: parseDecimal(formData.peso_bruto),
+            custo_standard: parseDecimal(formData.custo_standard),
+            preco_venda: parseDecimal(formData.preco_venda),
+            lead_time_dias: parseInt(formData.lead_time_dias, 10) || 0
+        };
 
-            setModalSuccess(`Produto ${formData.codigo} cadastrado com sucesso no padrão Protheus!`);
+        try {
+            if (isEditing) {
+                await api.put(`/erp/produtos/${encodeURIComponent(formData.codigo)}`, payload);
+                setModalSuccess(`Produto ${formData.codigo} atualizado com sucesso!`);
+            } else {
+                await api.post('/erp/produtos', payload);
+                setModalSuccess(`Produto ${formData.codigo} cadastrado com sucesso!`);
+            }
+
             setTimeout(() => {
                 setIsModalOpen(false);
                 setFormData({
                     codigo: '', descricao: '', tipo: 'PA', unidade_medida: 'UN',
                     ncm: '', armazem_padrao: '01', origem: '0', peso_liquido: '', peso_bruto: '',
-                    custo_standard: '', preco_venda: '', lead_time_dias: '5', status: 'ativo'
+                    custo_standard: '', preco_venda: '', lead_time_dias: '5', status: 'ativo',
+                    foto_url: '', desenho_url: '', desenho_nome: '', desenho_tipo: ''
                 });
                 loadData();
-            }, 1200);
+            }, 1000);
         } catch (err) {
             const msg = err.response?.data?.error || err.response?.data?.erros?.join(', ') || err.message;
             setModalError(msg);
@@ -187,7 +379,7 @@ export default function ErpProdutosPage() {
                     <div>
                         <div className="flex items-center gap-2">
                             <h1 className="text-xl md:text-2xl font-bold text-gray-900 leading-tight">
-                                Cadastro de Produtos (MATA010)
+                                Cadastro de Produtos
                             </h1>
                             <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                                 Protheus Nativo
@@ -201,11 +393,11 @@ export default function ErpProdutosPage() {
 
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={handleOpenModal}
+                        onClick={handleOpenCreateModal}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition shadow-sm"
                     >
                         <Plus className="w-4 h-4" />
-                        Novo Produto (MATA010)
+                        Novo Produto
                     </button>
                     <button
                         onClick={loadData}
@@ -220,53 +412,77 @@ export default function ErpProdutosPage() {
 
             {/* Quick Stats Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3">
+                <button
+                    type="button"
+                    onClick={() => { setTipoFilter(''); setPage(0); }}
+                    className={`bg-white p-4 rounded-xl shadow-sm border transition text-left flex items-center gap-3 cursor-pointer ${
+                        tipoFilter === '' ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/20' : 'border-gray-200 hover:border-blue-300'
+                    }`}
+                >
                     <div className="p-2.5 bg-blue-50 text-blue-600 rounded-lg">
                         <Package className="w-5 h-5" />
                     </div>
                     <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Cadastrado</span>
                         <p className="text-xl font-bold text-gray-900 mt-0.5">
-                            {(stats.produtos || 153322).toLocaleString('pt-BR')}
+                            {(stats.produtos ?? 0).toLocaleString('pt-BR')}
                         </p>
                     </div>
-                </div>
+                </button>
 
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3">
+                <button
+                    type="button"
+                    onClick={() => { setTipoFilter('PA'); setPage(0); }}
+                    className={`bg-white p-4 rounded-xl shadow-sm border transition text-left flex items-center gap-3 cursor-pointer ${
+                        tipoFilter === 'PA' ? 'border-emerald-500 ring-2 ring-emerald-100 bg-emerald-50/20' : 'border-gray-200 hover:border-emerald-300'
+                    }`}
+                >
                     <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-lg">
                         <Layers className="w-5 h-5" />
                     </div>
                     <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Produtos Acabados (PA)</span>
                         <p className="text-xl font-bold text-emerald-600 mt-0.5">
-                            {(46666).toLocaleString('pt-BR')}
+                            {(stats.pa ?? 0).toLocaleString('pt-BR')}
                         </p>
                     </div>
-                </div>
+                </button>
 
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3">
+                <button
+                    type="button"
+                    onClick={() => { setTipoFilter('PI'); setPage(0); }}
+                    className={`bg-white p-4 rounded-xl shadow-sm border transition text-left flex items-center gap-3 cursor-pointer ${
+                        tipoFilter === 'PI' ? 'border-amber-500 ring-2 ring-amber-100 bg-amber-50/20' : 'border-gray-200 hover:border-amber-300'
+                    }`}
+                >
                     <div className="p-2.5 bg-amber-50 text-amber-600 rounded-lg">
                         <Tag className="w-5 h-5" />
                     </div>
                     <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Intermediários (PI)</span>
                         <p className="text-xl font-bold text-amber-600 mt-0.5">
-                            {(84089).toLocaleString('pt-BR')}
+                            {(stats.pi ?? 0).toLocaleString('pt-BR')}
                         </p>
                     </div>
-                </div>
+                </button>
 
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center gap-3">
+                <button
+                    type="button"
+                    onClick={() => { setTipoFilter('MP'); setPage(0); }}
+                    className={`bg-white p-4 rounded-xl shadow-sm border transition text-left flex items-center gap-3 cursor-pointer ${
+                        tipoFilter === 'MP' ? 'border-slate-500 ring-2 ring-slate-100 bg-slate-50/50' : 'border-gray-200 hover:border-slate-300'
+                    }`}
+                >
                     <div className="p-2.5 bg-slate-100 text-slate-700 rounded-lg">
                         <Database className="w-5 h-5" />
                     </div>
                     <div>
                         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Matéria-Prima (MP)</span>
                         <p className="text-xl font-bold text-slate-800 mt-0.5">
-                            {(13805).toLocaleString('pt-BR')}
+                            {(stats.mp ?? 0).toLocaleString('pt-BR')}
                         </p>
                     </div>
-                </div>
+                </button>
             </div>
 
             {/* Search & Filter Bar */}
@@ -275,7 +491,7 @@ export default function ErpProdutosPage() {
                     <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
                         type="text"
-                        placeholder="Buscar por código, descrição ou NCM..."
+                        placeholder="Buscar por código, descrição, ref. cliente, revisão ou NCM..."
                         value={searchTerm}
                         onChange={(e) => { setSearchTerm(e.target.value); setPage(0); }}
                         className="w-full bg-white border border-gray-300 rounded-lg pl-10 pr-4 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -305,6 +521,9 @@ export default function ErpProdutosPage() {
                         <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold uppercase tracking-wider text-gray-600">
                             <tr>
                                 <th className="py-3 px-4">Código (B1_COD)</th>
+                                <th className="py-3 px-3 text-center">Rev. Prod.</th>
+                                <th className="py-3 px-3">Ref. Cliente</th>
+                                <th className="py-3 px-3 text-center">Rev. Cli.</th>
                                 <th className="py-3 px-4">Descrição (B1_DESC)</th>
                                 <th className="py-3 px-4">Tipo</th>
                                 <th className="py-3 px-4">U.M.</th>
@@ -319,38 +538,101 @@ export default function ErpProdutosPage() {
                         <tbody className="divide-y divide-gray-100">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="10" className="py-12 text-center text-gray-500">
+                                    <td colSpan="13" className="py-12 text-center text-gray-500">
                                         <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
                                         Carregando cadastro de produtos do Protheus...
                                     </td>
                                 </tr>
                             ) : produtos.length === 0 ? (
                                 <tr>
-                                    <td colSpan="10" className="py-12 text-center text-gray-500">
+                                    <td colSpan="13" className="py-12 text-center text-gray-500">
                                         Nenhum produto encontrado com os filtros informados.
                                     </td>
                                 </tr>
                             ) : (
                                 produtos.map((p) => (
                                     <tr key={p.id || p.codigo} className="hover:bg-gray-50/80 transition group">
-                                        <td className="py-3.5 px-4 font-mono font-bold text-blue-700">
-                                            <Link
-                                                to={`/estrutura/${encodeURIComponent(p.codigo)}`}
-                                                state={{ from: '/erp/produtos' }}
-                                                className="text-blue-700 hover:text-blue-900 hover:underline inline-flex items-center gap-1.5 group/code"
-                                                title="Abrir Estrutura Técnica do Produto (BOM)"
-                                            >
-                                                <span>{p.codigo}</span>
-                                                <Layers className="w-3.5 h-3.5 text-blue-500 opacity-0 group-hover/code:opacity-100 transition-opacity" />
-                                            </Link>
+                                        <td className="py-3 px-4 font-mono font-bold text-blue-700">
+                                            <div className="flex items-center gap-3">
+                                                {/* Thumbnail da Foto com preview */}
+                                                {p.foto_url ? (
+                                                    <div
+                                                        onClick={() => setPreviewImage(p.foto_url)}
+                                                        className="w-10 h-10 rounded-lg overflow-hidden border border-gray-200 bg-white shrink-0 shadow-xs cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all flex items-center justify-center group/thumb"
+                                                        title="Clique para ampliar foto"
+                                                    >
+                                                        <img src={p.foto_url} alt={p.codigo} className="w-full h-full object-cover group-hover/thumb:scale-110 transition-transform" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-lg border border-dashed border-gray-200 bg-gray-50 shrink-0 flex items-center justify-center text-gray-400">
+                                                        <Package className="w-5 h-5 text-gray-300" />
+                                                    </div>
+                                                )}
+
+                                                <div>
+                                                    <Link
+                                                        to={`/estrutura/${encodeURIComponent(p.codigo)}`}
+                                                        state={{ from: '/erp/produtos' }}
+                                                        className="text-blue-700 hover:text-blue-900 hover:underline inline-flex items-center gap-1.5 group/code"
+                                                        title="Abrir Estrutura Técnica do Produto (BOM)"
+                                                    >
+                                                        <span>{p.codigo}</span>
+                                                        <Layers className="w-3.5 h-3.5 text-blue-500 opacity-0 group-hover/code:opacity-100 transition-opacity" />
+                                                    </Link>
+
+                                                    {/* Badge de Desenho Técnico se existir */}
+                                                    {p.desenho_url && (
+                                                        <div className="mt-0.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleOpenDrawing(p)}
+                                                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase transition ${
+                                                                    p.desenho_tipo === 'pdf' ? 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200' :
+                                                                    p.desenho_tipo === 'dwg' ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200' :
+                                                                    p.desenho_tipo === 'dxf' ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200' :
+                                                                    'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
+                                                                }`}
+                                                                title={`Abrir/Baixar Desenho: ${p.desenho_nome || 'Arquivo Técnico'}`}
+                                                            >
+                                                                <FileCode className="w-3 h-3" />
+                                                                <span>{p.desenho_tipo || 'DESENHO'}</span>
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="py-3.5 px-3 text-center">
+                                            <span className="px-2 py-0.5 rounded font-mono font-bold text-xs bg-slate-100 text-slate-800 border border-slate-200" title="Revisão Interna do Produto (C6_XREVM / B1_XREVM)">
+                                                {p.b1_xrevm || '0'}
+                                            </span>
+                                        </td>
+                                        <td className="py-3.5 px-3">
+                                            {p.b1_xproc1 ? (
+                                                <span className="px-2 py-0.5 rounded font-mono font-semibold text-xs bg-amber-50 text-amber-900 border border-amber-200" title="Número do Desenho / Referência do Cliente">
+                                                    {p.b1_xproc1}
+                                                </span>
+                                            ) : (
+                                                <span className="text-gray-400 font-mono text-xs">-</span>
+                                            )}
+                                        </td>
+                                        <td className="py-3.5 px-3 text-center">
+                                            <span className="px-2 py-0.5 rounded font-mono font-bold text-xs bg-purple-50 text-purple-700 border border-purple-200" title="Revisão do Desenho do Cliente">
+                                                {p.b1_xrevc || '0'}
+                                            </span>
                                         </td>
                                         <td className="py-3.5 px-4 font-medium text-gray-900">
                                             {p.descricao}
                                         </td>
                                         <td className="py-3.5 px-4">
-                                            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200 font-mono">
+                                            <button
+                                                type="button"
+                                                onClick={() => { setTipoFilter(p.tipo); setPage(0); }}
+                                                className="px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-blue-50 hover:text-blue-700 border border-gray-200 font-mono transition cursor-pointer"
+                                                title={`Filtrar por Tipo ${p.tipo}`}
+                                            >
                                                 {p.tipo}
-                                            </span>
+                                            </button>
                                         </td>
                                         <td className="py-3.5 px-4 font-mono text-xs text-gray-600">
                                             {p.unidade_medida || 'UN'}
@@ -376,6 +658,16 @@ export default function ErpProdutosPage() {
                                         </td>
                                         <td className="py-3.5 px-4 text-center whitespace-nowrap">
                                             <div className="flex items-center justify-center gap-1.5">
+                                                {/* Botão Editar Produto */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleOpenEditModal(p)}
+                                                    className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition inline-flex items-center justify-center cursor-pointer"
+                                                    title="Editar Produto, Foto e Desenho Técnico"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+
                                                 {/* Botão Estrutura (BOM) Tela Completa */}
                                                 <Link
                                                     to={`/estrutura/${encodeURIComponent(p.codigo)}`}
@@ -442,7 +734,7 @@ export default function ErpProdutosPage() {
                 </div>
             </div>
 
-            {/* Modal de Inclusão de Produto MATA010 com Código Automático */}
+            {/* Modal de Inclusão de Produto com Código Automático */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-2xl overflow-hidden my-8">
@@ -453,20 +745,35 @@ export default function ErpProdutosPage() {
                                     <Package className="w-5 h-5" />
                                 </div>
                                 <div>
-                                    <h2 className="text-base font-bold text-gray-900">Novo Produto (MATA010)</h2>
-                                    <p className="text-xs text-gray-500">Filosofia de cadastro Protheus com código automático</p>
+                                    <h2 className="text-base font-bold text-gray-900">
+                                        {isEditing ? `Editar Produto: ${formData.codigo}` : 'Novo Produto'}
+                                    </h2>
+                                    <p className="text-xs text-gray-500">
+                                        {isEditing ? 'Atualização cadastral, fotos e desenhos de engenharia' : 'Filosofia de cadastro Protheus com código automático'}
+                                    </p>
                                 </div>
                             </div>
-                            <button
-                                onClick={() => setIsModalOpen(false)}
-                                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg transition"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <Link
+                                    to="/cadastros/basicos"
+                                    target="_blank"
+                                    className="px-2.5 py-1 text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition flex items-center gap-1"
+                                    title="Abrir módulo de Cadastros Básicos em nova aba"
+                                >
+                                    <Database className="w-3.5 h-3.5" />
+                                    <span>Cadastros Básicos</span>
+                                </Link>
+                                <button
+                                    onClick={() => setIsModalOpen(false)}
+                                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg transition"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Modal Form */}
-                        <form onSubmit={handleCreateProduct} className="p-6 space-y-4">
+                        <form onSubmit={handleSaveProduct} className="p-6 space-y-4">
                             {modalError && (
                                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2">
                                     <AlertCircle className="w-4 h-4 shrink-0" />
@@ -486,28 +793,47 @@ export default function ErpProdutosPage() {
                                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
                                     {/* 1. Seleção de Prefixo */}
                                     <div className="sm:col-span-5">
-                                        <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                                            Prefixo do Código (Família) *
-                                        </label>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                                                Prefixo do Código (Família) *
+                                            </label>
+                                            <Link
+                                                to="/cadastros/basicos?tab=prefixos"
+                                                target="_blank"
+                                                className="text-[10px] text-blue-600 hover:underline"
+                                            >
+                                                + Configurar
+                                            </Link>
+                                        </div>
                                         <select
                                             value={selectedPrefixo}
                                             onChange={(e) => handlePrefixoChange(e.target.value)}
                                             className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         >
-                                            <option value="MT2">MT2 - Componentes / Cabines (MT2)</option>
-                                            <option value="MT3">MT3 - Conjuntos Soldados / Weldments (MT3)</option>
-                                            <option value="MT4">MT4 - Perfis e Estruturas Maiores (MT4)</option>
-                                            <option value="MT5">MT5 - Chaparias e Caldeiraria (MT5)</option>
-                                            <option value="MT6">MT6 - Componentes Auxiliares (MT6)</option>
-                                            <option value="SCL">SCL - Produtos Acabados Gerais (SCL)</option>
-                                            <option value="MTA">MTA - Acessórios e Montagens (MTA)</option>
-                                            <option value="MPT">MPT - Matérias-Primas Tratadas (MPT)</option>
-                                            <option value="MTF">MTF - Ferramentais e Fixadores (MTF)</option>
-                                            <option value="SEG">SEG - Itens de Segurança (SEG)</option>
-                                            <option value="DIV">DIV - Diversos (DIV)</option>
-                                            <option value="ESC">ESC - Escadas e Estruturas (ESC)</option>
+                                            {cadastrosBasicos.prefixos && cadastrosBasicos.prefixos.length > 0 ? (
+                                                cadastrosBasicos.prefixos.map(p => (
+                                                    <option key={p.sigla} value={p.sigla}>
+                                                        {p.sigla} - {p.descricao}
+                                                    </option>
+                                                ))
+                                            ) : (
+                                                <>
+                                                    <option value="MT2">MT2 - Componentes / Cabines (MT2)</option>
+                                                    <option value="MT3">MT3 - Conjuntos Soldados / Weldments (MT3)</option>
+                                                    <option value="MT4">MT4 - Perfis e Estruturas Maiores (MT4)</option>
+                                                    <option value="MT5">MT5 - Chaparias e Caldeiraria (MT5)</option>
+                                                    <option value="MT6">MT6 - Componentes Auxiliares (MT6)</option>
+                                                    <option value="SCL">SCL - Produtos Acabados Gerais (SCL)</option>
+                                                    <option value="MTA">MTA - Acessórios e Montagens (MTA)</option>
+                                                    <option value="MPT">MPT - Matérias-Primas Tratadas (MPT)</option>
+                                                    <option value="MTF">MTF - Ferramentais e Fixadores (MTF)</option>
+                                                    <option value="SEG">SEG - Itens de Segurança (SEG)</option>
+                                                    <option value="DIV">DIV - Diversos (DIV)</option>
+                                                    <option value="ESC">ESC - Escadas e Estruturas (ESC)</option>
+                                                </>
+                                            )}
                                             {availablePrefixos
-                                                .filter(g => !['MT2', 'MT3', 'MT4', 'MT5', 'MT6', 'SCL', 'MTA', 'MPT', 'MTF', 'SEG', 'DIV', 'ESC'].includes(g.sigla))
+                                                .filter(g => !['MT2', 'MT3', 'MT4', 'MT5', 'MT6', 'SCL', 'MTA', 'MPT', 'MTF', 'SEG', 'DIV', 'ESC'].includes(g.sigla) && !cadastrosBasicos.prefixos?.some(p => p.sigla === g.sigla))
                                                 .map(g => (
                                                     <option key={g.sigla} value={g.sigla}>
                                                         {g.sigla} - {g.sigla} ({g.total} itens cadastrados)
@@ -520,22 +846,41 @@ export default function ErpProdutosPage() {
 
                                     {/* 2. Tipo do Produto */}
                                     <div className="sm:col-span-3">
-                                        <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                                            Tipo (B1_TIPO) *
-                                        </label>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                                                Tipo (B1_TIPO) *
+                                            </label>
+                                            <Link
+                                                to="/cadastros/basicos?tab=tipos"
+                                                target="_blank"
+                                                className="text-[10px] text-blue-600 hover:underline"
+                                            >
+                                                + Tipos
+                                            </Link>
+                                        </div>
                                         <select
                                             value={formData.tipo}
                                             onChange={(e) => handleTipoChange(e.target.value)}
                                             className="w-full bg-white border border-gray-300 rounded-lg px-2.5 py-2 text-sm text-gray-900 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         >
-                                            <option value="PI">PI - Produto Intermediário</option>
-                                            <option value="PA">PA - Produto Acabado</option>
-                                            <option value="MP">MP - Matéria-Prima</option>
-                                            <option value="MC">MC - Material de Consumo</option>
-                                            <option value="SL">SL - Subconjunto</option>
-                                            <option value="SV">SV - Serviço</option>
-                                            <option value="EM">EM - Embalagem</option>
-                                            <option value="ME">ME - Revenda</option>
+                                            {cadastrosBasicos.tipos && cadastrosBasicos.tipos.length > 0 ? (
+                                                cadastrosBasicos.tipos.map(t => (
+                                                    <option key={t.codigo} value={t.codigo}>
+                                                        {t.codigo} - {t.descricao}
+                                                    </option>
+                                                ))
+                                            ) : (
+                                                <>
+                                                    <option value="PI">PI - Produto Intermediário</option>
+                                                    <option value="PA">PA - Produto Acabado</option>
+                                                    <option value="MP">MP - Matéria-Prima</option>
+                                                    <option value="MC">MC - Material de Consumo</option>
+                                                    <option value="SL">SL - Subconjunto</option>
+                                                    <option value="SV">SV - Serviço</option>
+                                                    <option value="EM">EM - Embalagem</option>
+                                                    <option value="ME">ME - Revenda</option>
+                                                </>
+                                            )}
                                         </select>
                                     </div>
 
@@ -596,7 +941,10 @@ export default function ErpProdutosPage() {
                                 {/* Chips de Acesso Rápido para Prefixos Frequentes */}
                                 <div className="flex items-center gap-1.5 flex-wrap pt-1 text-xs">
                                     <span className="text-[11px] font-bold text-gray-500 uppercase mr-1">Prefixos Rápidos:</span>
-                                    {['MT2', 'MT3', 'MT4', 'MT5', 'MT6', 'SCL', 'MPT', 'MTA', 'MTF'].map((sigla) => (
+                                    {(cadastrosBasicos.prefixos && cadastrosBasicos.prefixos.length > 0
+                                        ? cadastrosBasicos.prefixos.filter(p => p.rapido === 1 || p.rapido === true).map(p => p.sigla)
+                                        : ['MT2', 'MT3', 'MT4', 'MT5', 'MT6', 'SCL', 'MPT', 'MTA', 'MTF']
+                                    ).map((sigla) => (
                                         <button
                                             key={sigla}
                                             type="button"
@@ -627,41 +975,124 @@ export default function ErpProdutosPage() {
                                 />
                             </div>
 
+                            {/* REVISÃO DO PRODUTO (C6_XREVM), NÚMERO DO DESENHO (REF. CLIENTE) E REVISÃO DO CLIENTE */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-blue-50/50 p-3.5 rounded-xl border border-blue-100">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                                        Revisão do Produto (C6_XREVM)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="0"
+                                        value={formData.b1_xrevm}
+                                        onChange={(e) => setFormData({ ...formData, b1_xrevm: e.target.value })}
+                                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <span className="text-[10px] text-gray-400 mt-0.5 block">Padrão: 0</span>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                                        Ref. Cliente (Desenho do Cliente)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="Ex: DES-10492 / REF-001"
+                                        value={formData.b1_xproc1}
+                                        onChange={(e) => setFormData({ ...formData, b1_xproc1: e.target.value })}
+                                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <span className="text-[10px] text-gray-400 mt-0.5 block">Cód. / Desenho cliente</span>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                                        Rev. Cliente (Revisão do Cliente)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        placeholder="0"
+                                        value={formData.b1_xrevc}
+                                        onChange={(e) => setFormData({ ...formData, b1_xrevc: e.target.value })}
+                                        className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <span className="text-[10px] text-gray-400 mt-0.5 block">Padrão: 0</span>
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">
-                                        Unidade (B1_UM) *
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Unidade (B1_UM) *
+                                        </label>
+                                        <Link
+                                            to="/cadastros/basicos?tab=unidades"
+                                            target="_blank"
+                                            className="text-[10px] text-blue-600 hover:underline"
+                                        >
+                                            + UMs
+                                        </Link>
+                                    </div>
                                     <select
                                         value={formData.unidade_medida}
                                         onChange={(e) => setFormData({ ...formData, unidade_medida: e.target.value })}
                                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
-                                        <option value="UN">UN - Unidade</option>
-                                        <option value="PC">PC - Peça</option>
-                                        <option value="KG">KG - Quilograma</option>
-                                        <option value="MT">MT - Metro</option>
-                                        <option value="M2">M2 - Metro Quadrado</option>
-                                        <option value="M3">M3 - Metro Cúbico</option>
-                                        <option value="L">L - Litro</option>
-                                        <option value="CX">CX - Caixa</option>
-                                        <option value="PR">PR - Par</option>
+                                        {cadastrosBasicos.unidades && cadastrosBasicos.unidades.length > 0 ? (
+                                            cadastrosBasicos.unidades.map(u => (
+                                                <option key={u.codigo} value={u.codigo}>
+                                                    {u.codigo} - {u.descricao}
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <>
+                                                <option value="UN">UN - Unidade</option>
+                                                <option value="PC">PC - Peça</option>
+                                                <option value="KG">KG - Quilograma</option>
+                                                <option value="MT">MT - Metro</option>
+                                                <option value="M2">M2 - Metro Quadrado</option>
+                                                <option value="M3">M3 - Metro Cúbico</option>
+                                                <option value="L">L - Litro</option>
+                                                <option value="CX">CX - Caixa</option>
+                                                <option value="PR">PR - Par</option>
+                                            </>
+                                        )}
                                     </select>
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">
-                                        Armazém (B1_LOCPAD)
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                            Armazém (B1_LOCPAD)
+                                        </label>
+                                        <Link
+                                            to="/cadastros/basicos?tab=armazens"
+                                            target="_blank"
+                                            className="text-[10px] text-blue-600 hover:underline"
+                                        >
+                                            + Armazéns
+                                        </Link>
+                                    </div>
                                     <select
                                         value={formData.armazem_padrao}
                                         onChange={(e) => setFormData({ ...formData, armazem_padrao: e.target.value })}
                                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
-                                        <option value="01">01 - Almoxarifado Central</option>
-                                        <option value="99">99 - Chão de Fábrica / Linha</option>
-                                        <option value="02">02 - Matéria-Prima</option>
-                                        <option value="03">03 - Expedição</option>
+                                        {cadastrosBasicos.armazens && cadastrosBasicos.armazens.length > 0 ? (
+                                            cadastrosBasicos.armazens.map(a => (
+                                                <option key={a.codigo} value={a.codigo}>
+                                                    {a.codigo} - {a.descricao}
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <>
+                                                <option value="01">01 - Almoxarifado Central</option>
+                                                <option value="99">99 - Chão de Fábrica / Linha</option>
+                                                <option value="02">02 - Matéria-Prima</option>
+                                                <option value="03">03 - Expedição</option>
+                                            </>
+                                        )}
                                     </select>
                                 </div>
 
@@ -693,17 +1124,18 @@ export default function ErpProdutosPage() {
                                 </div>
                             </div>
 
+                            {/* 4 Campos Numéricos com suporte total a decimais */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                 <div>
                                     <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">
                                         Peso Líq. (kg)
                                     </label>
                                     <input
-                                        type="number"
-                                        step="0.001"
-                                        placeholder="0.000"
+                                        type="text"
+                                        inputMode="decimal"
+                                        placeholder="0,000"
                                         value={formData.peso_liquido}
-                                        onChange={(e) => setFormData({ ...formData, peso_liquido: e.target.value })}
+                                        onChange={(e) => handleDecimalChange('peso_liquido', e.target.value)}
                                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
@@ -713,11 +1145,11 @@ export default function ErpProdutosPage() {
                                         Peso Bruto (kg)
                                     </label>
                                     <input
-                                        type="number"
-                                        step="0.001"
-                                        placeholder="0.000"
+                                        type="text"
+                                        inputMode="decimal"
+                                        placeholder="0,000"
                                         value={formData.peso_bruto}
-                                        onChange={(e) => setFormData({ ...formData, peso_bruto: e.target.value })}
+                                        onChange={(e) => handleDecimalChange('peso_bruto', e.target.value)}
                                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
@@ -727,11 +1159,11 @@ export default function ErpProdutosPage() {
                                         Custo Standard (R$)
                                     </label>
                                     <input
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="0.00"
+                                        type="text"
+                                        inputMode="decimal"
+                                        placeholder="0,00"
                                         value={formData.custo_standard}
-                                        onChange={(e) => setFormData({ ...formData, custo_standard: e.target.value })}
+                                        onChange={(e) => handleDecimalChange('custo_standard', e.target.value)}
                                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
@@ -741,13 +1173,176 @@ export default function ErpProdutosPage() {
                                         Preço Venda (R$)
                                     </label>
                                     <input
-                                        type="number"
-                                        step="0.01"
-                                        placeholder="0.00"
+                                        type="text"
+                                        inputMode="decimal"
+                                        placeholder="0,00"
                                         value={formData.preco_venda}
-                                        onChange={(e) => setFormData({ ...formData, preco_venda: e.target.value })}
+                                        onChange={(e) => handleDecimalChange('preco_venda', e.target.value)}
                                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
+                                </div>
+                            </div>
+
+                            {/* SEÇÃO: FOTO DO PRODUTO E ANEXO DE DESENHO TÉCNICO (PDF / DWG / DXF) */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                                {/* 1. Foto do Produto */}
+                                <div className="bg-slate-50 p-3.5 rounded-xl border border-gray-200 flex flex-col justify-between">
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                                                <Camera className="w-4 h-4 text-blue-600" />
+                                                Foto do Produto
+                                            </label>
+                                            {formData.foto_url && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData(prev => ({ ...prev, foto_url: '' }))}
+                                                    className="text-[11px] text-red-600 hover:text-red-700 font-semibold flex items-center gap-1 cursor-pointer"
+                                                >
+                                                    <Trash2 className="w-3 h-3" />
+                                                    Remover Foto
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {formData.foto_url ? (
+                                            <div className="relative group w-full h-32 bg-white border border-gray-200 rounded-lg overflow-hidden flex items-center justify-center shadow-inner">
+                                                <img
+                                                    src={formData.foto_url}
+                                                    alt="Foto do Produto"
+                                                    className="max-h-full max-w-full object-contain"
+                                                />
+                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPreviewImage(formData.foto_url)}
+                                                        className="p-1.5 bg-white text-gray-900 rounded-lg shadow text-xs font-semibold flex items-center gap-1 hover:bg-gray-100"
+                                                    >
+                                                        <ZoomIn className="w-3.5 h-3.5" />
+                                                        Ampliar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-white hover:bg-blue-50/50 hover:border-blue-400 transition group">
+                                                <div className="flex flex-col items-center justify-center pt-2.5 pb-2.5 text-center px-2">
+                                                    <div className="p-2 bg-blue-50 rounded-full text-blue-600 mb-1 group-hover:scale-110 transition-transform">
+                                                        <Upload className="w-4 h-4" />
+                                                    </div>
+                                                    <p className="text-xs font-medium text-gray-700">Clique para enviar foto</p>
+                                                    <p className="text-[10px] text-gray-400 mt-0.5">PNG, JPG ou WEBP (máx. 5MB)</p>
+                                                </div>
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    className="hidden"
+                                                    onChange={handleFotoUpload}
+                                                />
+                                            </label>
+                                        )}
+                                    </div>
+
+                                    {/* Campo alternativo de URL direta */}
+                                    <div className="mt-2">
+                                        <input
+                                            type="text"
+                                            placeholder="Ou cole a URL da imagem (https://...)"
+                                            value={formData.foto_url?.startsWith('data:') ? '' : formData.foto_url}
+                                            onChange={(e) => setFormData(prev => ({ ...prev, foto_url: e.target.value }))}
+                                            className="w-full bg-white border border-gray-200 rounded-lg px-2.5 py-1 text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* 2. Desenho Técnico (PDF / DWG / DXF) */}
+                                <div className="bg-slate-50 p-3.5 rounded-xl border border-gray-200 flex flex-col justify-between">
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                                                <FileCode className="w-4 h-4 text-indigo-600" />
+                                                Desenho Técnico (PDF / DWG / DXF)
+                                            </label>
+                                            {formData.desenho_url && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFormData(prev => ({ ...prev, desenho_url: '', desenho_nome: '', desenho_tipo: '' }))}
+                                                    className="text-[11px] text-red-600 hover:text-red-700 font-semibold flex items-center gap-1 cursor-pointer"
+                                                >
+                                                    <Trash2 className="w-3 h-3" />
+                                                    Remover Desenho
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {formData.desenho_url ? (
+                                            <div className="w-full h-32 bg-white border border-gray-200 rounded-lg p-2.5 flex flex-col justify-between shadow-inner">
+                                                <div className="flex items-start gap-2.5">
+                                                    <div className={`p-2 rounded-lg text-white font-bold text-xs uppercase ${
+                                                        formData.desenho_tipo === 'pdf' ? 'bg-red-600' :
+                                                        formData.desenho_tipo === 'dwg' ? 'bg-blue-600' :
+                                                        formData.desenho_tipo === 'dxf' ? 'bg-emerald-600' : 'bg-indigo-600'
+                                                    }`}>
+                                                        {formData.desenho_tipo?.toUpperCase() || 'ARQ'}
+                                                    </div>
+                                                    <div className="overflow-hidden flex-1">
+                                                        <p className="text-xs font-bold text-gray-900 truncate" title={formData.desenho_nome}>
+                                                            {formData.desenho_nome || 'Desenho do Produto'}
+                                                        </p>
+                                                        <span className="inline-block mt-0.5 px-1.5 py-0.2 bg-gray-100 text-gray-600 rounded text-[10px] font-mono uppercase">
+                                                            Formato {formData.desenho_tipo?.toUpperCase() || 'Engenharia'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-2 pt-1.5 border-t border-gray-100">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleOpenDrawing(formData)}
+                                                        className="flex-1 py-1 px-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                                                    >
+                                                        <ExternalLink className="w-3.5 h-3.5" />
+                                                        Visualizar / Baixar Desenho
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-white hover:bg-indigo-50/50 hover:border-indigo-400 transition group">
+                                                <div className="flex flex-col items-center justify-center pt-2.5 pb-2.5 text-center px-2">
+                                                    <div className="p-2 bg-indigo-50 rounded-full text-indigo-600 mb-1 group-hover:scale-110 transition-transform">
+                                                        <Paperclip className="w-4 h-4" />
+                                                    </div>
+                                                    <p className="text-xs font-medium text-gray-700">Anexar Desenho Técnico</p>
+                                                    <p className="text-[10px] text-gray-400 mt-0.5">.PDF, .DWG ou .DXF (máx. 25MB)</p>
+                                                </div>
+                                                <input
+                                                    type="file"
+                                                    accept=".pdf,.dwg,.dxf,image/*"
+                                                    className="hidden"
+                                                    onChange={handleDesenhoUpload}
+                                                />
+                                            </label>
+                                        )}
+                                    </div>
+
+                                    {/* Campo alternativo de URL direta */}
+                                    <div className="mt-2">
+                                        <input
+                                            type="text"
+                                            placeholder="Ou link para o desenho (SharePoint, Drive, etc.)"
+                                            value={formData.desenho_url?.startsWith('data:') ? '' : formData.desenho_url}
+                                            onChange={(e) => {
+                                                const url = e.target.value;
+                                                const ext = url.split('.').pop()?.split(/[?#]/)[0]?.toLowerCase();
+                                                setFormData(prev => ({
+                                                    ...prev,
+                                                    desenho_url: url,
+                                                    desenho_nome: url ? (url.split('/').pop()?.split(/[?#]/)[0] || 'desenho-externo') : '',
+                                                    desenho_tipo: ['pdf', 'dwg', 'dxf'].includes(ext) ? ext : 'outro'
+                                                }));
+                                            }}
+                                            className="w-full bg-white border border-gray-200 rounded-lg px-2.5 py-1 text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                        />
+                                    </div>
                                 </div>
                             </div>
 
@@ -763,12 +1358,37 @@ export default function ErpProdutosPage() {
                                 <button
                                     type="submit"
                                     disabled={saving}
-                                    className="px-5 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition shadow-sm disabled:opacity-50"
+                                    className="px-5 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white transition shadow-sm disabled:opacity-50 flex items-center gap-2"
                                 >
-                                    {saving ? 'Gravando no Protheus...' : 'Gravar Produto (MATA010)'}
+                                    {saving ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                            <span>Salvando...</span>
+                                        </>
+                                    ) : (
+                                        <span>{isEditing ? 'Atualizar Produto' : 'Gravar Produto'}</span>
+                                    )}
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Zoom da Foto do Produto */}
+            {previewImage && (
+                <div 
+                    onClick={() => setPreviewImage(null)}
+                    className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer"
+                >
+                    <div className="relative max-w-2xl max-h-[85vh] bg-white p-2 rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <button
+                            onClick={() => setPreviewImage(null)}
+                            className="absolute top-4 right-4 p-2 bg-black/60 hover:bg-black text-white rounded-full transition shadow"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                        <img src={previewImage} alt="Visualização ampliada" className="max-h-[80vh] w-auto mx-auto rounded-xl object-contain" />
                     </div>
                 </div>
             )}

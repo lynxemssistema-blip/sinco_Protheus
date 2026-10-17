@@ -191,8 +191,8 @@ export const generateOPDrawingsWithOpsStampPdf = async (mirrorData, userName = '
                 
                 const safePedidoNum = mirrorData?.pedido?.pedido || '-';
                 const textLine1 = isAglutinado
-                    ? `CÓPIA CONTROLADA | METALFISA GARANTIA DA QUALIDADE | DATA: ${dataGeracao} | USUÁRIO: ${userName}`
-                    : `CÓPIA CONTROLADA | METALFISA GARANTIA DA QUALIDADE | DATA: ${dataGeracao} | USUÁRIO: ${userName} | PEDIDO: ${safePedidoNum}`;
+                    ? `CÓPIA CONTROLADA | LYNX GARANTIA DA QUALIDADE | DATA: ${dataGeracao} | USUÁRIO: ${userName}`
+                    : `CÓPIA CONTROLADA | LYNX GARANTIA DA QUALIDADE | DATA: ${dataGeracao} | USUÁRIO: ${userName} | PEDIDO: ${safePedidoNum}`;
                 const baseInfo = `ROTEIRO: ${part.roteiro} | CÓD: ${part.codigo} | ENT. LOTE: ${batchContext && batchContext.data_pcp ? batchContext.data_pcp : '-'} | QTD TOTAL: ${finalQtdStr} ${part.um} | LOTE/OP: ${visualOpStr}`;
                 
                 const chunkedInfo = chunkText(baseInfo, 105);

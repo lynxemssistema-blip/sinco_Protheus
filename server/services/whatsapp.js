@@ -48,10 +48,11 @@ async function logEmailSent({ recipients, subject, body }) {
     if (!mysqlPool) return;
     const recipientStr = Array.isArray(recipients) ? recipients.join(', ') : String(recipients || '');
     try {
+        const sender = process.env.SMTP_USER || 'suporte@lynxems.com.br';
         await mysqlPool.query(
             `INSERT INTO app_emails (folder, sender_email, recipient_email, subject, body_html, date)
-             VALUES ('SENT', 'sincometal@metalfisa.com.br', ?, ?, ?, NOW())`,
-            [recipientStr, subject || null, body || null]
+             VALUES ('SENT', ?, ?, ?, ?, NOW())`,
+            [sender, recipientStr, subject || null, body || null]
         );
     } catch (e) { /* silencioso */ }
 }

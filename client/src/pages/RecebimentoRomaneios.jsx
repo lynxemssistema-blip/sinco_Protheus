@@ -13,7 +13,7 @@ export default function RecebimentoRomaneios() {
     const [itens, setItens] = useState([]);
     const [tiposRomaneio, setTiposRomaneio] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [groupBy, setGroupBy] = useStickyState('none', '@metalfisa:romaneio_rec_groupby'); // 'none' | 'padrao' | 'data' | 'produto' | 'pedido'
+    const [groupBy, setGroupBy] = useStickyState('none', '@lynxems:romaneio_rec_groupby'); // 'none' | 'padrao' | 'data' | 'produto' | 'pedido'
 
     // Filtros
     const [filters, setFilters] = useStickyState({
@@ -24,7 +24,7 @@ export default function RecebimentoRomaneios() {
         pedido: '',
         qtde: '',
         viewMode: 'pendentes' // 'pendentes' | 'todos'
-    }, '@metalfisa:romaneio_rec_filters');
+    }, '@lynxems:romaneio_rec_filters');
 
     // Modais
     const [modalRecebimentoOpen, setModalRecebimentoOpen] = useState(false);

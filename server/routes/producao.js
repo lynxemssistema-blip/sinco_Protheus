@@ -1805,6 +1805,38 @@ router.get('/op-roteiro-saldo', async (req, res) => {
       } catch (myErr) {
         console.warn('⚠️ [OP-ROTEIRO-SALDO] Erro MySQL sg2010:', myErr.message);
       }
+
+      // Complemento: buscar de erp_ordens_producao_operacoes ou erp_roteiros_operacoes
+      if (operacoes.length === 0) {
+        try {
+          const fullOp = `${op.trim()}${item.trim()}`;
+          const [myOpOps] = await mysqlPool.query(`
+            SELECT produto_codigo as produto, operacao_seq as operacao_codigo, codigo_recurso as recurso_codigo,
+                   descricao_operacao as operacao_desc
+            FROM erp_ordens_producao_operacoes
+            WHERE numero_op = ? OR numero_op LIKE ?
+            ORDER BY CAST(REGEXP_REPLACE(operacao_seq, '[^0-9]', '') AS UNSIGNED) ASC
+          `, [fullOp, `${op.trim()}%`]);
+
+          if (myOpOps && myOpOps.length > 0) {
+            operacoes = myOpOps;
+          } else {
+            const [myRot] = await mysqlPool.query(`
+              SELECT o.codigo_produto as produto, o.operacao_seq as operacao_codigo, o.codigo_recurso as recurso_codigo,
+                     COALESCE(NULLIF(o.descricao_operacao, ''), r.nome, o.codigo_recurso) as operacao_desc
+              FROM erp_roteiros_operacoes o
+              LEFT JOIN pcp_recursos r ON r.codigo COLLATE utf8mb4_unicode_ci = o.codigo_recurso COLLATE utf8mb4_unicode_ci
+              WHERE TRIM(o.codigo_produto) = ?
+              ORDER BY CAST(REGEXP_REPLACE(o.operacao_seq, '[^0-9]', '') AS UNSIGNED) ASC
+            `, [produto.trim()]);
+            if (myRot && myRot.length > 0) {
+              operacoes = myRot;
+            }
+          }
+        } catch (myErr2) {
+          console.warn('⚠️ [OP-ROTEIRO-SALDO] Erro MySQL erp_roteiros/operacoes:', myErr2.message);
+        }
+      }
     }
 
     if (operacoes.length === 0) {

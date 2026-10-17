@@ -321,7 +321,7 @@ router.post('/upload-estrutura', upload.single('file'), async (req, res) => {
             item.qtd_total = total;
         }
 
-        // Consulta em lote o Protheus (SZ1010 e SB1010) para preencher Número MetalFisa e Revisão
+        // Consulta em lote o Protheus (SZ1010 e SB1010) para preencher Número Lynx e Revisão
         const uniqueDesenhos = Array.from(uniqueDesenhosSet);
         const protheusMap = new Map();
 
@@ -387,7 +387,7 @@ router.post('/upload-estrutura', upload.single('file'), async (req, res) => {
                         status_detalhe = `Mesma Revisão (${hit.z1_revisao})`;
                     } else {
                         status_mapeamento = 'DIFERENCA_REVISAO';
-                        status_detalhe = `Cliente: ${item.rev_cliente_raw} (${item.rev_convertida}) ≠ MetalFisa: ${hit.z1_revisao}`;
+                        status_detalhe = `Cliente: ${item.rev_cliente_raw} (${item.rev_convertida}) ≠ Lynx: ${hit.z1_revisao}`;
                     }
                 } else {
                     status_mapeamento = 'NAO_ENCONTRADO';
@@ -1109,24 +1109,22 @@ router.post('/vincular-produto-existente', async (req, res) => {
         const codProtheus = String(codigo_protheus).replace(/\s+/g, '').trim().toUpperCase();
         const rev = String(revisao_cliente || '00').replace(/\s+/g, '').trim().toUpperCase().slice(0, 4);
 
-        // Buscar dados complementares (UM, Tipo, Descrição) no Protheus SB1010
+        // Buscar dados complementares (UM, Tipo, Descrição) no erp_produtos (MySQL)
         let protheusUm = null;
         let protheusTipo = null;
         let descSb1 = null;
         try {
-            const { rows: sb1Rows } = await pgDb.query(`
-                SELECT TRIM(b1_desc) as b1_desc, TRIM(b1_um) as b1_um, TRIM(b1_tipo) as b1_tipo
-                FROM public.sb1010
-                WHERE TRIM(b1_cod) = $1 AND COALESCE(d_e_l_e_t_, '') <> '*'
-                LIMIT 1
-            `, [codProtheus]);
-            if (sb1Rows && sb1Rows.length > 0) {
-                protheusUm = sb1Rows[0].b1_um;
-                protheusTipo = sb1Rows[0].b1_tipo;
-                descSb1 = sb1Rows[0].b1_desc;
+            const [pRows] = await db.query(
+                `SELECT descricao as b1_desc, unidade_medida as b1_um, tipo as b1_tipo FROM erp_produtos WHERE codigo = ? LIMIT 1`,
+                [codProtheus]
+            );
+            if (pRows && pRows.length > 0) {
+                protheusUm = pRows[0].b1_um;
+                protheusTipo = pRows[0].b1_tipo;
+                descSb1 = pRows[0].b1_desc;
             }
-        } catch (pgErr) {
-            console.warn('[Wabtec Vincular Existente] Aviso ao consultar SB1010:', pgErr.message);
+        } catch (dbErr) {
+            console.warn('[Vincular Existente] Aviso erp_produtos:', dbErr.message);
         }
 
         // 1. Atualizar ocorrências em app_wabtec_estruturas (MySQL)
@@ -1159,67 +1157,46 @@ router.post('/vincular-produto-existente', async (req, res) => {
             console.warn('[Wabtec Vincular Existente] Aviso ao atualizar MySQL:', mErr.message);
         }
 
-        // 2. Amarração oficial na tabela SZ1010 (Produto MetalFisa x Cliente) no Protheus
+        // 2. Amarração oficial na tabela SZ1010 (Produto x Cliente) no MySQL SINCO
         const codCliFinal = String(cliente_codigo || (is_sinco ? "" : "00000739")).trim();
         const lojaCliFinal = String(cliente_loja || "0001").trim();
         let sz1Status = 'Nenhum cliente informado para vínculo SZ1010';
 
         if (codCliFinal) {
             try {
-                const accessToken = await getProtheusToken();
-                if (accessToken) {
-                    let sz1Recno = null;
-                    try {
-                        const { rows: sz1Rows } = await pgDb.query(`
-                            SELECT r_e_c_n_o_ 
-                            FROM public.sz1010 
-                            WHERE TRIM(z1_cliente) = $1 
-                              AND TRIM(z1_loja) = $2 
-                              AND TRIM(z1_produto) = $3 
-                              AND COALESCE(d_e_l_e_t_, '') <> '*'
-                            LIMIT 1
-                        `, [codCliFinal, lojaCliFinal, codProtheus]);
-                        if (sz1Rows && sz1Rows.length > 0) {
-                            sz1Recno = Number(sz1Rows[0].r_e_c_n_o_);
-                        }
-                    } catch (pgSz1Err) {
-                        console.warn('[Wabtec Vincular Existente] Aviso ao checar SZ1010:', pgSz1Err.message);
-                    }
-
-                    const descFinal = String(titulo || descSb1 || cliente_nome || 'PRODUTO').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 30);
-                    const itemSZ1 = {
-                        Z1_CLIENTE: codCliFinal,
-                        Z1_LOJA: lojaCliFinal || "0001",
-                        Z1_PRODUTO: codProtheus,
-                        Z1_CODCLI: codDesenho,
-                        Z1_DESCCLI: descFinal,
-                        Z1_REVISAO: rev || '00'
-                    };
-                    if (sz1Recno) {
-                        itemSZ1.RECNO = sz1Recno;
-                    }
-
-                    const payloadSZ1 = {
-                        data: {
-                            EMPRESA: "01",
-                            CFILANT: "0101",
-                            NOPER: sz1Recno ? 4 : 3,
-                            produtos_clientes: [itemSZ1]
-                        }
-                    };
-
-                    const sz1Res = await axios.post('https://192.168.1.60:47500/produto-cliente/editar', payloadSZ1, {
-                        headers: { 'Authorization': `Bearer ${accessToken}` },
-                        httpsAgent,
-                        timeout: 35000
-                    });
-                    console.log(`[Wabtec Vincular Existente] ✅ Amarração SZ1010 vinculada (NOPER: ${sz1Recno ? 4 : 3}):`, sz1Res.data);
-                    sz1Status = 'Vínculo SZ1010 gravado com sucesso';
-                }
-            } catch (sz1Err) {
-                console.error('[Wabtec Vincular Existente] Erro ao vincular SZ1010 via API Protheus:', sz1Err.response?.data || sz1Err.message);
-                sz1Status = 'Aviso: Erro ao vincular na SZ1010: ' + (sz1Err.response?.data?.message || sz1Err.message);
+                const [recRows] = await db.query(`SELECT COALESCE(MAX(r_e_c_n_o_), 0) + 1 AS next_rec FROM sz1010`);
+                const nextRec = recRows[0]?.next_rec || 1;
+                const descFinal = String(titulo || descSb1 || cliente_nome || 'PRODUTO').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 30);
+                await db.query(`
+                    INSERT INTO sz1010 (z1_filial, z1_cliente, z1_loja, z1_nomecli, z1_produto, z1_codcli, z1_desccli, z1_revisao, r_e_c_n_o_, d_e_l_e_t_, IdEmpresa)
+                    VALUES ('0101', ?, ?, ?, ?, ?, ?, ?, ?, '', 1)
+                    ON DUPLICATE KEY UPDATE
+                        z1_codcli = VALUES(z1_codcli),
+                        z1_desccli = VALUES(z1_desccli),
+                        z1_revisao = VALUES(z1_revisao)
+                `, [codCliFinal, lojaCliFinal, cliente_nome || '', codProtheus, codDesenho, descFinal, rev || '00', nextRec]);
+                sz1Status = 'Vínculo gravado com sucesso no SINCO';
+            } catch (mSzErr) {
+                console.warn('[Vincular Existente] Aviso sz1010 MySQL:', mSzErr.message);
             }
+        }
+
+        if (is_sinco) {
+            return res.json({
+                success: true,
+                codigo: codProtheus,
+                desenho_cliente: codDesenho,
+                revisao: rev,
+                cliente_codigo: codCliFinal,
+                cliente_loja: lojaCliFinal,
+                cliente_nome: cliente_nome || '',
+                uom: protheusUm || 'UN',
+                protheus_tipo: protheusTipo || 'PA',
+                descricao: titulo || descSb1 || '',
+                linhas_atualizadas: linhasAtualizadas,
+                sz1_status: sz1Status,
+                mensagem: `Código ${codProtheus} vinculado com sucesso no SINCO!`
+            });
         }
 
         res.json({
@@ -1288,6 +1265,116 @@ router.post('/criar-produto-protheus', async (req, res) => {
             return res.status(400).json({ error: 'Identificador do produto/desenho, Título, Grupo, Tipo e UM são campos obrigatórios.' });
         }
 
+        const grupoLimpo = String(grupo || '').split(/[\-\s]/)[0].trim().toUpperCase() || 'MT';
+        const tipoLimpo = String(tipo || '').split(/[\-\s]/)[0].trim().toUpperCase() || 'PA';
+        const umLimpa = String(um || '').split(/[\-\s]/)[0].trim().toUpperCase() || 'UN';
+        const tituloLimpo = String(titulo || '').replace(/\s+/g, ' ').trim().toUpperCase();
+        const descCurtada = tituloLimpo.replace(/"/g, '\\"').replace(/\r\n/g, ' ').replace(/\n/g, ' ').slice(0, 100).trim();
+        const codDesHigienizado = codDesenhoBruto === 'Novo Cadastro Pelo SINCO'
+            ? 'Novo Cadastro Pelo SINCO'
+            : String(codDesenhoBruto).replace(/\s+/g, ' ').trim().toUpperCase();
+        const revWabtec = String(revisao_cliente || '00').replace(/\s+/g, '').trim().toUpperCase().slice(0, 2).padStart(2, '0');
+        const numPeso = parseFloat(String(peso || 0).replace(',', '.').trim()) || 0;
+        const numComprimento = parseFloat(String(comprimento || 0).replace(',', '.').trim()) || 0;
+        const numLargura = parseFloat(String(largura || 0).replace(',', '.').trim()) || 0;
+        const numEspessura = parseFloat(String(espessura || 0).replace(',', '.').trim()) || 0;
+        const numVolume = parseFloat(String(volume || area || 0).replace(',', '.').trim()) || 0;
+        const codCliFinal = String(cliente_codigo || (is_sinco ? "" : "00000739")).trim();
+        const lojaCliFinal = String(cliente_loja || "0001").trim();
+        const nomeCliFinal = String(req.body.cliente_nome || '').trim();
+        const ncmLimpo = String(ncm || posipi || '00000000').replace(/\D/g, '').slice(0, 10).padEnd(8, '0');
+
+        // 0. FLUXO NATIVO SINCO (100% Hostinger MySQL u494795077_SINCO): Totalmente independente do Protheus
+        if (is_sinco) {
+            let codigoGerado = '';
+            // Se o usuário já informou um código limpo (ex: MT2-0001 ou PRD-0001)
+            if (codDesenhoBruto && codDesenhoBruto !== 'Novo Cadastro Pelo SINCO' && !codDesenhoBruto.includes(' ')) {
+                const [exist] = await db.query('SELECT codigo FROM erp_produtos WHERE codigo = ? LIMIT 1', [codDesenhoBruto]);
+                if (exist && exist.length > 0) {
+                    codigoGerado = codDesenhoBruto;
+                }
+            }
+
+            if (!codigoGerado) {
+                try {
+                    const [prodRows] = await db.query(
+                        `SELECT codigo FROM erp_produtos WHERE codigo LIKE ? ORDER BY id DESC LIMIT 50`,
+                        [`${grupoLimpo}-%`]
+                    );
+                    let maiorNum = 0;
+                    const regex = new RegExp(`^${grupoLimpo}-(\\d+)$`, 'i');
+                    for (const row of prodRows) {
+                        const match = (row.codigo || '').trim().match(regex);
+                        if (match) {
+                            const n = parseInt(match[1], 10);
+                            if (!isNaN(n) && n > maiorNum) maiorNum = n;
+                        }
+                    }
+                    const proximoNum = maiorNum > 0 ? maiorNum + 1 : 1;
+                    codigoGerado = `${grupoLimpo}-${String(proximoNum).padStart(4, '0')}`;
+                } catch (eSeq) {
+                    console.warn('[SINCO Criar Produto] Erro sequencial:', eSeq.message);
+                    codigoGerado = `${grupoLimpo}-${Date.now().toString().slice(-4)}`;
+                }
+            }
+
+            // Persiste no cadastro oficial do SINCO (erp_produtos)
+            await db.query(`
+                INSERT INTO erp_produtos (codigo, descricao, tipo, unidade_medida, peso_liquido, peso_bruto, revisao_atual, IdEmpresa)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                ON DUPLICATE KEY UPDATE
+                    descricao = VALUES(descricao),
+                    tipo = VALUES(tipo),
+                    unidade_medida = VALUES(unidade_medida),
+                    peso_liquido = VALUES(peso_liquido),
+                    peso_bruto = VALUES(peso_bruto),
+                    revisao_atual = VALUES(revisao_atual)
+            `, [codigoGerado, descCurtada, tipoLimpo, umLimpa, numPeso, numPeso, revWabtec]);
+
+            // Se informado cliente, cria amarração no sz1010
+            let sz1Criado = false;
+            if (codCliFinal) {
+                try {
+                    const [recRows] = await db.query(`SELECT COALESCE(MAX(r_e_c_n_o_), 0) + 1 AS next_rec FROM sz1010`);
+                    const nextRec = recRows[0]?.next_rec || 1;
+                    await db.query(`
+                        INSERT INTO sz1010 (z1_filial, z1_cliente, z1_loja, z1_nomecli, z1_produto, z1_codcli, z1_desccli, z1_revisao, r_e_c_n_o_, d_e_l_e_t_, IdEmpresa)
+                        VALUES ('0101', ?, ?, ?, ?, ?, ?, ?, ?, '', 1)
+                        ON DUPLICATE KEY UPDATE
+                            z1_codcli = VALUES(z1_codcli),
+                            z1_desccli = VALUES(z1_desccli),
+                            z1_revisao = VALUES(z1_revisao)
+                    `, [codCliFinal, lojaCliFinal, nomeCliFinal, codigoGerado, codDesHigienizado, descCurtada, revWabtec, nextRec]);
+                    sz1Criado = true;
+                } catch (sz1Err) {
+                    console.warn('[SINCO Criar Produto] Aviso sz1010:', sz1Err.message);
+                }
+            }
+
+            return res.json({
+                success: true,
+                codigo: codigoGerado,
+                revisao: revWabtec,
+                descricao: descCurtada,
+                desenho_cliente: codDesHigienizado,
+                cliente_codigo: codCliFinal,
+                cliente_loja: lojaCliFinal,
+                cliente_nome: nomeCliFinal,
+                sz1_criado: sz1Criado,
+                uom: umLimpa,
+                protheus_tipo: tipoLimpo,
+                grupo: grupoLimpo,
+                peso: numPeso,
+                comprimento: numComprimento,
+                largura: numLargura,
+                espessura: numEspessura,
+                volume: numVolume,
+                cadastro_novo: 1,
+                linhas_atualizadas: 0,
+                message: `Produto ${codigoGerado} gerado com sucesso no SINCO!`
+            });
+        }
+
         // 1. Obter Token OAuth2 da API Protheus (com cache em memória e timeout de 35s)
         let accessToken = '';
         try {
@@ -1300,27 +1387,6 @@ router.post('/criar-produto-protheus', async (req, res) => {
         if (!accessToken) {
             return res.status(500).json({ error: 'Token JWT retornado pelo Protheus estava em branco.' });
         }
-
-        // 2. Limpeza e Higienização de Strings no padrão do Protheus
-        const grupoLimpo = String(grupo || '').split(/[\-\s]/)[0].trim().toUpperCase();
-        const tipoLimpo = String(tipo || '').split(/[\-\s]/)[0].trim().toUpperCase();
-        const umLimpa = String(um || '').split(/[\-\s]/)[0].trim().toUpperCase();
-        const tituloLimpo = String(titulo || '').replace(/\s+/g, ' ').trim().toUpperCase();
-        const descCurtada = tituloLimpo.replace(/"/g, '\\"').replace(/\r\n/g, ' ').replace(/\n/g, ' ').slice(0, 30).trim();
-        const codDesHigienizado = codDesenhoBruto === 'Novo Cadastro Pelo SINCO'
-            ? 'Novo Cadastro Pelo SINCO'
-            : String(codDesenhoBruto).replace(/\s+/g, ' ').trim().toUpperCase();
-        
-        // B1_XREVM = número da revisão do cliente (2 caracteres, sem espaços)
-        const revWabtec = String(revisao_cliente || '00').replace(/\s+/g, '').trim().toUpperCase().slice(0, 2).padStart(2, '0');
-
-        // B1_POSIPI = NCM (padrão '00000000', 8 a 10 caracteres, sem espaços ou pontuação)
-        const ncmLimpo = String(ncm || posipi || '00000000').replace(/\D/g, '').slice(0, 10).padEnd(8, '0');
-        const numPeso = parseFloat(String(peso || 0).replace(',', '.').trim()) || 0;
-        const numComprimento = parseFloat(String(comprimento || 0).replace(',', '.').trim()) || 0;
-        const numLargura = parseFloat(String(largura || 0).replace(',', '.').trim()) || 0;
-        const numEspessura = parseFloat(String(espessura || 0).replace(',', '.').trim()) || 0;
-        const numVolume = parseFloat(String(volume || area || 0).replace(',', '.').trim()) || 0;
 
         // 3. Determinar o próximo código sequencial diretamente no backend para a API Protheus
         let novoCodigo = '';
@@ -1429,8 +1495,6 @@ router.post('/criar-produto-protheus', async (req, res) => {
         console.log(`[Wabtec Criar Produto] ✅ Código oficial purinho retornado pelo Protheus: ${codigoGerado}`);
 
         // 5. Amarração na SZ1010 (Produto x Cliente / Desenho Cliente)
-        const codCliFinal = String(cliente_codigo || (is_sinco ? "" : "00000739")).trim();
-        const lojaCliFinal = String(cliente_loja || "0001").trim();
         let sz1Criado = false;
         
         if (codCliFinal) {
@@ -1627,7 +1691,7 @@ router.post('/desmarcar-novo', async (req, res) => {
 });
 
 // =========================================================================
-// ROTA: Exportar Estrutura Completa WabTec em Excel Padrão MetalFisa
+// ROTA: Exportar Estrutura Completa WabTec em Excel Padrão Lynx
 // GET /api/wabtec/exportar-excel
 // =========================================================================
 router.get('/exportar-excel', async (req, res) => {
@@ -1683,23 +1747,23 @@ router.get('/exportar-excel', async (req, res) => {
             return res.status(404).json({ error: 'Nenhum registro encontrado para exportar.' });
         }
 
-        // Criar Workbook ExcelJS no padrão institucional MetalFisa
+        // Criar Workbook ExcelJS no padrão institucional Lynx
         const ExcelJS = require('exceljs');
         const workbook = new ExcelJS.Workbook();
-        workbook.creator = 'MetalFisa Industrial';
-        workbook.lastModifiedBy = req.user ? req.user.nome : 'Sistema MetalFisa';
+        workbook.creator = 'Lynx Industrial';
+        workbook.lastModifiedBy = req.user ? req.user.nome : 'Sistema Lynx';
         workbook.created = new Date();
         workbook.modified = new Date();
 
-        // Cores padrão MetalFisa
-        const NAVY   = 'FF1E3A5F'; // Azul corporativo MetalFisa
+        // Cores padrão Lynx
+        const NAVY   = 'FF1E3A5F'; // Azul corporativo Lynx
         const WHITE  = 'FFFFFFFF';
         const GRAY   = 'FFF8FAFC'; // Linhas zebradas
         const BORDER_COLOR = 'FFCBD5E1'; // Slate 300
         const DARK_TEXT = 'FF0F172A';
 
-        // 1. ABA PRINCIPAL: "Estrutura MetalFisa"
-        const sheet = workbook.addWorksheet('Estrutura WabTec MetalFisa', {
+        // 1. ABA PRINCIPAL: "Estrutura Lynx"
+        const sheet = workbook.addWorksheet('Estrutura WabTec Lynx', {
             views: [{ showGridLines: true, state: 'frozen', ySplit: 6 }]
         });
 
@@ -1715,10 +1779,10 @@ router.get('/exportar-excel', async (req, res) => {
         const totalDivergentes = rows.filter(r => r.status_mapeamento === 'DIFERENCA_REVISAO').length;
         const totalNaoCadastrados = rows.filter(r => r.status_mapeamento === 'NAO_ENCONTRADO').length;
 
-        // LINHA 1: BANNER PRINCIPAL METALFISA
+        // LINHA 1: BANNER PRINCIPAL LYNX
         sheet.mergeCells('A1:R1');
         const cellA1 = sheet.getCell('A1');
-        cellA1.value = 'METALFISA INDUSTRIAL — RELATÓRIO ESTRUTURA DE PRODUTOS WABTEC';
+        cellA1.value = 'LYNX INDUSTRIAL — RELATÓRIO ESTRUTURA DE PRODUTOS WABTEC';
         cellA1.font = { name: 'Calibri', size: 14, bold: true, color: { argb: WHITE } };
         cellA1.alignment = { horizontal: 'center', vertical: 'middle' };
         cellA1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
@@ -1794,7 +1858,7 @@ router.get('/exportar-excel', async (req, res) => {
 
         sheet.mergeCells('P3:R4');
         const kpi6 = sheet.getCell('P3');
-        kpi6.value = `SISTEMA METALFISA\nGestão Integrada PCP`;
+        kpi6.value = `SISTEMA LYNX\nGestão Integrada PCP`;
         kpi6.font = { name: 'Calibri', size: 9.5, italic: true, color: { argb: 'FF475569' } };
         kpi6.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
         kpi6.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
@@ -1812,12 +1876,12 @@ router.get('/exportar-excel', async (req, res) => {
             { header: 'Cód. WabTec (Desenho)', key: 'desenho_cliente', width: 25, align: 'left' },
             { header: 'Rev. WabTec (Orig)', key: 'rev_cliente_raw', width: 16, align: 'center' },
             { header: 'Rev. Convertida', key: 'rev_convertida', width: 16, align: 'center' },
-            { header: 'Número MetalFisa', key: 'protheus_cod', width: 18, align: 'center' },
-            { header: 'Rev. MetalFisa', key: 'protheus_rev', width: 15, align: 'center' },
+            { header: 'Número Lynx', key: 'protheus_cod', width: 18, align: 'center' },
+            { header: 'Rev. Lynx', key: 'protheus_rev', width: 15, align: 'center' },
             { header: 'Cadastro', key: 'cadastro_status', width: 14, align: 'center' },
             { header: 'UNID', key: 'uom', width: 10, align: 'center' },
             { header: 'TIPO', key: 'protheus_tipo', width: 10, align: 'center' },
-            { header: 'Descrição MetalFisa', key: 'protheus_desc', width: 35, align: 'left' },
+            { header: 'Descrição Lynx', key: 'protheus_desc', width: 35, align: 'left' },
             { header: 'Descrição WabTec', key: 'titulo', width: 35, align: 'left' },
             { header: 'Qtd Unit', key: 'qtd', width: 12, align: 'right', numFmt: '#,##0.00' },
             { header: 'Qtd Total', key: 'qtd_total', width: 14, align: 'right', numFmt: '#,##0.00' },
@@ -2003,7 +2067,7 @@ router.get('/exportar-excel', async (req, res) => {
             rRowIdx++;
         });
 
-        const safeFileName = `Estrutura_MetalFisa_Wabtec_Lote_${loteInfo.lote_id || 'Geral'}.xlsx`;
+        const safeFileName = `Estrutura_Lynx_Wabtec_Lote_${loteInfo.lote_id || 'Geral'}.xlsx`;
         const tempDir = path.join(__dirname, '../uploads');
         if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
         const tempFilePath = path.join(tempDir, `temp_${Date.now()}_${safeFileName}`);

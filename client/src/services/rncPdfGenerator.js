@@ -4,6 +4,7 @@ import autoTable from 'jspdf-autotable';
 import { logoBase64 } from './metalfisaLogoBase64';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import api from './api';
+import { getCompanyShortName } from './companyBranding';
 
 const drawRncStampOnPage = (page, rnc, helveticaFont, helveticaBoldFont) => {
     const { width, height } = page.getSize();
@@ -132,13 +133,13 @@ export const generateRNCPdf = async (rncs, filters, currentUser) => {
                     pageDoc.setFontSize(13);
                     pageDoc.setFont('helvetica', 'bold');
                     pageDoc.setTextColor(30, 58, 95);
-                    pageDoc.text('METALFISA', ML + 4, hY + 9);
+                    pageDoc.text(getCompanyShortName(), ML + 4, hY + 9);
                 }
             } catch (e) {
                 pageDoc.setFontSize(13);
                 pageDoc.setFont('helvetica', 'bold');
                 pageDoc.setTextColor(30, 58, 95);
-                pageDoc.text('METALFISA', ML + 4, hY + 9);
+                pageDoc.text(getCompanyShortName(), ML + 4, hY + 9);
             }
 
             pageDoc.setTextColor(0, 0, 0);
@@ -240,7 +241,7 @@ export const generateRNCPdf = async (rncs, filters, currentUser) => {
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(150, 150, 150);
             doc.text(`Página ${i} de ${pageCount}`, pageWidth - MR, doc.internal.pageSize.getHeight() - 10, { align: 'right' });
-            doc.text(`Gerado via MetalFisa App`, ML, doc.internal.pageSize.getHeight() - 10);
+            doc.text(`Gerado via Lynx App`, ML, doc.internal.pageSize.getHeight() - 10);
         }
 
         doc.save(`relatorio_rncs_${new Date().getTime()}.pdf`);
@@ -273,7 +274,7 @@ export const generateSingleRNCPdf = async (rnc, options = {}) => {
                 doc.setFontSize(14);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(30, 58, 95);
-                doc.text('METALFISA', ML + 5, currentY + 12);
+                doc.text(getCompanyShortName(), ML + 5, currentY + 12);
             }
         } catch (e) {}
 

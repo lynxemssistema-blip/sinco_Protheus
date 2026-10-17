@@ -16,21 +16,40 @@ const api = axios.create({
     timeout: 150000
 });
 
-// Interceptor to attach JWT token to every request
+// Interceptor to attach JWT token and tenant override to every request
 api.interceptors.request.use(
     (config) => {
-        const token = localStorage.getItem('@MetalFisa:token');
+        const token = localStorage.getItem('@Lynx:token');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
+        }
+        const tenantOverride = localStorage.getItem('@Lynx:tenant_override');
+        if (tenantOverride && tenantOverride !== 'null' && tenantOverride !== 'undefined') {
+            config.headers['x-tenant-override'] = tenantOverride;
         }
         return config;
     },
     (error) => Promise.reject(error)
 );
 
-// Interceptor para tratamento de erros
+// Interceptor para tratamento de respostas e erros
 api.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        const contentType = response.headers?.['content-type'] || '';
+        const url = response.config?.url || '';
+        if (
+            typeof response.data === 'string' &&
+            (contentType.includes('text/html') || response.data.trim().startsWith('<!doctype html>') || response.data.trim().startsWith('<!DOCTYPE html>') || response.data.trim().startsWith('<html')) &&
+            !url.includes('/docs/view')
+        ) {
+            console.error(`❌ [API Interceptor] A rota "${url}" retornou HTML em vez de JSON. O backend Node.js pode não estar ativo ou a rota /api não está configurada no servidor.`);
+            const err = new Error(`A rota da API "${url}" retornou HTML em vez de JSON.`);
+            err.response = response;
+            err.isHtmlResponse = true;
+            return Promise.reject(err);
+        }
+        return response;
+    },
     (error) => {
         const status = error.response?.status;
         const data   = error.response?.data;
@@ -47,8 +66,8 @@ api.interceptors.response.use(
             const currentPath = window.location.pathname;
             
             console.warn('🔒 Session expired or invalid. Clearing session...');
-            localStorage.removeItem('@MetalFisa:token');
-            localStorage.removeItem('@MetalFisa:user');
+            localStorage.removeItem('@Lynx:token');
+            localStorage.removeItem('@Lynx:user');
 
             // Do not redirect if already on login or landing page
             if (currentPath !== '/login' && currentPath !== '/') {
@@ -482,10 +501,13 @@ export const getCompanySettings = () => api.get('/company').then(res => {
                 console.error('Failed to parse menu_config', e);
             }
         }
+        // Keep report branding (logo, company name, CNPJ, address) in sync
+        import('./companyBranding').then(m => m.applyCompanyBranding(data)).catch(() => {});
     }
     return data;
 });
 export const updateCompanySettings = (data) => api.put('/company', data).then(res => res.data);
+export const lookupCnpjBrasilApi = (cnpj) => api.get(`/company/cnpj/${String(cnpj || '').replace(/\D/g, '')}`).then(res => res.data);
 export const updateMenuSettings = (data) => api.put('/company/menu', data).then(res => res.data);
 export const updateGeneralSettings = (data) => api.put('/company/general', data).then(res => res.data);
 export const getRomaneioInitialNumber = () => api.get('/company/romaneio-number').then(res => res.data);
@@ -645,7 +667,7 @@ export const getFileUrl = (path) => {
 
 export const getReportDownloadUrl = (type, params, category = 'production') => {
     const queryParams = { ...params };
-    const token = localStorage.getItem('@MetalFisa:token');
+    const token = localStorage.getItem('@Lynx:token');
     if (token) {
         queryParams.token = token;
     }
@@ -730,12 +752,12 @@ export const saveSystemSetting = async (key, value) => {
 // Error Reporting Helper
 export const reportSystemError = async (moduleName, error, filters = {}) => {
     try {
-        const user = JSON.parse(localStorage.getItem('@MetalFisa:user') || '{}');
+        const user = JSON.parse(localStorage.getItem('@Lynx:user') || '{}');
         await api.post('/email/system-error', {
             to: 'edsonmanoel2012@gmail.com',
             subject: `⚠️ ERRO NO SISTEMA - ${moduleName}`,
             html: `
-                <h2>Erro Reportado pelo Sistema MetalFisa</h2>
+                <h2>Erro Reportado pelo Sistema Lynx</h2>
                 <p><strong>Usuário:</strong> ${user?.nome || 'Desconhecido'} (${user?.login || 'N/A'})</p>
                 <p><strong>Data/Hora:</strong> ${new Date().toLocaleString('pt-BR')}</p>
                 <p><strong>Módulo:</strong> ${moduleName}</p>
@@ -795,11 +817,34 @@ export const setProductStatusBatch = (codigos, estado, usuario, acao = 'MARCACAO
 export const getRecursosAjusteApontamento = () => api.get('/producao/ajuste-apontamento/recursos').then(res => res.data);
 export const previewAjusteApontamento = (payload) => api.post('/producao/ajuste-apontamento/preview', payload).then(res => res.data);
 export const executarAjusteApontamento = (payload) => api.post('/producao/ajuste-apontamento/executar', payload).then(res => res.data);
+// CIPA & Eleição Eletrônica (NR-05)
+export const getCipaGestoes = () => api.get('/cipa/gestoes').then(res => res.data);
+export const getCipaGestao = (id) => api.get(`/cipa/gestoes/${id}`).then(res => res.data);
+export const createCipaGestao = (data) => api.post('/cipa/gestoes', data).then(res => res.data);
+export const updateCipaGestaoStatus = (id, status) => api.put(`/cipa/gestoes/${id}/status`, { status }).then(res => res.data);
+export const addCipaComissaoMembro = (gestaoId, data) => api.post(`/cipa/gestoes/${gestaoId}/comissao`, data).then(res => res.data);
+export const deleteCipaComissaoMembro = (gestaoId, comissaoId) => api.delete(`/cipa/gestoes/${gestaoId}/comissao/${comissaoId}`).then(res => res.data);
+export const inscreverCipaCandidato = (gestaoId, data) => api.post(`/cipa/gestoes/${gestaoId}/candidatos`, data).then(res => res.data);
+export const homologarCipaCandidato = (gestaoId, candidatoId, data) => api.put(`/cipa/gestoes/${gestaoId}/candidatos/${candidatoId}/homologar`, data).then(res => res.data);
+export const getCipaUrnaStatus = (gestaoId) => api.get(`/cipa/urna/${gestaoId}/status`).then(res => res.data);
+export const votarCipaUrna = (gestaoId, data) => api.post(`/cipa/urna/${gestaoId}/votar`, data).then(res => res.data);
+export const apurarCipaUrna = (gestaoId, data = {}) => api.post(`/cipa/urna/${gestaoId}/apurar`, data).then(res => res.data);
+export const salvarCipaMembrosIndicados = (gestaoId, data) => api.post(`/cipa/gestoes/${gestaoId}/membros-indicados`, data).then(res => res.data);
+export const definirCipaCargos = (gestaoId, data) => api.put(`/cipa/gestoes/${gestaoId}/definir-cargos`, data).then(res => res.data);
+export const darPosseCipa = (gestaoId, data) => api.post(`/cipa/gestoes/${gestaoId}/dar-posse`, data).then(res => res.data);
+export const getCipaReunioes = (gestaoId) => api.get(`/cipa/gestoes/${gestaoId}/reunioes`).then(res => res.data);
+export const createCipaReuniao = (gestaoId, data) => api.post(`/cipa/gestoes/${gestaoId}/reunioes`, data).then(res => res.data);
+export const createCipaReuniaoWithAnexo = (gestaoId, formData) => api.post(`/cipa/gestoes/${gestaoId}/reunioes`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(res => res.data);
+export const uploadCipaAtaAnexo = (reuniaoId, formData) => api.post(`/cipa/reunioes/${reuniaoId}/anexo`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(res => res.data);
+export const assinarCipaAta = (reuniaoId, data) => api.post(`/cipa/reunioes/${reuniaoId}/assinar`, data).then(res => res.data);
 
-// Proposta Comercial Lynx / Metalfisa (Exclusivo Superadmin)
-export const getPropostaComercial = () => api.get('/proposta-comercial').then(res => res.data);
-export const savePropostaComercial = (data) => api.put('/proposta-comercial', data).then(res => res.data);
-export const exportPropostaWord = () => api.post('/proposta-comercial/export-word', {}, { responseType: 'blob' }).then(res => res.data);
+// CIPA v2 - Diretório de Colaboradores, Gestão Legada Existente e Auditoria
+export const getCipaColaboradoresDisponiveis = () => api.get('/cipa/colaboradores-disponiveis').then(res => res.data);
+export const createCipaGestaoLegada = (data) => api.post('/cipa/gestoes/legada', data).then(res => res.data);
+export const addCipaMembroManual = (gestaoId, data) => api.post(`/cipa/gestoes/${gestaoId}/membros`, data).then(res => res.data);
+export const deleteCipaMembroManual = (gestaoId, membroId) => api.delete(`/cipa/gestoes/${gestaoId}/membros/${membroId}`).then(res => res.data);
+export const getCipaAuditoria = (gestaoId) => api.get(`/cipa/gestoes/${gestaoId}/auditoria`).then(res => res.data);
+export const auditarCipaComprovante = (hash) => api.get(`/cipa/auditar-comprovante/${hash}`).then(res => res.data);
 
 export { api };
 export default api;

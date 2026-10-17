@@ -100,7 +100,7 @@ const EngineeringOrdersPrint = React.forwardRef(({ orders, visibleCols, generate
                 <tbody>
                     <tr>
                         <td style={{ border: '2px solid #111', padding: '4px 8px', width: '16%', verticalAlign: 'middle' }}>
-                            <img src={metalfisaLogo} alt="MetalFisa" style={{ maxHeight: '32px', display: 'block' }} />
+                            <img src={metalfisaLogo} alt="Lynx" style={{ maxHeight: '32px', display: 'block' }} />
                         </td>
                         <td style={{ border: '2px solid #111', borderLeft: 'none', padding: '4px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', width: '60%', verticalAlign: 'middle' }}>
                             Relatório — Pedidos de Engenharia
@@ -157,7 +157,7 @@ const EngineeringOrdersPrint = React.forwardRef(({ orders, visibleCols, generate
 
             {/* ── Footer ── */}
             <div style={{ marginTop: '10px', borderTop: '1px solid #bbb', paddingTop: '4px', fontSize: '8px', color: '#666', display: 'flex', justifyContent: 'space-between' }}>
-                <span>MetalFisa Indústria e Comércio Ltda — Uso Interno</span>
+                <span>Lynx Indústria e Comércio Ltda — Uso Interno</span>
                 <span>Sistema LYNX — Controle de Engenharia</span>
             </div>
         </div>

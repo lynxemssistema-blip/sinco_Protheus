@@ -1,6 +1,7 @@
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
+import { getCompanyShortName } from './companyBranding';
 
 const formatDatePCP = (dateStr) => {
     if (!dateStr) return '-';
@@ -173,7 +174,7 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
                 fallbackDoc.rect(10, 5, 40, 15, 'F');
                 fallbackDoc.setTextColor(255, 255, 255);
                 fallbackDoc.setFontSize(12);
-                fallbackDoc.text('METALFISA', 30, 14, { align: 'center' });
+                fallbackDoc.text(getCompanyShortName(), 30, 14, { align: 'center' });
                 fallbackDoc.setTextColor(0, 0, 0);
                 fallbackDoc.setFontSize(16);
                 fallbackDoc.setFont('helvetica', 'bold');
@@ -213,7 +214,7 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
                 doc.rect(10, 5, 40, 15, 'F');
                 doc.setTextColor(255, 255, 255);
                 doc.setFontSize(12);
-                doc.text("METALFISA", 30, 14, { align: 'center' });
+                doc.text(getCompanyShortName(), 30, 14, { align: 'center' });
                 doc.setTextColor(0, 0, 0);
 
                 doc.setFontSize(14);
@@ -364,7 +365,7 @@ export const generateOPByOperationPdf = (mirrorData, returnBuffer = false, batch
             }
 
             const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-            doc.text(`MetalFisa - Rastreabilidade de Operações - Gerado em: ${dataGeracao}`, 10, pageHeight - 10);
+            doc.text(`Lynx - Rastreabilidade de Operações - Gerado em: ${dataGeracao}`, 10, pageHeight - 10);
         }
 
         // --- NOVO RECURSO: RESUMO GERAL DE PEÇAS AGLUTINADAS ---

@@ -39,7 +39,7 @@ const DocumentHeader = ({ headerData, setHeaderData, activeSector }) => {
                 <tbody>
                     <tr>
                         <td rowSpan="6" style={{ width: '25%', border: '1px solid #000', padding: '10px' }}>
-                            <img src={metalfisaLogo} alt="MetalFisa" style={{ maxWidth: '100%', height: 'auto', maxHeight: '60px', margin: '0 auto' }} />
+                            <img src={metalfisaLogo} alt="Lynx" style={{ maxWidth: '100%', height: 'auto', maxHeight: '60px', margin: '0 auto' }} />
                         </td>
                         <td rowSpan="2" style={{ width: '45%', border: '1px solid #000', fontWeight: 'bold', fontSize: '12pt', color: '#555' }}>
                             SISTEMA DE GESTÃO DA QUALIDADE
@@ -152,7 +152,7 @@ const SGQDocuments = () => {
         <br>
         <hr style="border: 1px solid #000; margin-top: 40px;">
         <p style="text-align: center; font-size: 9pt; font-family: Arial, sans-serif; margin-top: 5px;">
-            <strong>Proibido reproduzir ou ceder a terceiros sem autorização da Metalfisa.</strong>
+            <strong>Proibido reproduzir ou ceder a terceiros sem autorização da Lynx.</strong>
         </p>
     `;
 
@@ -948,7 +948,7 @@ const SGQDocuments = () => {
 
                         {showHeader && <DocumentHeader headerData={headerData} setHeaderData={setHeaderData} activeSector={activeSector} />}
                         <SunEditor 
-                            ref={sunEditorRef}
+                            getSunEditorInstance={(editor) => { sunEditorRef.current = editor; }}
                             setContents={content}
                             onChange={setContent}
                             onMouseUp={(e, core) => {

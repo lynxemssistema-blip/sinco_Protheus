@@ -19,16 +19,16 @@ export default function SgqOrganogramTab({ data, onNodeClick }) {
              <div className="max-w-6xl mx-auto space-y-10 pb-20">
                   <div className="mb-10 p-6 bg-gradient-to-r from-slate-800 to-slate-700 rounded-3xl shadow-xl border border-slate-600 flex flex-col items-center justify-center text-center">
                        <h3 className="text-3xl font-black tracking-tight text-white mb-2">Sistema de Gestão da Qualidade Integrada</h3>
-                       <p className="text-slate-300 font-medium max-w-2xl">Mapeamento em tempo real de todas as interfaces, rotinas e responsáveis do MetalFisa Anty PCP.</p>
+                       <p className="text-slate-300 font-medium max-w-2xl">Mapeamento em tempo real de todas as interfaces, rotinas e responsáveis do Lynx Anty PCP.</p>
                   </div>
 
                   {Object.entries(tree).map(([categoryName, processos]) => {
-                      const color = processos[0]?.category_color || '#3b82f6';
+                      const color = processos[0]?.category_color || '#425750';
                       return (
                           <div key={categoryName} className="relative bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
                                {/* Category Header */}
                                <div className="flex items-center gap-4 mb-8">
-                                   <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-500/20" style={{ backgroundColor: color }}>
+                                   <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-emerald-500/20" style={{ backgroundColor: color }}>
                                         <Layers className="h-7 w-7" />
                                    </div>
                                    <div>

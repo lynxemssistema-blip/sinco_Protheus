@@ -48,7 +48,7 @@ const ControleFaturamento = () => {
     const isLockedFaturado = selectedSolicitacao?.status === 'Atendido' && user?.nome !== faturadoPor;
 
     // Filtros
-    const [statusFilter, setStatusFilter] = useStickyState('Pendente', '@metalfisa:controleFat_status');
+    const [statusFilter, setStatusFilter] = useStickyState('Pendente', '@lynxems:controleFat_status');
 
     // Estados da Visão Financeira
     const [finFilters, setFinFilters] = useState({
@@ -608,7 +608,7 @@ const ControleFaturamento = () => {
                                         contentStyle={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                                     />
                                     <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                                    <Bar dataKey="Solicitado (R$)" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="Solicitado (R$)" fill="#32423D" radius={[4, 4, 0, 0]} />
                                     <Bar dataKey="Faturado (R$)" fill="#10b981" radius={[4, 4, 0, 0]} />
                                 </BarChart>
                             </ResponsiveContainer>
@@ -934,7 +934,7 @@ const ControleFaturamento = () => {
                                             <th className="px-4 py-3 font-semibold bg-green-50/50 text-green-800">Emissão NF</th>
                                             <th className="px-3 py-3 font-semibold text-center text-indigo-700 whitespace-nowrap">Dt. Entrega</th>
                                             <th className="px-3 py-3 font-semibold text-center text-indigo-700">Série Cli.</th>
-                                            <th className="px-3 py-3 font-semibold text-center text-indigo-700">Série MF</th>
+                                            <th className="px-3 py-3 font-semibold text-center text-indigo-700">Série Lynx</th>
                                             <th className="px-3 py-3 font-semibold text-center text-indigo-700">Nº Série</th>
                                             <th className="px-3 py-3 font-semibold text-center text-indigo-700">Lote / Nº Lote</th>
                                             {canViewFinancials && <th className="px-4 py-3 font-semibold text-right">V. Unit (R$)</th>}
@@ -993,7 +993,7 @@ const ControleFaturamento = () => {
                                                     {it.pcp_data_entrega ? new Date(it.pcp_data_entrega).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : <span className="text-gray-300">—</span>}
                                                 </td>
                                                 <td className="px-3 py-3 text-center text-xs text-indigo-600 font-medium">{it.pcp_serie_cliente || <span className="text-gray-300">—</span>}</td>
-                                                <td className="px-3 py-3 text-center text-xs text-indigo-600 font-medium">{it.pcp_serie_metalfisa || <span className="text-gray-300">—</span>}</td>
+                                                <td className="px-3 py-3 text-center text-xs text-indigo-600 font-medium">{it.pcp_serie_lynx || it.pcp_serie_metalfisa || it.pcp_numero_serie || <span className="text-gray-300">—</span>}</td>
                                                 <td className="px-3 py-3 text-center text-xs text-indigo-600 font-medium">{it.pcp_numero_serie || <span className="text-gray-300">—</span>}</td>
                                                 <td className="px-3 py-3 text-center">
                                                     {(it.pcp_lote || it.pcp_numero_lote) ? (

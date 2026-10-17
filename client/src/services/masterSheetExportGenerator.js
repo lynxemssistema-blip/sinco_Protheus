@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { logoBase64 } from './metalfisaLogoBase64.js';
+import { getCompanyShortName } from './companyBranding';
 
 // Layout Constants
 const ML = 8;
@@ -12,7 +13,7 @@ const BRAND_W = 44;
 const LOGO_W = 12;
 const LOGO_H = 12;
 
-// Draw standard MetalFisa Header for PDF
+// Draw standard Lynx Header for PDF
 const drawHeader = (doc, pageWidth, title, subtitle = '') => {
     const y0 = 5;
 
@@ -27,7 +28,7 @@ const drawHeader = (doc, pageWidth, title, subtitle = '') => {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(255, 255, 255);
-    doc.text('METALFISA', ML + 16, y0 + 9);
+    doc.text(getCompanyShortName(), ML + 16, y0 + 9);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.5);
     doc.text('Metalúrgica Ltda', ML + 16, y0 + 13.5);
@@ -159,9 +160,9 @@ const filterInactiveAndInvoiced = (rawData) => {
     return data;
 };
 
-const createMetalFisaSheet = (title, headerRow, dataRows, dateStr = new Date().toLocaleString('pt-BR'), filterLabel = '') => {
+const createLynxSheet = (title, headerRow, dataRows, dateStr = new Date().toLocaleString('pt-BR'), filterLabel = '') => {
     const metaHeader = [
-        ['METALFISA METALÚRGICA LTDA — SISTEMA INTEGRADO DE GESTÃO (S&OP)'],
+        ['LYNX EMS SISTEMAS LTDA — SISTEMA INTEGRADO DE GESTÃO (S&OP)'],
         [`RELATÓRIO: ${title.toUpperCase()}`],
         [`Data de Emissão: ${dateStr}${filterLabel ? `  |  Filtros: ${filterLabel}` : ''}`],
         [], // linha em branco
@@ -214,7 +215,7 @@ const createMetalFisaSheet = (title, headerRow, dataRows, dateStr = new Date().t
 };
 
 /**
- * EXPORT TO EXCEL (.XLSX) — ESTILO OFICIAL METALFISA (EXCELJS)
+ * EXPORT TO EXCEL (.XLSX) — ESTILO OFICIAL LYNX (EXCELJS)
  * Exports multi-sheet Excel file with corporate branding, styled headers, zebra striping, borders and proportional loads
  */
 export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractionalItems = null) => {
@@ -222,7 +223,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
     const data = filterInactiveAndInvoiced(rawData);
 
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'MetalFisa System';
+    wb.creator = 'Lynx System';
     wb.created = new Date();
 
     const filterLabel = buildFilterLabel(filterParams);
@@ -250,7 +251,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
         right: { style: 'thin', color: { argb: 'FF94A3B8' } }
     };
 
-    const addStyledMetalFisaSheet = (sheetName, title, columnsConfig, dataRows, totalConfig = null) => {
+    const addStyledLynxSheet = (sheetName, title, columnsConfig, dataRows, totalConfig = null) => {
         const ws = wb.addWorksheet(sheetName, {
             views: [{ state: 'frozen', ySplit: 5, showGridLines: true }]
         });
@@ -272,7 +273,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
             ws.mergeCells(`A1:${lastCol}1`);
         }
         const r1 = ws.getCell('A1');
-        r1.value = 'METALFISA METALÚRGICA LTDA — SISTEMA INTEGRADO DE GESTÃO (S&OP)';
+        r1.value = 'LYNX EMS SISTEMAS LTDA — SISTEMA INTEGRADO DE GESTÃO (S&OP)';
         r1.fill = NAVY_FILL;
         r1.font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
         r1.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -474,13 +475,13 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
                 qtd_total: Number(r.qtd_total || 0)
             };
             (data.recursos || []).forEach(rec => {
-                const valHoras = (loads[rec] || 0) / 50; // 50 min/hora padrão MetalFisa
+                const valHoras = (loads[rec] || 0) / 50; // 50 min/hora padrão Lynx
                 row[`rec_${rec}`] = valHoras > 0 ? Number(valHoras.toFixed(2)) : 0;
             });
             return row;
         });
 
-        addStyledMetalFisaSheet('Resumo', 'Resumo de Produtos a Produzir', resumoColumns, resumoData, resumoTotals);
+        addStyledLynxSheet('Resumo', 'Resumo de Produtos a Produzir', resumoColumns, resumoData, resumoTotals);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -525,7 +526,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
             return row;
         });
 
-        addStyledMetalFisaSheet('Pedidos', 'Lista de Pedidos de Venda', pedColumns, pedData, pedTotals);
+        addStyledLynxSheet('Pedidos', 'Lista de Pedidos de Venda', pedColumns, pedData, pedTotals);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -572,7 +573,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
             ped_cli: i.ped_cli || '-'
         }));
 
-        addStyledMetalFisaSheet('Itens Detalhados', 'Itens Detalhados com Prioridade e PCP', itensColumns, itensData, itensTotals);
+        addStyledLynxSheet('Itens Detalhados', 'Itens Detalhados com Prioridade e PCP', itensColumns, itensData, itensTotals);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -612,7 +613,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
             };
         });
 
-        addStyledMetalFisaSheet('Estrutura BOM', 'Estrutura de Produtos Consolidada (BOM)', bomColumns, bomData, { qtdTotal: true });
+        addStyledLynxSheet('Estrutura BOM', 'Estrutura de Produtos Consolidada (BOM)', bomColumns, bomData, { qtdTotal: true });
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -662,7 +663,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
             });
         });
 
-        addStyledMetalFisaSheet('Necessidade de Materiais', 'Necessidade de Materiais por Pedido', matColumns, matData, { totalQtd: true });
+        addStyledLynxSheet('Necessidade de Materiais', 'Necessidade de Materiais por Pedido', matColumns, matData, { totalQtd: true });
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -711,7 +712,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
             return row;
         });
 
-        addStyledMetalFisaSheet('Carga por Recurso', 'Carga de Máquinas por Pedido', cargaColumns, cargaData, cargaTotals);
+        addStyledLynxSheet('Carga por Recurso', 'Carga de Máquinas por Pedido', cargaColumns, cargaData, cargaTotals);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -771,7 +772,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
             };
         });
 
-        addStyledMetalFisaSheet('Capacidade do Período', `Capacidade do Período (${days} dias úteis)`, capColumns, capData, capTotals);
+        addStyledLynxSheet('Capacidade do Período', `Capacidade do Período (${days} dias úteis)`, capColumns, capData, capTotals);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -848,7 +849,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
             return row;
         });
 
-        addStyledMetalFisaSheet('Execução OP', 'Execução e Apontamentos de OP', execColumns, execData, execTotals);
+        addStyledLynxSheet('Execução OP', 'Execução e Apontamentos de OP', execColumns, execData, execTotals);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -910,7 +911,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
             return row;
         });
 
-        addStyledMetalFisaSheet('Prog. Entregas', 'Programação de Entregas (14 Dias)', progColumns, progData, progTotals);
+        addStyledLynxSheet('Prog. Entregas', 'Programação de Entregas (14 Dias)', progColumns, progData, progTotals);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1029,12 +1030,12 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
             });
         });
 
-        addStyledMetalFisaSheet('Detalhamento Estrutura', 'Árvore Multinível de Fabricação por Fração / Lote de OP', treeColumns, treeRows, { qtd_lote: true });
+        addStyledLynxSheet('Detalhamento Estrutura', 'Árvore Multinível de Fabricação por Fração / Lote de OP', treeColumns, treeRows, { qtd_lote: true });
     }
 
     // Garante que o workbook tenha ao menos 1 worksheet válida
     if (wb.worksheets.length === 0) {
-        addStyledMetalFisaSheet('Resumo', 'Nenhum Registro Encontrado', [{ header: 'Aviso', key: 'msg', minWidth: 40 }], [{ msg: 'Nenhum registro encontrado para os filtros selecionados.' }]);
+        addStyledLynxSheet('Resumo', 'Nenhum Registro Encontrado', [{ header: 'Aviso', key: 'msg', minWidth: 40 }], [{ msg: 'Nenhum registro encontrado para os filtros selecionados.' }]);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1046,7 +1047,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `Planilha_Mestra_MetalFisa_${getTodayDateStr()}.xlsx`;
+    a.download = `Planilha_Mestra_Lynx_${getTodayDateStr()}.xlsx`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -1056,7 +1057,7 @@ export const exportMasterSheetExcel = async (rawData, filterParams = {}, fractio
 };
 
 /**
- * EXPORT TO PDF (.PDF) — ESTILO METALFISA
+ * EXPORT TO PDF (.PDF) — ESTILO LYNX
  * Exports Planilha Mestra data into formatted PDF report
  */
 export const exportMasterSheetPdf = (rawData, activeTab = 'itens', filterParams = {}) => {
@@ -1317,16 +1318,16 @@ export const exportMasterSheetPdf = (rawData, activeTab = 'itens', filterParams 
             doc.setFontSize(7);
             doc.setTextColor(140, 140, 140);
             doc.text(`Página ${d.pageNumber}`, pageWidth - MR, pageHeight - 4.5, { align: 'right' });
-            doc.text('MetalFisa System — Sistema Integrado de Gestão & Planejamento S&OP', ML, pageHeight - 4.5);
+            doc.text('Lynx System — Sistema Integrado de Gestão & Planejamento S&OP', ML, pageHeight - 4.5);
         }
     });
 
-    const fileName = `Planilha_Mestra_MetalFisa_${activeTab}_${getTodayDateStr()}.pdf`;
+    const fileName = `Planilha_Mestra_Lynx_${activeTab}_${getTodayDateStr()}.pdf`;
     doc.save(fileName);
 };
 
 /**
- * EXPORT MASTER SHEET BASED ON FRACTIONAL OPS (.XLSX) — ESTILO OFICIAL METALFISA
+ * EXPORT MASTER SHEET BASED ON FRACTIONAL OPS (.XLSX) — ESTILO OFICIAL LYNX
  * Exports multi-sheet Excel file with corporate navy branding, styled headers, zebra striping, borders and proportional loads
  */
 export const exportFractionalMasterSheetExcel = async (fractionalItems, masterData = {}, filterParams = {}) => {
@@ -1335,7 +1336,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
     }
 
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'MetalFisa System';
+    wb.creator = 'Lynx System';
     wb.created = new Date();
 
     const filterLabel = buildFilterLabel(filterParams);
@@ -1363,7 +1364,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         right: { style: 'thin', color: { argb: 'FF94A3B8' } }
     };
 
-    const addStyledMetalFisaSheet = (sheetName, title, columnsConfig, dataRows, totalConfig = null) => {
+    const addStyledLynxSheet = (sheetName, title, columnsConfig, dataRows, totalConfig = null) => {
         const ws = wb.addWorksheet(sheetName, {
             views: [{ state: 'frozen', ySplit: 5, showGridLines: true }]
         });
@@ -1385,7 +1386,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
             ws.mergeCells(`A1:${lastCol}1`);
         }
         const r1 = ws.getCell('A1');
-        r1.value = 'METALFISA METALÚRGICA LTDA — SISTEMA INTEGRADO DE GESTÃO (S&OP)';
+        r1.value = 'LYNX EMS SISTEMAS LTDA — SISTEMA INTEGRADO DE GESTÃO (S&OP)';
         r1.fill = NAVY_FILL;
         r1.font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
         r1.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -1588,7 +1589,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         status: parseFloat(item.qtd_faturar) <= 0 ? 'Entregue' : (item.is_fraction ? 'Fracionada' : 'Pendente')
     }));
 
-    addStyledMetalFisaSheet('OPs e Lotes (Visão Geral)', 'OPs e Frações de Produção Detalhadas', opsColumns, opsData, { visual_qtd: true, qtd_faturar: true });
+    addStyledLynxSheet('OPs e Lotes (Visão Geral)', 'OPs e Frações de Produção Detalhadas', opsColumns, opsData, { visual_qtd: true, qtd_faturar: true });
 
     // ─────────────────────────────────────────────────────────────────────────
     // MAPAS AUXILIARES DE ENGENHARIA E OPERAÇÕES
@@ -1712,7 +1713,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         });
     });
 
-    addStyledMetalFisaSheet('Peças e Fabricação (BOM)', 'Árvore Multinível de Peças e Fabricação por Fração de OP', treeColumns, treeData, { qtd_lote: true, tempo_horas: true });
+    addStyledLynxSheet('Peças e Fabricação (BOM)', 'Árvore Multinível de Peças e Fabricação por Fração de OP', treeColumns, treeData, { qtd_lote: true, tempo_horas: true });
 
     // ─────────────────────────────────────────────────────────────────────────
     // ABA 3: OPERAÇÕES POR RECURSO & MÁQUINA (DETALHAMENTO DE POSTO DE TRABALHO)
@@ -1804,7 +1805,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
     });
 
     if (operacoesData.length > 0) {
-        addStyledMetalFisaSheet('Operações por Recurso', 'Detalhamento Completo de Operações por Máquina / Recurso', operacoesColumns, operacoesData, { qtd_processar: true, tempo_total_min: true, tempo_total_horas: true });
+        addStyledLynxSheet('Operações por Recurso', 'Detalhamento Completo de Operações por Máquina / Recurso', operacoesColumns, operacoesData, { qtd_processar: true, tempo_total_min: true, tempo_total_horas: true });
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1875,7 +1876,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
             return row;
         });
 
-        addStyledMetalFisaSheet('Matriz Carga Máquina', 'Matriz de Carga de Horas Máquina por Lote de OP', matrizColumns, matrizData, matrizTotals);
+        addStyledLynxSheet('Matriz Carga Máquina', 'Matriz de Carga de Horas Máquina por Lote de OP', matrizColumns, matrizData, matrizTotals);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1949,7 +1950,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
             return a.comp.localeCompare(b.comp);
         });
 
-        addStyledMetalFisaSheet('Materiais Consolidados', 'Necessidade Consolidada de Matérias-Primas e Componentes (PCP / Compras)', matConsolidadoColumns, matConsolidadoData, { qtd_total_consolidada: true });
+        addStyledLynxSheet('Materiais Consolidados', 'Necessidade Consolidada de Matérias-Primas e Componentes (PCP / Compras)', matConsolidadoColumns, matConsolidadoData, { qtd_total_consolidada: true });
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1998,7 +1999,7 @@ export const exportFractionalMasterSheetExcel = async (fractionalItems, masterDa
         pedidos_str: Array.from(r.pedidos).join(', ')
     }));
 
-    addStyledMetalFisaSheet('Resumo Produtos', 'Resumo Consolidado por Produto Acabado', resumoColumns, resumoData, { qtd_total_pcp: true, qtd_fracoes: true });
+    addStyledLynxSheet('Resumo Produtos', 'Resumo Consolidado por Produto Acabado', resumoColumns, resumoData, { qtd_total_pcp: true, qtd_fracoes: true });
 
     // ─────────────────────────────────────────────────────────────────────────
     // Exportação do Buffer via Navegador

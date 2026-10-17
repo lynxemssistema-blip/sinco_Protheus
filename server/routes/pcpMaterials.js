@@ -435,7 +435,7 @@ router.post('/export', async (req, res) => {
 
         // ── Gerar Excel ───────────────────────────────────────────────────────
         const workbook = new ExcelJS.Workbook();
-        workbook.creator  = 'MetalFisa PCP';
+        workbook.creator  = 'Lynx PCP';
         workbook.created  = new Date();
 
         const sortedRows = Array.from(consolidado.values()).sort((a, b) => a.codigo.localeCompare(b.codigo));

@@ -65,7 +65,7 @@ const ItensAFaturar = () => {
     const [invoiceModalItem, setInvoiceModalItem] = useState(null);
 
     // Active Tab State (with Sticky persistence)
-    const [activeTab, setActiveTab] = useStickyState('itens', '@metalfisa:itensFat_activeTab');
+    const [activeTab, setActiveTab] = useStickyState('itens', '@lynxems:itensFat_activeTab');
     const [selectedRow, setSelectedRow] = useState(null);
 
     // Enforce tab security
@@ -87,7 +87,7 @@ const ItensAFaturar = () => {
         somente_prontos: 'false',
         pcpDataInicial: '',
         pcpDataFinal: ''
-    }, '@metalfisa:itensFat_filters');
+    }, '@lynxems:itensFat_filters');
 
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
@@ -95,7 +95,7 @@ const ItensAFaturar = () => {
     const limit = 100;
 
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
-    const [columnFilters, setColumnFilters] = useStickyState({}, '@metalfisa:itensFat_colFilters');
+    const [columnFilters, setColumnFilters] = useStickyState({}, '@lynxems:itensFat_colFilters');
 
     // --- FATURAMENTO CART STATE ---
     const [selectedItems, setSelectedItems] = useState({}); // { 'pedido-item': orderObject }
@@ -358,7 +358,10 @@ const ItensAFaturar = () => {
         }
 
         const getNestedValue = (row, key) => {
-            if (['data_entrega_pcp', 'serie_cliente', 'serie_metalfisa', 'numero_serie', 'lote'].includes(key)) {
+            if (['data_entrega_pcp', 'serie_cliente', 'serie_metalfisa', 'serie_lynx', 'numero_serie', 'lote'].includes(key)) {
+                if (key === 'serie_lynx' || key === 'serie_metalfisa') {
+                    return row._pcp_prog ? (row._pcp_prog.serie_lynx || row._pcp_prog.serie_metalfisa || row._pcp_prog.numero_serie || '') : '';
+                }
                 return row._pcp_prog ? row._pcp_prog[key] : '';
             }
             return row[key];
@@ -539,7 +542,8 @@ const ItensAFaturar = () => {
                 pcp_forecast_id: prog?.id || null,
                 pcp_data_entrega: prog?.data_entrega_pcp || null,
                 pcp_serie_cliente: prog?.serie_cliente || null,
-                pcp_serie_metalfisa: prog?.serie_metalfisa || null,
+                pcp_serie_lynx: prog?.serie_lynx || prog?.serie_metalfisa || prog?.numero_serie || null,
+                pcp_serie_metalfisa: prog?.serie_lynx || prog?.serie_metalfisa || prog?.numero_serie || null,
                 pcp_numero_serie: prog?.numero_serie || null,
                 pcp_lote: prog?.lote || null,
                 pcp_numero_lote: prog?.numero_lote || null
@@ -651,7 +655,7 @@ const ItensAFaturar = () => {
                     
                     // Series & Lote
                     baseData['Série Cli.'] = prog?.serie_cliente || '';
-                    baseData['Série MF'] = prog?.serie_metalfisa || '';
+                    baseData['Série Lynx'] = prog?.serie_lynx || prog?.serie_metalfisa || prog?.numero_serie || '';
                     baseData['Nº Série'] = prog?.numero_serie || '';
                     baseData['Lote'] = prog?.lote || '';
                     
@@ -761,7 +765,7 @@ const ItensAFaturar = () => {
                                             <th className="px-4 py-3 font-semibold">Produto</th>
                                             <th className="px-4 py-3 font-semibold text-center text-indigo-700 whitespace-nowrap">Dt. Entrega</th>
                                             <th className="px-4 py-3 font-semibold text-center text-indigo-700">Série Cli.</th>
-                                            <th className="px-4 py-3 font-semibold text-center text-indigo-700">Série MF</th>
+                                            <th className="px-4 py-3 font-semibold text-center text-indigo-700">Série Lynx</th>
                                             <th className="px-4 py-3 font-semibold text-center text-indigo-700">Nº Série</th>
                                             <th className="px-4 py-3 font-semibold text-center text-indigo-700">Lote / Nº Lote</th>
                                             <th className="px-4 py-3 font-semibold">Cliente / Ped. Cli / Des. Cli</th>
@@ -795,7 +799,7 @@ const ItensAFaturar = () => {
                                                         {order._pcp_prog?.grid_entrega_pcp || order._pcp_prog?.serie_cliente || <span className="text-gray-300">—</span>}
                                                     </td>
                                                     <td className="px-4 py-2 text-center text-xs text-indigo-600 font-medium">
-                                                        {order._pcp_prog?.serie_metalfisa || <span className="text-gray-300">—</span>}
+                                                        {order._pcp_prog?.serie_lynx || order._pcp_prog?.serie_metalfisa || order._pcp_prog?.numero_serie || <span className="text-gray-300">—</span>}
                                                     </td>
                                                     <td className="px-4 py-2 text-center text-xs text-indigo-600 font-medium">
                                                         {order._pcp_prog?.numero_serie || <span className="text-gray-300">—</span>}
@@ -1352,7 +1356,7 @@ const ItensAFaturar = () => {
                                 <SortableHeader label="Data PCP" columnKey="data_entrega_pcp" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['data_entrega_pcp']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
                                 <SortableHeader label="Prev. Fat." columnKey="data_prevista_faturamento" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['data_prevista_faturamento']} onFilterChange={handleColumnFilterChange} className="text-teal-700" />
                                 <SortableHeader label="Série Cli." columnKey="serie_cliente" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['serie_cliente']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
-                                <SortableHeader label="Série MF" columnKey="serie_metalfisa" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['serie_metalfisa']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
+                                <SortableHeader label="Série Lynx" columnKey="serie_lynx" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['serie_lynx'] || columnFilters['serie_metalfisa']} onFilterChange={(val) => { handleColumnFilterChange('serie_lynx', val); handleColumnFilterChange('serie_metalfisa', val); }} className="text-indigo-700" />
                                 <SortableHeader label="Nº Série" columnKey="numero_serie" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['numero_serie']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
                                 <SortableHeader label="Lote" columnKey="lote" align="center" sortConfig={sortConfig} requestSort={requestSort} filterValue={columnFilters['lote']} onFilterChange={handleColumnFilterChange} className="text-indigo-700" />
                                 <th className="px-3 py-3 font-semibold text-center align-top pt-5">Status</th>
@@ -1473,7 +1477,7 @@ const ItensAFaturar = () => {
                                                 {prog?.serie_cliente || <span className="text-gray-300">—</span>}
                                             </td>
                                             <td className="px-2 py-2 text-center text-xs text-indigo-600 font-medium" onClick={(e) => e.stopPropagation()}>
-                                                {prog?.serie_metalfisa || <span className="text-gray-300">—</span>}
+                                                {prog?.serie_lynx || prog?.serie_metalfisa || prog?.numero_serie || <span className="text-gray-300">—</span>}
                                             </td>
                                             <td className="px-2 py-2 text-center text-xs text-indigo-600 font-medium" onClick={(e) => e.stopPropagation()}>
                                                 {prog?.numero_serie || <span className="text-gray-300">—</span>}

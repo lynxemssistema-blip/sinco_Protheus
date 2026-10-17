@@ -324,7 +324,7 @@ export default function ProcessFlowchart({
                 >
                     {processFlow.length > 0 ? (
                         processFlow.map((resource, index) => (
-                            <React.Fragment key={resource.codigo}>
+                            <React.Fragment key={`${resource.codigo}-${index}`}>
                                 {/* Cartão do Recurso (Setor) */}
                                 <div className="flex flex-col items-center">
                                     <div className="bg-slate-800 border-2 border-slate-700 text-white rounded-xl p-4 shadow-xl w-72 relative z-10 flex flex-col items-center mb-6">

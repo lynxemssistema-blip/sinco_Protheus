@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 import { useAuth } from '../contexts/AuthContext';
 
-import { UserPlus, ShieldAlert, UserX, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database, Calendar, Info, Play } from 'lucide-react';
+import { UserPlus, ShieldAlert, UserX, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, ChevronUp, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database, Calendar, Info, Play, Factory, Wrench, Truck, ShoppingCart, Award, Clock, Layers, Cpu, Tag, CheckSquare, TrendingUp, Box, ClipboardList, Landmark, Monitor, ShieldCheck, Flame, Search, CheckCircle2, XCircle, SlidersHorizontal } from 'lucide-react';
 
 import { createUser, getUsers, deleteUser, updateUser, bulkUpdateUserProfile, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus, getProtheusFornecedores, getProtheusClientes, getSincoProcessosList } from '../services/api';
 
@@ -12,7 +12,6 @@ import { MENU_GROUPS } from '../config/menuItems';
 
 import PCPMetalConfig from './PCPMetalConfig';
 
-import EmailClient from '../components/EmailClient';
 
 import MonitoringDashboard from '../components/MonitoringDashboard';
 
@@ -28,7 +27,255 @@ import LabelPrinterTab from '../components/settings/LabelPrinterTab';
 
 import AjusteApontamentoTab from '../components/settings/AjusteApontamentoTab';
 
+import CompanyProfileForm from '../components/settings/CompanyProfileForm';
 
+import { applyCompanyBranding } from '../services/companyBranding';
+
+
+
+const MODULE_CATEGORIES = [
+    { id: 'ALL', label: 'Todos os Módulos' },
+    { id: 'Produção & Fábrica', label: 'Produção & Fábrica' },
+    { id: 'Engenharia & Modelagem', label: 'Engenharia & Modelagem' },
+    { id: 'Qualidade & SGQ', label: 'Qualidade & SGQ' },
+    { id: 'Manutenção', label: 'Manutenção' },
+    { id: 'Comercial & ERP', label: 'Comercial & ERP' },
+    { id: 'Suprimentos & Logística', label: 'Suprimentos & Logística' },
+    { id: 'Financeiro', label: 'Financeiro' },
+    { id: 'Gente & Segurança', label: 'Gente & Segurança' },
+    { id: 'Acessos & Corporativo', label: 'Acessos & Corporativo' }
+];
+
+const SYSTEM_MODULES = [
+    // 1. Produção & Fábrica
+    {
+        id: 'pcp',
+        key: 'module_pcp_active',
+        name: 'PCP Geral & Produção',
+        category: 'Produção & Fábrica',
+        description: 'Visão global da fábrica, controle de ordens de produção, apontamentos, matriz de produção, fila de dependências e relatórios fabris.',
+        icon: Factory,
+        defaultActive: true,
+        menuGroupId: 'pcp',
+        badge: 'Chão de Fábrica'
+    },
+    {
+        id: 'pcp_refinado',
+        key: 'module_pcp_refinado_active',
+        name: 'PCP Refinado & Capacidade (CRP)',
+        category: 'Produção & Fábrica',
+        description: 'Gestão avançada de tempos padrão por máquina, cálculo de capacidade diária (CRP) e análise visual da taxa de ocupação dos recursos.',
+        icon: Layers,
+        defaultActive: false,
+        menuGroupId: 'pcp_refinado',
+        badge: 'Planejamento Avançado'
+    },
+    {
+        id: 'op_fracionada',
+        key: 'module_op_fracionada_active',
+        name: 'OP Fracionada & Industrial',
+        category: 'Produção & Fábrica',
+        description: 'Liberação de PCP mescla, painel da fábrica local e apontamentos fracionados de produção por lote.',
+        icon: CheckSquare,
+        defaultActive: true,
+        menuGroupId: 'op_fracionada',
+        badge: 'Industrial'
+    },
+    {
+        id: 'ronaldo',
+        key: 'module_gestao_vista_active',
+        name: 'Gestão à Vista & Analytics',
+        category: 'Produção & Fábrica',
+        description: 'Acompanhamento em tempo real da evolução dos apontamentos e gráficos dinâmicos de produtividade.',
+        icon: TrendingUp,
+        defaultActive: true,
+        menuGroupId: 'ronaldo',
+        badge: 'Dashboards'
+    },
+
+    // 2. Engenharia & Modelagem
+    {
+        id: 'engenharia',
+        key: 'module_engenharia_active',
+        name: 'Engenharia de Produto',
+        category: 'Engenharia & Modelagem',
+        description: 'Painel de itens técnicos, catálogo de produtos, gerador de BOM (lista de materiais), integração SolidEdge e liberação técnica.',
+        icon: Cpu,
+        defaultActive: true,
+        menuGroupId: 'engenharia',
+        badge: 'Estruturas & BOM'
+    },
+    {
+        id: 'analise_3d',
+        key: 'module_analise3d_active',
+        name: 'Análise 3D',
+        category: 'Engenharia & Modelagem',
+        description: 'Visualizador de modelos 3D (.stl) com suporte a rotação, zoom e inspeção visual de componentes de engenharia.',
+        icon: Box,
+        defaultActive: false,
+        menuGroupId: 'analise_3d',
+        badge: 'Visualizador CAD'
+    },
+
+    // 3. Qualidade & SGQ
+    {
+        id: 'qualidade',
+        key: 'module_sgq_active',
+        name: 'Qualidade (SGQ)',
+        category: 'Qualidade & SGQ',
+        description: 'Gestão de ativos e calibrações, caixas de ferramentas, romaneios SGQ, RNCs, treinamentos, mapeamento de processos e PPAPs.',
+        icon: Award,
+        defaultActive: false,
+        menuGroupId: 'qualidade',
+        badge: 'ISO 9001 / SGQ',
+        hasAdvancedSettings: true
+    },
+
+    // 4. Manutenção Industrial
+    {
+        id: 'manutencao',
+        key: 'module_maintenance_active',
+        name: 'Manutenção de Equipamentos',
+        category: 'Manutenção',
+        description: 'Gerenciamento de ordens de manutenção preventivas e corretivas, checklists diários por máquina, controle de operadores e materiais.',
+        icon: Wrench,
+        defaultActive: false,
+        menuGroupId: 'manutencao',
+        badge: 'Preventiva & Corretiva'
+    },
+
+    // 5. Comercial & ERP
+    {
+        id: 'comercial',
+        key: 'module_comercial_active',
+        name: 'Comercial & Vendas',
+        category: 'Comercial & ERP',
+        description: 'Pedidos de venda, itens a faturar, dashboard de faturamento, controle de atrasos, fluxo comercial e gestão gerencial de OPs.',
+        icon: ShoppingCart,
+        defaultActive: true,
+        menuGroupId: 'comercial',
+        badge: 'Faturamento'
+    },
+    {
+        id: 'sinco_erp',
+        key: 'module_erp_active',
+        name: 'SINCO ERP Nativo',
+        category: 'Comercial & ERP',
+        description: 'Módulo nativo do sistema para gerenciamento rápido de cadastros: produtos, pedidos, clientes e ordens de produção.',
+        icon: Database,
+        defaultActive: true,
+        menuGroupId: 'sinco_erp',
+        badge: 'ERP Integrado'
+    },
+    {
+        id: 'cadastros_basicos',
+        key: 'module_cadastros_basicos_active',
+        name: 'Cadastros Básicos & Hub',
+        category: 'Comercial & ERP',
+        description: 'Centralização de cadastros de apoio: prefixos/famílias de produtos, tipos, unidades de medida e armazéns/almoxarifados.',
+        icon: Tag,
+        defaultActive: true,
+        menuGroupId: 'cadastros_basicos',
+        badge: 'Tabelas Mestras'
+    },
+
+    // 6. Suprimentos & Logística
+    {
+        id: 'suprimentos',
+        key: 'module_suprimentos_active',
+        name: 'Suprimentos & Compras',
+        category: 'Suprimentos & Logística',
+        description: 'Solicitações de compra, pedidos x PV de clientes, requisições internas, rastreamento SC -> NF e auditoria PC x XML.',
+        icon: ClipboardList,
+        defaultActive: true,
+        menuGroupId: 'suprimentos',
+        badge: 'Compras'
+    },
+    {
+        id: 'logistica',
+        key: 'module_logistica_active',
+        name: 'Logística & Expedição',
+        category: 'Suprimentos & Logística',
+        description: 'Expedição com romaneios de entrega, portal de fornecedores terceirizados, recebimento de retornos e saldos de estoque.',
+        icon: Truck,
+        defaultActive: true,
+        menuGroupId: 'logistica',
+        badge: 'Expedição'
+    },
+
+    // 7. Financeiro
+    {
+        id: 'financeiro',
+        key: 'module_financeiro_active',
+        name: 'Financeiro & Controladoria',
+        category: 'Financeiro',
+        description: 'Acompanhamento do fluxo de caixa previsto e realizado, dashboards financeiros gerenciais e balancete dinâmico.',
+        icon: Landmark,
+        defaultActive: true,
+        menuGroupId: 'financeiro',
+        badge: 'Controladoria'
+    },
+
+    // 8. Gente & Segurança
+    {
+        id: 'rh',
+        key: 'module_rh_active',
+        name: 'Recursos Humanos (RH 360°)',
+        category: 'Gente & Segurança',
+        description: 'Pasta do colaborador 360°, portal de autoatendimento, gestão de vagas, triagem de currículos com IA, offboarding e cargos/funções.',
+        icon: Users,
+        defaultActive: true,
+        menuGroupId: 'rh',
+        badge: 'Gestão de Pessoas'
+    },
+    {
+        id: 'sst',
+        key: 'module_sst_active',
+        name: 'Segurança do Trabalho (SST & NR-06)',
+        category: 'Gente & Segurança',
+        description: 'Gestão de EPIs, controle de entregas NR-06, eleições da CIPA (NR-05), brigada de incêndio (NR-23) e gestão de cesta básica.',
+        icon: ShieldCheck,
+        defaultActive: true,
+        menuGroupId: 'sst',
+        badge: 'Normas Regulamentadoras',
+        hasSstSubmodules: true
+    },
+
+    // 9. Acessos & Corporativo
+    {
+        id: 'portaria',
+        key: 'module_portaria_active',
+        name: 'Portaria & Acessos',
+        category: 'Acessos & Corporativo',
+        description: 'Terminal guarita para registro de entradas/saídas de veículos e visitantes, painel gerencial de fluxo e cadastro de turnos.',
+        icon: Clock,
+        defaultActive: true,
+        menuGroupId: 'portaria',
+        badge: 'Controle de Entrada'
+    },
+    {
+        id: 'corporativo',
+        key: 'module_corporativo_active',
+        name: 'Salas de Reunião & Suporte TI',
+        category: 'Acessos & Corporativo',
+        description: 'Sistema de reserva e totem de salas de reunião, e central de chamados para suporte de tecnologia.',
+        icon: Calendar,
+        defaultActive: true,
+        menuGroupId: 'corporativo',
+        badge: 'Facilities & TI'
+    },
+    {
+        id: 'cliente',
+        key: 'module_cliente_active',
+        name: 'Portal do Cliente',
+        category: 'Acessos & Corporativo',
+        description: 'Acesso externo para clientes acompanharem o status de seus projetos e interface rápida via tablet para solicitações.',
+        icon: Monitor,
+        defaultActive: true,
+        menuGroupId: 'cliente',
+        badge: 'Acesso Externo'
+    }
+];
 
 export default function Settings() {
 
@@ -58,7 +305,6 @@ export default function Settings() {
 
         { id: 'permissions', label: 'Permissões', icon: Shield },
 
-        { id: 'reports', label: 'Relatórios', icon: FileText },
 
         { id: 'automations', label: 'Automações & Avisos', icon: Send },
 
@@ -66,7 +312,6 @@ export default function Settings() {
 
         { id: 'errors', label: 'Lista de Erros', icon: Bug },
 
-        { id: 'email', label: 'E-mail Corporativo', icon: Mail },
 
         { id: 'notifications', label: 'Histórico de Notificações', icon: MessageSquare },
 
@@ -250,21 +495,18 @@ export default function Settings() {
 
             const map = {};
 
-            (data || []).forEach(p => {
-
-                map[p.page_id] = {
-
-                    can_view: !!p.can_view,
-
-                    can_create: !!p.can_create,
-
-                    can_edit: !!p.can_edit,
-
-                    can_delete: !!p.can_delete
-
-                };
-
-            });
+            if (Array.isArray(data)) {
+                data.forEach(p => {
+                    if (p && p.page_id) {
+                        map[p.page_id] = {
+                            can_view: !!p.can_view,
+                            can_create: !!p.can_create,
+                            can_edit: !!p.can_edit,
+                            can_delete: !!p.can_delete
+                        };
+                    }
+                });
+            }
 
             setPermMatrix(map);
 
@@ -915,6 +1157,48 @@ export default function Settings() {
 
     };
 
+    // Modules Management States & Handlers
+    const [moduleSearch, setModuleSearch] = useState('');
+    const [moduleCategoryFilter, setModuleCategoryFilter] = useState('ALL');
+    const [expandedModuleSettings, setExpandedModuleSettings] = useState({ qualidade: false });
+
+    const isModuleActive = (mod) => {
+        const val = companyForm.general_config?.[mod.key];
+        if (val !== undefined && val !== null) return !!val;
+        return mod.defaultActive;
+    };
+
+    const handleToggleModule = async (modKey, modName, currentActive) => {
+        const newValue = !currentActive;
+        const newGeneralConfig = { ...companyForm.general_config, [modKey]: newValue };
+        try {
+            setLoadingCompany(true);
+            await updateGeneralSettings({ general_config: newGeneralConfig });
+            setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
+            if (window.confirm(`Módulo "${modName}" ${newValue ? 'ativado' : 'desativado'} com sucesso!\n\nA página será recarregada para atualizar o menu de navegação e as rotas. Deseja recarregar agora?`)) {
+                window.location.reload();
+            }
+        } catch (err) {
+            alert('Erro ao alterar status do módulo: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setLoadingCompany(false);
+        }
+    };
+
+    const handleToggleSubmodule = async (subKey, subName, currentActive) => {
+        const newValue = !currentActive;
+        const newGeneralConfig = { ...companyForm.general_config, [subKey]: newValue };
+        try {
+            setLoadingCompany(true);
+            await updateGeneralSettings({ general_config: newGeneralConfig });
+            setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
+        } catch (err) {
+            alert('Erro ao alterar status do submódulo: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setLoadingCompany(false);
+        }
+    };
+
 
 
     const handleRomaneioNumberSubmit = async () => {
@@ -1077,6 +1361,8 @@ export default function Settings() {
             // Sends everything, but backend only ignores menu_config here
 
             await updateCompanySettings(companyForm);
+
+            applyCompanyBranding(companyForm);
 
             // Also update general settings
 
@@ -1560,7 +1846,7 @@ export default function Settings() {
 
                 {activeTab === 'general' && (
 
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-2xl">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 w-full">
 
                         <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b pb-4">
 
@@ -1570,101 +1856,14 @@ export default function Settings() {
 
                         </h2>
 
-                        <h3 className="text-lg font-bold text-slate-800 mb-4">Dados Corporativos</h3>
-
-                        <form onSubmit={handleCompanySubmit} className="space-y-4">
-
-                            <div>
-
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Razão Social</label>
-
-                                <input
-
-                                    className="w-full p-2 border rounded-lg"
-
-                                    value={companyForm.razao_social || ''}
-
-                                    onChange={e => setCompanyForm({ ...companyForm, razao_social: e.target.value })}
-
-                                />
-
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-
-                                <div>
-
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">CNPJ</label>
-
-                                    <input
-
-                                        className="w-full p-2 border rounded-lg"
-
-                                        value={companyForm.cnpj || ''}
-
-                                        onChange={e => setCompanyForm({ ...companyForm, cnpj: e.target.value })}
-
-                                    />
-
-                                </div>
-
-                                <div>
-
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Telefone</label>
-
-                                    <input
-
-                                        className="w-full p-2 border rounded-lg"
-
-                                        value={companyForm.telefone || ''}
-
-                                        onChange={e => setCompanyForm({ ...companyForm, telefone: e.target.value })}
-
-                                    />
-
-                                </div>
-
-                            </div>
-
-                            <div>
-
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Endereço Completo</label>
-
-                                <input
-
-                                    className="w-full p-2 border rounded-lg"
-
-                                    value={companyForm.endereco || ''}
-
-                                    onChange={e => setCompanyForm({ ...companyForm, endereco: e.target.value })}
-
-                                    onClick={(e) => e.target.value = e.target.value} // Fix focus issues
-
-                                />
-
-                            </div>
-
-                            <div className="pt-4">
-
-                                <button
-
-                                    type="submit"
-
-                                    disabled={loadingCompany}
-
-                                    className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium transition-colors"
-
-                                >
-
-                                    <Save className="w-4 h-4" />
-
-                                    {loadingCompany ? 'Salvando...' : 'Salvar Alterações'}
-
-                                </button>
-
-                            </div>
-
-                        </form>
+                        <h3 className="text-lg font-bold text-slate-800 mb-1">Dados Corporativos</h3>
+                        <p className="text-xs text-slate-500 mb-4">Empresa que utiliza o sistema. Estes dados e o logo aparecem em todos os relatórios gerados.</p>
+                        <CompanyProfileForm
+                            companyForm={companyForm}
+                            setCompanyForm={setCompanyForm}
+                            onSubmit={handleCompanySubmit}
+                            loading={loadingCompany}
+                        />
 
 
 
@@ -2645,822 +2844,530 @@ export default function Settings() {
                                                         <tr>
 
                                                             <td colSpan="4" className="px-4 py-2 text-center text-xs text-gray-400 bg-gray-50">
-
                                                                 Use a busca para encontrar mais pedidos...
-
                                                             </td>
-
                                                         </tr>
-
                                                     )}
-
                                                 </tbody>
-
                                             </table>
-
                                         )}
-
                                     </div>
-
                                 </div>
-
                             </div>
-
                         </div>
-
                     </div>
-
                 )}
-
-
 
                 {/* MÓDULOS TAB */}
+                {activeTab === 'modules' && (() => {
+                    const activeModulesCount = SYSTEM_MODULES.filter(m => isModuleActive(m)).length;
+                    const totalModulesCount = SYSTEM_MODULES.length;
+                    const inactiveModulesCount = totalModulesCount - activeModulesCount;
 
-                {activeTab === 'modules' && (
+                    const filteredModules = SYSTEM_MODULES.filter(mod => {
+                        const matchesCategory = moduleCategoryFilter === 'ALL' || mod.category === moduleCategoryFilter;
+                        const term = moduleSearch.toLowerCase().trim();
+                        const matchesSearch = !term ||
+                            mod.name.toLowerCase().includes(term) ||
+                            mod.description.toLowerCase().includes(term) ||
+                            mod.badge.toLowerCase().includes(term);
+                        return matchesCategory && matchesSearch;
+                    });
 
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-4xl">
+                    const categoriesWithModules = MODULE_CATEGORIES.filter(c => c.id !== 'ALL').map(cat => ({
+                        ...cat,
+                        modules: filteredModules.filter(m => m.category === cat.id)
+                    })).filter(cat => cat.modules.length > 0);
 
-                        <div className="flex items-center justify-between gap-3 mb-6 border-b pb-4">
-
-                            <div className="flex items-center gap-3">
-
-                                <Package className="w-6 h-6 text-indigo-600" />
-
-                                <div>
-
-                                    <h2 className="text-lg font-bold text-slate-800">Gestão de Módulos</h2>
-
-                                    <p className="text-sm text-slate-500">Ative ou desative módulos inteiros do sistema. Oculta menus, rotas e interfaces de todos os usuários.</p>
-
+                    return (
+                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-5xl">
+                            {/* Header Section */}
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-200 pb-5">
+                                <div className="flex items-start gap-3">
+                                    <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
+                                        <Package className="w-6 h-6" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-800">Gestão de Módulos</h2>
+                                        <p className="text-sm text-slate-500 mt-0.5">
+                                            Ative ou desative módulos inteiros do sistema. Módulos inativos ocultam seus menus, atalhos e rotas para todos os usuários.
+                                        </p>
+                                    </div>
                                 </div>
 
+                                {/* Overview Metrics */}
+                                <div className="flex items-center gap-2 self-start md:self-auto">
+                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700">
+                                        <Package className="w-3.5 h-3.5 text-slate-400" />
+                                        <span>Total: <strong>{totalModulesCount}</strong></span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-semibold text-emerald-700">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        <span>Ativos: <strong>{activeModulesCount}</strong></span>
+                                    </div>
+                                    {inactiveModulesCount > 0 && (
+                                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs font-semibold text-amber-700">
+                                            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                                            <span>Ocultos: <strong>{inactiveModulesCount}</strong></span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
-                        </div>
-
-
-
-                        <div className="space-y-6">
-
-                            {/* Módulo de Manutenção */}
-
-                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-
-                                <div className="flex items-center justify-between mb-2">
-
-                                    <div>
-
-                                        <h4 className="font-bold text-slate-800 text-lg">Módulo de Manutenção</h4>
-
-                                        <p className="text-sm text-slate-500">
-
-                                            Gerenciamento de ordens de manutenção preventivas e corretivas, checklists diários por máquina e controle de operadores.
-
-                                        </p>
-
-                                    </div>
-
-                                    <button
-
-                                        type="button"
-
-                                        disabled={loadingCompany}
-
-                                        onClick={async () => {
-
-                                            const newValue = !companyForm.general_config?.module_maintenance_active;
-
-                                            const newGeneralConfig = { ...companyForm.general_config, module_maintenance_active: newValue };
-
-                                            try {
-
-                                                setLoadingCompany(true);
-
-                                                await updateGeneralSettings({ general_config: newGeneralConfig });
-
-                                                setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
-
-                                                // Alerting that the page will reload so Sidebar and Routes re-evaluate
-
-                                                if (window.confirm('Módulo ' + (newValue ? 'Ativado' : 'Desativado') + ' com sucesso! A página será recarregada para aplicar as mudanças de menu. OK?')) {
-
-                                                    window.location.reload();
-
-                                                }
-
-                                            } catch (err) {
-
-                                                alert('Erro ao alterar status do módulo: ' + err.message);
-
-                                            } finally {
-
-                                                setLoadingCompany(false);
-
-                                            }
-
-                                        }}
-
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.module_maintenance_active ? 'bg-green-600' : 'bg-slate-300'} ${loadingCompany ? 'opacity-50 cursor-not-allowed' : ''}`}
-
-                                        title={companyForm.general_config?.module_maintenance_active ? 'Módulo Ativo - Clique para Desativar' : 'Módulo Inativo - Clique para Ativar'}
-
-                                    >
-
-                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.module_maintenance_active ? 'translate-x-6' : 'translate-x-1'}`} />
-
-                                    </button>
-
-                                </div>
-
-                                <div className="mt-4 flex gap-2">
-
-                                    <span className={`px-2 py-1 text-xs font-bold rounded ${companyForm.general_config?.module_maintenance_active ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>
-
-                                        Status: {companyForm.general_config?.module_maintenance_active ? 'ATIVO NO SISTEMA' : 'DESATIVADO'}
-
-                                    </span>
-
-                                </div>
-
-                            </div>
-
-                            
-
-                            {/* Módulo SGQ */}
-
-                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-
-                                <div className="flex items-center justify-between mb-2">
-
-                                    <div>
-
-                                        <h4 className="font-bold text-slate-800 text-lg">Módulo de Qualidade (SGQ)</h4>
-
-                                        <p className="text-sm text-slate-500">
-
-                                            Controle de ativos, certificados de calibração, manuais e documentações de treinamento.
-
-                                        </p>
-
-                                    </div>
-
-                                    <button
-
-                                        type="button"
-
-                                        disabled={loadingCompany}
-
-                                        onClick={async () => {
-
-                                            const newValue = !companyForm.general_config?.module_sgq_active;
-
-                                            const newGeneralConfig = { ...companyForm.general_config, module_sgq_active: newValue };
-
-                                            try {
-
-                                                setLoadingCompany(true);
-
-                                                await updateGeneralSettings({ general_config: newGeneralConfig });
-
-                                                setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
-
-                                                if (window.confirm('Módulo ' + (newValue ? 'Ativado' : 'Desativado') + ' com sucesso! A página será recarregada para aplicar as mudanças de menu. OK?')) {
-
-                                                    window.location.reload();
-
-                                                }
-
-                                            } catch (err) {
-
-                                                alert('Erro ao alterar status do módulo: ' + err.message);
-
-                                            } finally {
-
-                                                setLoadingCompany(false);
-
-                                            }
-
-                                        }}
-
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.module_sgq_active ? 'bg-green-600' : 'bg-slate-300'} ${loadingCompany ? 'opacity-50 cursor-not-allowed' : ''}`}
-
-                                        title={companyForm.general_config?.module_sgq_active ? 'Módulo Ativo - Clique para Desativar' : 'Módulo Inativo - Clique para Ativar'}
-
-                                    >
-
-                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.module_sgq_active ? 'translate-x-6' : 'translate-x-1'}`} />
-
-                                    </button>
-
-                                </div>
-
-                                <div className="mt-4 flex gap-2">
-
-                                    <span className={`px-2 py-1 text-xs font-bold rounded ${companyForm.general_config?.module_sgq_active ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>
-
-                                        Status: {companyForm.general_config?.module_sgq_active ? 'ATIVO NO SISTEMA' : 'DESATIVADO'}
-
-                                    </span>
-
-                                </div>
-
-
-
-                                {/* RNC Numbering Config */}
-
-                                <div className="mt-5 pt-4 border-t border-slate-200">
-
-                                    <h5 className="font-semibold text-slate-700 text-sm mb-1 flex items-center gap-2">
-
-                                        <span className="w-2 h-2 rounded-full bg-teal-500 inline-block"></span>
-
-                                        Numeração Automática de RNC
-
-                                    </h5>
-
-                                    <p className="text-xs text-slate-500 mb-4">
-
-                                        Define o padrão de número gerado automaticamente para cada nova RNC aberta no sistema.
-
-                                        Use os marcadores: <code className="bg-slate-100 px-1 rounded">{'{YEAR}'}</code> (ano), <code className="bg-slate-100 px-1 rounded">{'{MONTH}'}</code> (mês), <code className="bg-slate-100 px-1 rounded">{'{SEQ:N}'}</code> (sequência com N dígitos).
-
-                                    </p>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                                        {/* Format */}
-
-                                        <div>
-
-                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Formato do Número</label>
-
-                                            <input
-
-                                                type="text"
-
-                                                className="w-full p-2 border rounded-lg text-sm font-mono focus:ring-2 focus:ring-teal-400 focus:border-teal-500 outline-none"
-
-                                                placeholder="Ex: RNC-{YEAR}-{SEQ:4}"
-
-                                                value={rncFormatForm}
-
-                                                onChange={e => setRncFormatForm(e.target.value)}
-
-                                            />
-
-                                            {/* Live Preview */}
-
-                                            <div className="mt-1.5 text-xs text-slate-500">
-
-                                                Prévia: <span className="font-mono font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
-
-                                                    {rncFormatForm
-
-                                                        .replace('{YEAR}', new Date().getFullYear())
-
-                                                        .replace('{MONTH}', String(new Date().getMonth() + 1).padStart(2, '0'))
-
-                                                        .replace(/\{SEQ:(\d+)\}/, (_, n) => String(parseInt(rncNumberForm) || 1).padStart(parseInt(n), '0'))
-
-                                                        .replace('{SEQ}', String(parseInt(rncNumberForm) || 1).padStart(4, '0'))
-
-                                                    }
-
-                                                </span>
-
-                                            </div>
-
-                                        </div>
-
-                                        {/* Starting Number */}
-
-                                        <div>
-
-                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Próximo Número Sequencial</label>
-
-                                            <input
-
-                                                type="number"
-
-                                                min="1"
-
-                                                className="w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-teal-400 focus:border-teal-500 outline-none"
-
-                                                placeholder="Ex: 1"
-
-                                                value={rncNumberForm}
-
-                                                onChange={e => setRncNumberForm(e.target.value)}
-
-                                            />
-
-                                            <p className="mt-1.5 text-xs text-slate-500">A próxima RNC criada usará este número.</p>
-
-                                        </div>
-
-                                    </div>
-
-                                    <div className="mt-3 flex justify-end">
-
-                                        <button
-
-                                            type="button"
-
-                                            disabled={loadingCompany}
-
-                                            onClick={handleRncConfigSubmit}
-
-                                            className="bg-teal-600 text-white font-medium px-5 py-2 rounded-lg hover:bg-teal-700 text-sm disabled:opacity-50 transition-colors"
-
-                                        >
-
-                                            {loadingCompany ? 'Salvando...' : 'Salvar Configuração de Numeração'}
-
-                                        </button>
-
-                                    </div>
-
-                                </div>
-
-                                
-                                {/* Automação: Alertas do SGQ */}
-                                <div className="mt-5 pt-4 border-t border-slate-200">
-                                    <h5 className="font-semibold text-slate-700 text-sm mb-1 flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block"></span>
-                                        Notificações do SGQ
-                                    </h5>
-                                    <p className="text-xs text-slate-500 mb-4">
-                                        Configure os usuários que receberão notificações automáticas (E-mail e WhatsApp) sobre eventos do Controle de Qualidade (vencimentos de calibração, romaneios, alertas de PPAP, etc).
-                                    </p>
-                                    <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Usuários e Canais de Recebimento</label>
-                                    <div className="max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg p-2">
-                                        {usersList.filter(u => u.aprovado === 1).map(u => {
-                                            const sgqAlerts = companyForm.general_config?.sgq_alerts_users || [];
-                                            const userPref = sgqAlerts.find(x => x.id === u.idUsuario);
-                                            const isInGroup = !!userPref;
-                                            
-                                            return (
-                                                <div key={u.idUsuario} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded border-b border-gray-50 last:border-0">
-                                                    <label className="flex items-center gap-3 cursor-pointer">
-                                                        <input 
-                                                            type="checkbox" 
-                                                            checked={isInGroup}
-                                                            onChange={(e) => {
-                                                                let newUsers = [...sgqAlerts];
-                                                                if (e.target.checked) {
-                                                                    newUsers.push({ id: u.idUsuario, email: true, whatsapp: true });
-                                                                } else {
-                                                                    newUsers = newUsers.filter(x => x.id !== u.idUsuario);
-                                                                }
-                                                                setCompanyForm(prev => ({
-                                                                    ...prev,
-                                                                    general_config: { ...prev.general_config, sgq_alerts_users: newUsers }
-                                                                }));
-                                                            }}
-                                                            className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
-                                                        />
-                                                        <div className="flex flex-col">
-                                                            <span className="text-sm font-medium text-slate-700">{u.NomeCompleto}</span>
-                                                            <span className="text-xs text-slate-500">{u.email || 'Sem e-mail'} | {u.telefone || 'Sem telefone'}</span>
-                                                        </div>
-                                                    </label>
-                                                    
-                                                    {isInGroup && (
-                                                        <div className="flex items-center gap-4 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
-                                                            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
-                                                                <input 
-                                                                    type="checkbox" 
-                                                                    checked={userPref.email}
-                                                                    disabled={!u.email}
-                                                                    onChange={(e) => {
-                                                                        const newUsers = sgqAlerts.map(x => x.id === u.idUsuario ? { ...x, email: e.target.checked } : x);
-                                                                        setCompanyForm(prev => ({
-                                                                            ...prev,
-                                                                            general_config: { ...prev.general_config, sgq_alerts_users: newUsers }
-                                                                        }));
-                                                                    }}
-                                                                    className="w-3.5 h-3.5 text-indigo-500 rounded border-gray-300"
-                                                                /> E-mail
-                                                            </label>
-                                                            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 cursor-pointer">
-                                                                <input 
-                                                                    type="checkbox" 
-                                                                    checked={userPref.whatsapp}
-                                                                    disabled={!u.telefone}
-                                                                    onChange={(e) => {
-                                                                        const newUsers = sgqAlerts.map(x => x.id === u.idUsuario ? { ...x, whatsapp: e.target.checked } : x);
-                                                                        setCompanyForm(prev => ({
-                                                                            ...prev,
-                                                                            general_config: { ...prev.general_config, sgq_alerts_users: newUsers }
-                                                                        }));
-                                                                    }}
-                                                                    className="w-3.5 h-3.5 text-indigo-500 rounded border-gray-300"
-                                                                /> WhatsApp
-                                                            </label>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                        {usersList.filter(u => u.aprovado === 1).length === 0 && (
-                                            <p className="text-sm text-slate-400 p-2 text-center">Nenhum usuário aprovado no sistema.</p>
+                            {/* Search and Category Filters */}
+                            <div className="space-y-3 mb-6">
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <div className="relative flex-1">
+                                        <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            value={moduleSearch}
+                                            onChange={e => setModuleSearch(e.target.value)}
+                                            placeholder="Buscar módulo por nome, palavra-chave ou funcionalidade..."
+                                            className="w-full pl-9 pr-8 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
+                                        />
+                                        {moduleSearch && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setModuleSearch('')}
+                                                className="absolute right-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-600 bg-slate-200 hover:bg-slate-300 rounded-full w-5 h-5 flex items-center justify-center transition-colors"
+                                                title="Limpar busca"
+                                            >
+                                                ✕
+                                            </button>
                                         )}
                                     </div>
+                                </div>
 
-                                    {/* Controle de Mensagens de Alerta */}
-                                    <div className="mt-6 pt-4 border-t border-slate-200">
-                                        <h6 className="font-semibold text-slate-700 text-sm mb-2 flex items-center gap-2">
-                                            <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
-                                            Templates de Mensagem de Alerta (Calibração)
-                                        </h6>
-                                        <p className="text-xs text-slate-500 mb-4">
-                                            Configure o texto que será enviado automaticamente. Variáveis disponíveis: <code className="bg-slate-100 px-1 rounded">{'{name}'}</code>, <code className="bg-slate-100 px-1 rounded">{'{patrimonio}'}</code>, <code className="bg-slate-100 px-1 rounded">{'{validade}'}</code>, <code className="bg-slate-100 px-1 rounded">{'{dias}'}</code>.
-                                        </p>
-                                        
-                                        <div className="space-y-4">
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Mensagem para WhatsApp</label>
-                                                <textarea
-                                                    value={companyForm.general_config?.sgq_alerts_template_whatsapp || '⚠️ *Alerta SGQ - Calibração* ⚠️\nO instrumento {name} (Patrimônio: {patrimonio}) vencerá em {validade} ({dias} dias).'}
-                                                    onChange={(e) => setCompanyForm(prev => ({
-                                                        ...prev,
-                                                        general_config: { ...prev.general_config, sgq_alerts_template_whatsapp: e.target.value }
-                                                    }))}
-                                                    rows={3}
-                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all"
-                                                    placeholder="Digite o template da mensagem de WhatsApp..."
-                                                ></textarea>
+                                {/* Category Chips */}
+                                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
+                                    {MODULE_CATEGORIES.map(cat => {
+                                        const isSelected = moduleCategoryFilter === cat.id;
+                                        return (
+                                            <button
+                                                key={cat.id}
+                                                type="button"
+                                                onClick={() => setModuleCategoryFilter(cat.id)}
+                                                className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all font-medium ${
+                                                    isSelected
+                                                        ? 'bg-slate-900 text-white shadow-xs'
+                                                        : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
+                                                }`}
+                                            >
+                                                {cat.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Modules List Grouped by Category */}
+                            {categoriesWithModules.length === 0 ? (
+                                <div className="p-12 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                                    <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                                    <p className="text-slate-600 font-medium text-sm">Nenhum módulo encontrado</p>
+                                    <p className="text-slate-400 text-xs mt-1">Tente ajustar a busca ou o filtro de categoria selecionado.</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setModuleSearch(''); setModuleCategoryFilter('ALL'); }}
+                                        className="mt-3 text-xs text-blue-600 hover:underline font-semibold"
+                                    >
+                                        Limpar todos os filtros
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="space-y-8">
+                                    {categoriesWithModules.map(category => (
+                                        <div key={category.id} className="space-y-3">
+                                            {/* Category Heading */}
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="w-1.5 h-4 rounded-full bg-blue-600 inline-block"></span>
+                                                    <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide">
+                                                        {category.label}
+                                                    </h3>
+                                                    <span className="text-xs text-slate-400 font-medium">
+                                                        ({category.modules.filter(m => isModuleActive(m)).length}/{category.modules.length} ativos)
+                                                    </span>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Mensagem para E-mail</label>
-                                                <textarea
-                                                    value={companyForm.general_config?.sgq_alerts_template_email || 'Prezado(a),\n\nInformamos que o instrumento {name} (Patrimônio: {patrimonio}) possui calibração válida apenas até {validade} ({dias} dias restantes).\n\nPor favor, providencie a calibração.'}
-                                                    onChange={(e) => setCompanyForm(prev => ({
-                                                        ...prev,
-                                                        general_config: { ...prev.general_config, sgq_alerts_template_email: e.target.value }
-                                                    }))}
-                                                    rows={4}
-                                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm transition-all"
-                                                    placeholder="Digite o template da mensagem de E-mail..."
-                                                ></textarea>
+
+                                            {/* Cards Grid */}
+                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                                {category.modules.map(mod => {
+                                                    const isActive = isModuleActive(mod);
+                                                    const ModIcon = mod.icon || Package;
+                                                    const menuGroup = MENU_GROUPS.find(g => g.id === mod.menuGroupId);
+                                                    const menuItemsCount = menuGroup?.items?.length || 0;
+                                                    const isExpanded = !!expandedModuleSettings[mod.id];
+
+                                                    return (
+                                                        <div
+                                                            key={mod.id}
+                                                            className={`p-4 rounded-xl border transition-all ${
+                                                                isActive
+                                                                    ? 'bg-white border-slate-200 shadow-xs hover:border-slate-300'
+                                                                    : 'bg-slate-50/80 border-slate-200/80'
+                                                            }`}
+                                                        >
+                                                            {/* Top Row: Icon, Title, Status & Toggle */}
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div className="flex items-start gap-3 flex-1 min-w-0">
+                                                                    <div className={`p-2.5 rounded-xl border flex-shrink-0 transition-colors ${
+                                                                        isActive
+                                                                            ? 'bg-blue-50 text-blue-700 border-blue-100'
+                                                                            : 'bg-slate-100 text-slate-400 border-slate-200'
+                                                                    }`}>
+                                                                        <ModIcon className="w-5 h-5" />
+                                                                    </div>
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                            <h4 className="font-bold text-slate-800 text-sm leading-tight">
+                                                                                {mod.name}
+                                                                            </h4>
+                                                                            {mod.badge && (
+                                                                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+                                                                                    {mod.badge}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="mt-1 flex items-center gap-2">
+                                                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded-full ${
+                                                                                isActive
+                                                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                                                    : 'bg-slate-100 text-slate-500 border border-slate-200'
+                                                                            }`}>
+                                                                                <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                                                                                {isActive ? 'ATIVO NO SISTEMA' : 'DESATIVADO'}
+                                                                            </span>
+                                                                            {menuItemsCount > 0 && (
+                                                                                <span className="text-[11px] text-slate-400">
+                                                                                    • {menuItemsCount} {menuItemsCount === 1 ? 'tela' : 'telas'}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* iOS Toggle Switch */}
+                                                                <button
+                                                                    type="button"
+                                                                    disabled={loadingCompany}
+                                                                    onClick={() => handleToggleModule(mod.key, mod.name, isActive)}
+                                                                    className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                                                                        isActive ? 'bg-emerald-600' : 'bg-slate-300'
+                                                                    } ${loadingCompany ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                                                                    title={isActive ? `Clique para desativar ${mod.name}` : `Clique para ativar ${mod.name}`}
+                                                                >
+                                                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                                                                        isActive ? 'translate-x-6' : 'translate-x-1'
+                                                                    }`} />
+                                                                </button>
+                                                            </div>
+
+                                                            {/* Description */}
+                                                            <p className="text-xs text-slate-500 mt-2.5 leading-relaxed">
+                                                                {mod.description}
+                                                            </p>
+
+                                                            {/* Submodules: SST (CIPA & Brigada) */}
+                                                            {mod.hasSstSubmodules && (
+                                                                <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                                                                    <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                                                        Sub-módulos e Normas de SST
+                                                                    </div>
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                                                        {/* CIPA NR-05 */}
+                                                                        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
+                                                                            <span className="text-slate-700 font-medium flex items-center gap-1.5">
+                                                                                <Award className="w-3.5 h-3.5 text-amber-600" />
+                                                                                CIPA (NR-05)
+                                                                            </span>
+                                                                            <button
+                                                                                type="button"
+                                                                                disabled={loadingCompany}
+                                                                                onClick={() => handleToggleSubmodule('module_cipa_active', 'CIPA (NR-05)', companyForm.general_config?.module_cipa_active !== false)}
+                                                                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                                                                                    companyForm.general_config?.module_cipa_active !== false ? 'bg-emerald-600' : 'bg-slate-300'
+                                                                                }`}
+                                                                                title="Ativar/Desativar CIPA"
+                                                                            >
+                                                                                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                                                                                    companyForm.general_config?.module_cipa_active !== false ? 'translate-x-4.5' : 'translate-x-0.5'
+                                                                                }`} />
+                                                                            </button>
+                                                                        </div>
+
+                                                                        {/* Brigada de Incêndio NR-23 */}
+                                                                        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
+                                                                            <span className="text-slate-700 font-medium flex items-center gap-1.5">
+                                                                                <Flame className="w-3.5 h-3.5 text-rose-600" />
+                                                                                Brigada (NR-23)
+                                                                            </span>
+                                                                            <button
+                                                                                type="button"
+                                                                                disabled={loadingCompany}
+                                                                                onClick={() => handleToggleSubmodule('module_brigada_active', 'Brigada de Incêndio (NR-23)', companyForm.general_config?.module_brigada_active !== false)}
+                                                                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                                                                                    companyForm.general_config?.module_brigada_active !== false ? 'bg-emerald-600' : 'bg-slate-300'
+                                                                                }`}
+                                                                                title="Ativar/Desativar Brigada"
+                                                                            >
+                                                                                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                                                                                    companyForm.general_config?.module_brigada_active !== false ? 'translate-x-4.5' : 'translate-x-0.5'
+                                                                                }`} />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            {/* SGQ Advanced Settings (Consolidated - Zero Duplication) */}
+                                                            {mod.hasAdvancedSettings && (
+                                                                <div className="mt-3 pt-3 border-t border-slate-100">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setExpandedModuleSettings(prev => ({ ...prev, [mod.id]: !prev[mod.id] }))}
+                                                                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+                                                                    >
+                                                                        <span className="flex items-center gap-2">
+                                                                            <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" />
+                                                                            Configurações Avançadas do SGQ (RNC & Notificações)
+                                                                        </span>
+                                                                        {isExpanded ? (
+                                                                            <ChevronUp className="w-4 h-4 text-slate-500" />
+                                                                        ) : (
+                                                                            <ChevronDown className="w-4 h-4 text-slate-500" />
+                                                                        )}
+                                                                    </button>
+
+                                                                    {isExpanded && (
+                                                                        <div className="mt-3 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-5 text-xs">
+                                                                            {/* Submódulo Controle Dimensional */}
+                                                                            <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200">
+                                                                                <div>
+                                                                                    <h5 className="font-bold text-slate-800">Controle Dimensional de Peças</h5>
+                                                                                    <p className="text-slate-500 mt-0.5">Exibe planos de inspeção e histórico dimensional no SGQ.</p>
+                                                                                </div>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    disabled={loadingCompany}
+                                                                                    onClick={() => handleToggleSubmodule('module_sgq_controle_dimensional', 'Controle Dimensional', companyForm.general_config?.module_sgq_controle_dimensional !== false)}
+                                                                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                                                                                        companyForm.general_config?.module_sgq_controle_dimensional !== false ? 'bg-emerald-600' : 'bg-slate-300'
+                                                                                    }`}
+                                                                                >
+                                                                                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                                                                                        companyForm.general_config?.module_sgq_controle_dimensional !== false ? 'translate-x-4.5' : 'translate-x-0.5'
+                                                                                    }`} />
+                                                                                </button>
+                                                                            </div>
+
+                                                                            {/* RNC Numbering Config (Consolidated & Clean) */}
+                                                                            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-3">
+                                                                                <div>
+                                                                                    <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
+                                                                                        <span className="w-2 h-2 rounded-full bg-teal-500 inline-block"></span>
+                                                                                        Numeração Automática de RNC
+                                                                                    </h5>
+                                                                                    <p className="text-slate-500 mt-0.5">
+                                                                                        Padrão gerado para novos relatórios de não conformidade. Marcadores: <code className="bg-slate-100 px-1 py-0.5 rounded">{'{YEAR}'}</code>, <code className="bg-slate-100 px-1 py-0.5 rounded">{'{MONTH}'}</code>, <code className="bg-slate-100 px-1 py-0.5 rounded">{'{SEQ:4}'}</code>.
+                                                                                    </p>
+                                                                                </div>
+
+                                                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                                                    <div>
+                                                                                        <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Formato do Número</label>
+                                                                                        <input
+                                                                                            type="text"
+                                                                                            value={rncFormatForm}
+                                                                                            onChange={e => setRncFormatForm(e.target.value)}
+                                                                                            placeholder="Ex: RNC-{YEAR}-{SEQ:4}"
+                                                                                            className="w-full p-2 border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-teal-500 outline-none"
+                                                                                        />
+                                                                                        <div className="mt-1 text-slate-500">
+                                                                                            Prévia: <span className="font-mono font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                                                                                                {rncFormatForm
+                                                                                                    .replace('{YEAR}', new Date().getFullYear())
+                                                                                                    .replace('{MONTH}', String(new Date().getMonth() + 1).padStart(2, '0'))
+                                                                                                    .replace(/\{SEQ:(\d+)\}/, (_, n) => String(parseInt(rncNumberForm, 10) || 1).padStart(parseInt(n, 10), '0'))
+                                                                                                    .replace('{SEQ}', String(parseInt(rncNumberForm, 10) || 1).padStart(4, '0'))
+                                                                                                }
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    </div>
+
+                                                                                    <div>
+                                                                                        <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Próximo Número Sequencial</label>
+                                                                                        <input
+                                                                                            type="number"
+                                                                                            min="1"
+                                                                                            value={rncNumberForm}
+                                                                                            onChange={e => setRncNumberForm(e.target.value)}
+                                                                                            className="w-full p-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-teal-500 outline-none"
+                                                                                        />
+                                                                                        <p className="mt-1 text-slate-400">A próxima RNC criada usará este sequencial.</p>
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                <div className="flex justify-end pt-1">
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        disabled={loadingCompany}
+                                                                                        onClick={handleRncConfigSubmit}
+                                                                                        className="bg-teal-600 hover:bg-teal-700 text-white font-medium px-4 py-1.5 rounded-lg text-xs disabled:opacity-50 transition-colors shadow-xs"
+                                                                                    >
+                                                                                        {loadingCompany ? 'Salvando...' : 'Salvar Numeração de RNC'}
+                                                                                    </button>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            {/* SGQ Notifications & Alerts */}
+                                                                            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-3">
+                                                                                <div>
+                                                                                    <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
+                                                                                        <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                                                                                        Notificações e Alertas do SGQ
+                                                                                    </h5>
+                                                                                    <p className="text-slate-500 mt-0.5">
+                                                                                        Usuários que receberão avisos de calibração vencendo e romaneios via E-mail / WhatsApp.
+                                                                                    </p>
+                                                                                </div>
+
+                                                                                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-2 space-y-1">
+                                                                                    {usersList.filter(u => u.aprovado === 1).map(u => {
+                                                                                        const sgqAlerts = companyForm.general_config?.sgq_alerts_users || [];
+                                                                                        const userPref = sgqAlerts.find(x => x.id === u.idUsuario);
+                                                                                        const isInGroup = !!userPref;
+
+                                                                                        return (
+                                                                                            <div key={u.idUsuario} className="flex items-center justify-between p-1.5 hover:bg-slate-50 rounded border-b border-slate-100 last:border-0">
+                                                                                                <label className="flex items-center gap-2 cursor-pointer min-w-0">
+                                                                                                    <input
+                                                                                                        type="checkbox"
+                                                                                                        checked={isInGroup}
+                                                                                                        onChange={(e) => {
+                                                                                                            let newUsers = [...sgqAlerts];
+                                                                                                            if (e.target.checked) {
+                                                                                                                newUsers.push({ id: u.idUsuario, email: true, whatsapp: true });
+                                                                                                            } else {
+                                                                                                                newUsers = newUsers.filter(x => x.id !== u.idUsuario);
+                                                                                                            }
+                                                                                                            setCompanyForm(prev => ({
+                                                                                                                ...prev,
+                                                                                                                general_config: { ...prev.general_config, sgq_alerts_users: newUsers }
+                                                                                                            }));
+                                                                                                        }}
+                                                                                                        className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                                                                                    />
+                                                                                                    <span className="font-medium text-slate-700 truncate">{u.NomeCompleto}</span>
+                                                                                                </label>
+
+                                                                                                {isInGroup && (
+                                                                                                    <div className="flex items-center gap-3 bg-slate-100 px-2 py-1 rounded border border-slate-200 text-[11px]">
+                                                                                                        <label className="flex items-center gap-1 cursor-pointer">
+                                                                                                            <input
+                                                                                                                type="checkbox"
+                                                                                                                checked={userPref.email}
+                                                                                                                disabled={!u.email}
+                                                                                                                onChange={(e) => {
+                                                                                                                    const newUsers = sgqAlerts.map(x => x.id === u.idUsuario ? { ...x, email: e.target.checked } : x);
+                                                                                                                    setCompanyForm(prev => ({
+                                                                                                                        ...prev,
+                                                                                                                        general_config: { ...prev.general_config, sgq_alerts_users: newUsers }
+                                                                                                                    }));
+                                                                                                                }}
+                                                                                                                className="w-3 h-3 text-blue-600 rounded border-slate-300"
+                                                                                                            /> E-mail
+                                                                                                        </label>
+                                                                                                        <label className="flex items-center gap-1 cursor-pointer">
+                                                                                                            <input
+                                                                                                                type="checkbox"
+                                                                                                                checked={userPref.whatsapp}
+                                                                                                                disabled={!u.telefone}
+                                                                                                                onChange={(e) => {
+                                                                                                                    const newUsers = sgqAlerts.map(x => x.id === u.idUsuario ? { ...x, whatsapp: e.target.checked } : x);
+                                                                                                                    setCompanyForm(prev => ({
+                                                                                                                        ...prev,
+                                                                                                                        general_config: { ...prev.general_config, sgq_alerts_users: newUsers }
+                                                                                                                    }));
+                                                                                                                }}
+                                                                                                                className="w-3 h-3 text-blue-600 rounded border-slate-300"
+                                                                                                            /> WhatsApp
+                                                                                                        </label>
+                                                                                                    </div>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        );
+                                                                                    })}
+                                                                                </div>
+
+                                                                                {/* Message Templates */}
+                                                                                <div className="space-y-2 pt-2">
+                                                                                    <div>
+                                                                                        <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Template WhatsApp</label>
+                                                                                        <textarea
+                                                                                            value={companyForm.general_config?.sgq_alerts_template_whatsapp || '⚠️ *Alerta SGQ - Calibração* ⚠️\nO instrumento {name} (Patrimônio: {patrimonio}) vencerá em {validade} ({dias} dias).'}
+                                                                                            onChange={(e) => setCompanyForm(prev => ({
+                                                                                                ...prev,
+                                                                                                general_config: { ...prev.general_config, sgq_alerts_template_whatsapp: e.target.value }
+                                                                                            }))}
+                                                                                            rows={2}
+                                                                                            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                                                                        />
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Template E-mail</label>
+                                                                                        <textarea
+                                                                                            value={companyForm.general_config?.sgq_alerts_template_email || 'Prezado(a),\n\nInformamos que o instrumento {name} (Patrimônio: {patrimonio}) possui calibração válida apenas até {validade} ({dias} dias restantes).\n\nPor favor, providencie a calibração.'}
+                                                                                            onChange={(e) => setCompanyForm(prev => ({
+                                                                                                ...prev,
+                                                                                                general_config: { ...prev.general_config, sgq_alerts_template_email: e.target.value }
+                                                                                            }))}
+                                                                                            rows={2}
+                                                                                            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                                                                        />
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                <div className="flex justify-end pt-1">
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        disabled={loadingCompany}
+                                                                                        onClick={async () => {
+                                                                                            try {
+                                                                                                setLoadingCompany(true);
+                                                                                                await updateGeneralSettings({ general_config: companyForm.general_config });
+                                                                                                alert('Configurações de notificação do SGQ salvas com sucesso!');
+                                                                                            } catch (err) {
+                                                                                                alert('Erro ao salvar notificações do SGQ: ' + err.message);
+                                                                                            } finally {
+                                                                                                setLoadingCompany(false);
+                                                                                            }
+                                                                                        }}
+                                                                                        className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 rounded-lg text-xs disabled:opacity-50 transition-colors shadow-xs"
+                                                                                    >
+                                                                                        {loadingCompany ? 'Salvando...' : 'Salvar Notificações do SGQ'}
+                                                                                    </button>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
-                                    </div>
-
-                                    <div className="mt-6 flex justify-end">
-                                        <button
-                                            type="button"
-                                            disabled={loadingCompany}
-                                            onClick={async () => {
-                                                try {
-                                                    setLoadingCompany(true);
-                                                    await updateGeneralSettings({ general_config: companyForm.general_config });
-                                                    alert('Configurações de notificação do SGQ salvas com sucesso!');
-                                                } catch (err) {
-                                                    alert('Erro ao salvar notificações do SGQ: ' + err.message);
-                                                } finally {
-                                                    setLoadingCompany(false);
-                                                }
-                                            }}
-                                            className="bg-indigo-600 text-white font-medium px-5 py-2 rounded-lg hover:bg-indigo-700 text-sm disabled:opacity-50 transition-colors"
-                                        >
-                                            {loadingCompany ? 'Salvando...' : 'Salvar Configurações de Notificação'}
-                                        </button>
-                                    </div>
+                                    ))}
                                 </div>
-
-                            </div>
-
-                            
-                            {/* Módulo Análise 3D */}
-
-                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-
-                                <div className="flex items-center justify-between mb-2">
-
-                                    <div>
-
-                                        <h4 className="font-bold text-slate-800 text-lg">Módulo de Análise 3D</h4>
-
-                                        <p className="text-sm text-slate-500">
-
-                                            Visualizador de modelos 3D (.stl) com suporte a manipulação, zoom e inspeção visual de componentes de engenharia.
-
-                                        </p>
-
-                                    </div>
-
-                                    <button
-
-                                        type="button"
-
-                                        disabled={loadingCompany}
-
-                                        onClick={async () => {
-
-                                            const newValue = !companyForm.general_config?.module_analise3d_active;
-
-                                            const newGeneralConfig = { ...companyForm.general_config, module_analise3d_active: newValue };
-
-                                            try {
-
-                                                setLoadingCompany(true);
-
-                                                await updateGeneralSettings({ general_config: newGeneralConfig });
-
-                                                setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
-
-                                                if (window.confirm('Módulo ' + (newValue ? 'Ativado' : 'Desativado') + ' com sucesso! A página será recarregada para aplicar as mudanças de menu. OK?')) {
-
-                                                    window.location.reload();
-
-                                                }
-
-                                            } catch (err) {
-
-                                                alert('Erro ao alterar status do módulo: ' + err.message);
-
-                                            } finally {
-
-                                                setLoadingCompany(false);
-
-                                            }
-
-                                        }}
-
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.module_analise3d_active ? 'bg-green-600' : 'bg-slate-300'} ${loadingCompany ? 'opacity-50 cursor-not-allowed' : ''}`}
-
-                                        title={companyForm.general_config?.module_analise3d_active ? 'Módulo Ativo - Clique para Desativar' : 'Módulo Inativo - Clique para Ativar'}
-
-                                    >
-
-                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.module_analise3d_active ? 'translate-x-6' : 'translate-x-1'}`} />
-
-                                    </button>
-
-                                </div>
-
-                                <div className="mt-4 flex gap-2">
-
-                                    <span className={`px-2 py-1 text-xs font-bold rounded ${companyForm.general_config?.module_analise3d_active ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>
-
-                                        Status: {companyForm.general_config?.module_analise3d_active ? 'ATIVO NO SISTEMA' : 'DESATIVADO'}
-
-                                    </span>
-
-                                </div>
-
-                            </div>
-
-                            
-
-                            {/* Módulo PCP Refinado */}
-
-                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-
-                                <div className="flex items-center justify-between mb-2">
-
-                                    <div>
-
-                                        <h4 className="font-bold text-slate-800 text-lg">Módulo PCP Refinado</h4>
-
-                                        <p className="text-sm text-slate-500">
-
-                                            Gestão avançada de planejamento de produção, permitindo o cadastro de tempos padrão por máquina, cálculo de capacidade diária (CRP) e análise visual da taxa de ocupação dos recursos na fábrica.
-
-                                        </p>
-
-                                    </div>
-
-                                    <button
-
-                                        type="button"
-
-                                        disabled={loadingCompany}
-
-                                        onClick={async () => {
-
-                                            const newValue = !companyForm.general_config?.module_pcp_refinado_active;
-
-                                            const newGeneralConfig = { ...companyForm.general_config, module_pcp_refinado_active: newValue };
-
-                                            try {
-
-                                                setLoadingCompany(true);
-
-                                                await updateGeneralSettings({ general_config: newGeneralConfig });
-
-                                                setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
-
-                                                if (window.confirm('Módulo ' + (newValue ? 'Ativado' : 'Desativado') + ' com sucesso! A página será recarregada para aplicar as mudanças de menu. OK?')) {
-
-                                                    window.location.reload();
-
-                                                }
-
-                                            } catch (err) {
-
-                                                alert('Erro ao alterar status do módulo: ' + err.message);
-
-                                            } finally {
-
-                                                setLoadingCompany(false);
-
-                                            }
-
-                                        }}
-
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.module_pcp_refinado_active ? 'bg-green-600' : 'bg-slate-300'} ${loadingCompany ? 'opacity-50 cursor-not-allowed' : ''}`}
-
-                                        title={companyForm.general_config?.module_pcp_refinado_active ? 'Módulo Ativo - Clique para Desativar' : 'Módulo Inativo - Clique para Ativar'}
-
-                                    >
-
-                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.module_pcp_refinado_active ? 'translate-x-6' : 'translate-x-1'}`} />
-
-                                    </button>
-
-                                </div>
-
-                                <div className="mt-4 flex gap-2">
-
-                                    <span className={`px-2 py-1 text-xs font-bold rounded ${companyForm.general_config?.module_pcp_refinado_active ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'}`}>
-
-                                        Status: {companyForm.general_config?.module_pcp_refinado_active ? 'ATIVO NO SISTEMA' : 'DESATIVADO'}
-
-                                    </span>
-
-                                </div>
-
-                            </div>
-
-
-
-                            {/* Módulo SGQ - Configuração RNC */}
-
-                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-
-                                <div className="flex items-center justify-between mb-2">
-
-                                    <div>
-
-                                        <h4 className="font-bold text-slate-800 text-lg">Módulo SGQ - Numeração de RNC</h4>
-
-                                        <p className="text-sm text-slate-500">
-
-                                            Configure a numeração automática para os relatórios de não conformidade (RNC).
-
-                                        </p>
-
-                                    </div>
-
-                                </div>
-
-                                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                                    <div>
-
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Formato da Numeração</label>
-
-                                        <input 
-
-                                            type="text" 
-
-                                            value={companyForm.general_config?.sgq_rnc_config?.format || 'RNC-{YEAR}{MONTH}-{SEQ:4}'}
-
-                                            onChange={(e) => {
-
-                                                const v = e.target.value;
-
-                                                setCompanyForm(prev => ({
-
-                                                    ...prev,
-
-                                                    general_config: {
-
-                                                        ...prev.general_config,
-
-                                                        sgq_rnc_config: {
-
-                                                            ...prev.general_config?.sgq_rnc_config,
-
-                                                            format: v
-
-                                                        }
-
-                                                    }
-
-                                                }));
-
-                                            }}
-
-                                            placeholder="Ex: RNC-{YEAR}{MONTH}-{SEQ:4}"
-
-                                            className="w-full p-2 border rounded-lg"
-
-                                        />
-
-                                        <p className="text-xs text-slate-500 mt-1">Variáveis: {'{YEAR}'}, {'{MONTH}'}, {'{SEQ:4}'} (4 é o nº de dígitos)</p>
-
-                                    </div>
-
-                                    <div>
-
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Próximo Número (Inicial)</label>
-
-                                        <input 
-
-                                            type="number" 
-
-                                            value={companyForm.general_config?.sgq_rnc_config?.next_seq || 1}
-
-                                            onChange={(e) => {
-
-                                                const v = parseInt(e.target.value, 10);
-
-                                                setCompanyForm(prev => ({
-
-                                                    ...prev,
-
-                                                    general_config: {
-
-                                                        ...prev.general_config,
-
-                                                        sgq_rnc_config: {
-
-                                                            ...prev.general_config?.sgq_rnc_config,
-
-                                                            next_seq: isNaN(v) ? 1 : v
-
-                                                        }
-
-                                                    }
-
-                                                }));
-
-                                            }}
-
-                                            className="w-full p-2 border rounded-lg"
-
-                                        />
-
-                                    </div>
-
-                                </div>
-
-                                <div className="mt-4 flex justify-end">
-
-                                    <button
-
-                                        type="button"
-
-                                        disabled={loadingCompany}
-
-                                        onClick={async () => {
-
-                                            const newGeneralConfig = companyForm.general_config;
-
-                                            try {
-
-                                                setLoadingCompany(true);
-
-                                                await updateGeneralSettings({ general_config: newGeneralConfig });
-
-                                                alert('Configuração RNC salva com sucesso!');
-
-                                            } catch (err) {
-
-                                                alert('Erro ao salvar configuração RNC: ' + err.message);
-
-                                            } finally {
-
-                                                setLoadingCompany(false);
-
-                                            }
-
-                                        }}
-
-                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium p-2 px-4 rounded-lg flex items-center gap-2 transition"
-
-                                    >
-
-                                        {loadingCompany ? 'Aguarde...' : 'Salvar Numeração RNC'}
-
-                                    </button>
-
-                                </div>
-
-                            </div>
-
-
-
-                            {/* Pode adicionar novos módulos aqui no futuro */}
-
+                            )}
                         </div>
+                    );
+                })()}
 
-                    </div>
-
-                )}
+                {/* MENU TAB */}
 
 
 
@@ -3565,20 +3472,6 @@ export default function Settings() {
                             ))}
 
                         </div>
-
-                    </div>
-
-                )}
-
-
-
-                {/* EMAIL TAB */}
-
-                {activeTab === 'email' && (
-
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden" style={{ minHeight: '600px' }}>
-
-                        <EmailClient />
 
                     </div>
 
@@ -4418,7 +4311,7 @@ export default function Settings() {
 
                                                     <div className="mt-4">
                                                         <label className="block text-sm font-medium text-slate-700 mb-1">
-                                                            Pedidos MetalFisa Autorizados (Separados por vírgula)
+                                                            Pedidos Lynx Autorizados (Separados por vírgula)
                                                         </label>
                                                         <input
                                                             type="text"
@@ -4506,7 +4399,7 @@ export default function Settings() {
 
                                         onChange={e => setUserForm({ ...userForm, email: e.target.value })}
 
-                                        placeholder="usuario@metalfisa.com.br"
+                                        placeholder="usuario@lynxems.com.br"
 
                                     />
 
@@ -5153,149 +5046,6 @@ export default function Settings() {
 
 
 
-                {/* REPORTS TAB */}
-
-                {activeTab === 'reports' && (
-
-                    <div className="space-y-6 max-w-4xl animate-fadeIn">
-
-                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-
-                            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2 mb-6 border-b pb-4">
-
-                                <FileText className="w-6 h-6 text-blue-600" />
-
-                                Relatórios Administrativos
-
-                            </h2>
-
-
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                                {/* User Report Card */}
-
-                                <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 hover:border-blue-300 transition-colors group">
-
-                                    <div className="flex items-start justify-between mb-4">
-
-                                        <div className="p-3 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
-
-                                            <UserPlus className="w-6 h-6" />
-
-                                        </div>
-
-                                        <div className="text-right">
-
-                                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Usuários</span>
-
-                                            <p className="text-2xl font-black text-slate-800">{usersList.length}</p>
-
-                                        </div>
-
-                                    </div>
-
-                                    <h3 className="text-lg font-bold text-slate-800 mb-1">Listagem Geral de Usuários</h3>
-
-                                    <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-
-                                        Gere um arquivo Excel contendo todos os usuários, permissões, setores e acessos ao sistema.
-
-                                    </p>
-
-                                    <div className="flex gap-2">
-
-                                        <button
-
-                                            onClick={() => setActiveTab('users')}
-
-                                            className="flex-1 bg-white text-slate-700 border border-slate-300 px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-50 transition-colors"
-
-                                        >
-
-                                            Ver Usuários
-
-                                        </button>
-
-                                        <button
-
-                                            onClick={() => {
-
-                                                const url = `http://${window.location.hostname}:3001/api/reports/users/xlsx`;
-
-                                                window.open(url, '_blank');
-
-                                            }}
-
-                                            className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-sm transition-colors flex items-center justify-center gap-2"
-
-                                        >
-
-                                            <Download className="w-4 h-4" />
-
-                                            Exportar Excel
-
-                                        </button>
-
-                                    </div>
-
-                                </div>
-
-
-
-                                {/* Placeholder for more reports */}
-
-                                <div className="bg-slate-50 p-5 rounded-xl border border-slate-100 border-dashed flex flex-col items-center justify-center text-center opacity-60">
-
-                                    <div className="p-3 bg-slate-200 text-slate-400 rounded-lg mb-2">
-
-                                        <ShieldAlert className="w-6 h-6" />
-
-                                    </div>
-
-                                    <p className="text-sm font-bold text-slate-400">Novos Relatórios em Breve</p>
-
-                                </div>
-
-                            </div>
-
-                        </div>
-
-
-
-                        {/* Summary Info */}
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-
-                                <p className="text-sm font-medium text-slate-500">Administradores</p>
-
-                                <p className="text-2xl font-bold text-indigo-600">{usersList.filter(u => customProfiles.find(p => p.code === u.TipoUsuario)?.isAdmin).length}</p>
-
-                            </div>
-
-                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-
-                                <p className="text-sm font-medium text-slate-500">Usuários Padrão</p>
-
-                                <p className="text-2xl font-bold text-emerald-600">{usersList.filter(u => u.TipoUsuario === 'U').length}</p>
-
-                            </div>
-
-                            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-
-                                <p className="text-sm font-medium text-slate-500">Acesso via PC</p>
-
-                                <p className="text-2xl font-bold text-blue-600">{usersList.filter(u => u.TemPC === 1).length}</p>
-
-                            </div>
-
-                        </div>
-
-                    </div>
-
-                )}
 
 
 

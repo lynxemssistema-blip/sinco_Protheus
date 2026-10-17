@@ -50,10 +50,22 @@ function validarCNPJ(cnpj) {
 
 const ErpValidator = {
     // 1. Validação de Cliente
-    validarCliente(dados) {
+    validarCliente(dados, isUpdate = false) {
         const erros = [];
-        if (!dados.codigo || dados.codigo.trim().length < 2) erros.push('Código do cliente inválido');
-        if (!dados.razao_social || dados.razao_social.trim().length < 3) erros.push('Razão Social obrigatória');
+        if (isUpdate) {
+            if (!dados.codigo || dados.codigo.trim().length < 2) {
+                erros.push('Código do cliente inválido ou não informado');
+            }
+        } else {
+            // Se fornecido manualmente na criação, precisa ter ao menos 2 caracteres
+            if (dados.codigo && dados.codigo.trim().length < 2) {
+                erros.push('Se informado manualmente, o código do cliente deve ter pelo menos 2 caracteres');
+            }
+        }
+
+        if (!dados.razao_social || dados.razao_social.trim().length < 3) {
+            erros.push('Razão Social obrigatória (mínimo 3 caracteres)');
+        }
 
         if (dados.cnpj_cpf) {
             const limpo = String(dados.cnpj_cpf).replace(/\D/g, '');
@@ -63,6 +75,14 @@ const ErpValidator = {
                 erros.push('CNPJ inválido');
             } else if (limpo.length !== 11 && limpo.length !== 14 && limpo.length > 0) {
                 erros.push('Documento deve ter 11 dígitos (CPF) ou 14 dígitos (CNPJ)');
+            }
+        }
+
+        // Validação estrita de formato de E-mail
+        if (dados.email && dados.email.trim() !== '') {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(dados.email.trim())) {
+                erros.push('E-mail informado possui formato inválido (ex: contato@empresa.com.br)');
             }
         }
 
@@ -81,16 +101,22 @@ const ErpValidator = {
     },
 
     // 3. Validação de Ordem de Produção (MATA650 / SC2)
-    async validarOrdemProducao(dados, conn) {
+    async validarOrdemProducao(dados, conn, tenantId = null) {
         const erros = [];
         const clientConn = conn || mysql;
 
         if (!dados.produto_codigo || dados.produto_codigo.trim() === '') {
             erros.push('Código do produto obrigatório para abertura da OP');
         } else {
-            const [prodRows] = await clientConn.query('SELECT codigo, descricao, tipo, status FROM erp_produtos WHERE codigo = ?', [dados.produto_codigo.trim()]);
+            let sql = 'SELECT codigo, descricao, tipo, status FROM erp_produtos WHERE codigo = ?';
+            let params = [dados.produto_codigo.trim()];
+            if (tenantId) {
+                sql = 'SELECT codigo, descricao, tipo, status FROM erp_produtos WHERE IdEmpresa = ? AND codigo = ?';
+                params = [tenantId, dados.produto_codigo.trim()];
+            }
+            const [prodRows] = await clientConn.query(sql, params);
             if (prodRows.length === 0) {
-                erros.push(`Produto "${dados.produto_codigo}" não existe no catálogo de produtos`);
+                erros.push(`Produto "${dados.produto_codigo}" não existe no catálogo de produtos desta empresa`);
             } else {
                 const prod = prodRows[0];
                 if (prod.status === 'inativo') {
@@ -123,7 +149,7 @@ const ErpValidator = {
     },
 
     // 3. Validação Protheus-Grade de Pedido de Venda (AllOk & LineOk)
-    async validarPedidoVenda(cabecalho, itens, conn) {
+    async validarPedidoVenda(cabecalho, itens, conn, tenantId = null) {
         const erros = [];
         const clientConn = conn || mysql;
 
@@ -131,9 +157,15 @@ const ErpValidator = {
         if (!cabecalho.cliente_codigo) {
             erros.push('Código do cliente não informado no cabeçalho do pedido');
         } else {
-            const [cliRows] = await clientConn.query('SELECT codigo, razao_social, status FROM erp_clientes WHERE codigo = ?', [cabecalho.cliente_codigo.trim()]);
+            let cliSql = 'SELECT codigo, razao_social, status FROM erp_clientes WHERE codigo = ?';
+            let cliParams = [cabecalho.cliente_codigo.trim()];
+            if (tenantId) {
+                cliSql = 'SELECT codigo, razao_social, status FROM erp_clientes WHERE IdEmpresa = ? AND codigo = ?';
+                cliParams = [tenantId, cabecalho.cliente_codigo.trim()];
+            }
+            const [cliRows] = await clientConn.query(cliSql, cliParams);
             if (cliRows.length === 0) {
-                erros.push(`Cliente com código "${cabecalho.cliente_codigo}" não existe no cadastro`);
+                erros.push(`Cliente com código "${cabecalho.cliente_codigo}" não existe no cadastro desta empresa`);
             } else if (cliRows[0].status === 'inativo' || cliRows[0].status === 'bloqueado') {
                 erros.push(`Cliente "${cliRows[0].razao_social}" está bloqueado para novas vendas`);
             }
@@ -149,7 +181,6 @@ const ErpValidator = {
             return { valido: false, erros };
         }
 
-        const produtosVistos = new Set();
 
         for (let i = 0; i < itens.length; i++) {
             const item = itens[i];
@@ -162,16 +193,18 @@ const ErpValidator = {
 
             const codProd = item.produto_codigo.trim();
 
-            // Checar duplicidade na mesma venda
-            if (produtosVistos.has(codProd)) {
-                erros.push(`Linha ${numLinha}: Produto "${codProd}" está duplicado no mesmo pedido`);
-            }
-            produtosVistos.add(codProd);
+            // Same product may repeat on several lines of the same order (business rule)
 
             // Validar existência do produto no MySQL
-            const [prodRows] = await clientConn.query('SELECT codigo, descricao, status FROM erp_produtos WHERE codigo = ?', [codProd]);
+            let prodSql = 'SELECT codigo, descricao, status FROM erp_produtos WHERE codigo = ?';
+            let prodParams = [codProd];
+            if (tenantId) {
+                prodSql = 'SELECT codigo, descricao, status FROM erp_produtos WHERE IdEmpresa = ? AND codigo = ?';
+                prodParams = [tenantId, codProd];
+            }
+            const [prodRows] = await clientConn.query(prodSql, prodParams);
             if (prodRows.length === 0) {
-                erros.push(`Linha ${numLinha}: Produto "${codProd}" não encontrado no catálogo`);
+                erros.push(`Linha ${numLinha}: Produto "${codProd}" não encontrado no catálogo desta empresa`);
             } else if (prodRows[0].status === 'inativo') {
                 erros.push(`Linha ${numLinha}: Produto "${codProd} - ${prodRows[0].descricao}" está inativo`);
             }

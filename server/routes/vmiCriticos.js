@@ -140,7 +140,7 @@ router.post('/preview-abas', upload.single('planilha'), async (req, res) => {
             // Sugestão de aba principal
             const isSuggested = name.toUpperCase().includes('FALTANTE') || 
                                 name.toUpperCase().includes('CRITICO') || 
-                                (name.toUpperCase().includes('METALFISA') && rows.length > 50);
+                                (name.toUpperCase().includes('LYNX') && rows.length > 50);
 
             return {
                 name,
@@ -182,7 +182,7 @@ router.post('/processar', upload.single('planilha'), async (req, res) => {
         if (!sheetName || !workbook.Sheets[sheetName]) {
             // Auto-detect
             sheetName = workbook.SheetNames.find(s => s.toUpperCase().includes('FALTANTE') || s.toUpperCase().includes('CRITICO')) || 
-                        workbook.SheetNames.find(s => s.toUpperCase().includes('METALFISA')) || 
+                        workbook.SheetNames.find(s => s.toUpperCase().includes('LYNX')) || 
                         workbook.SheetNames[0];
         }
 
@@ -212,7 +212,7 @@ router.post('/processar', upload.single('planilha'), async (req, res) => {
         
         // Mapear índices das colunas chave
         let colPrioridade = -1;
-        let colCodMetalfisa = -1;
+        let colCodLynx = -1;
         let colCodVmi = -1;
         let colDescricao = -1;
         let colWk01 = -1;
@@ -232,7 +232,7 @@ router.post('/processar', upload.single('planilha'), async (req, res) => {
         headerRow.forEach((col, idx) => {
             const s = String(col || '').toUpperCase().trim();
             if (s === 'PRIORIDADE') colPrioridade = idx;
-            else if (s.includes('CODIGO METALFISA') || s.includes('CÓDIGO METALFISA') || s.includes('COD METAL')) colCodMetalfisa = idx;
+            else if (s.includes('CODIGO LYNX') || s.includes('CÓDIGO LYNX') || s.includes('COD METAL')) colCodLynx = idx;
             else if ((s === 'CÓDIGO' || s === 'CODIGO' || s === 'PRODUTO' || s.includes('REF')) && colCodVmi === -1) colCodVmi = idx;
             else if (s.includes('DESCRI')) colDescricao = idx;
             else if (s === 'WK 01' || s === 'WK01' || s === 'SEM 01' || s === 'SEM 1') colWk01 = idx;
@@ -253,7 +253,7 @@ router.post('/processar', upload.single('planilha'), async (req, res) => {
         });
 
         // Fallbacks baseados na estrutura oficial da 24-08.xlsx
-        if (colCodMetalfisa === -1) colCodMetalfisa = 1;
+        if (colCodLynx === -1) colCodLynx = 1;
         if (colCodVmi === -1) colCodVmi = 2;
         if (colDescricao === -1) colDescricao = 3;
         if (colWk01 === -1) colWk01 = 4;
@@ -277,7 +277,7 @@ router.post('/processar', upload.single('planilha'), async (req, res) => {
             if (!row || row.length === 0) continue;
 
             const codVmiRaw = String(row[colCodVmi] || '').trim();
-            const codMetalRaw = String(row[colCodMetalfisa] || '').trim();
+            const codMetalRaw = String(row[colCodLynx] || '').trim();
             const descrRaw = String(row[colDescricao] || '').trim();
 
             if (!codVmiRaw && !codMetalRaw) continue;
@@ -293,7 +293,7 @@ router.post('/processar', upload.single('planilha'), async (req, res) => {
             const itemObj = {
                 linhaOriginal: r + 1,
                 prioridade: colPrioridade !== -1 ? String(row[colPrioridade] || '').trim() : '',
-                codMetalfisa: codMetalRaw,
+                codLynx: codMetalRaw,
                 codVmi: codVmiRaw,
                 codVmiClean: cleanCode(codVmiRaw),
                 codVmiBase: getBaseCleanCode(codVmiRaw),
@@ -491,15 +491,15 @@ router.post('/processar', upload.single('planilha'), async (req, res) => {
         let totalFaltantesSum = 0;
         let totalOkCount = 0;
         let totalPendenteCount = 0;
-        let totalSaldoPedidosMetalFisa = 0;
-        let totalFaturadoMetalFisa = 0;
+        let totalSaldoPedidosLynx = 0;
+        let totalFaturadoLynx = 0;
 
         const itensCruzados = itensExcel.map(item => {
             const ref = item.codVmiClean;
             const refBase = item.codVmiBase;
             const codMetalRawClean = item.codMetalClean;
 
-            let b1Cod = item.codMetalfisa || vmiMap.get(ref) || (refBase && vmiMap.get(refBase)) || sz1Map.get(ref) || (refBase && sz1Map.get(refBase)) || null;
+            let b1Cod = item.codLynx || vmiMap.get(ref) || (refBase && vmiMap.get(refBase)) || sz1Map.get(ref) || (refBase && sz1Map.get(refBase)) || null;
 
             if (!b1Cod) {
                 const vMatch = vmiList.find(m => m.codCliClean.endsWith(ref) || m.codCliClean.includes(ref) || (refBase && m.codCliClean.includes(refBase)));
@@ -559,8 +559,8 @@ router.post('/processar', upload.single('planilha'), async (req, res) => {
             }
 
             totalFaltantesSum += Math.abs(item.totalFaltantes);
-            totalSaldoPedidosMetalFisa += saldoTotalItem;
-            totalFaturadoMetalFisa += faturadoTotalItem;
+            totalSaldoPedidosLynx += saldoTotalItem;
+            totalFaturadoLynx += faturadoTotalItem;
 
             if (item.statusEntrega === 'MATERIAL OK') {
                 totalOkCount++;
@@ -570,11 +570,11 @@ router.post('/processar', upload.single('planilha'), async (req, res) => {
 
             return {
                 ...item,
-                b1Cod: b1Cod || item.codMetalfisa || '',
-                temPedidoMetalFisa: uniqueOrders.length > 0,
-                saldoPedidosMetalFisa: saldoTotalItem,
-                faturadoMetalFisa: faturadoTotalItem,
-                qtdPedidaMetalFisa: qtdPedidaTotalItem,
+                b1Cod: b1Cod || item.codLynx || '',
+                temPedidoLynx: uniqueOrders.length > 0,
+                saldoPedidosLynx: saldoTotalItem,
+                faturadoLynx: faturadoTotalItem,
+                qtdPedidaLynx: qtdPedidaTotalItem,
                 pedidos: uniqueOrders,
                 ops: itemOps,
                 pcps: itemPcps,
@@ -616,7 +616,7 @@ router.post('/processar', upload.single('planilha'), async (req, res) => {
                 const batch = itensCruzados.slice(i, i + batchSize);
                 const values = batch.map(it => [
                     novaVersaoId,
-                    it.b1Cod || it.codMetalfisa || '',
+                    it.b1Cod || it.codLynx || '',
                     it.codVmi,
                     it.descricao,
                     it.prioridade,
@@ -658,8 +658,8 @@ router.post('/processar', upload.single('planilha'), async (req, res) => {
                 totalOk: totalOkCount,
                 totalPendente: totalPendenteCount,
                 taxaAtendimento: itensCruzados.length > 0 ? ((totalOkCount / itensCruzados.length) * 100).toFixed(1) : 0,
-                saldoPedidosMetalFisa: totalSaldoPedidosMetalFisa,
-                faturadoMetalFisa: totalFaturadoMetalFisa
+                saldoPedidosLynx: totalSaldoPedidosLynx,
+                faturadoLynx: totalFaturadoLynx
             },
             itens: itensCruzados
         });
@@ -712,7 +712,7 @@ router.get('/versoes/:id', async (req, res) => {
         if (itens.length === 0) {
             const [itemRows] = await mysqlPool.query('SELECT * FROM app_vmi_criticos_itens WHERE versao_id = ? ORDER BY id ASC', [req.params.id]);
             itens = itemRows.map(r => ({
-                codMetalfisa: r.cod_metalfisa,
+                codLynx: r.cod_metalfisa,
                 codVmi: r.cod_vmi,
                 descricao: r.descricao,
                 prioridade: r.prioridade,
@@ -797,13 +797,13 @@ router.post('/comparar', async (req, res) => {
 
         const mapA = new Map();
         itensA.forEach(it => {
-            const k = cleanCode(it.codVmi) || cleanCode(it.codMetalfisa);
+            const k = cleanCode(it.codVmi) || cleanCode(it.codLynx);
             if (k) mapA.set(k, it);
         });
 
         const mapB = new Map();
         itensB.forEach(it => {
-            const k = cleanCode(it.codVmi) || cleanCode(it.codMetalfisa);
+            const k = cleanCode(it.codVmi) || cleanCode(it.codLynx);
             if (k) mapB.set(k, it);
         });
 
@@ -853,7 +853,7 @@ router.post('/comparar', async (req, res) => {
             return {
                 chave: k,
                 codVmi: itB?.codVmi || itA?.codVmi,
-                codMetalfisa: itB?.b1Cod || itB?.codMetalfisa || itA?.b1Cod || itA?.codMetalfisa,
+                codLynx: itB?.b1Cod || itB?.codLynx || itA?.b1Cod || itA?.codLynx,
                 descricao: itB?.descricao || itA?.descricao,
                 classificacao,
                 versaoA: {
@@ -861,16 +861,16 @@ router.post('/comparar', async (req, res) => {
                     statusEntrega: stA,
                     followUp: itA?.followUp || '',
                     previsaoEntrega: itA?.previsaoEntrega || '',
-                    saldoPedidosMetalFisa: itA?.saldoPedidosMetalFisa || 0,
-                    faturadoMetalFisa: itA?.faturadoMetalFisa || 0
+                    saldoPedidosLynx: itA?.saldoPedidosLynx || 0,
+                    faturadoLynx: itA?.faturadoLynx || 0
                 },
                 versaoB: {
                     totalFaltantes: faltB,
                     statusEntrega: stB,
                     followUp: itB?.followUp || '',
                     previsaoEntrega: itB?.previsaoEntrega || '',
-                    saldoPedidosMetalFisa: itB?.saldoPedidosMetalFisa || 0,
-                    faturadoMetalFisa: itB?.faturadoMetalFisa || 0
+                    saldoPedidosLynx: itB?.saldoPedidosLynx || 0,
+                    faturadoLynx: itB?.faturadoLynx || 0
                 },
                 deltaFaltante,
                 mudancaPrevisao: (itA?.previsaoEntrega !== itB?.previsaoEntrega) || (itA?.followUp !== itB?.followUp)

@@ -273,9 +273,10 @@ router.get('/produtos/:id/estrutura', async (req, res) => {
             }
         });
     } catch (err) {
-        console.error('❌ Erro no endpoint /api/msmetal/produtos/:id/estrutura:', err);
-        res.status(500).json({
-            error: 'Erro ao consultar estrutura no MS Metal: ' + err.message
+        const notFound = /não encontrad/i.test(err.message || '');
+        if (!notFound) console.error('❌ Erro no endpoint /api/msmetal/produtos/:id/estrutura:', err);
+        res.status(notFound ? 404 : 500).json({
+            error: notFound ? err.message : 'Erro ao consultar estrutura no MS Metal: ' + err.message
         });
     }
 });

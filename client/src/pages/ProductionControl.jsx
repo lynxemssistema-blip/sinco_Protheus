@@ -31,8 +31,8 @@ import { Link } from 'react-router-dom';
 
 export default function ProductionControl() {
     const [activeRowKey, setActiveRowKey] = useState(null);
-    const [ops, setOps] = useStickyState([], '@metalfisa:prod_control_ops');
-    const [total, setTotal] = useStickyState(0, '@metalfisa:prod_control_total');
+    const [ops, setOps] = useStickyState([], '@lynxems:prod_control_ops');
+    const [total, setTotal] = useStickyState(0, '@lynxems:prod_control_total');
     const [selectedOpHistory, setSelectedOpHistory] = useState(null);
     const [loading, setLoading] = useState(false);
     const [apiError, setApiError] = useState(null);
@@ -43,7 +43,7 @@ export default function ProductionControl() {
     const [macroOperations, setMacroOperations] = useState([]);
     const [loadingMacro, setLoadingMacro] = useState(false);
     const [showLegend, setShowLegend] = useState(false);
-    const [calcType, setCalcType] = useStickyState('op_specific', '@metalfisa:prod_calcType');
+    const [calcType, setCalcType] = useStickyState('op_specific', '@lynxems:prod_calcType');
     const [isCargaFullscreen, setIsCargaFullscreen] = useState(false);
     const [isEvolutionFullscreen, setIsEvolutionFullscreen] = useState(false);
     const [isTabelaFullscreen, setIsTabelaFullscreen] = useState(false);
@@ -137,7 +137,7 @@ export default function ProductionControl() {
         status: [],
         pending_delivery: true, // Default: Only show items with balance to deliver
         date_filter_type: 'inicio'
-    }, '@metalfisa:prod_filters');
+    }, '@lynxems:prod_filters');
 
     // Migrate stale/invalid status values from localStorage
     useEffect(() => {
@@ -196,7 +196,7 @@ export default function ProductionControl() {
         setFilters(prev => ({ ...prev, planned_date_start: fmt(start), planned_date_end: fmt(end) }));
     };
 
-    const [sortConfig, setSortConfig] = useStickyState(null, '@metalfisa:prod_sortConfig');
+    const [sortConfig, setSortConfig] = useStickyState(null, '@lynxems:prod_sortConfig');
     // Map of cod_produto_op -> { hasDoc: bool, url: string|null }
     const [productDocs, setProductDocs] = useState({});
     const [expandedRows, setExpandedRows] = useState({});
@@ -236,7 +236,7 @@ export default function ProductionControl() {
     };
 
     const [sectors, setSectors] = useState([]);
-    const [activeTab, setActiveTab] = useStickyState('tabela', '@metalfisa:prod_activeTab');
+    const [activeTab, setActiveTab] = useStickyState('tabela', '@lynxems:prod_activeTab');
     const abortControllerRef = useRef(null);
     const tableContainerRef = useRef(null);
     const [visibleCount, setVisibleCount] = useState(100);
@@ -600,12 +600,12 @@ export default function ProductionControl() {
                             <button
                                 onClick={(e) => { e.stopPropagation(); setShowSmartPlanMenu(v => !v); }}
                                 disabled={loadingAllOps}
-                                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-60"
+                                className="flex items-center gap-2 bg-[#425750] hover:bg-[#32423D] text-white px-4 py-2 rounded-lg font-bold border border-[#425750] transition-colors shadow-sm disabled:opacity-60"
                                 title="Motor PCF (Planejamento de Capacidade Finita): replaneja OPs não executadas do passado, ordena por data de entrega PCP (mais urgente primeiro) e aloca capacidade a partir da data informada. Itens sem data de entrega vão para o final da fila."
                             >
                                 {loadingAllOps
                                     ? <><span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />Carregando...</>
-                                    : <><Bot className="w-5 h-5" />Planejamento Inteligente<ChevronDown className="w-4 h-4 ml-1" /></>
+                                    : <><Bot className="w-5 h-5 text-[#E0E800]" />Planejamento Inteligente<ChevronDown className="w-4 h-4 ml-1" /></>
                                 }
                             </button>
 

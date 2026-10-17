@@ -86,8 +86,8 @@ export default function ProcessLegendModal({ onClose, onSelect }) {
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
-                                {filtered.map(p => (
-                                    <tr key={p.codigo} className="hover:bg-blue-50 transition-colors group cursor-pointer"
+                                {filtered.map((p, idx) => (
+                                    <tr key={`${p.codigo}-${idx}`} className="hover:bg-blue-50 transition-colors group cursor-pointer"
                                         onClick={() => onSelect(p.codigo)}>
                                         <td className="p-2 font-mono font-bold text-blue-700">{p.codigo}</td>
                                         <td className="p-2 text-slate-700">{p.descricao || <span className="text-slate-400 italic">Sem descrição</span>}</td>

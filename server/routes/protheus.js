@@ -156,36 +156,94 @@ router.get('/pedido/:numero', async (req, res) => {
 // =========================================================================
 // ROTA: Buscar Listas (Combos de Grupo, Tipo e UM)
 // =========================================================================
+// =========================================================================
+// ROTA: Buscar Listas (Combos de Grupo, Tipo e UM)
+// =========================================================================
 router.get('/dropdowns', async (req, res) => {
     try {
         const sqlGrupo = `SELECT bm_grupo AS codigo, bm_desc AS descricao FROM public.sbm010 WHERE d_e_l_e_t_ = ' ' ORDER BY bm_grupo`;
         const sqlTipo = `SELECT x5_chave AS codigo, x5_descri AS descricao FROM public.sx5010 WHERE x5_tabela = '02' AND d_e_l_e_t_ = ' ' ORDER BY x5_chave`;
         const sqlUM = `SELECT ah_unimed AS codigo, ah_umres AS descricao FROM public.sah010 WHERE d_e_l_e_t_ = ' ' ORDER BY ah_unimed`;
 
-        // Executa em paralelo
-        const [grupos, tipos, ums] = await Promise.all([
-            queryProtheus(sqlGrupo),
-            queryProtheus(sqlTipo),
-            queryProtheus(sqlUM)
-        ]);
+        let grupos = [];
+        let tipos = [];
+        let ums = [];
+
+        try {
+            [grupos, tipos, ums] = await Promise.all([
+                queryProtheus(sqlGrupo),
+                queryProtheus(sqlTipo),
+                queryProtheus(sqlUM)
+            ]);
+        } catch (_) {}
+
+        // Fallbacks inteligentes padrão SINCO
+        const finalGrupos = grupos && grupos.length > 0
+            ? grupos.map(g => ({ code: g.codigo?.trim(), label: g.descricao?.trim() }))
+            : [
+                { code: '01', label: '01 - PRODUTOS GERAIS' },
+                { code: 'MT', label: 'MT - METALFISA' },
+                { code: 'PA', label: 'PA - PRODUTOS ACABADOS' }
+            ];
+
+        const finalTipos = tipos && tipos.length > 0
+            ? tipos.map(t => ({ code: t.codigo?.trim(), label: t.descricao?.trim() }))
+            : [
+                { code: 'PA', label: 'PA - PRODUTO ACABADO' },
+                { code: 'PI', label: 'PI - PRODUTO INTERMEDIARIO' },
+                { code: 'MP', label: 'MP - MATERIA PRIMA' },
+                { code: 'MC', label: 'MC - MATERIAL DE CONSUMO' },
+                { code: 'ME', label: 'ME - MERCADORIA' },
+                { code: 'BN', label: 'BN - BENEFICIAMENTO' }
+            ];
+
+        const finalUms = ums && ums.length > 0
+            ? ums.map(u => ({ code: u.codigo?.trim(), label: u.descricao?.trim() }))
+            : [
+                { code: 'UN', label: 'UN - UNIDADE' },
+                { code: 'PC', label: 'PC - PEÇA' },
+                { code: 'KG', label: 'KG - QUILOGRAMA' },
+                { code: 'MT', label: 'MT - METRO' },
+                { code: 'M2', label: 'M2 - METRO QUADRADO' },
+                { code: 'CJ', label: 'CJ - CONJUNTO' },
+                { code: 'LT', label: 'LT - LITRO' }
+            ];
 
         res.json({
-            grupos: grupos.map(g => ({ code: g.codigo?.trim(), label: g.descricao?.trim() })),
-            tipos: tipos.map(t => ({ code: t.codigo?.trim(), label: t.descricao?.trim() })),
-            ums: ums.map(u => ({ code: u.codigo?.trim(), label: u.descricao?.trim() }))
+            grupos: finalGrupos,
+            tipos: finalTipos,
+            ums: finalUms
         });
     } catch (error) {
-        console.error('Erro ao buscar Dropdowns no Protheus PG:', error.message);
+        console.error('Erro ao buscar Dropdowns no SINCO:', error.message);
         res.status(500).json({ error: 'Falha ao recuperar listas.' });
     }
 });
 
 // =========================================================================
-// ROTA: Listagem Completa de Produtos (DataGrid inferior)
+// ROTA: Listagem Completa de Produtos (DataGrid)
 // =========================================================================
 router.get('/produtos', async (req, res) => {
     try {
-        // Limitado a 1000 linhas inicialmente para não quebrar a UI
+        // 1. Busca nativa no SINCO (erp_produtos)
+        const [sincoRows] = await mysqlService.query(`
+            SELECT codigo, descricao, tipo, unidade_medida AS um, '01' AS grupo
+            FROM erp_produtos
+            ORDER BY id DESC
+            LIMIT 1000
+        `);
+
+        if (sincoRows.length > 0) {
+            return res.json(sincoRows.map(r => ({
+                codigo: r.codigo?.trim(),
+                descricao: r.descricao?.trim(),
+                tipo: r.tipo?.trim(),
+                um: r.um?.trim(),
+                grupo: r.grupo?.trim()
+            })));
+        }
+
+        // 2. Fallback espelho legado
         const sql = `
             SELECT b1_cod AS codigo, b1_desc AS descricao, b1_tipo AS tipo, b1_um AS um, b1_grupo AS grupo
             FROM public.sb1010
@@ -202,255 +260,125 @@ router.get('/produtos', async (req, res) => {
             grupo: r.grupo?.trim()
         })));
     } catch (error) {
-        console.error('Erro ao buscar produtos do Protheus:', error.message);
+        console.error('Erro ao buscar produtos:', error.message);
         res.status(500).json({ error: 'Falha na busca de Cadastros.' });
     }
 });
 
 // =========================================================================
-// ROTA: Inserir novo Produto via API POST Originária
+// ROTA: Inserir novo Produto nativamente no SINCO (erp_produtos)
 // =========================================================================
 router.post('/produtos/create', async (req, res) => {
     try {
-        const { titulo, codigoDesenho, revisao, peso, grupo, tipo, um } = req.body;
+        const { titulo, codigo, codigoDesenho, revisao, peso, grupo, tipo, um } = req.body;
 
-        if (!titulo || !grupo || !tipo || !um) {
-            return res.status(400).json({ error: 'Grupo, Tipo, UM e Título são campos obrigatórios.' });
+        if (!titulo || !tipo || !um) {
+            return res.status(400).json({ error: 'Título, Tipo e Unidade são campos obrigatórios.' });
         }
 
-        // 1. Requisitar Token (Login)
-        let accessToken = '';
-        try {
-            const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
-            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 10000 });
-            accessToken = tokenRes.data.access_token;
-        } catch (authError) {
-            throw new Error('Falha de Login (Obtenção de Token) na API Protheus: ' + authError.message);
-        }
-
-        if (!accessToken) {
-            throw new Error('Token JWT retornado estava em branco.');
-        }
-
-        // 2. Limpeza de Strings
-        let tituloLimpo = (titulo || '').toUpperCase().trim();
-        tituloLimpo = tituloLimpo.replace(/"/g, '\\"').replace(/\r\n/g, ' ').replace(/\n/g, ' ');
-
-        let codDesHigienizado = (codigoDesenho || 'desenho_metalfisa').trim();
-        codDesHigienizado = codDesHigienizado.replace(/"/g, '\\"').replace(/\r\n/g, ' ').replace(/\n/g, ' ');
-
+        const tituloLimpo = String(titulo).trim().toUpperCase();
+        const tipoLimpo = String(tipo).split(/[\-\s]/)[0].trim().toUpperCase();
+        const umLimpa = String(um).split(/[\-\s]/)[0].trim().toUpperCase();
         const numPeso = parseFloat(peso) || 0;
+        const rev = String(revisao || '00').trim();
 
-        // 3. Montagem do Payload
-        const payload = {
-            data: {
-                produtos: [
-                    {
-                        EMPRESA: "01",
-                        CFILANT: "01",
-                        B1_GRUPO: grupo.split(/[\-\s]/)[0], // Extrai só prefixo antes do hifen
-                        B1_DESC: tituloLimpo,
-                        B1_XREVM: (revisao || '').trim(),
-                        B1_TIPO: tipo.split(/[\-\s]/)[0],
-                        B1_UM: um.split(/[\-\s]/)[0],
-                        B1_LOCPAD: "03",
-                        B1_POSIPI: "00000000",
-                        B1_FINALID: "1",
-                        B1_ORIGEM: "0",
-                        B1_XCODDES: codDesHigienizado,
-                        B1_PESO: numPeso,
-                        B1_PESBRU: numPeso
-                    }
-                ]
-            }
-        };
-
-        // 4. Envio POST
-        const createUrl = 'https://192.168.1.60:47500/produtos/create';
-        const createRes = await axios.post(createUrl, payload, {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-            httpsAgent,
-            timeout: 15000
-        });
-
-        // 5. Analise Resposta. B1_COD geralmente vem de volta no body JSON
-        const responseData = createRes.data;
-        const codigoGerado = responseData.B1_COD || responseData.data?.B1_COD || null;
-
-        if (codigoGerado) {
-            res.json({ success: true, codigo: codigoGerado, mensagem: `Produto Criado. Renomeie o Desenho para: ${codigoGerado}`, raw: responseData });
-        } else {
-            // Em caso de API mutável ou diferente, retorna pra front-end analisar o raw
-            res.json({ success: true, codigo: 'SUCESSO_VER_RETORNO', mensagem: 'Resposta irregular obtida da Totvs. Vide Console.', raw: responseData });
+        let codFinal = String(codigo || codigoDesenho || '').trim().toUpperCase();
+        if (!codFinal) {
+            const [[maxRow]] = await mysqlService.query('SELECT COALESCE(MAX(id), 0) + 1 AS nextId FROM erp_produtos');
+            codFinal = `PRD-${maxRow.nextId}`;
         }
 
+        const [existing] = await mysqlService.query('SELECT id FROM erp_produtos WHERE codigo = ? LIMIT 1', [codFinal]);
+        if (existing.length > 0) {
+            await mysqlService.query(`
+                UPDATE erp_produtos SET
+                    descricao = ?,
+                    tipo = ?,
+                    unidade_medida = ?,
+                    peso_liquido = ?,
+                    peso_bruto = ?,
+                    revisao_atual = ?,
+                    updated_at = NOW()
+                WHERE codigo = ?
+            `, [tituloLimpo, tipoLimpo, umLimpa, numPeso, numPeso, rev, codFinal]);
+        } else {
+            await mysqlService.query(`
+                INSERT INTO erp_produtos (
+                    codigo, descricao, tipo, unidade_medida, peso_liquido, peso_bruto, revisao_atual, IdEmpresa
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+            `, [codFinal, tituloLimpo, tipoLimpo, umLimpa, numPeso, numPeso, rev]);
+        }
+
+        res.json({
+            success: true,
+            codigo: codFinal,
+            mensagem: `Produto cadastrado com sucesso no SINCO: ${codFinal}`
+        });
     } catch (error) {
-        console.error('Protheus Integrador Erro:', error.response?.data || error.message);
-        res.status(500).json({ error: 'Erro ao Submeter Produto à API.', details: error.response?.data || error.message });
+        console.error('Erro ao cadastrar produto no SINCO:', error.message);
+        res.status(500).json({ error: 'Erro ao cadastrar produto no SINCO', details: error.message });
     }
 });
 
 // =========================================================================
-// ROTA: Editar/Atualizar Produto via API POST
+// ROTA: Editar/Atualizar Produto nativamente no SINCO (erp_produtos)
 // =========================================================================
 router.post('/produtos/update', async (req, res) => {
     try {
-        console.log('\n======================================================');
-        console.log('[PRODUTOS UPDATE] INICIANDO REQUISIÇÃO DE EDIÇÃO...');
-        console.log('[PRODUTOS UPDATE] Payload recebido do frontend:', JSON.stringify(req.body, null, 2));
-        
         const {
             codigo,
             titulo,
-            grupo,
             tipo,
             um,
             revisao,
-            codigoDesenho,
-            peso,
-            comprimento,
-            largura,
-            espessura,
-            area
+            peso
         } = req.body;
 
-        if (!codigo || !titulo || !grupo || !tipo || !um) {
+        if (!codigo || !titulo || !tipo || !um) {
             return res.status(400).json({ 
                 success: false,
-                error: 'Código, Grupo, Tipo, UM e Título são campos obrigatórios.',
-                frontendPayload: req.body,
-                endpoint: '/api/protheus/produtos/update',
-                timestamp: new Date().toISOString()
+                error: 'Código, Tipo, UM e Título são campos obrigatórios.'
             });
         }
 
-        // 1. Requisitar Token (Login)
-        let accessToken = '';
-        try {
-            const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
-            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 10000 });
-            accessToken = tokenRes.data.access_token;
-        } catch (authError) {
-            throw new Error('Falha de Login (Obtenção de Token) na API Protheus: ' + authError.message);
-        }
-
-        if (!accessToken) {
-            throw new Error('Token JWT retornado estava em branco.');
-        }
-
-        console.log('[PRODUTOS UPDATE] Token JWT obtido com sucesso!');
-
-        // 2. Limpeza e Formatação
-        let tituloLimpo = (titulo || '').toUpperCase().trim();
-        tituloLimpo = tituloLimpo.replace(/"/g, '\\"').replace(/\r\n/g, ' ').replace(/\n/g, ' ');
-
-        let codDesHigienizado = (codigoDesenho || 'desenho_metalfisa').trim();
-        codDesHigienizado = codDesHigienizado.replace(/"/g, '\\"').replace(/\r\n/g, ' ').replace(/\n/g, ' ');
-
+        const codLimpo = String(codigo).toUpperCase().trim();
+        const tituloLimpo = String(titulo).trim().toUpperCase();
+        const tipoLimpo = String(tipo).split(/[\-\s]/)[0].trim().toUpperCase();
+        const umLimpa = String(um).split(/[\-\s]/)[0].trim().toUpperCase();
         const numPeso = parseFloat(peso) || 0;
-        const numComprimento = parseFloat(comprimento) || 0;
-        const numLargura = parseFloat(largura) || 0;
-        const numEspessura = parseFloat(espessura) || 0;
-        const numArea = parseFloat(area) || 0; // Area = B5_VOLUME no desktop app
+        const rev = String(revisao || '00').trim();
 
-        // 2.5 Resgatar valores originais (Fiscal/Logística e Desenho) para não sobrescrever
-        let b1_posipi = "00000000";
-        let b1_locpad = "03";
-        let b1_origem = "0";
-        let b1_finalid = "1";
-        let b1_xcoddes = codDesHigienizado; // Usa o novo caso não encontre
-        let noperVal = "3"; // Por padrao assume Novo
-
-        try {
-            const prodRes = await queryProtheus(`SELECT b1_posipi, b1_locpad, b1_origem, b1_finalid, b1_xcoddes FROM public.sb1010 WHERE TRIM(b1_cod) = $1 AND COALESCE(d_e_l_e_t_, '') = ''`, [String(codigo).toUpperCase().trim()]);
-            if (prodRes.length > 0) {
-                b1_posipi = (prodRes[0].b1_posipi || b1_posipi).trim();
-                b1_locpad = (prodRes[0].b1_locpad || b1_locpad).trim();
-                b1_origem = (prodRes[0].b1_origem || b1_origem).trim();
-                b1_finalid = (prodRes[0].b1_finalid || b1_finalid).trim();
-                // Se houver código de desenho original no banco, priorizamos ele para não perder:
-                b1_xcoddes = (prodRes[0].b1_xcoddes || b1_xcoddes).trim();
-                noperVal = "4"; // Produto Existe, faremos Update!
-            }
-        } catch (dbErr) {
-            console.error('Aviso: Erro ao resgatar valores fiscais antigos do Produto, usando fallback padrão:', dbErr.message);
+        const [existing] = await mysqlService.query('SELECT id FROM erp_produtos WHERE codigo = ? LIMIT 1', [codLimpo]);
+        if (existing.length > 0) {
+            await mysqlService.query(`
+                UPDATE erp_produtos SET
+                    descricao = ?,
+                    tipo = ?,
+                    unidade_medida = ?,
+                    peso_liquido = ?,
+                    peso_bruto = ?,
+                    revisao_atual = ?,
+                    updated_at = NOW()
+                WHERE codigo = ?
+            `, [tituloLimpo, tipoLimpo, umLimpa, numPeso, numPeso, rev, codLimpo]);
+        } else {
+            await mysqlService.query(`
+                INSERT INTO erp_produtos (
+                    codigo, descricao, tipo, unidade_medida, peso_liquido, peso_bruto, revisao_atual, IdEmpresa
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+            `, [codLimpo, tituloLimpo, tipoLimpo, umLimpa, numPeso, numPeso, rev]);
         }
-
-        // 3. Montagem do Payload Exatamente igual ao Desktop
-        const payload = {
-            data: {
-                produtos: [
-                    {
-                        EMPRESA: "01",
-                        CFILANT: "01",
-                        NOPER: noperVal,
-                        B1_COD: String(codigo).toUpperCase().trim(),
-                        B1_GRUPO: grupo.split(/[\-\s]/)[0],
-                        B1_DESC: tituloLimpo,
-                        B1_XREVM: (revisao || '').trim(),
-                        B1_TIPO: tipo.split(/[\-\s]/)[0],
-                        B1_UM: um.split(/[\-\s]/)[0],
-                        B1_LOCPAD: b1_locpad,
-                        B1_POSIPI: b1_posipi,
-                        B1_FINALID: b1_finalid,
-                        B1_ORIGEM: b1_origem,
-                        B1_XCODDES: b1_xcoddes,
-                        B1_PESO: numPeso,
-                        B1_PESBRU: numPeso,
-                        B5_CEME: tituloLimpo,
-                        B5_COMPR: numComprimento,
-                        B5_LARG: numLargura,
-                        B5_ESPESS: numEspessura,
-                        B5_VOLUME: numArea
-                    }
-                ]
-            }
-        };
-
-        console.log('[PRODUTOS UPDATE] Payload formatado para enviar ao Protheus:');
-        console.log(JSON.stringify(payload, null, 2));
-
-        // 4. Envio POST
-        const createUrl = 'https://192.168.1.60:47500/produtos/create';
-        console.log(`[PRODUTOS UPDATE] Enviando POST para: ${createUrl}`);
-        const createRes = await axios.post(createUrl, payload, {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-            httpsAgent,
-            timeout: 15000
-        });
-
-        const responseData = createRes.data;
-        
-        console.log('[PRODUTOS UPDATE] Resposta da TOTVS Protheus recebida:');
-        console.log(JSON.stringify(responseData, null, 2));
-        console.log('======================================================\n');
 
         res.json({ 
             success: true, 
-            message: 'Produto salvo/atualizado no Protheus.', 
-            endpoint: '/api/protheus/produtos/update',
-            timestamp: new Date().toISOString(),
-            protheusRawResponse: responseData,
-            protheusPayload: payload,
-            frontendPayload: req.body,
-            raw: responseData 
+            message: 'Dados do produto atualizados no SINCO com sucesso!'
         });
-
-    } catch (error) {
-        console.error('Protheus Integrador Erro [Update Produto]:', error.response?.data || error.message);
-        console.error('Stack:', error.stack);
-        const errDetails = error.response?.data || error.message;
-        res.status(error.response?.status || 500).json({ 
+    } catch (err) {
+        console.error('Erro ao atualizar produto no SINCO:', err.message);
+        res.status(500).json({ 
             success: false,
-            error: 'Erro ao Atualizar Produto na API Protheus.', 
-            message: error.message,
-            details: errDetails,
-            protheusRawResponse: error.response?.data || null,
-            protheusPayload: typeof payload !== 'undefined' ? payload : null,
-            frontendPayload: req.body,
-            endpoint: '/api/protheus/produtos/update',
-            timestamp: new Date().toISOString(),
-            stack: error.stack
+            error: 'Erro ao atualizar produto no SINCO',
+            details: err.message
         });
     }
 });
@@ -469,53 +397,12 @@ router.post('/ordem-producao/incluir', async (req, res) => {
 
         await conn.beginTransaction();
 
-        // 1. Descobrir o próximo número base sequencial da OP no Banco Novo (MySQL)
-        const [[maxRow]] = await conn.query(`
-            SELECT MAX(CAST(SUBSTRING(numero_op, 1, 6) AS UNSIGNED)) as max_base 
-            FROM erp_ordens_producao 
-            WHERE numero_op REGEXP '^[0-9]{6}' AND CAST(SUBSTRING(numero_op, 1, 6) AS UNSIGNED) < 900000
-        `);
-        let baseOpNum = parseInt(maxRow?.max_base || 6805, 10);
-
-        // Mapeamento de Pedido -> Número Base da OP (para garantir que itens do mesmo pedido compartilhem a mesma base de 6 dígitos)
-        const pedidoBaseMap = new Map();
-
+        // Mapeamento de Pedido -> Número Base da OP: estritamente o número do pedido (6 dígitos)
         const getBaseOpForPedido = async (pedStr) => {
-            if (pedStr && pedidoBaseMap.has(pedStr)) {
-                return pedidoBaseMap.get(pedStr);
-            }
-
-            // A. Se o pedido já possui alguma OP gravada em erp_ordens_producao, reaproveitar a mesma base de 6 dígitos
             if (pedStr) {
-                const [[existingOpRow]] = await conn.query(`
-                    SELECT SUBSTRING(numero_op, 1, 6) as base_op
-                    FROM erp_ordens_producao
-                    WHERE (pedido_venda = ? OR pedido_venda = ?)
-                      AND numero_op REGEXP '^[0-9]{6}'
-                    LIMIT 1
-                `, [pedStr, parseInt(pedStr, 10) || 0]);
-
-                if (existingOpRow?.base_op) {
-                    const base = existingOpRow.base_op;
-                    pedidoBaseMap.set(pedStr, base);
-                    return base;
-                }
+                return String(pedStr).trim().padStart(6, '0');
             }
-
-            // B. Caso contrário, encontrar próxima base sequencial não utilizada
-            while (true) {
-                baseOpNum += 1;
-                const candidateBase = String(baseOpNum).padStart(6, '0');
-                const [[usedRow]] = await conn.query(`
-                    SELECT id FROM erp_ordens_producao 
-                    WHERE numero_op LIKE ? LIMIT 1
-                `, [`${candidateBase}%`]);
-
-                if (!usedRow) {
-                    if (pedStr) pedidoBaseMap.set(pedStr, candidateBase);
-                    return candidateBase;
-                }
-            }
+            return '900001';
         };
 
         const ordensProducao = [];
@@ -530,6 +417,17 @@ router.post('/ordem-producao/incluir', async (req, res) => {
             if (quantFinal <= 0) {
                 console.log(`[OP BUILDER - NOVO BANCO] Pulo item ${itemPvStr} do Pedido ${pedidoStr}: quantidade inválida (${quantFinal}).`);
                 continue;
+            }
+
+            // Only confirmed orders (status 'pedido') may generate production orders
+            const [[pedStatus]] = await conn.query(
+                'SELECT status FROM erp_pedidos_venda WHERE (numero_pedido = ? OR numero_pedido = ?) LIMIT 1',
+                [pedidoStr, String(parseInt(pedidoStr, 10) || '')]
+            );
+            if (pedStatus && !['pedido', 'em_producao'].includes(pedStatus.status)) {
+                const err = new Error(`O pedido ${pedidoStr} está com status "${pedStatus.status === 'orcamento' ? 'Orçamento' : pedStatus.status}". OP só pode ser gerada quando o status for Pedido.`);
+                err.httpStatus = 400;
+                throw err;
             }
 
             // Se produto não veio no payload, busca na tabela de itens do novo banco
@@ -735,9 +633,10 @@ router.post('/ordem-producao/incluir', async (req, res) => {
                 `, [totalQtdOriginal, pedidoStr, parseInt(pedidoStr, 10) || 0, itemPvStr]);
             }
 
-            // 3. Obter base de 6 dígitos unificada para o pedido e compor número completo da OP normal
-            const nextOpStr = await getBaseOpForPedido(pedidoStr);
-            const fullOp = `${nextOpStr}${targetItemPv}001`;
+            // 3. Número da OP: Número do Pedido + Item (e se fracionado: sufixo A, B, etc. ex: 00000101, 00000101A)
+            const nextOpStr = pedidoStr;
+            const opDisplayNum = `${pedidoStr}${targetItemPv}`;
+            const fullOp = `${pedidoStr}${targetItemPv}001`;
 
             // 4. Gravar Ordem de Produção no Banco Novo (erp_ordens_producao)
             await conn.query(`
@@ -756,7 +655,7 @@ router.post('/ordem-producao/incluir', async (req, res) => {
                     status = 'aberta',
                     observacoes = VALUES(observacoes)
             `, [
-                fullOp,
+                opDisplayNum,
                 produto,
                 quantFinal,
                 pedidoStr,
@@ -805,7 +704,7 @@ router.post('/ordem-producao/incluir', async (req, res) => {
                 SET numero_op_gerada = ?, status = 'em_producao'
                 WHERE (pedido_numero = ? OR pedido_numero = ?) 
                   AND item_seq = ?
-            `, [fullOp, pedidoStr, parseInt(pedidoStr, 10), targetItemPv]);
+            `, [opDisplayNum, pedidoStr, parseInt(pedidoStr, 10), targetItemPv]);
 
             // 6. Atualizar ou inserir tabela de previsões de entrega app_pcp_delivery_forecasts para o item específico
             const fractionLetter = isFracionado ? targetItemPv.substring(itemPvStr.length) : null;
@@ -826,7 +725,7 @@ router.post('/ordem-producao/incluir', async (req, res) => {
                 dataFim,
                 quantFinal,
                 ((it.obs || '').trim() + (isFracionado ? ` [Item Fracionado ${targetItemPv}]` : '')).trim(),
-                fullOp,
+                opDisplayNum,
                 fractionLetter,
                 fractionLetter ? `Lote ${fractionLetter}` : null
             ]);
@@ -840,7 +739,8 @@ router.post('/ordem-producao/incluir', async (req, res) => {
 
             // 8. Explodir materiais (SD4) e operações (SH6) industriais de forma síncrona/transacional
             const explosionResult = await opExplosionService.explodirOrdemProducao({
-                numero_op: fullOp,
+                numero_op: opDisplayNum,
+                op_completa: fullOp,
                 produto_codigo: produto,
                 quantidade: quantFinal,
                 pedido_venda: pedidoStr,
@@ -850,7 +750,7 @@ router.post('/ordem-producao/incluir', async (req, res) => {
                 conn
             });
 
-            console.log(`✅ [OP BANCO NOVO] OP ${fullOp} gerada para Pedido ${pedidoStr} Item ${targetItemPv} (${quantFinal} un):`, {
+            console.log(`✅ [OP BANCO NOVO] OP ${opDisplayNum} gerada para Pedido ${pedidoStr} Item ${targetItemPv} (${quantFinal} un):`, {
                 materiais: explosionResult?.total_materiais || 0,
                 operacoes: explosionResult?.total_operacoes || 0,
                 sub_ops: explosionResult?.sub_ops?.length || 0
@@ -862,7 +762,7 @@ router.post('/ordem-producao/incluir', async (req, res) => {
                 item_original: itemPvStr,
                 is_fracionado: isFracionado,
                 op_base: nextOpStr,
-                op_num: fullOp,
+                op_num: opDisplayNum,
                 op_completa: fullOp,
                 produto: produto,
                 quantidade: quantFinal,
@@ -890,6 +790,9 @@ router.post('/ordem-producao/incluir', async (req, res) => {
     } catch (error) {
         await conn.rollback();
         console.error('[OP BANCO NOVO] Erro ao gerar OP:', error.message);
+        if (error.httpStatus === 400) {
+            return res.status(400).json({ error: error.message, details: error.message });
+        }
         res.status(500).json({ error: 'Erro ao gerar O.P. no banco novo.', details: error.message });
     } finally {
         conn.release();
@@ -913,117 +816,103 @@ router.post('/estrutura-produtos/editar', async (req, res) => {
             });
         }
 
-        // 1. Requisitar Token (Login)
-        let accessToken = '';
+        const produtoPai = String(produto).trim().toUpperCase();
+
+        // 1. Persistência Nativa no SINCO (erp_estruturas_bom)
+        for (let i = 0; i < estrutura.length; i++) {
+            const item = estrutura[i];
+            const comp = String(item.G1_COMP || item.componente || '').trim().toUpperCase();
+            if (!comp) continue;
+
+            const quant = item.G1_QUANT !== undefined ? Number(item.G1_QUANT) : (item.quantidade !== undefined ? Number(item.quantidade) : 1);
+            const perda = item.G1_PERDA !== undefined ? Number(item.G1_PERDA) : (item.perda !== undefined ? Number(item.perda) : 0);
+            const revisao = String(item.revisao || item.G1_REVISA || '00').trim();
+            const isExcluir = item.deleted || item.OPCAO === 'EXCLUIR';
+
+            if (isExcluir) {
+                await mysqlService.query(
+                    `UPDATE erp_estruturas_bom SET ativo = 0 WHERE produto_pai_codigo = ? AND produto_filho_codigo = ?`,
+                    [produtoPai, comp]
+                );
+            } else {
+                const [existente] = await mysqlService.query(
+                    `SELECT id FROM erp_estruturas_bom WHERE produto_pai_codigo = ? AND produto_filho_codigo = ? LIMIT 1`,
+                    [produtoPai, comp]
+                );
+
+                if (existente && existente.length > 0) {
+                    await mysqlService.query(
+                        `UPDATE erp_estruturas_bom 
+                         SET quantidade = ?, perda_percentual = ?, revisao = ?, ordem_sequencia = ?, ativo = 1 
+                         WHERE id = ?`,
+                        [quant, perda, revisao, i + 1, existente[0].id]
+                    );
+                } else {
+                    await mysqlService.query(
+                        `INSERT INTO erp_estruturas_bom 
+                         (produto_pai_codigo, produto_filho_codigo, quantidade, unidade, perda_percentual, revisao, ordem_sequencia, ativo, IdEmpresa) 
+                         VALUES (?, ?, ?, 'UN', ?, ?, ?, 1, 1)`,
+                        [produtoPai, comp, quant, perda, revisao, i + 1]
+                    );
+                }
+            }
+        }
+
+        // 2. Best-effort opcional de sincronização Protheus
         try {
             const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
-            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 10000 });
-            accessToken = tokenRes.data.access_token;
-        } catch (authError) {
-            throw new Error('Falha de Login (Obtenção de Token) na API Protheus: ' + authError.message);
-        }
-
-        if (!accessToken) {
-            throw new Error('Token JWT retornado estava em branco.');
-        }
-
-        // 2. Montagem do Payload
-        const payload = {
-            data: {
-                NOPER: noper || 4, // 4 = Alterar (default), 3 = Incluir
-                EMPRESA: empresa || "01",
-                CFILANT: filial || "0101",
-                G1_COD: produto,
-                G1_QUANT: quantidade || 1,
-                AUTOREV: false,
-                estrutura: estrutura.map(item => {
-                    let trt = item.G1_TRT || item.trt;
-                    if (!trt || String(trt).trim() === '') {
-                        trt = "   ";
-                    } else {
-                        trt = String(trt).padEnd(3, ' ').substring(0, 3);
+            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 3000 });
+            const accessToken = tokenRes.data?.access_token;
+            if (accessToken) {
+                const payload = {
+                    data: {
+                        NOPER: noper || 4,
+                        EMPRESA: empresa || "01",
+                        CFILANT: filial || "0101",
+                        G1_COD: produtoPai,
+                        G1_QUANT: quantidade || 1,
+                        AUTOREV: false,
+                        estrutura: estrutura.map(item => ({
+                            G1_COD: produtoPai,
+                            G1_COMP: String(item.G1_COMP || item.componente || '').trim().toUpperCase(),
+                            G1_TRT: String(item.G1_TRT || item.trt || '   ').padEnd(3, ' ').substring(0, 3),
+                            G1_QUANT: item.G1_QUANT !== undefined ? Number(item.G1_QUANT) : (item.quantidade !== undefined ? Number(item.quantidade) : 1),
+                            G1_PERDA: item.G1_PERDA !== undefined ? Number(item.G1_PERDA) : (item.perda !== undefined ? Number(item.perda) : 0),
+                            G1_INI: item.G1_INI || item.ini || "19000101",
+                            G1_FIM: item.G1_FIM || item.fim || "20491231",
+                            OPCAO: item.deleted ? "EXCLUIR" : (item.OPCAO || "ALTERAR")
+                        }))
                     }
-                    const comp = String(item.G1_COMP || item.componente || '').trim().toUpperCase();
-                    const quant = item.G1_QUANT !== undefined ? Number(item.G1_QUANT) : (item.quantidade !== undefined ? Number(item.quantidade) : 1);
-                    let opcao = item.OPCAO;
-                    if (!opcao) {
-                        if (item.deleted) opcao = "EXCLUIR";
-                        else if (Number(noper) === 3) opcao = "INCLUIR";
-                        else opcao = "ALTERAR";
-                    }
-                    return {
-                        G1_COD: produto,
-                        G1_COMP: comp,
-                        G1_TRT: trt,
-                        G1_QUANT: quant,
-                        G1_PERDA: item.G1_PERDA !== undefined ? Number(item.G1_PERDA) : (item.perda !== undefined ? Number(item.perda) : 0),
-                        G1_INI: item.G1_INI || item.ini || "19000101",
-                        G1_FIM: item.G1_FIM || item.fim || "20491231",
-                        OPCAO: opcao // "INCLUIR", "ALTERAR" ou "EXCLUIR"
-                    };
-                })
+                };
+                await axios.post('https://192.168.1.60:47500/estrutura-produtos/editar', payload, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` },
+                    httpsAgent,
+                    timeout: 5000
+                });
             }
-        };
-
-        console.log('🚀 [ESTRUTURA] Payload enviado para o Protheus:', JSON.stringify(payload, null, 2));
-
-        // 3. Envio POST
-        const createUrl = 'https://192.168.1.60:47500/estrutura-produtos/editar';
-        const createRes = await axios.post(createUrl, payload, {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-            httpsAgent,
-            timeout: 30000
-        });
-
-        const responseData = createRes.data;
-        console.log('📬 [ESTRUTURA] Resposta Protheus:', responseData);
-
-        // Se o status da API for erro ou erro parcial
-        if (responseData.status === "error" || responseData.status === "partial") {
-            return res.status(400).json({ 
-                success: false,
-                error: responseData.status === "partial" ? 'Erro parcial retornado pelo Protheus' : 'Erro ao processar estrutura no Protheus', 
-                message: responseData.message || 'Erro retornado pela API Protheus',
-                details: responseData.message || responseData,
-                protheusRawResponse: responseData,
-                protheusPayload: payload,
-                frontendPayload: req.body,
-                endpoint: '/api/protheus/estrutura-produtos/editar',
-                timestamp: new Date().toISOString()
-            });
-        }
+        } catch (_) {}
 
         res.json({ 
             success: true, 
-            message: 'Estrutura atualizada com sucesso', 
+            message: 'Estrutura atualizada com sucesso no SINCO', 
             endpoint: '/api/protheus/estrutura-produtos/editar',
-            timestamp: new Date().toISOString(),
-            protheusRawResponse: responseData,
-            protheusPayload: payload,
-            frontendPayload: req.body,
-            raw: responseData 
+            timestamp: new Date().toISOString()
         });
 
     } catch (error) {
-        console.error('❌ Protheus Integrador Erro [Estrutura]:', error.response?.data || error.message);
-        const errDetails = error.response?.data || error.message;
-        res.status(error.response?.status || 500).json({ 
+        console.error('❌ Erro [Estrutura]:', error.message);
+        res.status(500).json({ 
             success: false,
-            error: 'Erro ao Submeter Estrutura à API Protheus.', 
-            message: error.message,
-            details: errDetails,
-            protheusRawResponse: error.response?.data || null,
-            protheusPayload: typeof payload !== 'undefined' ? payload : null,
-            frontendPayload: req.body,
+            error: 'Erro ao salvar estrutura no SINCO', 
+            details: error.message,
             endpoint: '/api/protheus/estrutura-produtos/editar',
-            timestamp: new Date().toISOString(),
-            stack: error.stack
+            timestamp: new Date().toISOString()
         });
     }
 });
 
 // =========================================================================
-// ROTA: Editar Roteiro Produtivo via API POST
+// ROTA: Editar Roteiro Produtivo via API POST (Nativo no SINCO)
 // =========================================================================
 router.post('/roteiro-produtivo/editar', async (req, res) => {
     try {
@@ -1039,129 +928,160 @@ router.post('/roteiro-produtivo/editar', async (req, res) => {
             });
         }
 
-        const activeOps = data.roteiros.filter(r => r.OPERACAO !== "EXCLUIR").map(r => String(r.G2_OPERAC).trim());
-        const uniqueOps = new Set(activeOps);
-        if (uniqueOps.size !== activeOps.length) {
-            return res.status(400).json({ 
-                success: false,
-                error: 'Existem operações com a mesma sequência. O Protheus rejeita duplicidade. Recarregue a página e tente novamente.',
-                duplicateOperations: activeOps,
-                frontendPayload: req.body,
-                endpoint: '/api/protheus/roteiro-produtivo/editar',
-                timestamp: new Date().toISOString()
-            });
+        const codigoProduto = String(data.G2_PRODUTO).trim().toUpperCase();
+
+        // 1. Persistência Nativa no SINCO (erp_roteiros_operacoes)
+        for (const r of data.roteiros) {
+            const seq = String(r.G2_OPERAC || '').trim().padStart(2, '0');
+            if (!seq) continue;
+
+            const isExcluir = r.OPERACAO === 'EXCLUIR' || r.deleted;
+            if (isExcluir) {
+                await mysqlService.query(
+                    `DELETE FROM erp_roteiros_operacoes WHERE codigo_produto = ? AND operacao_seq = ?`,
+                    [codigoProduto, seq]
+                );
+                try {
+                    await mysqlService.query(
+                        `UPDATE sg2010 SET d_e_l_e_t_ = '*' WHERE TRIM(g2_produto) = ? AND TRIM(g2_operac) = ?`,
+                        [codigoProduto, seq]
+                    );
+                } catch (_) {}
+            } else {
+                const recursoCod = String(r.G2_RECURSO || '').trim();
+                const desc = String(r.G2_DESCRI || '').substring(0, 100);
+                const setup = r.G2_SETUP !== undefined && r.G2_SETUP !== '' ? Number(r.G2_SETUP) : 0;
+                const tempad = Number(r.G2_TEMPAD || 1);
+
+                const [existente] = await mysqlService.query(
+                    `SELECT id FROM erp_roteiros_operacoes WHERE codigo_produto = ? AND operacao_seq = ? LIMIT 1`,
+                    [codigoProduto, seq]
+                );
+
+                if (existente && existente.length > 0) {
+                    await mysqlService.query(`
+                        UPDATE erp_roteiros_operacoes
+                        SET codigo_recurso = ?, descricao_operacao = ?, tempo_setup_minutos = ?, tempo_operacao_minutos = ?
+                        WHERE id = ?
+                    `, [recursoCod, desc, setup, tempad, existente[0].id]);
+                } else {
+                    await mysqlService.query(`
+                        INSERT INTO erp_roteiros_operacoes
+                        (codigo_produto, operacao_seq, codigo_recurso, descricao_operacao, tempo_setup_minutos, tempo_operacao_minutos, unidade_tempo, IdEmpresa)
+                        VALUES (?, ?, ?, ?, ?, ?, 'MIN', 1)
+                    `, [codigoProduto, seq, recursoCod, desc, setup, tempad]);
+                }
+
+                // Espelhar sincronizadamente no espelho Protheus sg2010
+                try {
+                    await mysqlService.query(`
+                        INSERT INTO sg2010 (
+                            g2_filial, g2_codigo, g2_produto, g2_operac, g2_recurso,
+                            g2_descri, g2_setup, g2_tempad, d_e_l_e_t_, IdEmpresa
+                        ) VALUES (
+                            '0101', '01', ?, ?, ?,
+                            ?, ?, ?, '', 1
+                        ) ON DUPLICATE KEY UPDATE
+                            g2_recurso = VALUES(g2_recurso),
+                            g2_descri = VALUES(g2_descri),
+                            g2_setup = VALUES(g2_setup),
+                            g2_tempad = VALUES(g2_tempad),
+                            d_e_l_e_t_ = ''
+                    `, [codigoProduto, seq, recursoCod, desc, setup, tempad]);
+                } catch (sg2Err) {
+                    console.warn('[protheus] Aviso ao espelhar em sg2010:', sg2Err.message);
+                }
+            }
         }
 
-        const sanitizedRoteiros = data.roteiros.map(r => {
-            const recursoCod = String(r.G2_RECURSO || '').trim();
-            return {
-                G2_OPERAC: String(r.G2_OPERAC || '').trim().padStart(2, '0'),
-                G2_DESCRI: String(r.G2_DESCRI || '').substring(0, 30),
-                G2_RECURSO: recursoCod,
-                G2_FERRAM: String(r.G2_FERRAM || ''),
-                G2_TPALOCF: String(r.G2_TPALOCF || ''),
-                G2_SETUP: r.G2_SETUP !== undefined && r.G2_SETUP !== '' ? Number(r.G2_SETUP) : 0,
-                G2_FORMSTP: String(r.G2_FORMSTP || ''),
-                G2_LOTEPAD: 1,
-                G2_TEMPAD: Number(r.G2_TEMPAD || 1),
-                G2_TPOPER: "1",
-                G2_TPSOBRE: String(r.G2_TPSOBRE || ''),
-                G2_TEMPSOB: String(r.G2_TEMPSOB || ''),
-                G2_CTRAB: String(r.G2_CTRAB || ''),
-                G2_TEMPEND: String(r.G2_TEMPEND || ''),
-                G2_MAOOBRA: Number(r.G2_MAOOBRA || r.G2_MAOBRA || 1),
-                OPERACAO: r.OPERACAO || "ALTERAR"
-            };
-        });
-
-        const normalizedPayload = {
-            data: {
-                NOPER: Number(data.NOPER) || 4,
-                EMPRESA: String(data.EMPRESA || "01").trim(),
-                CFILANT: String(data.CFILANT || "0101").trim(),
-                G2_CODIGO: String(data.G2_CODIGO || "01").trim().padStart(2, '0'),
-                G2_PRODUTO: String(data.G2_PRODUTO).trim().toUpperCase(),
-                roteiros: sanitizedRoteiros
-            }
-        };
-
-        // 1. Requisitar Token (Login)
-        let accessToken = '';
+        // 2. Best-effort opcional de sincronização Protheus
         try {
             const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
-            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 10000 });
-            accessToken = tokenRes.data.access_token;
-        } catch (authError) {
-            throw new Error('Falha de Login (Obtenção de Token) na API Protheus: ' + authError.message);
-        }
-
-        if (!accessToken) {
-            throw new Error('Token JWT retornado estava em branco.');
-        }
-
-        console.log('🚀 [ROTEIRO] Payload normalizado enviado para o Protheus:', JSON.stringify(normalizedPayload, null, 2));
-
-        // 2. Envio POST
-        const createUrl = 'https://192.168.1.60:47500/roteiro-produtivo/editar';
-        const createRes = await axios.post(createUrl, normalizedPayload, {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-            httpsAgent,
-            timeout: 30000
-        });
-
-        const responseData = createRes.data;
-        console.log('📬 [ROTEIRO] Resposta Protheus:', responseData);
-
-        // Se o status da API for erro ou erro parcial
-        if (responseData.status === "error" || responseData.status === "partial") {
-            return res.status(400).json({ 
-                success: false,
-                error: responseData.status === "partial" ? 'Erro parcial retornado pelo Protheus' : 'Erro ao processar roteiro no Protheus', 
-                message: responseData.message || 'Erro retornado pela API Protheus',
-                details: responseData.message || responseData,
-                protheusRawResponse: responseData,
-                protheusPayload: normalizedPayload,
-                frontendPayload: req.body,
-                endpoint: '/api/protheus/roteiro-produtivo/editar',
-                timestamp: new Date().toISOString()
-            });
-        }
+            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 3000 });
+            const accessToken = tokenRes.data?.access_token;
+            if (accessToken) {
+                const sanitizedRoteiros = data.roteiros.map(r => ({
+                    G2_OPERAC: String(r.G2_OPERAC || '').trim().padStart(2, '0'),
+                    G2_DESCRI: String(r.G2_DESCRI || '').substring(0, 30),
+                    G2_RECURSO: String(r.G2_RECURSO || '').trim(),
+                    G2_FERRAM: String(r.G2_FERRAM || ''),
+                    G2_TPALOCF: String(r.G2_TPALOCF || ''),
+                    G2_SETUP: r.G2_SETUP !== undefined && r.G2_SETUP !== '' ? Number(r.G2_SETUP) : 0,
+                    G2_FORMSTP: String(r.G2_FORMSTP || ''),
+                    G2_LOTEPAD: 1,
+                    G2_TEMPAD: Number(r.G2_TEMPAD || 1),
+                    G2_TPOPER: "1",
+                    G2_TPSOBRE: String(r.G2_TPSOBRE || ''),
+                    G2_TEMPSOB: String(r.G2_TEMPSOB || ''),
+                    G2_CTRAB: String(r.G2_CTRAB || ''),
+                    G2_TEMPEND: String(r.G2_TEMPEND || ''),
+                    G2_MAOOBRA: Number(r.G2_MAOOBRA || r.G2_MAOBRA || 1),
+                    OPERACAO: r.OPERACAO || "ALTERAR"
+                }));
+                const normalizedPayload = {
+                    data: {
+                        NOPER: Number(data.NOPER) || 4,
+                        EMPRESA: String(data.EMPRESA || "01").trim(),
+                        CFILANT: String(data.CFILANT || "0101").trim(),
+                        G2_CODIGO: String(data.G2_CODIGO || "01").trim().padStart(2, '0'),
+                        G2_PRODUTO: codigoProduto,
+                        roteiros: sanitizedRoteiros
+                    }
+                };
+                await axios.post('https://192.168.1.60:47500/roteiro-produtivo/editar', normalizedPayload, {
+                    headers: { 'Authorization': `Bearer ${accessToken}` },
+                    httpsAgent,
+                    timeout: 5000
+                });
+            }
+        } catch (_) {}
 
         res.json({ 
             success: true, 
-            message: 'Roteiro atualizado com sucesso', 
+            message: 'Roteiro produtivo salvo com sucesso no SINCO', 
             endpoint: '/api/protheus/roteiro-produtivo/editar',
-            timestamp: new Date().toISOString(),
-            protheusRawResponse: responseData,
-            protheusPayload: normalizedPayload,
-            frontendPayload: req.body,
-            raw: responseData 
+            timestamp: new Date().toISOString()
         });
 
     } catch (error) {
-        const errDetail = error.response?.data || error.message;
-        console.error('❌ Protheus Integrador Erro [Roteiro]:', errDetail);
-        res.status(error.response?.status || 500).json({ 
+        console.error('❌ Erro [Roteiro]:', error.message);
+        res.status(500).json({ 
             success: false,
-            error: 'Erro ao Submeter Roteiro à API Protheus.', 
-            message: error.message,
-            details: errDetail,
-            protheusRawResponse: error.response?.data || null,
-            protheusPayload: typeof normalizedPayload !== 'undefined' ? normalizedPayload : null,
-            frontendPayload: req.body,
+            error: 'Erro ao salvar roteiro no SINCO', 
+            details: error.message,
             endpoint: '/api/protheus/roteiro-produtivo/editar',
-            timestamp: new Date().toISOString(),
-            stack: error.stack
+            timestamp: new Date().toISOString()
         });
     }
 });
 
 // =========================================================================
-// ROTA: Buscar Produto x Cliente (SZ1) via DB
+// ROTA: Buscar Produto x Cliente (SZ1) via DB (Nativo no SINCO)
 // =========================================================================
 router.get('/produto-cliente/:codigo', async (req, res) => {
     try {
-        const { codigo } = req.params;
+        const codigo = String(req.params.codigo || '').toUpperCase().trim();
+
+        // 1. Busca nativa no SINCO (sz1010 MySQL)
+        const [mysqlRows] = await mysqlService.query(`
+            SELECT 
+                TRIM(z1_cliente) AS z1_cliente,
+                TRIM(z1_loja) AS z1_loja,
+                TRIM(z1_produto) AS z1_produto,
+                TRIM(z1_codcli) AS z1_codcli,
+                TRIM(z1_desccli) AS z1_desccli,
+                TRIM(z1_revisao) AS z1_revisao,
+                r_e_c_n_o_ AS recno
+            FROM sz1010
+            WHERE TRIM(z1_produto) = ? AND COALESCE(d_e_l_e_t_, '') <> '*'
+            ORDER BY z1_cliente
+        `, [codigo]);
+
+        if (mysqlRows && mysqlRows.length > 0) {
+            return res.json(mysqlRows);
+        }
+
+        // 2. Fallback no Protheus legado
         const sql = `
             SELECT 
                 TRIM(z1_cliente) as z1_cliente,
@@ -1176,7 +1096,7 @@ router.get('/produto-cliente/:codigo', async (req, res) => {
             AND d_e_l_e_t_ = ' '
             ORDER BY z1_cliente
         `;
-        const rows = await queryProtheus(sql, [codigo.toUpperCase().trim()]);
+        const rows = await queryProtheus(sql, [codigo]);
         res.json(rows);
     } catch (error) {
         console.error('Erro ao buscar SZ1:', error.message);
@@ -1192,13 +1112,12 @@ router.get('/produto-cliente/:codigo', async (req, res) => {
 });
 
 // =========================================================================
-// ROTA: Editar Restrição Produto x Cliente (SZ1) via API POST
+// ROTA: Editar Restrição Produto x Cliente (SZ1) via API POST (Nativo SINCO)
 // =========================================================================
 
 /**
- * Helper para validar regras de negócio do Protheus na tabela SZ1010 (Produto x Cliente)
- * O Protheus possui índice único 1: Z1_FILIAL + Z1_CLIENTE + Z1_LOJA + Z1_CODCLI + Z1_REVISAO.
- * Não permite que dois produtos internos compartilhem o mesmo código de desenho e revisão para o mesmo cliente.
+ * Helper para validar regras de negócio na tabela SZ1010 (Produto x Cliente)
+ * Chave única lógica: Z1_FILIAL + Z1_CLIENTE + Z1_LOJA + Z1_CODCLI + Z1_REVISAO.
  */
 async function verificarConflitoSz1(produtosClientes, noper) {
     if (!produtosClientes || !Array.isArray(produtosClientes)) return null;
@@ -1213,55 +1132,45 @@ async function verificarConflitoSz1(produtosClientes, noper) {
 
         if (!cliente || !codcli) continue;
 
-        const query = `
-            SELECT 
-                TRIM(z1.z1_filial)  AS filial,
-                TRIM(z1.z1_cliente) AS cliente,
-                TRIM(z1.z1_loja)    AS loja,
-                TRIM(z1.z1_codcli)  AS cod_cliente,
-                TRIM(z1.z1_revisao) AS revisao,
-                TRIM(z1.z1_produto) AS produto_existente,
-                TRIM(b1.b1_desc)    AS desc_produto_existente,
-                TRIM(z1.z1_desccli) AS desc_cliente,
-                TRIM(a1.a1_nome)    AS nome_cliente,
-                z1.r_e_c_n_o_       AS recno
-            FROM public.sz1010 z1
-            LEFT JOIN public.sb1010 b1 ON TRIM(b1.b1_cod) = TRIM(z1.z1_produto) AND COALESCE(b1.d_e_l_e_t_, '') <> '*'
-            LEFT JOIN public.sa1010 a1 ON TRIM(a1.a1_cod) = TRIM(z1.z1_cliente) AND TRIM(a1.a1_loja) = TRIM(z1.z1_loja) AND COALESCE(a1.d_e_l_e_t_, '') <> '*'
-            WHERE TRIM(z1.z1_cliente) = $1
-              AND TRIM(z1.z1_loja) = $2
-              AND TRIM(z1.z1_codcli) = $3
-              AND TRIM(z1.z1_revisao) = $4
-              AND COALESCE(z1.d_e_l_e_t_, '') <> '*'
-            LIMIT 1
-        `;
-
         try {
-            const rows = await queryProtheus(query, [cliente, loja, codcli, revisao]);
-            if (rows && rows.length > 0) {
-                const conf = rows[0];
+            const [mysqlRows] = await mysqlService.query(`
+                SELECT 
+                    z1_filial AS filial,
+                    z1_cliente AS cliente,
+                    z1_loja AS loja,
+                    z1_codcli AS cod_cliente,
+                    z1_revisao AS revisao,
+                    z1_produto AS produto_existente,
+                    z1_desccli AS desc_cliente,
+                    r_e_c_n_o_ AS recno
+                FROM sz1010
+                WHERE TRIM(z1_cliente) = ?
+                  AND TRIM(z1_loja) = ?
+                  AND TRIM(z1_codcli) = ?
+                  AND TRIM(z1_revisao) = ?
+                  AND COALESCE(d_e_l_e_t_, '') <> '*'
+                LIMIT 1
+            `, [cliente, loja, codcli, revisao]);
+
+            if (mysqlRows && mysqlRows.length > 0) {
+                const conf = mysqlRows[0];
                 const confRecno = Number(conf.recno);
                 const isMesmaLinha = recno && confRecno === recno;
-                
-                // Conflito se for nova inclusão (NOPER 3), ou se a linha encontrada não for a mesma sendo editada
-                // ou se o produto amarrado no banco for diferente do produto atual
                 if (Number(noper) === 3 || (!isMesmaLinha && conf.produto_existente !== produtoAtual)) {
                     return {
                         cliente: conf.cliente,
                         loja: conf.loja,
-                        nome_cliente: conf.nome_cliente || conf.desc_cliente || `Cliente ${conf.cliente}`,
+                        nome_cliente: conf.desc_cliente || `Cliente ${conf.cliente}`,
                         cod_cliente: conf.cod_cliente,
                         revisao: conf.revisao || '00',
                         produto_atual: produtoAtual,
                         produto_existente: conf.produto_existente,
-                        desc_produto_existente: conf.desc_produto_existente || 'Sem descrição cadastrada',
+                        desc_produto_existente: conf.desc_cliente || 'Sem descrição cadastrada',
                         recno: conf.recno
                     };
                 }
             }
-        } catch (dbErr) {
-            console.warn('⚠️ [SZ1 Check Conflito] Falha na verificação prévia do espelho Protheus:', dbErr.message);
-        }
+        } catch (_) {}
     }
     return null;
 }
@@ -1270,13 +1179,13 @@ function formatarMensagemRegraSz1(conflito) {
     return {
         isBusinessRule: true,
         ruleCode: 'SZ1_DUPLICIDADE_PRODUTO_CLIENTE',
-        error: 'Regra Protheus (SZ1): Código de desenho já vinculado a outro produto',
+        error: 'Regra de Negócio (SZ1): Código de desenho já vinculado a outro produto',
         message: `O código de cliente/desenho '${conflito.cod_cliente}' (Revisão '${conflito.revisao}') já está em uso pelo produto ${conflito.produto_existente} (${conflito.desc_produto_existente}) para o cliente ${conflito.cliente} - ${conflito.nome_cliente}.`,
-        motivo: `No Protheus, a amarração Produto x Cliente (tabela SZ1) possui chave única por [Cliente + Loja + Cód. Cliente + Revisão]. O sistema bloqueia duplicidades para que não haja ambiguidade na entrada de pedidos e emissão de notas fiscais.`,
+        motivo: `A amarração Produto x Cliente (tabela SZ1) possui chave única por [Cliente + Loja + Cód. Cliente + Revisão]. O sistema bloqueia duplicidades para que não haja ambiguidade em ordens de produção e pedidos.`,
         solucoes: [
             `1. Se este novo produto (${conflito.produto_atual}) é uma nova versão do desenho, informe uma nova revisão (ex: '01', '02').`,
             `2. Se este produto é uma peça ou conjunto diferente, utilize o código de desenho específico do cliente para ele.`,
-            `3. Se o código pertencia erroneamente ao produto ${conflito.produto_existente}, acesse aquele produto e altere ou exclua a amarração anterior antes de cadastrar neste.`
+            `3. Se o código pertencia erroneamente ao produto ${conflito.produto_existente}, altere ou exclua a amarração anterior antes de cadastrar neste.`
         ],
         conflito
     };
@@ -1309,13 +1218,15 @@ router.post('/produto-cliente/editar', async (req, res) => {
             formatted.Z1_CODCLI = String(item.Z1_CODCLI || item.cod_cliente || '').trim().toUpperCase();
             formatted.Z1_DESCCLI = String(item.Z1_DESCCLI || item.desc_cliente || item.Z1_PRODUTO || 'PRODUTO').trim().toUpperCase();
             formatted.Z1_REVISAO = String(item.Z1_REVISAO || item.revisao || '').trim().toUpperCase();
+            formatted.deleted = !!(item.deleted || item.OPCAO === 'EXCLUIR' || Number(data.NOPER) === 5);
             return formatted;
         });
 
-        // Verificação proativa das regras de negócio do Protheus (SZ1)
-        const conflitoPrevio = await verificarConflitoSz1(data.produtos_clientes, data.NOPER);
+        // 1. Verificação de Regra de Negócio (SZ1)
+        const itensAtivos = data.produtos_clientes.filter(i => !i.deleted);
+        const conflitoPrevio = itensAtivos.length ? await verificarConflitoSz1(itensAtivos, data.NOPER) : null;
         if (conflitoPrevio) {
-            console.warn('⚠️ [SZ1 PRODUTO-CLIENTE] Conflito de regra detectado antecipadamente:', conflitoPrevio);
+            console.warn('⚠️ [SZ1 PRODUTO-CLIENTE] Conflito de regra detectado:', conflitoPrevio);
             const infoRegra = formatarMensagemRegraSz1(conflitoPrevio);
             return res.status(400).json({
                 success: false,
@@ -1326,117 +1237,88 @@ router.post('/produto-cliente/editar', async (req, res) => {
             });
         }
 
-        // 1. Requisitar Token (Login)
-        let accessToken = '';
-        try {
-            const tokenUrl = 'https://192.168.1.60:47500/tlpp/oauth2/token?grant_type=password&username=sinco&password=Metal1120';
-            const tokenRes = await axios.get(tokenUrl, { httpsAgent, timeout: 10000 });
-            accessToken = tokenRes.data.access_token;
-        } catch (authError) {
-            throw new Error('Falha de Login (Obtenção de Token) na API Protheus: ' + authError.message);
-        }
+        // 2. Persistência Nativa no SINCO (sz1010 MySQL)
+        for (const item of data.produtos_clientes) {
+            if (item.deleted) {
+                if (item.RECNO) {
+                    await mysqlService.query(`UPDATE sz1010 SET d_e_l_e_t_ = '*' WHERE r_e_c_n_o_ = ?`, [item.RECNO]);
+                } else {
+                    await mysqlService.query(`UPDATE sz1010 SET d_e_l_e_t_ = '*' WHERE z1_produto = ? AND z1_cliente = ? AND z1_codcli = ?`, [item.Z1_PRODUTO, item.Z1_CLIENTE, item.Z1_CODCLI]);
+                }
+            } else {
+                let recno = item.RECNO;
+                if (recno) {
+                    await mysqlService.query(`
+                        UPDATE sz1010 SET
+                            z1_cliente = ?, z1_loja = ?, z1_produto = ?, z1_codcli = ?, z1_desccli = ?, z1_revisao = ?, d_e_l_e_t_ = ' '
+                        WHERE r_e_c_n_o_ = ?
+                    `, [item.Z1_CLIENTE, item.Z1_LOJA, item.Z1_PRODUTO, item.Z1_CODCLI, item.Z1_DESCCLI, item.Z1_REVISAO, recno]);
+                } else {
+                    const [chk] = await mysqlService.query(`
+                        SELECT r_e_c_n_o_ FROM sz1010 
+                        WHERE z1_produto = ? AND z1_cliente = ? AND z1_codcli = ?
+                        LIMIT 1
+                    `, [item.Z1_PRODUTO, item.Z1_CLIENTE, item.Z1_CODCLI]);
 
-        if (!accessToken) {
-            throw new Error('Token JWT retornado estava em branco.');
-        }
-
-        console.log('🚀 [SZ1 PRODUTO-CLIENTE] Payload enviado para o Protheus:', JSON.stringify(req.body, null, 2));
-
-        // 2. Envio POST
-        const createUrl = 'https://192.168.1.60:47500/produto-cliente/editar';
-        const createRes = await axios.post(createUrl, req.body, {
-            headers: { 'Authorization': `Bearer ${accessToken}` },
-            httpsAgent,
-            timeout: 30000
-        });
-
-        const responseData = createRes.data;
-        console.log('📬 [SZ1 PRODUTO-CLIENTE] Resposta Protheus:', responseData);
-
-        // Se o status da API for OK, mas o conteúdo for um erro ou erro parcial
-        if (responseData.status === "error" || responseData.status === "partial") {
-            const rawMsg = Array.isArray(responseData.message) ? responseData.message.join(' | ') : String(responseData.message || '');
-            
-            // Se for o erro clássico de duplicidade da SZ1 no Protheus
-            if (rawMsg.toLowerCase().includes('já existe') || rawMsg.toLowerCase().includes('ja existe')) {
-                const conflito = await verificarConflitoSz1(data.produtos_clientes, data.NOPER);
-                if (conflito) {
-                    const infoRegra = formatarMensagemRegraSz1(conflito);
-                    return res.status(400).json({
-                        success: false,
-                        ...infoRegra,
-                        protheusRawResponse: responseData,
-                        frontendPayload: req.body,
-                        endpoint: '/api/protheus/produto-cliente/editar',
-                        timestamp: new Date().toISOString()
-                    });
+                    if (chk && chk.length > 0) {
+                        await mysqlService.query(`
+                            UPDATE sz1010 SET
+                                z1_loja = ?, z1_desccli = ?, z1_revisao = ?, d_e_l_e_t_ = ' '
+                            WHERE r_e_c_n_o_ = ?
+                        `, [item.Z1_LOJA, item.Z1_DESCCLI, item.Z1_REVISAO, chk[0].r_e_c_n_o_]);
+                    } else {
+                        const [[nextRow]] = await mysqlService.query(`SELECT COALESCE(MAX(r_e_c_n_o_), 0) + 1 AS nextRecno FROM sz1010`);
+                        const nextRecno = nextRow?.nextRecno || 1;
+                        await mysqlService.query(`
+                            INSERT INTO sz1010 
+                            (z1_filial, z1_cliente, z1_loja, z1_nomecli, z1_produto, z1_codcli, z1_desccli, z1_revisao, r_e_c_n_o_, d_e_l_e_t_, IdEmpresa)
+                            VALUES ('0101', ?, ?, ?, ?, ?, ?, ?, ?, ' ', 1)
+                        `, [item.Z1_CLIENTE, item.Z1_LOJA, item.Z1_DESCCLI, item.Z1_PRODUTO, item.Z1_CODCLI, item.Z1_DESCCLI, item.Z1_REVISAO, nextRecno]);
+                    }
                 }
             }
-
-            return res.status(400).json({ 
-                success: false,
-                error: 'Erro no Protheus', 
-                message: responseData.message || 'Erro retornado pela API Protheus',
-                details: responseData.message || responseData,
-                protheusRawResponse: responseData,
-                protheusPayload: req.body,
-                frontendPayload: req.body,
-                endpoint: '/api/protheus/produto-cliente/editar',
-                timestamp: new Date().toISOString()
-            });
         }
 
         res.json({ 
             success: true, 
-            message: 'Produto-cliente (SZ1) atualizado com sucesso', 
+            message: 'Produto-cliente (SZ1) salvo com sucesso no SINCO', 
             endpoint: '/api/protheus/produto-cliente/editar',
-            timestamp: new Date().toISOString(),
-            protheusRawResponse: responseData,
-            protheusPayload: req.body,
-            frontendPayload: req.body,
-            raw: responseData 
+            timestamp: new Date().toISOString()
         });
 
     } catch (error) {
-        console.error('❌ Protheus Integrador Erro [Produto-Cliente SZ1]:', error.response?.data || error.message);
-        const errDetails = error.response?.data || error.message;
-        const rawErrStr = typeof errDetails === 'object' ? JSON.stringify(errDetails) : String(errDetails);
-        
-        if (rawErrStr.toLowerCase().includes('já existe') || rawErrStr.toLowerCase().includes('ja existe')) {
-            const conflito = await verificarConflitoSz1(req.body?.data?.produtos_clientes, req.body?.data?.NOPER);
-            if (conflito) {
-                const infoRegra = formatarMensagemRegraSz1(conflito);
-                return res.status(400).json({
-                    success: false,
-                    ...infoRegra,
-                    protheusRawResponse: error.response?.data || null,
-                    frontendPayload: req.body,
-                    endpoint: '/api/protheus/produto-cliente/editar',
-                    timestamp: new Date().toISOString()
-                });
-            }
-        }
-
-        res.status(error.response?.status || 500).json({ 
+        console.error('❌ Erro [Produto-Cliente SZ1]:', error.message);
+        res.status(500).json({ 
             success: false,
-            error: 'Erro ao Submeter Produto-Cliente à API Protheus.', 
-            message: error.message,
-            details: errDetails,
-            protheusRawResponse: error.response?.data || null,
-            protheusPayload: req.body,
-            frontendPayload: req.body,
+            error: 'Erro ao salvar Produto x Cliente no SINCO', 
+            details: error.message,
             endpoint: '/api/protheus/produto-cliente/editar',
-            timestamp: new Date().toISOString(),
-            stack: error.stack
+            timestamp: new Date().toISOString()
         });
     }
 });
 
 // =========================================================================
-// ROTA: Buscar Fornecedores (SA2) via DB
+// ROTA: Buscar Fornecedores via DB (Nativo no SINCO)
 // =========================================================================
 router.get('/fornecedores', async (req, res) => {
     try {
+        // 1. Busca nativa no SINCO (erp_fornecedores)
+        const [rows] = await mysqlService.query(`
+            SELECT 
+                codigo AS a2_cod,
+                loja AS a2_loja,
+                razao_social AS a2_nome,
+                cnpj_cpf AS a2_cgc
+            FROM erp_fornecedores
+            WHERE status = 'ATIVO' OR status IS NULL
+            ORDER BY razao_social ASC
+        `);
+        if (rows && rows.length > 0) {
+            return res.json(rows);
+        }
+
+        // 2. Fallback no Protheus legado
         const sql = `
             SELECT 
                 TRIM(a2_cod) as a2_cod,
@@ -1446,27 +1328,43 @@ router.get('/fornecedores', async (req, res) => {
             FROM public.sa2010
             WHERE d_e_l_e_t_ = ' '
         `;
-        const rows = await queryProtheus(sql);
+        const legacyRows = await queryProtheus(sql);
         const td = new TextDecoder('windows-1252');
-        const formatted = rows.map(r => ({
+        const formatted = legacyRows.map(r => ({
             a2_cod: r.a2_cod?.trim() || '',
             a2_loja: r.a2_loja?.trim() || '',
-            a2_nome: r.a2_nome_bytes ? td.decode(r.a2_nome_bytes).trim() : '',
+            a2_nome: r.a2_nome_bytes ? (typeof r.a2_nome_bytes === 'string' ? r.a2_nome_bytes.trim() : td.decode(r.a2_nome_bytes).trim()) : '',
             a2_cgc: r.a2_cgc?.trim() || ''
         }));
         formatted.sort((a, b) => a.a2_nome.localeCompare(b.a2_nome, 'pt-BR'));
         res.json(formatted);
     } catch (error) {
-        console.error('Erro ao buscar SA2:', error.message);
-        res.status(500).json({ error: 'Falha na busca de Fornecedores do Protheus.' });
+        console.error('Erro ao buscar Fornecedores:', error.message);
+        res.status(500).json({ error: 'Falha na busca de Fornecedores.' });
     }
 });
 
 // =========================================================================
-// ROTA: Buscar Clientes (SA1) via DB
+// ROTA: Buscar Clientes via DB (Nativo no SINCO)
 // =========================================================================
 router.get('/clientes', async (req, res) => {
     try {
+        // 1. Busca nativa no SINCO (erp_clientes)
+        const [rows] = await mysqlService.query(`
+            SELECT 
+                codigo AS a1_cod,
+                loja AS a1_loja,
+                razao_social AS a1_nome,
+                cnpj_cpf AS a1_cgc
+            FROM erp_clientes
+            WHERE status = 'ATIVO' OR status IS NULL
+            ORDER BY razao_social ASC
+        `);
+        if (rows && rows.length > 0) {
+            return res.json(rows);
+        }
+
+        // 2. Fallback no Protheus legado
         const sql = `
             SELECT 
                 TRIM(a1_cod) as a1_cod,
@@ -1476,19 +1374,19 @@ router.get('/clientes', async (req, res) => {
             FROM public.sa1010
             WHERE d_e_l_e_t_ = ' '
         `;
-        const rows = await queryProtheus(sql);
+        const legacyRows = await queryProtheus(sql);
         const td = new TextDecoder('windows-1252');
-        const formatted = rows.map(r => ({
+        const formatted = legacyRows.map(r => ({
             a1_cod: r.a1_cod?.trim() || '',
             a1_loja: r.a1_loja?.trim() || '',
-            a1_nome: r.a1_nome_bytes ? td.decode(r.a1_nome_bytes).trim() : '',
+            a1_nome: r.a1_nome_bytes ? (typeof r.a1_nome_bytes === 'string' ? r.a1_nome_bytes.trim() : td.decode(r.a1_nome_bytes).trim()) : '',
             a1_cgc: r.a1_cgc?.trim() || ''
         }));
         formatted.sort((a, b) => a.a1_nome.localeCompare(b.a1_nome, 'pt-BR'));
         res.json(formatted);
     } catch (error) {
-        console.error('Erro ao buscar SA1:', error.message);
-        res.status(500).json({ error: 'Falha na busca de Clientes do Protheus.' });
+        console.error('Erro ao buscar Clientes:', error.message);
+        res.status(500).json({ error: 'Falha na busca de Clientes.' });
     }
 });
 

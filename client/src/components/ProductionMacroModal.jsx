@@ -824,7 +824,7 @@ Forneça apenas:
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('@MetalFisa:token') || ''}`,
+                    'Authorization': `Bearer ${localStorage.getItem('@Lynx:token') || ''}`,
                 },
                 body: JSON.stringify({
                     pergunta,
@@ -908,7 +908,7 @@ Os códigos em "ordered_codes" devem ser exatamente iguais aos listados acima.`;
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('@MetalFisa:token') || ''}`,
+                    'Authorization': `Bearer ${localStorage.getItem('@Lynx:token') || ''}`,
                 },
                 body: JSON.stringify({
                     pergunta: prompt,
@@ -2552,7 +2552,7 @@ Os códigos em "ordered_codes" devem ser exatamente iguais aos listados acima.`;
 
                     {/* Footer */}
                     <div className="px-6 py-3 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
-                        <p className="text-[10px] text-slate-400">Planejamento Sequencial &mdash; MetalFisa PCP System</p>
+                        <p className="text-[10px] text-slate-400">Planejamento Sequencial &mdash; Lynx PCP System</p>
                         <button onClick={() => setShowHelp(false)} className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg transition-colors">
                             Entendido, fechar
                         </button>

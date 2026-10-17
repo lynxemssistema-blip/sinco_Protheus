@@ -2,6 +2,7 @@ import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
 import { logoBase64 } from './metalfisaLogoBase64';
+import { getCompanyShortName } from './companyBranding';
 
 export const generateVerticalPendingPdf = (pendencies, filters, currentUser, groupByResource, pageBreakPerGroup = false) => {
     try {
@@ -35,14 +36,14 @@ export const generateVerticalPendingPdf = (pendencies, filters, currentUser, gro
                     pageDoc.setFontSize(13);
                     pageDoc.setFont('helvetica', 'bold');
                     pageDoc.setTextColor(30, 58, 95);
-                    pageDoc.text('METALFISA', ML + 4, hY + 9);
+                    pageDoc.text(getCompanyShortName(), ML + 4, hY + 9);
                 }
             } catch(e) {
                 // Ignore if image fails
                 pageDoc.setFontSize(13);
                 pageDoc.setFont('helvetica', 'bold');
                 pageDoc.setTextColor(30, 58, 95);
-                pageDoc.text('METALFISA', ML + 4, hY + 9);
+                pageDoc.text(getCompanyShortName(), ML + 4, hY + 9);
             }
 
             pageDoc.setTextColor(0, 0, 0);
@@ -239,7 +240,7 @@ export const generateVerticalPendingPdf = (pendencies, filters, currentUser, gro
             doc.setTextColor(150, 150, 150);
             doc.text(`Página ${i} de ${pageCount}`, pageWidth - MR, doc.internal.pageSize.getHeight() - 10, { align: 'right' });
             // Let's add the signature at the bottom left
-            doc.text(`Gerado via MetalFisa App`, ML, doc.internal.pageSize.getHeight() - 10);
+            doc.text(`Gerado via Lynx App`, ML, doc.internal.pageSize.getHeight() - 10);
         }
 
         doc.save(`pendencias_producao_${new Date().getTime()}.pdf`);

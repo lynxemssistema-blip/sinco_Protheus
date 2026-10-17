@@ -166,9 +166,9 @@ const NaoConformidades = () => {
                 </div>
             </div>
 
-            {/* Cabeçalho de Impressão MetalFisa */}
+            {/* Cabeçalho de Impressão Lynx */}
             <div className="hidden print:block mb-8 text-center pt-4">
-                <h1 className="text-2xl font-bold text-black uppercase tracking-wider mb-2 border-b-2 border-black pb-2">MetalFisa Indústria e Comércio</h1>
+                <h1 className="text-2xl font-bold text-black uppercase tracking-wider mb-2 border-b-2 border-black pb-2">Lynx Indústria e Comércio</h1>
                 <h2 className="text-lg font-semibold text-gray-800 uppercase">Padrão Visual de Não-Conformidade</h2>
                 {selectedRecurso && (
                     <div className="mt-4 text-left p-3 border border-gray-300 rounded bg-gray-50 flex justify-between">
@@ -194,8 +194,7 @@ const NaoConformidades = () => {
                     disabled={loadingRecursos}
                 >
                     <option value="">-- Selecione --</option>
-                    {recursos.map(r => (
-                        <option key={r.codigo} value={r.codigo}>
+                    {recursos.map((r, idx) => (<option key={`${r.codigo}-${idx}`} value={r.codigo}>
                             {r.codigo} - {r.descricao}
                         </option>
                     ))}

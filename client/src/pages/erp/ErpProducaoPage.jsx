@@ -381,9 +381,9 @@ export default function ErpProducaoPage() {
                                 {/* Autocomplete Dropdown */}
                                 {prodOptions.length > 0 && (
                                     <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-30 max-h-52 overflow-y-auto">
-                                        {prodOptions.map((p) => (
+                                        {prodOptions.map((p, idx) => (
                                             <div
-                                                key={p.codigo}
+                                                key={`${p.codigo}-${idx}`}
                                                 onClick={() => handleSelectProduct(p)}
                                                 className="p-2.5 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-none flex items-center justify-between"
                                             >

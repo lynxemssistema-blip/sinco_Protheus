@@ -2,6 +2,7 @@ import jsPDFLib from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import api from './api';
+import { getCompanyShortName } from './companyBranding';
 
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 
@@ -73,7 +74,7 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
             doc.rect(10, 5, 40, 15, 'F');
             doc.setTextColor(255, 255, 255);
             doc.setFontSize(12);
-            doc.text("METALFISA", 30, 14, { align: 'center' });
+            doc.text(getCompanyShortName(), 30, 14, { align: 'center' });
 
             doc.setTextColor(0, 0, 0);
             doc.setFontSize(14);
@@ -290,7 +291,7 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 doc.rect(10, 5, 40, 15, 'F');
                 doc.setTextColor(255, 255, 255);
                 doc.setFontSize(12);
-                doc.text("METALFISA", 30, 14, { align: 'center' });
+                doc.text(getCompanyShortName(), 30, 14, { align: 'center' });
                 doc.setTextColor(0, 0, 0);
 
                 doc.setFontSize(14);
@@ -394,13 +395,13 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 // Barra verde de fundo
                 doc.setFillColor(40, 167, 69);
                 doc.rect(10, 5, pageWidth - 20, 15, 'F');
-                // Logo METALFISA (bloco azul por cima da barra verde)
+                // Logo LYNX (bloco azul por cima da barra verde)
                 doc.setFillColor(30, 58, 95);
                 doc.rect(10, 5, 40, 15, 'F');
                 doc.setTextColor(255, 255, 255);
                 doc.setFontSize(12);
                 doc.setFont('helvetica', 'bold');
-                doc.text('METALFISA', 30, 14, { align: 'center' });
+                doc.text(getCompanyShortName(), 30, 14, { align: 'center' });
                 // Título centralizado
                 doc.setFontSize(13);
                 doc.text('LOTE AGLUTINADO - RESUMO DE MATERIAIS / INSUMOS', pageWidth / 2, 12, { align: 'center' });
@@ -470,13 +471,13 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 // Barra verde de fundo
                 doc.setFillColor(40, 167, 69);
                 doc.rect(10, 5, pageWidth - 20, 15, 'F');
-                // Logo METALFISA (bloco azul por cima da barra verde)
+                // Logo LYNX (bloco azul por cima da barra verde)
                 doc.setFillColor(30, 58, 95);
                 doc.rect(10, 5, 40, 15, 'F');
                 doc.setTextColor(255, 255, 255);
                 doc.setFontSize(12);
                 doc.setFont('helvetica', 'bold');
-                doc.text('METALFISA', 30, 14, { align: 'center' });
+                doc.text(getCompanyShortName(), 30, 14, { align: 'center' });
                 // Título centralizado
                 doc.setFontSize(13);
                 doc.text('RESUMO GERAL DE PEÇAS E MATERIAIS (AGLUTINADO)', pageWidth / 2, 12, { align: 'center' });
@@ -611,10 +612,10 @@ export const generateLoteWithDrawingsPdf = async (fractionOrders, userName = 'Us
                 const loteCodeSafe = codigoLiberacao || loteInfo || 'LOTE AGLUTINADO';
 
                 // Marca d'água limpa e focada no Lote PCP
-                const watermarkText = `LOTE: ${loteCodeSafe} - METALFISA PCP`;
+                const watermarkText = `LOTE: ${loteCodeSafe} - LYNX PCP`;
 
                 // Carimbo da Garantia da Qualidade: Focado no Lote e Quantidade Total Consolidada
-                const textLine1 = `CÓPIA CONTROLADA | METALFISA GARANTIA DA QUALIDADE | DATA: ${dataGeracao} | USUÁRIO: ${userName}`;
+                const textLine1 = `CÓPIA CONTROLADA | LYNX GARANTIA DA QUALIDADE | DATA: ${dataGeracao} | USUÁRIO: ${userName}`;
                 const textLine2 = `CÓD: ${part.codigo} | LOTE: ${loteCodeSafe} | DATA PCP: ${dataPcp ? formatDatePCP(dataPcp) : '-'} | QTD TOTAL A FABRICAR: ${finalQtdStr} ${part.um || 'UN'}`;
 
                 for (const page of copiedPages) {

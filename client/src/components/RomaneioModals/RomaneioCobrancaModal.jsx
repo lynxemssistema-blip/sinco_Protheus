@@ -21,7 +21,7 @@ export default function RomaneioCobrancaModal({ isOpen, onClose, supplierData, i
 
             // 2. E-mail do Usuário Logado (sempre envia cópia para si mesmo por padrão)
             try {
-                const userJson = localStorage.getItem('@MetalFisa:user');
+                const userJson = localStorage.getItem('@Lynx:user');
                 if (userJson) {
                     const user = JSON.parse(userJson);
                     if (user.email) {

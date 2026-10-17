@@ -17,7 +17,7 @@ export default function ProductionHistoryModal({ opData, onClose }) {
     const [toast, setToast] = useState(null);
 
     useEffect(() => {
-        const userStr = localStorage.getItem('@MetalFisa:user');
+        const userStr = localStorage.getItem('@Lynx:user');
         if (userStr) {
             try { setLoggedUser(JSON.parse(userStr)); } catch (e) { }
         }

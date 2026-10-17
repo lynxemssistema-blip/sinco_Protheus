@@ -588,8 +588,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
             }
         });
 
-        // Find Order columns (after "OC'S METALFISA")
-        const idxOC = headers.findIndex(h => h && String(h).toUpperCase().includes("OC'S METALFISA"));
+        // Find Order columns (after "OC'S LYNX")
+        const idxOC = headers.findIndex(h => h && String(h).toUpperCase().includes("OC'S LYNX"));
         const orderCols = [];
         if (idxOC !== -1) {
             for (let i = idxOC + 1; i < headers.length; i++) {
@@ -976,7 +976,7 @@ router.get('/demandas', async (req, res) => {
                     // Inicialização padrão de status como Restrição para itens não mapeados
                     rows.forEach(row => {
                         row.status_tipo_item = 'Restrição';
-                        row.status_tipo_detalhe = 'Produto do cliente sem mapeamento de código Protheus/Metalfisa.';
+                        row.status_tipo_detalhe = 'Produto do cliente sem mapeamento de código Protheus/Lynx.';
                         row.b1_cod = null;
                         row.b1_desc = null;
                     });
@@ -989,27 +989,37 @@ router.get('/demandas', async (req, res) => {
                             SELECT 
                                 TRIM(sb1.b1_cod) as b1_cod,
                                 TRIM(sb1.b1_desc) as b1_desc,
-                                (SELECT STRING_AGG(DISTINCT TRIM(z1.z1_revisao), ' / ') FROM public.sz1010 z1 WHERE TRIM(z1.z1_produto) = TRIM(sb1.b1_cod) AND COALESCE(z1.d_e_l_e_t_, '') = '') as rev_protheus,
+                                (SELECT STRING_AGG(DISTINCT TRIM(z1.z1_revisao), ' / ') FROM public.sz1010 z1 WHERE z1.z1_produto = sb1.b1_cod AND COALESCE(z1.d_e_l_e_t_, '') = '') as rev_protheus,
                                 CASE
                                     -- 1. Restrição
                                     WHEN sb1.b1_msblql IN ('1','S','T','Y') OR EXISTS (
                                         SELECT 1 FROM public.sz0010 sz0 
-                                        WHERE TRIM(sz0.z0_produto) = TRIM(sb1.b1_cod) 
+                                        WHERE sz0.z0_produto = sb1.b1_cod 
                                         AND sz0.z0_status = 'P' 
                                         AND COALESCE(sz0.d_e_l_e_t_, '') = ''
                                     ) THEN 'Restrição'
                                     
                                     -- 2. Novo
-                                    WHEN NOT EXISTS (SELECT 1 FROM public.sg1010 sg1 WHERE TRIM(sg1.g1_cod) = TRIM(sb1.b1_cod) AND COALESCE(sg1.d_e_l_e_t_, '') = '')
-                                     AND NOT EXISTS (SELECT 1 FROM public.sg2010 sg2 WHERE TRIM(sg2.g2_produto) = TRIM(sb1.b1_cod) AND COALESCE(sg2.d_e_l_e_t_, '') = '') THEN 'Novo'
+                                    WHEN NOT EXISTS (SELECT 1 FROM public.sg1010 sg1 WHERE sg1.g1_cod = sb1.b1_cod AND COALESCE(sg1.d_e_l_e_t_, '') = '')
+                                     AND NOT EXISTS (SELECT 1 FROM public.sg2010 sg2 WHERE sg2.g2_produto = sb1.b1_cod AND COALESCE(sg2.d_e_l_e_t_, '') = '') THEN 'Novo'
                                     
                                     -- 3. PCP (Default)
                                     ELSE 'PCP'
-LESCE(sg2.d_e_l_e_t_, '') = '') THEN 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.'
+                                END as status_tipo_item,
+                                CASE
+                                    WHEN sb1.b1_msblql IN ('1','S','T','Y') THEN 'Produto bloqueado no Protheus (B1_MSBLQL).'
+                                    WHEN EXISTS (
+                                        SELECT 1 FROM public.sz0010 sz0 
+                                        WHERE sz0.z0_produto = sb1.b1_cod 
+                                        AND sz0.z0_status = 'P' 
+                                        AND COALESCE(sz0.d_e_l_e_t_, '') = ''
+                                    ) THEN 'Produto com restrição pendente no Protheus (SZ0).'
+                                    WHEN NOT EXISTS (SELECT 1 FROM public.sg1010 sg1 WHERE sg1.g1_cod = sb1.b1_cod AND COALESCE(sg1.d_e_l_e_t_, '') = '')
+                                     AND NOT EXISTS (SELECT 1 FROM public.sg2010 sg2 WHERE sg2.g2_produto = sb1.b1_cod AND COALESCE(sg2.d_e_l_e_t_, '') = '') THEN 'Produto novo — sem estrutura (BOM) cadastrada no Protheus.'
                                     ELSE 'Item liberado para PCP.'
                                 END as status_tipo_detalhe_base
                             FROM public.sb1010 sb1
-                            WHERE TRIM(sb1.b1_cod) IN (${b1Cods.map((_, i) => `$${i + 1}`).join(',')})
+                            WHERE sb1.b1_cod IN (${b1Cods.map((_, i) => `$${i + 1}`).join(',')})
                             AND COALESCE(sb1.d_e_l_e_t_, '') = ''
                         `;
 
@@ -1121,7 +1131,7 @@ LESCE(sg2.d_e_l_e_t_, '') = '') THEN 'Produto novo — sem estrutura (BOM) cadas
                         });
                     }
                     
-                    // --- 5. Busca Pedido Metalfisa e Qtd Entregue no SC6 ---
+                    // --- 5. Busca Pedido Lynx e Qtd Entregue no SC6 ---
                     const cleanString = (str) => String(str || '').replace(/[^a-zA-Z0-9]/g, '').replace(/^0+/, '').toUpperCase();
                     const cleanOrderNumber = (str) => {
                         if (!str) return '';
@@ -1250,7 +1260,7 @@ LESCE(sg2.d_e_l_e_t_, '') = '') THEN 'Produto novo — sem estrutura (BOM) cadas
                                 }
                             });
                         } catch (errSC6) {
-                            console.error('[VMI] Erro ao buscar SC6 (Pedido Metalfisa):', errSC6.message);
+                            console.error('[VMI] Erro ao buscar SC6 (Pedido Lynx):', errSC6.message);
                         }
                     }
                 }
@@ -1271,7 +1281,7 @@ LESCE(sg2.d_e_l_e_t_, '') = '') THEN 'Produto novo — sem estrutura (BOM) cadas
 });
 
 // GET /api/vmi/pedidos-protheus
-// Busca especificamente o Pedido Metalfisa e a Qtde Entregue do Protheus SC6
+// Busca especificamente o Pedido Lynx e a Qtde Entregue do Protheus SC6
 router.post('/pedidos-protheus', async (req, res) => {
     try {
         const { rows } = req.body;
@@ -2279,7 +2289,7 @@ router.post('/ops-progresso', async (req, res) => {
 // OC'S DE FORNECEDORES — Upload, Salvamento, Listagem e Cruzamento
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Normaliza um código de produto Metalfisa (ex: "33.12.10537.00" → "3312105370")
+// Normaliza um código de produto Lynx (ex: "33.12.10537.00" → "3312105370")
 // Remove apenas caracteres não-alfanuméricos, mantém TODOS os dígitos/letras
 function normalizeProdutoCode(str) {
     if (!str) return '';
@@ -2287,14 +2297,14 @@ function normalizeProdutoCode(str) {
 }
 
 // Busca o b1_cod no Protheus a partir do código normalizado da coluna C
-// Estratégia: primeiro tenta SB1 direto (pois Col C já é código Metalfisa),
+// Estratégia: primeiro tenta SB1 direto (pois Col C já é código Lynx),
 // depois SZ1 como fallback (tabela de mapeamento cliente-produto)
 async function lookupB1CodFromProduto(normalizedCode) {
     if (!normalizedCode || normalizedCode.length < 3) return null;
     const searchCode = normalizedCode.length > 9 ? normalizedCode.substring(0, 9) : normalizedCode;
     const EXCLUDED_PREFIXES = 'MTC|SCL|MTI|MTA|MT8|MMP|MT7|MT1|MTB|COM';
     try {
-        // 1. Busca direta no SB1 (catálogo de produtos Metalfisa)
+        // 1. Busca direta no SB1 (catálogo de produtos Lynx)
         const sb1Result = await db.query(`
             SELECT TRIM(b1_cod) as b1_cod
             FROM public.sb1010
@@ -2970,8 +2980,8 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
         }
 
         const workbook = xlsx.read(req.file.buffer, { type: 'buffer', cellDates: true });
-        // Escolhe a primeira aba ou a aba 'METALFISA' se existir
-        const sheetName = workbook.SheetNames.find(s => s.toUpperCase().includes('METALFISA')) || workbook.SheetNames[0];
+        // Escolhe a primeira aba ou a aba 'LYNX' se existir
+        const sheetName = workbook.SheetNames.find(s => s.toUpperCase().includes('LYNX')) || workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         if (!sheet) {
             return res.status(400).json({ error: 'Nenhuma aba encontrada no arquivo Excel.' });
@@ -3119,7 +3129,7 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
             return s;
         }
 
-        // Filtro de Pedidos Inativos (MetalFisa + Protheus)
+        // Filtro de Pedidos Inativos (Lynx + Protheus)
         const inactiveFilter = await getInactiveOrdersFilter();
         const inactiveSqlC6 = inactiveFilter('c6.c6_num');
         const inactiveSqlC2 = inactiveFilter('c2_pedido');
@@ -3316,7 +3326,7 @@ router.post('/demanda-mes/processar', upload.single('planilha'), async (req, res
                 if (sMatch) b1Cod = sMatch.b1Cod;
             }
             
-            // Buscar pedidos vinculados no Protheus (por Ref Exata, Ref Base sem revisão, ou Código MetalFisa b1Cod)
+            // Buscar pedidos vinculados no Protheus (por Ref Exata, Ref Base sem revisão, ou Código Lynx b1Cod)
             const matchedOrders = [];
             if (protheusByRef.has(ref)) {
                 matchedOrders.push(...protheusByRef.get(ref));

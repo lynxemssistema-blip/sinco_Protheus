@@ -6,7 +6,7 @@ export const HELP_CONTENT = {
 
   '/novas-funcionalidades': {
     category: 'Sistema',
-    categoryColor: '#1F365C',
+    categoryColor: '#425750',
     title: 'Novas Funcionalidades (A partir de 09/09/2026)',
     icon: 'Sparkles',
     description: 'Linha do tempo oficial e registro detalhado de todas as novas ferramentas, correções e melhorias entregues após o marco de entrega do sistema.',
@@ -24,7 +24,7 @@ export const HELP_CONTENT = {
       }
     ],
     tips: [
-      'Esta tela é mantida continuamente para auditoria e acompanhamento das evoluções do Portal MetalFisa.',
+      'Esta tela é mantida continuamente para auditoria e acompanhamento das evoluções do Portal Lynx.',
       'Novas funcionalidades são marcadas com tags visuais destacando o tipo de entrega (Nova Funcionalidade, Resiliência, Melhoria).'
     ],
     links: [
@@ -35,7 +35,7 @@ export const HELP_CONTENT = {
 
   '/login': {
     category: 'Segurança e Acesso',
-    categoryColor: '#1F365C',
+    categoryColor: '#425750',
     title: 'Portal de Acesso e Auto-Recuperação',
     icon: 'Lock',
     description: 'Guia de autenticação no sistema, recuperação de acesso e utilização do recurso inteligente de auto-recuperação do servidor.',
@@ -71,112 +71,7 @@ export const HELP_CONTENT = {
     ]
   },
 
-  '/wabtec/datas-solicitacao': {
-    category: 'Gestão de Clientes / WabTec',
-    categoryColor: '#4f46e5',
-    title: 'WabTec Forecast (Datas Solicitação)',
-    icon: 'FileSpreadsheet',
-    description: 'Interface dedicada à importação, gerenciamento e integração da planilha de datas de solicitação enviada pelo cliente WabTec com o banco de dados do Protheus (SINCO).',
-    tabs: [
-      {
-        id: 'importacao',
-        label: 'Importação e Planilha',
-        description: 'Processo de carregamento e interpretação da planilha.',
-        steps: [
-          'Carregar Arquivo: Selecione a planilha .xlsx enviada pela WabTec. O sistema fará a leitura inteligente buscando as colunas chaves como "PO Number", "Pedido", "Código", "Saldo" e "Data".',
-          'Pré-visualização: Após a leitura, a tela exibirá as linhas identificadas antes de salvar, permitindo validar a estrutura dos dados.',
-          'Salvar Lote: Ao "Confirmar e Salvar", a importação será registrada, criando um lote que fica disponível para consultas futuras nos cartões no topo da tela.'
-        ]
-      },
-      {
-        id: 'sincronizacao',
-        label: 'Sincronização SINCO',
-        description: 'Lógica bidirecional de atualização do ERP.',
-        steps: [
-          'O Problema do Item: A planilha da WabTec possui o PO e o Pedido Metalfisa, mas NÃO possui o código exato da linha no ERP (C6_ITEM).',
-          'Busca Inteligente (SINCO): O sistema consulta o Protheus cruzando "PO Number", "Pedido Metalfisa" e "Código Produto" para encontrar a linha exata (C6_ITEM).',
-          'Sincronização: O sistema envia um comando ao Protheus atualizando o campo de Data de Entrega (C6_ENTREG) do item mapeado para a nova data solicitada pelo cliente.',
-          'Operações em Lote: Use o "Enviar Lote ao SINCO" para automatizar a descoberta do item e a atualização da data para centenas de linhas de uma só vez.'
-        ]
-      },
-      {
-        id: 'menu_contexto',
-        label: 'Menu de Contexto',
-        description: 'Atalhos de produtividade na tabela.',
-        steps: [
-          'Ativação: Clique com o botão direito sobre qualquer linha da tabela para abrir o menu flutuante.',
-          'Ações Rápidas: Você pode "Buscar" ou "Sincronizar" o item com o SINCO diretamente pelo menu, de forma individual.',
-          'Cópia Rápida: Copie o PO Number, Pedido Metalfisa, Código do Produto ou Ref. Cliente com um único clique.',
-          'Feedback Visual: Se o item já foi mapeado, o menu mostra no rodapé qual é o "Item ERP" atrelado e a data que consta hoje no sistema.'
-        ]
-      }
-    ],
-    tips: [
-      'Utilize os botões no canto direito da tabela para agrupar as visões por "PO Number" ou por "Pedido Metalfisa". Isso agrupa os saldos e facilita a identificação de entregas parciais.',
-      'Após o processamento dos dados ou para relatórios rápidos, utilize o botão "Exportar Excel" no cabeçalho.'
-    ],
-    links: [
-      { path: '/vmi/demanda-mes', label: 'VMI / Demanda Mensal' },
-      { path: '/comercial/gestao-ops', label: 'Gestão de OPs' }
-    ]
-  },
 
-  '/vmi/demanda-mes': {
-    category: 'VMI / PCP',
-    categoryColor: '#4f46e5',
-    title: 'Demanda Mês (Cruzamento VMI & PCP)',
-    icon: 'FileSpreadsheet',
-    description: 'Cruzamento automatizado da planilha de demandas mensais do cliente com a carteira de pedidos em aberto do Protheus (SC6), ordens de produção (SC2) e previsões de entrega registradas no SINCO (app_pcp_delivery_forecasts).',
-    tabs: [
-      {
-        id: 'fluxo_cruzamento',
-        label: 'Fluxo de Cruzamento',
-        description: 'Entenda como o sistema identifica os itens e calcula as previsões.',
-        steps: [
-          'Upload do Arquivo: Selecione o arquivo Excel (.xlsx) de demandas do cliente. O app valida a estrutura imediatamente antes de processar.',
-          'Rastreabilidade De-Para: O sistema lê a Coluna A (Ref. Cliente) e localiza o código B1_COD correspondente via De-Para SZ1010 ou app_demanda_vmi_map.',
-          'Cruzamento Protheus: Identifica todos os pedidos de venda com saldo a faturar e vincula as respectivas OPs ativas geradas no Protheus.',
-          'Consolidação SINCO: Agrupa as previsões de entrega gravadas por mês e destaca quantidades sem data definida.'
-        ]
-      },
-      {
-        id: 'auto_distribuicao',
-        label: 'Regra de Auto-Distribuição PCP',
-        description: 'Detalhamento do algoritmo inteligente de distribuição e cadenciamento de datas.',
-        steps: [
-          '1. Calendário VMI (Seg/Qua/Sex): O algoritmo gera apenas datas em Segundas, Quartas e Sextas-feiras dentro de cada mês de demanda.',
-          '2. Trava Estrita de Segurança (Data > Hoje): Nenhuma data PCP é agendada no passado ou no próprio dia atual. Se hoje for 19/08/2026 (Quarta), a primeira data possível será 21/08/2026 (Sexta) ou a próxima Segunda-feira.',
-          '3. Consumo da Demanda Mês a Mês: Para cada mês com demanda informada, o sistema calcula a cadência diária ideal (Demanda ÷ Dias de Entrega Úteis no Mês) e vai alocando os pedidos/OPs com saldo nessa grade até atingir a demanda do mês.',
-          '4. Exemplo Prático de Distribuição: Se a demanda de AGO/2026 for de 1.200 un e houver 6 dias VMI úteis restantes no mês (ex: 17/08, 19/08, 21/08, 24/08, 26/08, 28/08), o sistema programa parcelas de ~200 un em cada um desses dias até consumir o saldo.',
-          '5. Saldo Excedente / Itens Fora da Planilha: Produtos ou saldos que excederem a demanda ou que não estiverem na planilha são programados opcionalmente para as Segundas/Quartas/Sextas do último mês (ex: DEZ/2026).',
-          '6. Modo Fantasma & Gravação: As novas datas aparecem em tom cinza tracejado com a tag "SIMULADO". Você pode alterar a data manualmente no popover ou clicar em "Salvar Todas no SINCO" para gravar definitivamente no banco de dados.'
-        ]
-      },
-      {
-        id: 'estrutura_planilha',
-        label: 'Estrutura da Planilha',
-        description: 'Formato exato esperado da planilha do cliente.',
-        steps: [
-          'Aba de Leitura: O arquivo deve conter os dados preferencialmente na aba METALFISA ou na primeira aba ativa.',
-          'Coluna A: Código do Produto / Referência do Cliente (ex: 130300055).',
-          'Coluna B: Descrição detalhada do item usinado/montado.',
-          'Coluna C: Estoque Atual ou dados auxiliares do cliente.',
-          'Colunas D em diante: Colunas mensais de demanda (ex: AGO/2026, SET/2026, OUT/2026, NOV/2026, DEZ/2026...).',
-          'Preenchimento Automático: O botão "Preencher Planilha do Cliente" abre a planilha original, insere as datas PCP e preenche "SEM SALDO" para itens zerados mantendo o layout 100% original.'
-        ]
-      }
-    ],
-    tips: [
-      'Exemplo de Cadência: Para um saldo de 500 un com demanda de 500 un em AGO/2026, se o mês tiver 4 datas úteis futuras (ex: 21/08, 24/08, 26/08, 28/08), o sistema aloca o primeiro lote no dia 21/08.',
-      'Clique no badge da OP (ex: OP: 012345) em qualquer linha da tabela para abrir o modal de Estrutura da OP com o organograma completo de montagem e componentes.',
-      'Você pode baixar uma planilha modelo pronta com a estrutura correta clicando em "Baixar Planilha Modelo (.xlsx)" dentro do painel da página.'
-    ],
-    links: [
-      { path: '/vmi/dashboard', label: 'Dashboard VMI' },
-      { path: '/vmi/pedidos', label: 'Gestão de Pedidos VMI' },
-      { path: '/comercial/gestao-ops', label: 'Gestão de OPs' }
-    ]
-  },
 
   '/calendario-atividades': {
     category: 'Planejamento / PCP',
@@ -364,7 +259,7 @@ export const HELP_CONTENT = {
     ]
   },
 
-  // ── ðŸ¤– Diretrizes e Persona do Agente de IA (Metalfisa - Suporte Lynx) ───────
+  // ── ðŸ¤– Diretrizes e Persona do Agente de IA (Lynx - Suporte Lynx) ───────
   '_AI_SYSTEM_INSTRUCTIONS_': {
     category: 'Inteligência Artificial',
     categoryColor: '#8b5cf6',
@@ -373,7 +268,7 @@ export const HELP_CONTENT = {
     description: 'Bloco de sistema dedicado a alinhar o comportamento do agente de WhatsApp integrado à plataforma.',
     steps: [
       'PERSONA: Você é a IA de "Suporte do Grupo Lynx". Seja prestativo, sempre use um tom educado, cordial e corporativo.',
-      'RESTRIÇÃO DE GRUPO: Você atende exclusivamente o grupo "Metalfisa - Suporte Lynx". Se acionado fora dele, deve se recusar a interagir.',
+      'RESTRIÇÃO DE GRUPO: Você atende exclusivamente o grupo "Lynx - Suporte Lynx". Se acionado fora dele, deve se recusar a interagir.',
       'DOMÍNIO DE CONHECIMENTO: Você domina todos os módulos deste arquivo. Quando um usuário perguntar "Como eu aponto uma O.P.?" ou "Para que serve a curva S?", busque nestas chaves a resposta exata.',
       'TRATATIVA DE ERROS: Ao identificar que o usuário encontrou um erro no sistema, oriente de forma prática usando as dicas cadastradas neste documento (ex: erros de 401, falta de estrutura, erro na integração do Protheus).',
       'FORMATAÇÃO: Envie respostas bonitas para o WhatsApp, utilizando *negrito* para botões e menus, listas com emojis adequados e evite respostas extremamente longas se puder resumir.'
@@ -390,7 +285,7 @@ export const HELP_CONTENT = {
     categoryColor: '#f59e0b',
     title: 'Dashboard Principal',
     icon: 'LayoutDashboard',
-    description: 'Visão geral de todas as operações do sistema MetalFisa PCP. Acompanhe indicadores de produção, pedidos em aberto e alertas em tempo real.',
+    description: 'Visão geral de todas as operações do sistema Lynx PCP. Acompanhe indicadores de produção, pedidos em aberto e alertas em tempo real.',
     steps: [
       'Consulte os cards de resumo no topo para ver ordens abertas, itens a faturar e alertas.',
       'Clique em qualquer card para navegar diretamente ao módulo correspondente.',
@@ -582,7 +477,7 @@ export const HELP_CONTENT = {
           'Cada item é exibido como barra horizontal entre a data de emissão e data de entrega.',
           '🟢 Verde = Entregue | 🟠 Laranja = Pendente no prazo | 🔴 Vermelho = Atrasado.',
           'Passe o mouse para ver tooltip com detalhes completos (pedido, cliente, produto, datas).',
-          '🖨️ EXPORTAR PDF: Gera o cronograma em A4 Paisagem no padrão MetalFisa com cabeçalho corporativo repetido em todas as páginas.',
+          '🖨️ EXPORTAR PDF: Gera o cronograma em A4 Paisagem no padrão Lynx com cabeçalho corporativo repetido em todas as páginas.',
         ]
       },
       {
@@ -906,7 +801,7 @@ export const HELP_CONTENT = {
     title: 'Controle de Produção',
     icon: 'LayoutDashboard',
     image: '/help-images/controle_producao.png',
-    description: 'Dashboard principal de PCP para acompanhamento e programação das Ordens de Produção (OPs). Permite filtrar, visualizar o status de cada operação e sequenciar planejamentos em lote com Gantt interativo. Inclui geração de Relatório de Impressão no Padrão Corporativo MetalFisa (PDF A4 Paisagem) com sub-paginação por recurso/máquina.',
+    description: 'Dashboard principal de PCP para acompanhamento e programação das Ordens de Produção (OPs). Permite filtrar, visualizar o status de cada operação e sequenciar planejamentos em lote com Gantt interativo. Inclui geração de Relatório de Impressão no Padrão Corporativo Lynx (PDF A4 Paisagem) com sub-paginação por recurso/máquina.',
     imageCaption: 'Interface principal do Controle de Produção com filtros avançados e listagem detalhada de OPs e operações pendentes.',
     steps: [
       '— FILTROS —',
@@ -992,7 +887,7 @@ export const HELP_CONTENT = {
       '1. Consulta Mestra: No cabeçalho, digite o código do produto (Ex: MT2-1234) e clique em "Buscar" para carregar as informações em tempo real do banco.',
       '2. Árvore do Produto (SG1): Lista de materiais/componentes (BOM). Em modo de Edição, é possível modificar a estrutura, o tipo e a quantidade dos itens, impactando os consumos e empenhos da fábrica.',
       '3. Operações (Roteiro - SG2): Roteirização fabril. Ao editar, ajuste a descrição, mude o tempo de Setup/Padrão (importante para o PCP) e direcione para um novo Recurso (setor/máquina).',
-      '4. Produto Metalfisa/Cliente (SZ1): Relaciona o código e nome comercial usados pelo Cliente com o nosso código interno, com controle de Revisão. A busca inteligente de cliente (botão lupa) garante exatidão de cadastro e exibe os principais parceiros por padrão.',
+      '4. Produto Lynx/Cliente (SZ1): Relaciona o código e nome comercial usados pelo Cliente com o nosso código interno, com controle de Revisão. A busca inteligente de cliente (botão lupa) garante exatidão de cadastro e exibe os principais parceiros por padrão.',
     ],
     tips: [
       'Atenção ao Salvar: Suas modificações nos grids (como incluir linhas ou apagar) só serão validadas e enviadas ao Protheus após o clique no botão "Salvar" referente a cada bloco.',
@@ -1523,7 +1418,7 @@ export const HELP_CONTENT = {
     categoryColor: '#64748b', // slate-500
     title: 'Painel de Configurações Master',
     icon: 'Settings',
-    description: 'Central de controle absoluto do MetalFisa PCP. Aqui o administrador gerencia desde a identidade visual da empresa até o monitoramento de desempenho dos servidores em tempo real, organizados em abas de fácil acesso.',
+    description: 'Central de controle absoluto do Lynx PCP. Aqui o administrador gerencia desde a identidade visual da empresa até o monitoramento de desempenho dos servidores em tempo real, organizados em abas de fácil acesso.',
     steps: [
       '── GERAL ──',
       'Configura a identidade da empresa (Nome, CNPJ, Endereço, Telefones e Logo) que sairá nos cabeçalhos dos relatórios em PDF. Aqui também se define a numeração de base para criar os próximos Romaneios e o controle global de Apontamento Multi-Operação (permitir ou não baixas em lote no chão de fábrica).',
@@ -1760,7 +1655,7 @@ export const HELP_CONTENT = {
     description: 'Visão consolidada de todos os saldos pendentes de faturamento. Cada linha representa uma programação PCP vinculada a uma OP de produção â€” permitindo selecionar itens prontos, ajustar quantidades e gerar solicitações formais de faturamento com rastreabilidade completa.',
     steps: [
       'Entendendo o Saldo a Faturar: A coluna "Saldo" exibe o saldo real do ERP (SC6010: quantidade total do pedido menos o que já foi faturado/entregue). Apenas itens com Saldo > 0 podem ser selecionados. Por padrão a tela já filtra somente esses itens (toggle "Apenas Pendentes" ativo).',
-      'Linhas por Programação PCP: Quando um item de pedido possui uma programação PCP registrada, ele aparece como uma linha individual com data de entrega, série do cliente, série MetalFisa, nº de série, lote e nº lote. Isso significa que um mesmo item pode gerar múltiplas linhas se tiver múltiplas programações â€” cada uma representando um lote ou série distinto a ser faturado.',
+      'Linhas por Programação PCP: Quando um item de pedido possui uma programação PCP registrada, ele aparece como uma linha individual com data de entrega, série do cliente, série Lynx, nº de série, lote e nº lote. Isso significa que um mesmo item pode gerar múltiplas linhas se tiver múltiplas programações â€” cada uma representando um lote ou série distinto a ser faturado.',
       'Filtro "Mostrar Apenas Prontos (Produzidos)": Filtra client-side, exibindo somente linhas onde o Saldo Produzido (quantidade já fabricada pela produção) seja maior que zero. Use esse filtro para identificar o que pode ser faturado IMEDIATAMENTE pois já saiu da fábrica.',
       'Filtro por Data PCP: Use os campos "De/Até" da seção roxa para filtrar por data de entrega programada pelo PCP, independente da data do pedido de venda.',
       'Selecionando Itens: Clique na linha ou no checkbox para selecionar. Uma barra flutuante aparecerá no rodapé mostrando quantos itens estão selecionados e o valor total acumulado. Clique em "Avançar e Revisar" para abrir o modal de confirmação.',
@@ -2160,157 +2055,11 @@ export const HELP_CONTENT = {
     ],
   },
 
-  // ── VMI Forecast ─────────────────────────────────────────────────────────────
-  '/vmi/forecast': {
-    category: 'VMI (Demanda)',
-    categoryColor: '#3b82f6',
-    title: 'Monitor de Consumo e Previsões (Forecast)',
-    icon: 'TrendingUp',
-    description: 'Interface avançada para prever matematicamente a necessidade diária de consumo das montadoras baseada no giro histórico. Este painel dita o ritmo de reposição da MetalFisa.',
-    steps: [
-      'Visualização Mensal/Diária: Navegue entre a "Visão Diária" (focada nas entregas do dia D e da semana) e a "Visão Mensal" agregada.',
-      'Ajuste Sensível de Previsão: Digite manualmente no input numérico se o cliente mandou uma quebra de projeção forçada. O sistema vai ignorar a média nativa e vai adotar sua cotação.',
-      'Comparações Real vs Desejado: Cada linha de produto exibe o que estava previsto contra o Consumo Efetivo (Baixas por Notas Fiscais ou Reporte de Cliente).',
-      'Exportação Tática: Utilize o botão Exportar para gerar um grid em Excel validado que as montadoras utilizam em suas reuniões D-1 de abastecimento.',
-    ],
-    tips: [
-      'Mudanças feitas no forecast são rastreadas e o sistema sempre avisa "Atualizado em" com o carimbo do usuário que realizou a última sobreposição matemática.',
-      'Caso a previsão seja "zerada" a linha entra em modo ad-hoc (reposologia por pulo).',
-    ],
-    links: [
-      { path: '/vmi/pedido', label: 'Monitor de Pedidos VMI' },
-      { path: '/vmi/leitura', label: 'Importador Excel do Cliente' },
-    ],
-  },
 
-  // ── VMI Pedido ───────────────────────────────────────────────────────────────
-  '/vmi/pedido': {
-    category: 'VMI (Demanda)',
-    categoryColor: '#3b82f6',
-    title: 'Carga de Pedidos VMI e Necessidades',
-    icon: 'ShoppingBag',
-    description: 'Mesa de operações focada na transformação das projeções do fluxo de linha em Pedidos reais (necessidade de carregamento / empurrar estoque pro cliente).',
-    steps: [
-      'Recepção Passiva: Todo cliente VMI que roda seu MRP de planta mandará as ordens de EDI e elas caem neste painel.',
-      'Validação de Cobertura: O botão verde / amarelo à direita avalia instantaneamente se nós temos a peça no almoxarifado interno MetalFisa ou se estamos arriscando Parada de Linha do Cliente.',
-      'Gatilho de Produção: Sempre que um componente apresenta defasagem e o indicador Ponto de Reposição estoura, um gatilho envia um "Sinal de Fumaça" direto para a fila do planejamento de fábrica gerando Sugestão de OP.',
-    ],
-    tips: [
-      'As requisições que caem aqui respeitam a curva ABC do VMI: componentes críticos aparecem primeiro!',
-      'Você pode gerar faturamento diretamente dessa carga caso o item possua estoque físico na planta em Embalagem/Faturamento.',
-    ],
-    links: [
-      { path: '/vmi/forecast', label: 'Verificar Consumo Original' },
-      { path: '/vmi/dashboard', label: 'Analisar Riscos no Dashboard' },
-    ],
-  },
 
-  // ── VMI Leitura ──────────────────────────────────────────────────────────────
-  '/vmi/leitura': {
-    category: 'VMI (Demanda)',
-    categoryColor: '#3b82f6',
-    title: 'Importador (Leitura) de Excel dos Clientes',
-    icon: 'BarcodeScan',
-    description: 'Processo super flexível para traduzir a planilha dos portais de clientes (CNH, Catterpillar, JD, etc) para a arquitetura do ERP MetalFisa.',
-    steps: [
-      'Importação em Duas Etapas: Ao fazer drag-and-drop da planilha de inventário do cliente, a tela primeiro exibe o Modo de Pré-Visualização das métricas. Sem salvar.',
-      'Intersecção de Códigos: Internamente o módulo captura o famoso "Descr do Equipamento" (código descritivo extenso das colunas em texto) e aciona o motor regex.',
-      'Expurgo Inteligente: O motor Regex engole os sufixos "-10", "-B", "-ZN" exigidos por clientes e converte pro Código Base limpo registrado na aba SC2 da MetalFisa. Nenhuma falha manual entra na base.',
-      'Botão Salvar / Commit: Apenas quando tudo estiver verde/OK e as validações visuais não apontarem linhas orfãs, o botão Salvar grava o bloco de dados validado no sistema.',
-    ],
-    tips: [
-      'Regra 401 de Segurança: Após o Login e o Auth vencerem (401), se der tela vermelha ou o envio falhar no Console, basta relogar. A API deste módulo é rigidamente restrita.',
-      'As mensagens de retorno do Importador são auditadas num cronômetro.',
-    ],
-    links: [
-      { path: '/vmi/dashboard', label: 'Impactos no Abastecimento' },
-    ],
-  },
 
-  // ── VMI Dashboard ────────────────────────────────────────────────────────────
-  '/vmi/dashboard': {
-    category: 'VMI (Demanda)',
-    categoryColor: '#3b82f6',
-    title: 'Monitor de Saúde Preditiva (Dashboard VMI)',
-    icon: 'LayoutDashboard',
-    description: 'Dashboard executivo paramétrico que mescla a Cobertura Física (Almoxarifado) com a Demanda Futura do Cliente (Forecast). Este é o termômetro principal do programa.',
-    steps: [
-      'Análise de Nível de Serviço (SLA): Visualize o velocímetro apontando o % de saúde dos suprimentos VMI em comparação à métrica do contrato.',
-      'Matriz de Cobertura de Estoque: O gráfico de barras demonstra exatamente quantos DIAS DE SOBREVIVÊNCIA o cliente interno tem com o saldo projetado.',
-      'Gestão de Crise (Ruptura Eminente): O sistema acenderá luzes laranjas e vermelhas nos itens abaixo do Ponto de Ruptura (estoque incapaz de cobrir o lead time da próxima remessa).',
-    ],
-    tips: [
-      'As caixas e KPIs do dashboard são filtrados em tempo real na dropdown do cliente. Ao reportar o status para a CNH, mude o Switch exclusivo deles.',
-      'Não confunda "Ponto de Reposição" (Aviso) com "Estoque Mínimo" (Sobrevivência).',
-    ],
-    links: [
-      { path: '/vmi/forecast', label: 'Injetar Forecast Tático' },
-      { path: '/vmi/historico', label: 'Evolução do Saldo' },
-    ],
-  },
 
-  // ── VMI Estratégia ───────────────────────────────────────────────────────────
-  '/vmi/estrategia': {
-    category: 'VMI (Demanda)',
-    categoryColor: '#3b82f6',
-    title: 'Parametrização do Motor VMI',
-    icon: 'Target',
-    description: 'O cérebro matemático por trás dos cálculos automatizados. Aqui o Comercial define o grau agressivo de reposição para que o motor crie Pedidos sozinhos.',
-    steps: [
-      'Aba Lote Mínimo e Múltiplo: Informe se o produto só pode ser empurrado pro cliente de 10 em 10 peças (caixas fechadas). O motor irá arredondar requisições quebradas pro número exato.',
-      'Coberturas Desejadas de Estoque (Safety Stock): Defina quantos dias de segurança você deseja manter no teto do Cliente (Max) e o Piso de disparo (Min).',
-      'Lead Time (Lead Time SLA): Cadastre aqui os dias que a MetalFisa leva pra injetar peça no cliente (do frete à produção).',
-      'Persistência em Massa: Use o botão de Salvamento Lógico após checar toda a grid. Modificações aqui afetam todas as equações do próximo dia.',
-    ],
-    tips: [
-      'As mudanças não são retroativas. Elas recalcularão a Demanda da Carga VMI do dia subsequente ou num Forçar Atualização.',
-    ],
-    links: [
-      { path: '/vmi/dashboard', label: 'Painel Tático' },
-      { path: '/producao/relatorios', label: 'Relatórios Base' },
-    ],
-  },
 
-  // ── VMI Histórico ────────────────────────────────────────────────────────────
-  '/vmi/historico': {
-    category: 'VMI (Demanda)',
-    categoryColor: '#3b82f6',
-    title: 'Extrato Contábil VMI',
-    icon: 'History',
-    description: 'Controle de prestação de contas. Esta tela imita o "Saída e Entrada" bancário para confrontar se as requisições geradas bateram com o que o cliente efetivamente consumiu da nossa carga mensal.',
-    steps: [
-      'Leitura de Snapshot: As tabelas listarão por Código-Revisão cada pulso disparado pro cliente e a resposta de consumo da ponta oposta.',
-      'Investigação de Desperdício: Verificando "Consumo Médio" x "Enviado", caso haja discrepância forte a linha apita para auditoria.',
-      'Relatórios Retrospectivos: Filtre por ano e mês para provar para reuniões operacionais de que houve Abastecimento Full no período.',
-    ],
-    tips: [
-      'Este relatório cruza dados da tabela de Leituras (planilhas de estoque deles) fechando no "Liquidado".',
-    ],
-    links: [
-      { path: '/vmi/leitura', label: 'Auditoria da Planilha' },
-      { path: '/vendas/itens-faturar', label: 'Cruzar com ERP Interno' },
-    ],
-  },
-
-  // ── Admin Protheus ───────────────────────────────────────────────────────────
-  '/admin/protheus-estudo': {
-    category: 'Administração',
-    categoryColor: '#64748b',
-    title: 'Admin â€“ Protheus (Estudo)',
-    icon: 'Database',
-    description: 'Área administrativa para análise e estudo de integração com o ERP Protheus.',
-    steps: [
-      'Acesso restrito a administradores do sistema.',
-      'Use para testar e analisar a integração com o Protheus.',
-      'Consulte logs de sincronização e erros de integração.',
-    ],
-    tips: [
-      'Área técnica â€” não utilize em produção sem aprovação.',
-    ],
-    links: [
-      { path: '/configuracoes', label: 'Configurações' },
-    ],
-  },
 
   // ── Financeiro / Dashboard ───────────────────────────────────────────────────
   '/financeiro/dashboard': {
@@ -2516,28 +2265,6 @@ export const HELP_CONTENT = {
     ],
   },
 
-  // ── Protheus Overview ────────────────────────────────────────────────────────
-  '/protheus': {
-    category: 'Administração',
-    categoryColor: '#64748b',
-    title: 'Protheus Overview',
-    icon: 'Database',
-    description: 'Dashboard principal de acompanhamento da saúde da integração, fila e endpoints do ambiente ERP Protheus e do sistema.',
-    steps: [
-      'Observe os alertas globais no painel para certificar sua integridade sistêmica.',
-      'Analise a fila pendente de migrações: Estruturas ou apontamentos.',
-      'Se for um administrador técnico, dispare o reenvio manual para fluxos vitais pendentes por interrupções.'
-    ],
-    tips: [
-      'Mantenha comunicação aberta sobre janelas de manutenção de infraestrutura para evitar falhas durante altas transações de chão de fábrica.',
-    ],
-    links: [
-      { path: '/admin/protheus-estudo', label: 'Admin â€“ Protheus (Estudo)' },
-      { path: '/configuracoes', label: 'Configurações' },
-    ],
-  },
-
-  // ── Login / Acesso ──────────────────────────────────────────────────────────
   '/login': {
     category: 'Administração',
     categoryColor: '#64748b',
@@ -2547,7 +2274,7 @@ export const HELP_CONTENT = {
       {
         id: 'acesso',
         label: 'Acesso',
-        description: 'Credenciais de acesso ao sistema MetalFisa PCP.',
+        description: 'Credenciais de acesso ao sistema Lynx PCP.',
         steps: [
           'Utilize seu nome de usuário (ex: pcp01) ou e-mail corporativo.',
           'Insira sua senha de segurança definida no primeiro acesso.',
@@ -2565,7 +2292,7 @@ export const HELP_CONTENT = {
         description: 'Esqueceu sua senha? Veja como recuperar o acesso.',
         steps: [
           'Clique em "Esqueceu a senha?" na tela de login.',
-          'Informe seu e-mail corporativo cadastrado (@metalfisa.com.br).',
+          'Informe seu e-mail corporativo cadastrado (@lynx.com.br).',
           'Clique em "Receber Senha por E-mail".',
           'Sua senha atual será enviada imediatamente para sua caixa de entrada.'
         ],
@@ -2894,7 +2621,7 @@ export const HELP_CONTENT = {
     categoryColor: '#f59e0b',
     title: 'Cadastro de Setores Produtivos',
     icon: 'Landmark',
-    description: 'Gerencie os Setores Fabris da fábrica MetalFisa. Um Setor agrupa máquinas e centros de custo (Recursos) do Protheus sob um rótulo visual e operacional â€” por exemplo: "Solda", "Corte a Laser", "Pintura", "Montagem Final". Esta classificação alimenta diretamente o painel "Visão Gerencial por Setor" e o relatório de progresso por setor. Sem Setores configurados, a Visão Gerencial não consegue agrupar as OPs corretamente.',
+    description: 'Gerencie os Setores Fabris da fábrica Lynx. Um Setor agrupa máquinas e centros de custo (Recursos) do Protheus sob um rótulo visual e operacional â€” por exemplo: "Solda", "Corte a Laser", "Pintura", "Montagem Final". Esta classificação alimenta diretamente o painel "Visão Gerencial por Setor" e o relatório de progresso por setor. Sem Setores configurados, a Visão Gerencial não consegue agrupar as OPs corretamente.',
     steps: [
       '── COMO CRIAR UM NOVO SETOR ──',
       'Botão "Novo Setor" (azul, canto superior direito): Clique para abrir o modal de criação. Preencha os campos e confirme.',
@@ -2934,13 +2661,42 @@ export const HELP_CONTENT = {
     ],
   },
 
-  // ── Recursos por Setor ───────────────────────────────────────────────────────
+  // ── Cadastro de Recursos (Catálogo Centralizado Multi-Empresa) ───────────────
+  '/pcp/recursos': {
+    category: 'PCP',
+    categoryColor: '#3b82f6',
+    title: 'Cadastro de Recursos (Catálogo Centralizado)',
+    icon: 'Cpu',
+    description: 'Catálogo central de recursos de manufatura, máquinas, mão de obra e centros de trabalho. Os recursos cadastrados aqui pertencem à empresa ativa (Multi-Empresa) e podem ser associados flexivelmente a qualquer setor produtivo.',
+    steps: [
+      '── VISÃO GERAL DO CATÁLOGO ──',
+      'Cadastro Centralizado: Cada recurso é cadastrado uma única vez no catálogo da empresa. Uma vez cadastrado, ele pode ser vinculado a um ou mais setores produtivos na tela "Recursos por Setor".',
+      'Multi-Empresa: Os recursos são isolados por empresa ativa no sistema. Se você for Superadmin, pode alternar a empresa no topo para visualizar ou cadastrar recursos específicos daquela unidade.',
+      '── AÇÕES DISPONÍVEIS ──',
+      'Botão "+ Novo Recurso": Abre o modal para cadastro de uma nova máquina ou centro de trabalho. Informe o Código (ex: MO0013, MA0001), o Nome/Descrição, o Tipo (Máquina, Mão de Obra, Centro de Trabalho) e a capacidade diária.',
+      'Filtros de Tipo e Status: Use os botões no topo para filtrar rapidamente apenas Máquinas, Mão de Obra, ou filtrar por status Ativo/Inativo.',
+      'Busca Rápida: Digite qualquer termo para pesquisar por código, nome ou nome do setor onde o recurso já está alocado.',
+      'Ações por Linha: Clique no ícone de lápis para editar as informações ou na lixeira para remover o recurso do catálogo.',
+      'Botão "Vincular a Setores →": Atalho direto para a tela onde você associa os recursos cadastrados aos setores produtivos.',
+    ],
+    tips: [
+      'Mantenha os códigos de recurso idênticos aos usados nos roteiros de produção para que o cruzamento de OPs seja 100% automático.',
+      'Um mesmo recurso físico ou centro de trabalho pode ser alocado em mais de um setor produtivo se necessário.',
+    ],
+    links: [
+      { path: '/pcp/setores/recursos', label: 'Vincular Recursos aos Setores' },
+      { path: '/pcp/setores', label: 'Cadastro de Setores' },
+      { path: '/pcp/visao-setores', label: 'Visão Gerencial por Setor' },
+    ],
+  },
+
+    // ── Recursos por Setor ───────────────────────────────────────────────────────
   '/pcp/setores/recursos': {
     category: 'PCP',
     categoryColor: '#f59e0b',
     title: 'Recursos por Setor (Vinculação)',
     icon: 'Link',
-    description: 'Esta tela é o elo entre o Protheus e o sistema de Setores da MetalFisa. Aqui você define quais máquinas, centros de custo e recursos de fabricação (cadastrados no Protheus na tabela SH1) pertencem a cada setor produtivo. Esta vinculação é fundamental: o painel "Visão Gerencial por Setor" calcula o progresso das OPs usando exatamente essa associação â€” se um recurso não estiver vinculado a nenhum setor, as OPs que passam por ele aparecerão no card "Setor Não Definido".',
+    description: 'Esta tela é o elo entre o Protheus e o sistema de Setores da Lynx. Aqui você define quais máquinas, centros de custo e recursos de fabricação (cadastrados no Protheus na tabela SH1) pertencem a cada setor produtivo. Esta vinculação é fundamental: o painel "Visão Gerencial por Setor" calcula o progresso das OPs usando exatamente essa associação â€” se um recurso não estiver vinculado a nenhum setor, as OPs que passam por ele aparecerão no card "Setor Não Definido".',
     steps: [
       '── PAINEL ESQUERDO â€” LISTA DE SETORES ──',
       'Lista de Setores (coluna esquerda): Exibe todos os setores produtivos cadastrados na tela "Cadastro de Setores". Cada item mostra a bolinha colorida do setor (cor configurada), o nome do setor em negrito e a contagem de recursos já vinculados ("N recursos").',
@@ -3298,29 +3054,6 @@ export const HELP_CONTENT = {
   },
 
   // ── Módulo WabTec (Importação e Estrutura) ──────────────────────────────────
-  '/wabtec/estrutura': {
-    category: 'Engenharia / Integração',
-    categoryColor: '#14b8a6',
-    title: 'Importação de Estrutura WabTec',
-    icon: 'FileSpreadsheet',
-    description: 'Módulo dedicado à importação de planilhas Excel da WabTec para gerar e verificar estruturas (BOM) em paralelo com o ERP Protheus.',
-    steps: [
-      'Aba 1 (Importação e Base): Faça o upload da planilha Excel da WabTec. O sistema fará a validação obrigatória das colunas (Level, ID, Revision, Name, Quantity).',
-      'Aba 2 (Mapeamento Protheus): Nesta aba, clique em "Mapear c/ Protheus". O sistema cruzará os desenhos do cliente carregados no Excel com a base de dados para encontrar os códigos de produto equivalentes no ERP.',
-      'Aba 3 (Lista de Materiais - BOM): Selecione o lote e clique em "Extrair / Atualizar do Protheus". O sistema irá explodir a árvore de cada produto mapeado em até 20 níveis para recuperar toda a matéria-prima e os componentes.',
-      'Visões (Aba 3): Alterne entre a visão "Detalhada" (nível a nível da engenharia) ou "Aglutinada" (soma das matérias-primas consolidadas).',
-      'Exportação (Aba 3): Utilize os botões "Exportar Excel" para gerar uma planilha com as abas Detalhada e Resumo de Materiais, ou "Exportar PDF" para criar um documento formatado e pronto para impressão da visualização atual.'
-    ],
-    tips: [
-      'Erros de Template: Se a planilha não subir na Aba 1, verifique se a linha de cabeçalho contém as palavras exatas em inglês: "Level", "ID", "Revision", "Name" e "Quantity".',
-      'Otimização de Performance: Uma vez extraída, a Lista de Materiais é salva no servidor. Isso significa que exportar para Excel ou PDF é um processo instantâneo e não depende de novas consultas ao Protheus.',
-      'A visão aglutinada é excelente para o setor de compras e almoxarifado, pois unifica toda a quantidade requerida de cada componente em uma única linha.'
-    ],
-    links: [
-      { path: '/produtos', label: 'Catálogo de Produtos' },
-      { path: '/estrutura', label: 'Consulta Estrutural Padrão' }
-    ]
-  },
 
   // ── Gestão de RNCs (Relatório de Não Conformidade) ───────────────────────────
   '/sgq/gestao-rncs': {
@@ -3513,7 +3246,7 @@ export const HELP_CONTENT = {
     categoryColor: '#3b82f6',
     title: 'Painel do SGQ',
     icon: 'Building2',
-    description: 'Central de controle do Sistema de Gestão da Qualidade da MetalFisa. Acesse os módulos de processos, documentos, não conformidades, calibrações e ferramentas.',
+    description: 'Central de controle do Sistema de Gestão da Qualidade da Lynx. Acesse os módulos de processos, documentos, não conformidades, calibrações e ferramentas.',
     steps: [
       'Navegue pelos cards para acessar cada submódulo da qualidade.',
       'O módulo de Treinamentos e Processos mapeia as fichas de processo do setor.',
@@ -3632,7 +3365,7 @@ export const HELP_CONTENT = {
       'Adicione as atividades executadas na listagem de responsabilidades.',
       'Exporte a ficha do cargo em PDF clicando em "Imprimir".',
       'Consulte a Matriz de Responsabilidades (MRA) em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\05.2.3 Papéis e Responsabilidades\\MRA Matriz de Resp e Aut do SGQ - Rev 01.xlsx',
-      'Consulte o Organograma Oficial em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\05.3 Papeis, responsabilidades e autoridades\\D 17001 - Organograma Metalfisa Rev01.pdf'
+      'Consulte o Organograma Oficial em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\05.3 Papeis, responsabilidades e autoridades\\D 17001 - Organograma Lynx Rev01.pdf'
     ],
     tips: [
       'Estas fichas servem de base para a matriz de competências do SGQ.'
@@ -3654,7 +3387,7 @@ export const HELP_CONTENT = {
       'Use o botão "Carregar Tópicos ISO" para preencher a estrutura regulamentar de 10 cláusulas padrão.',
       'Escreva utilizando o editor SunEditor. Para auxílio, use o painel "Assistente IA".',
       'Salve o documento para registrar uma nova revisão no banco de dados.',
-      'Exporte o documento formatado com cabeçalho oficial de análise crítica da MetalFisa para Word (.docx) ou PDF.',
+      'Exporte o documento formatado com cabeçalho oficial de análise crítica da Lynx para Word (.docx) ou PDF.',
       'Consulte a Lista Mestre oficial de Documentos do SGQ em: \\\\192.168.1.253\\Iso\\ISO 9001-2015\\Requisitos ISO 9001-2015\\07.5 Informacao Documentada\\F 110-23 Lista Mestre - Documentos SGQ - Rev 00.xlsx',
       'Consulte os diretórios de Procedimentos (02 PQ\'s / 03 POP\'s) e Instruções (06 IT\'s) no servidor.'
     ],
@@ -3954,83 +3687,6 @@ export const HELP_CONTENT = {
       ]
   },
 
-  '/vmi/criticos': {
-      "category": "VMI / PCP",
-      "categoryColor": "#ef4444",
-      "title": "Tabela de Itens Críticos VMI",
-      "icon": "AlertOctagon",
-      "description": "Painel executivo de monitoramento e gestão preventiva de itens em situação crítica de desabastecimento, atraso ou risco de ruptura na cadeia VMI. Inclui gestão de versões de planilhas importadas, comparador de versões com cálculo de delta (resolvidos, novos, alterados), curvas de evolução temporal, visualização de espelho operacional com detalhamento de status e exportação em PDF e Excel.",
-      "tabs": [
-          {
-              "id": "espelho",
-              "label": "Espelho de Críticos & Status",
-              "description": "Visualização consolidada de todos os itens em situação crítica com cruzamento inteligente com o Protheus.",
-              "steps": [
-                  "Filtros por Status: Filtre rapidamente por \"Falta de Entrega\", \"Material OK\", \"Com Pedido\" ou \"Com NF\" para orientar as ações imediatas.",
-                  "Detalhes do Item: Expanda a linha de qualquer produto para visualizar pedidos de venda (SC6), ordens de produção (SC2), saldo em estoque e faturamentos recentes.",
-                  "Identificação Visual: Ícones e cores destacadas indicam se o item já possui ordem de produção em andamento ou se necessita de abertura urgente de pedido."
-              ]
-          },
-          {
-              "id": "importar",
-              "label": "Importação e Versionamento",
-              "description": "Carregamento de planilhas com seletor de aba e criação de versões históricas.",
-              "steps": [
-                  "Upload de Planilha: Arraste ou selecione o arquivo Excel (.xlsx) enviado pelo cliente com o relatório de críticos.",
-                  "Seletor de Abas: Caso o arquivo possua múltiplas abas, selecione qual aba contém a relação de peças críticas a ser importada.",
-                  "Título da Versão: Defina um nome identificador para a versão (ex: \"Semana 35 - Atualização Cliente X\") para facilitar comparações futuras.",
-                  "Processamento Automático: O sistema processa os códigos de produto, calcula os status operacionais e armazena o lote no banco de dados."
-              ]
-          },
-          {
-              "id": "comparador",
-              "label": "Comparador de Versões",
-              "description": "Análise de variações e evolução de criticidade entre duas datas/versões.",
-              "steps": [
-                  "Seleção de Versões: Escolha a Versão A (anterior) e a Versão B (mais recente) nos seletores do topo.",
-                  "Itens Novos Críticos: Identifica peças que entraram na lista de criticidade na versão mais recente.",
-                  "Itens Resolvidos: Destaca itens que deixaram de ser críticos devido a produção concluída ou entregas realizadas.",
-                  "Itens Alterados: Mostra variações de quantidade demandada ou alterações de prazo solicitadas pelo cliente."
-              ]
-          },
-          {
-              "id": "evolucao",
-              "label": "Curva de Evolução & Tendência",
-              "description": "Histórico gráfico do volume de itens críticos ao longo do tempo.",
-              "steps": [
-                  "Gráfico de Área Temporal: Acompanhe a evolução do número total de itens críticos por semana/mês.",
-                  "Métricas de Eficácia: Meça o impacto das ações de produção e compras na redução da curva de itens críticos."
-              ]
-          },
-          {
-              "id": "exportacoes",
-              "label": "Exportações PDF e Excel",
-              "description": "Geração de relatórios executivos para reuniões e clientes.",
-              "steps": [
-                  "Espelho PDF: Gera documento formatado em PDF profissional pronto para impressão ou envio por e-mail.",
-                  "Exportação Excel: Baixa a planilha completa com todas as colunas de rastreabilidade para auditoria externa."
-              ]
-          }
-      ],
-      "tips": [
-          "Sempre crie uma nova versão a cada envio de planilha do cliente para manter a curva histórica de evolução atualizada.",
-          "Utilize o Comparador de Versões antes de reuniões de alinhamento com clientes para demonstrar a quantidade exata de itens já resolvidos pela fábrica."
-      ],
-      "links": [
-          {
-              "path": "/vmi/demanda-mes",
-              "label": "Demanda Mês"
-          },
-          {
-              "path": "/vmi/dashboard",
-              "label": "Visão de Entrega VMI"
-          },
-          {
-              "path": "/comercial/gestao-ops",
-              "label": "Gestão de OPs"
-          }
-      ]
-  },
 
   '/suprimentos/espelho-nf': {
       "category": "Suprimentos / Fiscal",
@@ -4045,7 +3701,7 @@ export const HELP_CONTENT = {
               "description": "Detalhamento completo dos produtos faturados e alíquotas aplicadas.",
               "steps": [
                   "Busca por Chave / Número: Localize a nota digitando o número da NF, série ou chave de acesso de 44 dígitos.",
-                  "Conferência de Itens: Exibe código Metalfisa, descrição, quantidade faturada, valor unitário, valor total e NCM.",
+                  "Conferência de Itens: Exibe código Lynx, descrição, quantidade faturada, valor unitário, valor total e NCM.",
                   "Cálculo de Tributos: Visualização dos destaques de base de cálculo e valores de ICMS, IPI, ICMS-ST e retenções federais."
               ]
           },
@@ -4255,140 +3911,8 @@ export const HELP_CONTENT = {
       ]
   },
 
-  '/wabtec/ppaps': {
-      "category": "Gestão de Clientes / WabTec",
-      "categoryColor": "#4f46e5",
-      "title": "Gestão de PPAPs WabTec",
-      "icon": "Award",
-      "description": "Módulo de controle e acompanhamento dos Processos de Aprovação de Peças de Produção (PPAP) conforme as normas do setor ferroviário e os requisitos contratuais específicos da WabTec. Gerencia os níveis de submissão 1 a 5 e a homologação formal do PSW.",
-      "tabs": [
-          {
-              "id": "status_psw",
-              "label": "Controle de PSW & Submissão",
-              "description": "Acompanhamento do Part Submission Warrant.",
-              "steps": [
-                  "Status do PSW: Monitore o status de aprovação (Aprovado, Aprovado Provisório, Em Análise, Rejeitado).",
-                  "Níveis de Submissão: Níveis 1 a 5 configurados de acordo com a exigência técnica do cliente.",
-                  "Vencimento de Homologação: Alertas de revisão periódica e revalidação de peças homologadas."
-              ]
-          },
-          {
-              "id": "elementos_ppap",
-              "label": "18 Elementos do PPAP",
-              "description": "Repositório de documentação comprobatória.",
-              "steps": [
-                  "Registros de Projeto: Desenhos técnicos e especificações aprovadas.",
-                  "FMEA e Plano de Controle: PFMEA de fabricação e planos de inspeção da qualidade.",
-                  "Relatórios Dimensionais: Medições de peças do lote piloto.",
-                  "Ensaios de Materiais: Certificados de matéria-prima, ensaios de tração, dureza e camada de tratamento superficial."
-              ]
-          }
-      ],
-      "tips": [
-          "Nenhum item sob PPAP pode ter alteração de ferramental ou matéria-prima sem a prévia notificação e aprovação do cliente.",
-          "Mantenha os laudos de ensaio dimensional sempre vinculados ao lote da amostra inicial submetida."
-      ],
-      "links": [
-          {
-              "path": "/wabtec/escopo",
-              "label": "Escopo WabTec"
-          },
-          {
-              "path": "/wabtec/datas-solicitacao",
-              "label": "Datas de Solicitação"
-          },
-          {
-              "path": "/sgq/gestao-rncs",
-              "label": "Gestão de RNCs"
-          }
-      ]
-  },
 
-  '/wabtec/escopo': {
-      "category": "Gestão de Clientes / WabTec",
-      "categoryColor": "#4f46e5",
-      "title": "Escopo de Fornecimento WabTec",
-      "icon": "FileText",
-      "description": "Matriz técnica consolidada do escopo de fornecimento para a WabTec, integrando desenhos técnicos homologados, controle de revisões de engenharia (ECN), especificações de embalagem e normas aplicáveis.",
-      "tabs": [
-          {
-              "id": "matriz_pecas",
-              "label": "Matriz de Códigos & Especificações",
-              "description": "Mapeamento Metalfisa x Código Cliente.",
-              "steps": [
-                  "De-Para de Códigos: Código interno Protheus x Código WabTec e Descrição Técnica.",
-                  "Especificações de Processo: Tipo de aço, espessura, tratamento superficial e requisitos especiais de soldagem.",
-                  "Embalagens Homologadas: Tipo de rack, caixa retornável ou proteção especial para transporte."
-              ]
-          },
-          {
-              "id": "historico_revisoes",
-              "label": "Controle de Revisões (ECN)",
-              "description": "Rastreabilidade de alterações de projeto.",
-              "steps": [
-                  "Histórico de Mudanças: Registro das alterações de cotas, furações ou dobras com data de entrada em vigor.",
-                  "Desenho Vigente: Download da revisão oficial liberada pela Engenharia da WabTec."
-              ]
-          }
-      ],
-      "tips": [
-          "Antes de programar qualquer lote no PCP, verifique no Escopo se não houve emissão de nova revisão de desenho pelo cliente.",
-          "Dúvidas técnicas de tolerância dimensional devem ser esclarecidas via RNC ou consulta formal à Engenharia."
-      ],
-      "links": [
-          {
-              "path": "/wabtec/ppaps",
-              "label": "PPAPs WabTec"
-          },
-          {
-              "path": "/wabtec/datas-solicitacao",
-              "label": "Datas de Solicitação"
-          }
-      ]
-  },
 
-  '/engetron/dashboard': {
-      "category": "Gestão de Clientes / Engetron",
-      "categoryColor": "#059669",
-      "title": "Painel de Demandas Engetron",
-      "icon": "LayoutDashboard",
-      "description": "Painel de controle dedicado ao acompanhamento de carteira de pedidos, ordens de produção e entregas contratuais para o cliente Engetron, assegurando atendimento Just-In-Time e cumprimento de metas de OTD.",
-      "tabs": [
-          {
-              "id": "carteira_engetron",
-              "label": "Carteira de Pedidos & Prazos",
-              "description": "Visão detalhada dos pedidos em aberto.",
-              "steps": [
-                  "Pedidos Ativos: Lista de pedidos de venda com datas contratuais de entrega.",
-                  "Saldos a Entregar: Quantidades faturadas x saldos pendentes.",
-                  "Priorização: Itens com data de entrega mais próxima são destacados automaticamente no topo."
-              ]
-          },
-          {
-              "id": "producao_engetron",
-              "label": "Acompanhamento Fabril",
-              "description": "Status de avanço das OPs na fábrica.",
-              "steps": [
-                  "OPs Vinculadas: Ordens de produção em andamento para atender aos pedidos da Engetron.",
-                  "Progresso por Setor: Visualização das etapas concluídas (Corte, Dobra, Solda, Pintura e Montagem)."
-              ]
-          }
-      ],
-      "tips": [
-          "Acompanhe o painel diariamente para garantir que nenhuma etapa de fabricação atrase o cronograma de faturamento.",
-          "Utilize os filtros rápidos para exportar relatórios de posição de carteira para reuniões semanais de alinhamento."
-      ],
-      "links": [
-          {
-              "path": "/comercial/gestao-ops",
-              "label": "Gestão de OPs"
-          },
-          {
-              "path": "/comercial/faturamento",
-              "label": "Controle de Faturamento"
-          }
-      ]
-  },
 
   '/rh/offboarding': {
       "category": "Recursos Humanos",
@@ -4541,14 +4065,14 @@ export const HELP_CONTENT = {
       "categoryColor": "#059669",
       "title": "Portal do Fornecedor (Beneficiamento Externo)",
       "icon": "Truck",
-      "description": "Portal de acesso externo seguro para fornecedores parceiros que realizam serviços de beneficiamento (galvanoplastia, zincagem, bicromatização, pintura eletrostática e tratamento térmico). Permite consultar romaneios emitidos pela Metalfisa, confirmar recebimento físico de cargas e registrar o envio de lotes prontos.",
+      "description": "Portal de acesso externo seguro para fornecedores parceiros que realizam serviços de beneficiamento (galvanoplastia, zincagem, bicromatização, pintura eletrostática e tratamento térmico). Permite consultar romaneios emitidos pela Lynx, confirmar recebimento físico de cargas e registrar o envio de lotes prontos.",
       "tabs": [
           {
               "id": "romaneios_recebidos",
-              "label": "Romaneios Enviados pela Metalfisa",
+              "label": "Romaneios Enviados pela Lynx",
               "description": "Consulta de lotes e ordens de serviço em trânsito.",
               "steps": [
-                  "Lista de Romaneios: Visualização de romaneios expedidos pela Metalfisa destinados à sua empresa.",
+                  "Lista de Romaneios: Visualização de romaneios expedidos pela Lynx destinados à sua empresa.",
                   "Detalhes das Peças: Código, descrição, quantidade enviada, peso líquido/bruto e tratamento solicitado.",
                   "Download de Desenhos: Acesso direto aos desenhos técnicos para conferência de especificações e camadas."
               ]
@@ -4564,7 +4088,7 @@ export const HELP_CONTENT = {
           },
           {
               "id": "retorno_beneficiado",
-              "label": "Registro de Retorno à Metalfisa",
+              "label": "Registro de Retorno à Lynx",
               "description": "Notificação de peças prontas para entrega.",
               "steps": [
                   "Informar Retorno: Registre o número da NF de retorno e a quantidade de peças beneficiadas.",
@@ -4573,13 +4097,13 @@ export const HELP_CONTENT = {
           }
       ],
       "tips": [
-          "A confirmação ágil de recebimento no portal mantém o PCP da Metalfisa ciente da data real de início do beneficiamento.",
-          "Anexar o certificado de banho/pintura no momento do envio agiliza a liberação das peças no controle de qualidade da Metalfisa."
+          "A confirmação ágil de recebimento no portal mantém o PCP da Lynx ciente da data real de início do beneficiamento.",
+          "Anexar o certificado de banho/pintura no momento do envio agiliza a liberação das peças no controle de qualidade da Lynx."
       ],
       "links": [
           {
               "path": "/romaneios",
-              "label": "Expedição Metalfisa"
+              "label": "Expedição Lynx"
           },
           {
               "path": "/recebimentos",
@@ -4659,8 +4183,6 @@ export const HELP_CONTENT = {
       'Você pode filtrar simultaneamente por Cliente, Pedido, Produto e Período de Data PCP para visualizar apenas a carteira que deseja planejar.'
     ],
     links: [
-      { path: '/vmi/demanda-mes', label: 'VMI / Demanda Mensal' },
-      { path: '/wabtec/datas-solicitacao', label: 'WabTec Forecast' },
       { path: '/pcp/fila-dependencias', label: 'Fila de Dependências PCP' }
     ]
   },

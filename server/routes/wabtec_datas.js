@@ -198,7 +198,7 @@ router.get('/demandas', async (req, res) => {
                 r.pedido_metal = raw['PEDIDO'] || raw['Pedido'] || raw['Pedido Metal'] || raw['Num. Pedido'] || null;
             }
             if (!r.cod_produto) {
-                r.cod_produto = raw['COD'] || raw['Cod'] || raw['Cód. Produto'] || raw['Código MetalFisa'] || raw['Produto'] || null;
+                r.cod_produto = raw['COD'] || raw['Cod'] || raw['Cód. Produto'] || raw['Código Lynx'] || raw['Produto'] || null;
             }
             if (!r.item_cliente) {
                 r.item_cliente = raw['Número de item'] || raw['Item Cliente'] || raw['Part Number'] || null;
@@ -469,7 +469,7 @@ router.post('/update-sinco-date', async (req, res) => {
         const { pedido_metal, item, nova_data, saldo, usuario } = req.body;
         
         if (!pedido_metal || !item || !nova_data) {
-            return res.status(400).json({ error: 'Pedido Metalfisa, Item e Data são obrigatórios.' });
+            return res.status(400).json({ error: 'Pedido Lynx, Item e Data são obrigatórios.' });
         }
         
         const formattedPedido = String(pedido_metal).padStart(6, '0');
@@ -761,7 +761,7 @@ router.get('/sinco-date', async (req, res) => {
         const cleanPed = pedido_metal ? cleanCode(pedido_metal).padStart(6, '0') : '';
         
         if (!cleanPo && !cleanPed) {
-            return res.status(400).json({ error: 'PO Number ou Pedido Metalfisa é obrigatório.' });
+            return res.status(400).json({ error: 'PO Number ou Pedido Lynx é obrigatório.' });
         }
         
         let matched = null;

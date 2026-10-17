@@ -9,7 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#14b8a6', '#06b6d4', '#f97316'];
 const STATUS_COLORS = {
     'ABERTA': '#f59e0b',
-    'EM ANDAMENTO': '#3b82f6',
+    'EM ANDAMENTO': '#425750',
     'AGUARDANDO PECA': '#14b8a6',
     'CONCLUIDA': '#10b981',
     'CANCELADA': '#ef4444'

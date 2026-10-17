@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Activity, Calendar, Server, AlertTriangle, Edit2, Save, X, LayoutGrid, AlignLeft, BarChart2, ChevronDown, ChevronRight, Printer, Gauge, Clock, Layers, CheckCircle2 } from 'lucide-react';
 import api from '../../services/api';
-import logoMetalfisa from '../../assets/metalfisa-logo.png';
+import logoLynx from '../../assets/metalfisa-logo.png';
 
 const TaxaOcupacao = () => {
     const [data, setData] = useState([]);

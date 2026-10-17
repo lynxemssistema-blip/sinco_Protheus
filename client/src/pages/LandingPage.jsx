@@ -34,8 +34,17 @@ import {
     MapPin,
     Calendar,
     Building,
-    MessageCircle
+    MessageCircle,
+    Download,
+    FileText,
+    Presentation,
+    FileCheck,
+    GitBranch,
+    HelpCircle,
+    Maximize2
 } from 'lucide-react';
+
+import flowchartImg from '../assets/fluxograma_processo_sinco.jpg';
 
 // Brand Assets - Official Lynx SM IDV
 import lynxLogoForest from '../assets/brand-lynx/LOGOTIPO FOREST.svg';
@@ -158,14 +167,14 @@ const LandingPage = () => {
             ]
         },
         {
-            id: 'metalfisa',
-            name: 'MetalFisa',
+            id: 'lynx',
+            name: 'Lynx',
             segment: 'Metalmecânica & Corte Laser CNC',
             desc: 'Caldeiraria fina de ponta, corte a laser CNC de alta velocidade, conformação robotizada e solda certificada com controle operacional 100% digital via SINCO.',
             logo: metalfisaLogo,
-            link: 'https://metalfisa.com.br/',
-            instagram: 'https://www.instagram.com/metalfisa/',
-            instagramHandle: '@metalfisa',
+            link: 'https://lynxems.com.br/',
+            instagram: 'https://www.instagram.com/lynxems/',
+            instagramHandle: '@lynxems',
             badge: 'Metalmecânica de Precisão',
             isDarkLogo: false,
             theme: {
@@ -337,19 +346,24 @@ const LandingPage = () => {
         {
             id: 'sgq',
             title: 'SGQ & Qualidade Total',
-            category: 'Metrologia, Calibrações & RNCs',
+            category: 'Gestão de Equipamentos (Manutenção e Calibração)',
             partner: 'SIM Consultoria',
             partnerLogo: simLogo,
             partnerLink: 'https://www.instagram.com/sim.consultoria/',
-            desc: 'Gestão completa do Sistema de Gestão da Qualidade industrial estruturado em parceria com a SIM Consultoria (17 anos de excelência). Controle rigoroso de caixas de ferramentas (Toolbox), calibração de instrumentos, termos de responsabilidade e auditorias.',
+            desc: 'Gestão completa do Sistema de Gestão da Qualidade industrial estruturado em parceria com a SIM Consultoria (18 anos de excelência). Atendimento rigoroso aos requisitos das Normas ISO 9001, ISO 14001 e ISO 45001, análise de riscos organizacionais, gestão documental e inspeções de processo.',
             image: sgqQualityImage,
             badge: 'Parceria SIM Consultoria',
-            stats: '17 Anos de Excelência',
+            stats: '18 Anos de Excelência',
             highlights: [
-                'Metodologia homologada e apoiada pela SIM Consultoria (17 anos de história)',
-                'Monitoramento de calibração periódica de paquímetros, micrômetros e CMM',
-                'Abertura, plano de ação e acompanhamento de RNCs com causa raiz',
-                'Termos digitais de custódia e relatórios de auditoria com conformidade normativa'
+                'Atendimento e cumprimento dos requisitos segundo as Normas ISO 9001, ISO 14001 e ISO 45001',
+                'Inspeções de Qualidade junto ao processo da operação (chão de fábrica) em etapas importantes',
+                'Gestão de equipamentos (manutenção e calibração periódica)',
+                'Análise de riscos operacionais e estratégicos na gestão organizacional',
+                'Análise do direcionamento estratégico da organização',
+                'Gestão documental de procedimentos, instruções de trabalho, registros, etc.',
+                'Gestão de Objetivos do Sistema de Gestão, Metas e Indicadores',
+                'Gestão de mudanças e tratativa sistemática de RNCs com causa raiz',
+                'Metodologia homologada e apoiada pela SIM Consultoria (18 anos de história)'
             ]
         },
         {
@@ -369,14 +383,14 @@ const LandingPage = () => {
         },
         {
             id: 'log',
-            title: 'Logística, Expedição & VMI',
-            category: 'Cadeia de Suprimentos & Estoque Gerenciado',
-            desc: 'Gestão estratégica de estoque parceiro (VMI - Vendor Managed Inventory), conferência digital de expedição, montagem de romaneios inteligentes e emissão de listas de carga rastreáveis.',
+            title: 'Logística & Expedição',
+            category: 'Cadeia de Suprimentos & Expedição Ágil',
+            desc: 'Gestão estratégica de estoque, conferência digital de expedição, montagem de romaneios inteligentes e emissão de listas de carga rastreáveis.',
             image: logisticsVmiImage,
-            badge: 'VMI Conectado',
+            badge: 'Expedição Conectada',
             stats: 'Zero Divergência',
             highlights: [
-                'Monitoramento em tempo real dos níveis de estoque de clientes parceiros',
+                'Monitoramento em tempo real dos fluxos de expedição e entregas em carteira',
                 'Conferência ágil de expedição com coletores de dados e códigos de barra',
                 'Geração de romaneios de embarque e controle de motoristas/transportadoras',
                 'Rastreabilidade ponta a ponta desde o lote de matéria-prima até a entrega'
@@ -390,59 +404,72 @@ const LandingPage = () => {
             <nav className="fixed w-full z-50 bg-[#F9F8F3]/95 backdrop-blur-md border-b border-[#6F7170]/20 shadow-xs transition-all">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between h-20 items-center">
-                        {/* Brand Identity & Co-Branding Lockup (Clean, spacious, zero repetition) */}
-                        <div className="flex items-center gap-3 sm:gap-4">
-                            {/* Single Official Lynx SM Vector Brandmark */}
-                            <a href="#" className="flex items-center group" title="Lynx SM">
+                        {/* Brand Identity & Co-Branding Lockup (Lynx & SIM em Destaque) */}
+                        <div className="flex items-center gap-2.5 sm:gap-3.5">
+                            {/* Official Lynx Brandmark */}
+                            <a href="#" className="flex items-center group" title="Lynx EMS Sistemas">
                                 <img 
-                                    src={lynxSublogoForest} 
-                                    alt="Lynx SM" 
-                                    className="h-8 sm:h-9 w-auto object-contain transition-transform group-hover:scale-105" 
+                                    src={lynxLogoForest} 
+                                    alt="Lynx EMS" 
+                                    className="h-8 sm:h-9 w-auto object-contain transition-transform group-hover:scale-105 drop-shadow-2xs" 
                                 />
                             </a>
 
-                            <span className="text-[#6F7170]/30 font-light text-lg select-none">|</span>
+                            {/* Aliança Connector */}
+                            <span className="text-[#6F7170]/40 font-bold text-xs sm:text-sm select-none">✕</span>
 
-                            {/* Product Brand: SINCO Suite */}
-                            <div className="flex items-center gap-2">
-                                <span className="text-xl sm:text-2xl font-black tracking-tight text-[#32423D]">
-                                    SINCO
-                                </span>
-                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-[#425750] text-white tracking-wider shadow-2xs">
-                                    Suite
-                                </span>
-                            </div>
-
-                            {/* Strategic Partner Co-branding: SIM Consultoria (Visible on large screens) */}
-                            <div className="hidden 2xl:flex items-center gap-2 pl-3 border-l border-[#6F7170]/20">
-                                <span className="text-[#6F7170]/50 text-xs font-bold">✕</span>
-                                <a 
-                                    href="https://www.instagram.com/sim.consultoria/" 
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
-                                    className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-white hover:bg-slate-50 border border-[#6F7170]/25 hover:border-[#425750] shadow-2xs group transition-all"
-                                    title="SIM Consultoria - 17 Anos de Excelência em SGQ"
-                                >
-                                    <img 
-                                        src={simLogo} 
-                                        alt="SIM Consultoria" 
-                                        className="h-5 w-auto object-contain" 
-                                    />
-                                    <span className="text-[11px] font-extrabold text-[#556460] group-hover:text-[#32423D] transition-colors">
+                            {/* Strategic Partner: SIM Consultoria (Visível e com destaque em desktop e tablet) */}
+                            <a 
+                                href="https://www.instagram.com/sim.consultoria/" 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 hover:border-[#425750] shadow-xs group transition-all" 
+                                title="SIM Consultoria - 18 Anos de Excelência em SGQ"
+                            >
+                                <img 
+                                    src={simLogo} 
+                                    alt="SIM Consultoria" 
+                                    className="h-6 sm:h-7 w-auto object-contain" 
+                                />
+                                <div className="hidden sm:flex flex-col text-left">
+                                    <span className="text-[10px] font-black text-[#32423D] leading-tight">
                                         SIM Consultoria
                                     </span>
-                                    <span className="text-[9px] font-bold text-[#425750] bg-[#425750]/10 px-1.5 py-0.5 rounded-full">
-                                        17 Anos
+                                    <span className="text-[8px] font-bold text-[#425750] tracking-wider uppercase">
+                                        18 Anos SGQ
                                     </span>
-                                </a>
+                                </div>
+                            </a>
+
+                            <span className="hidden lg:inline text-[#6F7170]/30 font-light text-lg select-none">|</span>
+
+                            {/* Product Brand: SINCO Suite */}
+                            <div className="hidden lg:flex items-center gap-1.5">
+                                <span className="text-xl font-black tracking-tight text-[#32423D]">
+                                    SINCO
+                                </span>
+                                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-[#425750] text-white tracking-wider shadow-2xs">
+                                    Suite
+                                </span>
                             </div>
                         </div>
                         
                         {/* Desktop Navigation Links (Clean, uniform text links with generous breathing room) */}
-                        <div className="hidden xl:flex items-center gap-7">
+                        <div className="hidden xl:flex items-center gap-6">
                             <a href="#modulos" className="text-sm font-semibold text-[#32423D] hover:text-[#425750] transition-colors">
                                 Módulos
                             </a>
+                            <Link 
+                                to="/ajuda?tab=fluxograma" 
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-black text-amber-950 transition-all shadow-2xs group hover:scale-105"
+                                title="A Verdade do Processo: Fluxograma Operacional"
+                            >
+                                <GitBranch className="w-3.5 h-3.5 text-amber-600 group-hover:rotate-12 transition-transform" />
+                                <span>Fluxograma do Processo</span>
+                                <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[9px] font-black uppercase tracking-wider">
+                                    Verdade do App
+                                </span>
+                            </Link>
                             <a href="#clientes" className="text-sm font-semibold text-[#32423D] hover:text-[#425750] transition-colors flex items-center gap-1.5">
                                 <Building2 className="w-3.5 h-3.5 text-[#425750]" />
                                 <span>Clientes</span>
@@ -451,16 +478,30 @@ const LandingPage = () => {
                                 <Award className="w-3.5 h-3.5 text-[#425750]" />
                                 <span>Aliança SGQ</span>
                             </a>
-                            <a href="#plataforma" className="text-sm font-semibold text-[#32423D] hover:text-[#425750] transition-colors">
-                                Tecnologia 4.0
+                            <a href="#dossie-apresentacao" className="text-sm font-semibold text-[#32423D] hover:text-[#425750] transition-colors flex items-center gap-1.5">
+                                <FileText className="w-3.5 h-3.5 text-[#425750]" />
+                                <span>Dossiê & Normas</span>
                             </a>
-                            <a href="#contato" className="text-sm font-semibold text-[#32423D] hover:text-[#425750] transition-colors">
-                                Contato
-                            </a>
+                            <Link to="/ajuda" className="text-sm font-semibold text-[#32423D] hover:text-[#425750] transition-colors flex items-center gap-1">
+                                <HelpCircle className="w-3.5 h-3.5 text-[#425750]" />
+                                <span>Ajuda</span>
+                            </Link>
                         </div>
 
                         {/* CTA Button and Responsive Hamburger Toggle */}
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2.5 sm:gap-3">
+                            <Link 
+                                to="/login?mode=register&tab=empresa" 
+                                className="hidden md:flex items-center gap-2 bg-[#EAE8E0] hover:bg-white text-[#1E2825] px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl font-black text-xs sm:text-sm transition-all border border-[#6F7170]/40 shadow-xs hover:shadow-md transform hover:-translate-y-0.5 group"
+                                title="Cadastrar sua empresa com 14 dias de teste grátis"
+                            >
+                                <Building2 className="w-4 h-4 text-[#425750] group-hover:scale-110 transition-transform" />
+                                <span>Cadastrar Empresa</span>
+                                <span className="bg-[#425750] text-[#E0E800] text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md tracking-wider">
+                                    Grátis
+                                </span>
+                            </Link>
+
                             <Link 
                                 to="/login" 
                                 className="hidden sm:flex items-center gap-2 bg-[#425750] hover:bg-[#32423D] text-white px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all shadow-md shadow-[#32423D]/20 hover:shadow-lg transform hover:-translate-y-0.5 border border-[#425750]"
@@ -484,7 +525,32 @@ const LandingPage = () => {
                 {/* Mobile Navigation Dropdown Drawer */}
                 {mobileMenuOpen && (
                     <div className="lg:hidden bg-[#F9F8F3]/98 backdrop-blur-xl border-b border-[#6F7170]/25 px-4 pt-3 pb-6 space-y-3 shadow-xl animate-in slide-in-from-top duration-200">
+                        {/* Co-Branding Mobile Header em Destaque */}
+                        <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-200 shadow-2xs mb-2">
+                            <img src={lynxLogoForest} alt="Lynx EMS" className="h-7 w-auto object-contain" />
+                            <span className="text-slate-400 font-bold text-xs">✕</span>
+                            <div className="flex items-center gap-2">
+                                <img src={simLogo} alt="SIM Consultoria" className="h-6 w-auto object-contain" />
+                                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md">
+                                    18 Anos
+                                </span>
+                            </div>
+                        </div>
+
                         <div className="flex flex-col space-y-2">
+                            <Link 
+                                to="/ajuda?tab=fluxograma" 
+                                onClick={() => setMobileMenuOpen(false)}
+                                className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-amber-500/10 border border-amber-500/40 text-amber-950 font-black text-sm flex items-center justify-between shadow-xs"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <GitBranch className="w-4 h-4 text-amber-600" />
+                                    Fluxograma do Processo (Verdade do App)
+                                </span>
+                                <span className="text-[10px] bg-amber-500 text-white font-black px-2 py-0.5 rounded-full uppercase">
+                                    11 Etapas
+                                </span>
+                            </Link>
                             <a 
                                 href="#modulos" 
                                 onClick={() => setMobileMenuOpen(false)}
@@ -509,6 +575,17 @@ const LandingPage = () => {
                                 <Award className="w-4 h-4 text-[#425750]" />
                             </a>
                             <a 
+                                href="#dossie-apresentacao" 
+                                onClick={() => setMobileMenuOpen(false)}
+                                className="px-3 py-2 rounded-lg text-sm font-semibold text-[#32423D] hover:bg-[#EAE8E0] flex items-center justify-between"
+                            >
+                                <span className="flex items-center gap-2">
+                                    <FileText className="w-4 h-4 text-[#425750]" />
+                                    Dossiê Técnico (PDF & PPTX)
+                                </span>
+                                <span className="text-[10px] bg-[#E0E800] text-[#1E2825] font-black px-2 py-0.5 rounded-full">14 Slides</span>
+                            </a>
+                            <a 
                                 href="#plataforma" 
                                 onClick={() => setMobileMenuOpen(false)}
                                 className="px-3 py-2 rounded-lg text-sm font-semibold text-[#32423D] hover:bg-[#EAE8E0]"
@@ -529,6 +606,15 @@ const LandingPage = () => {
                             >
                                 Dados Corporativos & Contato
                             </a>
+                            <Link 
+                                to="/login?mode=register&tab=empresa" 
+                                onClick={() => setMobileMenuOpen(false)}
+                                className="w-full flex items-center justify-center gap-2.5 bg-[#EAE8E0] hover:bg-white text-[#1E2825] p-3 rounded-xl font-black text-sm shadow-xs border border-[#6F7170]/40 transition-all"
+                            >
+                                <Building2 className="w-4 h-4 text-[#425750]" />
+                                <span>Cadastrar Nova Empresa (14 Dias Grátis)</span>
+                            </Link>
+
                             <Link 
                                 to="/login" 
                                 onClick={() => setMobileMenuOpen(false)}
@@ -559,13 +645,59 @@ const LandingPage = () => {
 
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
                     <div className="text-center max-w-4xl mx-auto">
-                        <div className="inline-flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-full bg-[#425750]/40 border border-[#6F7170]/40 text-[#F9F8F3] text-xs font-bold uppercase tracking-wider mb-8 backdrop-blur-md shadow-inner">
-                            <Sparkles className="w-3.5 h-3.5 text-[#E0E800] animate-pulse" />
-                            <span>Lynx SM</span>
-                            <span className="text-[#E0E800] font-black">✕</span>
-                            <span>SIM Consultoria (17 Anos)</span>
-                            <span className="text-[#6F7170] hidden sm:inline">•</span>
-                            <span className="text-[#F9F8F3] hidden sm:inline font-semibold">Engenharia, PCP Dinâmico e SGQ Integrados ao seu ERP</span>
+                        {/* Executive Co-Branding Master Showcase: Lynx & SIM com Alto Destaque */}
+                        <div className="inline-flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 px-5 py-3.5 sm:px-8 sm:py-4 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl mb-8 transition-all hover:border-emerald-400/50">
+                            {/* Logotipo Oficial Lynx EMS */}
+                            <div className="flex items-center gap-2.5 sm:gap-3">
+                                <img 
+                                    src={lynxLogoSnow} 
+                                    alt="Lynx EMS Sistemas" 
+                                    className="h-8 sm:h-10 w-auto object-contain drop-shadow-md" 
+                                />
+                                <span className="hidden md:inline-block text-[11px] font-bold uppercase tracking-wider text-slate-300 border-l border-white/20 pl-3">
+                                    Tecnologia & Sistemas
+                                </span>
+                            </div>
+
+                            {/* Interconexão Visual */}
+                            <div className="flex items-center gap-2 text-emerald-400 font-black text-sm">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                <span className="text-white/60">✕</span>
+                            </div>
+
+                            {/* Logotipo Oficial SIM Consultoria */}
+                            <a 
+                                href="https://www.instagram.com/sim.consultoria/" 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="flex items-center gap-3 bg-white px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl shadow-lg border border-slate-200 hover:scale-102 transition-transform"
+                                title="Conhecer a SIM Consultoria"
+                            >
+                                <img 
+                                    src={simLogo} 
+                                    alt="SIM Consultoria" 
+                                    className="h-7 sm:h-9 w-auto object-contain" 
+                                />
+                                <div className="text-left border-l border-slate-200 pl-2.5">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700 block">
+                                        Aliança Estratégica
+                                    </span>
+                                    <span className="text-xs font-bold text-slate-800 block leading-none mt-0.5">
+                                        18 Anos em SGQ Fabril
+                                    </span>
+                                </div>
+                            </a>
+                        </div>
+
+                        <div className="flex justify-center mb-6">
+                            <Link 
+                                to="/ajuda?tab=fluxograma" 
+                                className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-gradient-to-r from-amber-500/20 via-amber-400/30 to-emerald-500/20 border border-amber-400/40 text-amber-300 text-xs sm:text-sm font-extrabold hover:scale-105 transition-all shadow-lg shadow-amber-950/40 group"
+                            >
+                                <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+                                <span>A Verdade do Processo Industrial: Veja o Fluxograma Real (11 Etapas)</span>
+                                <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-transform" />
+                            </Link>
                         </div>
 
                         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight leading-[1.15] mb-8">
@@ -576,23 +708,34 @@ const LandingPage = () => {
                         </h1>
 
                         <p className="text-lg sm:text-xl text-[#D8DCDA] mb-10 leading-relaxed max-w-3xl mx-auto font-normal">
-                            Desenvolvido pela <strong>Lynx SM</strong> em parceria estratégica com a <strong>SIM Consultoria</strong> (17 anos de excelência em SGQ), o <strong>SINCO</strong> é a suíte de alta precisão que atua no coração da sua manufatura. Conectando-se de forma nativa e transparente ao ERP que a sua indústria já utiliza — como <strong>TOTVS</strong>, <strong>Omie</strong>, <strong>Sankhya</strong> e outros —, o SINCO assume o controle técnico de <strong>estrutura de projetos (BOM)</strong>, <strong>apontamentos de produção em tempo real</strong>, <strong>metrologia</strong> e <strong>qualidade fabril</strong>, potencializando sua operação sem alterar a rotina fiscal ou contábil já consolidada na sua empresa.
+                            Desenvolvido pela <strong>Lynx SM</strong> em parceria estratégica com a <strong>SIM Consultoria</strong> (18 anos de excelência em SGQ), o <strong>SINCO</strong> é a suíte de alta precisão que atua no coração da sua manufatura. Conectando-se de forma nativa e transparente ao ERP que a sua indústria já utiliza — como <strong>TOTVS</strong>, <strong>Omie</strong>, <strong>Sankhya</strong> e outros —, o SINCO assume o controle técnico de <strong>estrutura de projetos (BOM)</strong>, <strong>apontamentos de produção em tempo real</strong>, <strong>gestão de equipamentos e calibração</strong> e <strong>qualidade fabril</strong>, potencializando sua operação sem alterar a rotina fiscal ou contábil já consolidada na sua empresa.
                         </p>
 
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
                             <Link 
+                                to="/login?mode=register&tab=empresa" 
+                                className="w-full sm:w-auto flex items-center justify-center gap-3 bg-[#E0E800] hover:bg-[#c8cf00] text-[#1E2825] px-8 py-4 rounded-xl font-black text-base transition-all shadow-xl shadow-black/30 hover:shadow-2xl border border-[#E0E800] transform hover:-translate-y-0.5 group"
+                            >
+                                <Building2 className="w-5 h-5 text-[#1E2825] group-hover:scale-110 transition-transform" />
+                                <span>Cadastrar Nova Empresa</span>
+                                <span className="bg-[#1E2825] text-[#E0E800] text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ml-1">
+                                    14 Dias Grátis
+                                </span>
+                            </Link>
+                            <Link 
+                                to="/ajuda?tab=fluxograma" 
+                                className="w-full sm:w-auto flex items-center justify-center gap-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 px-7 py-4 rounded-xl font-black text-base transition-all shadow-xl shadow-amber-950/30 hover:shadow-2xl border border-amber-400/60 transform hover:-translate-y-0.5"
+                            >
+                                <GitBranch className="w-5 h-5 text-slate-950" />
+                                <span>Ver Fluxograma do Processo</span>
+                            </Link>
+                            <Link 
                                 to="/login" 
                                 className="w-full sm:w-auto flex items-center justify-center gap-3 bg-[#425750] hover:bg-[#32423D] text-white px-8 py-4 rounded-xl font-bold text-base transition-all shadow-xl shadow-[#1E2825]/50 hover:shadow-2xl border border-[#425750] transform hover:-translate-y-0.5"
                             >
-                                Iniciar Sessão na Plataforma
+                                Iniciar Sessão
                                 <ArrowRight className="w-5 h-5 text-[#E0E800]" />
                             </Link>
-                            <a 
-                                href="#modulos" 
-                                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-[#32423D]/70 hover:bg-[#32423D] text-[#F9F8F3] border border-[#6F7170]/50 px-8 py-4 rounded-xl font-semibold text-base transition-all hover:border-[#F9F8F3]/50 backdrop-blur-sm"
-                            >
-                                Conhecer Módulos do Sistema
-                            </a>
                         </div>
 
                         {/* Top Key Metrics Banner */}
@@ -800,6 +943,157 @@ const LandingPage = () => {
                 </div>
             </section>
 
+            {/* ── SEÇÃO DE DESTAQUE: A VERDADE DO PROCESSO INDUSTRIAL (FLUXOGRAMA & MATRIZ) ── */}
+            <section id="fluxo-processo" className="py-20 sm:py-24 bg-gradient-to-b from-[#18221F] via-[#202C27] to-[#18221F] text-white relative overflow-hidden border-y border-[#6F7170]/30">
+                <div className="absolute top-0 right-1/4 w-[500px] h-[300px] bg-amber-500/10 rounded-full blur-[140px] pointer-events-none" />
+                <div className="absolute bottom-0 left-1/4 w-[500px] h-[300px] bg-emerald-500/10 rounded-full blur-[140px] pointer-events-none" />
+
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                    <div className="text-center max-w-3xl mx-auto mb-16">
+                        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-black uppercase tracking-wider mb-4 shadow-sm">
+                            <Sparkles className="w-4 h-4 text-amber-400" />
+                            A Verdade do Processo Fabril SINCO
+                        </div>
+                        <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight mb-5">
+                            Do Tenant ao Faturamento: <br />
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-white to-emerald-400">
+                                A Arquitetura Real de Execução
+                            </span>
+                        </h2>
+                        <p className="text-slate-300 text-base sm:text-lg leading-relaxed">
+                            No SINCO, nada é isolado ou fictício. Cada módulo é rigorosamente dependente do anterior em uma cadeia sincronizada de <strong>11 etapas reais</strong>: da parametrização básica ao apontamento em tablets e emissão da NF-e.
+                        </p>
+                    </div>
+
+                    {/* 4 Blocos de Fases do Processo */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+                        <div className="bg-slate-900/80 rounded-2xl p-6 border border-blue-500/30 shadow-xl flex flex-col justify-between hover:border-blue-400 transition-all group">
+                            <div>
+                                <div className="flex items-center justify-between mb-4">
+                                    <span className="px-2.5 py-1 rounded-lg bg-blue-500/20 text-blue-300 text-[11px] font-black uppercase tracking-wider border border-blue-500/30">
+                                        Fase 01
+                                    </span>
+                                    <Building2 className="w-6 h-6 text-blue-400 group-hover:scale-110 transition-transform" />
+                                </div>
+                                <h3 className="text-lg font-bold text-white mb-2">Fundação & Governança</h3>
+                                <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                                    Isolamento estrito multi-tenant (IdEmpresa), perfis de acesso RBAC de chão de fábrica e armazéns/unidades de medida.
+                                </p>
+                            </div>
+                            <div className="text-[11px] font-semibold text-blue-300 bg-blue-950/60 p-2.5 rounded-xl border border-blue-800/40">
+                                Passos 01 ao 03 · Base do Banco
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-900/80 rounded-2xl p-6 border border-emerald-500/30 shadow-xl flex flex-col justify-between hover:border-emerald-400 transition-all group">
+                            <div>
+                                <div className="flex items-center justify-between mb-4">
+                                    <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-[11px] font-black uppercase tracking-wider border border-emerald-500/30">
+                                        Fase 02
+                                    </span>
+                                    <Cpu className="w-6 h-6 text-emerald-400 group-hover:scale-110 transition-transform" />
+                                </div>
+                                <h3 className="text-lg font-bold text-white mb-2">Engenharia & Recursos</h3>
+                                <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                                    Cadastro de máquinas e bancadas, catálogo de matérias-primas (chapas/perfis), explosão da árvore BOM e roteiros sequenciais.
+                                </p>
+                            </div>
+                            <div className="text-[11px] font-semibold text-emerald-300 bg-emerald-950/60 p-2.5 rounded-xl border border-emerald-800/40">
+                                Passos 04 ao 07 · Engenharia & Rota
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-900/80 rounded-2xl p-6 border border-amber-500/30 shadow-xl flex flex-col justify-between hover:border-amber-400 transition-all group">
+                            <div>
+                                <div className="flex items-center justify-between mb-4">
+                                    <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 text-[11px] font-black uppercase tracking-wider border border-amber-500/30">
+                                        Fase 03
+                                    </span>
+                                    <Calendar className="w-6 h-6 text-amber-400 group-hover:scale-110 transition-transform" />
+                                </div>
+                                <h3 className="text-lg font-bold text-white mb-2">Demanda & PCP</h3>
+                                <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                                    Carteira de pedidos de venda com prazos acordados, geração de OPs, balanceamento de Carga Máquina e Gantt fabril.
+                                </p>
+                            </div>
+                            <div className="text-[11px] font-semibold text-amber-300 bg-amber-950/60 p-2.5 rounded-xl border border-amber-800/40">
+                                Passos 08 e 09 · Planejamento PCP
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-900/80 rounded-2xl p-6 border border-teal-500/30 shadow-xl flex flex-col justify-between hover:border-teal-400 transition-all group">
+                            <div>
+                                <div className="flex items-center justify-between mb-4">
+                                    <span className="px-2.5 py-1 rounded-lg bg-teal-500/20 text-teal-300 text-[11px] font-black uppercase tracking-wider border border-teal-500/30">
+                                        Fase 04
+                                    </span>
+                                    <Truck className="w-6 h-6 text-teal-400 group-hover:scale-110 transition-transform" />
+                                </div>
+                                <h3 className="text-lg font-bold text-white mb-2">Chão de Fábrica & NF-e</h3>
+                                <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                                    Apontamento vertical por operadores em tablets, gestão de qualidade SGQ/RNCs, montagem de romaneios de carga e auditoria de faturamento.
+                                </p>
+                            </div>
+                            <div className="text-[11px] font-semibold text-teal-300 bg-teal-950/60 p-2.5 rounded-xl border border-teal-800/40">
+                                Passos 10 e 11 · MES & Expedição
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Banner Interativo com Preview do Diagrama Visual e Ação */}
+                    <div className="bg-slate-900/90 rounded-3xl p-6 sm:p-10 border border-amber-500/30 shadow-2xl relative overflow-hidden flex flex-col lg:flex-row items-center justify-between gap-8">
+                        <div className="max-w-2xl">
+                            <div className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-amber-400 mb-2">
+                                <GitBranch className="w-4 h-4 text-amber-400" />
+                                Central de Ajuda & Matriz de Dependências
+                            </div>
+                            <h3 className="text-2xl sm:text-3xl font-black text-white tracking-tight mb-3">
+                                Explore o Fluxograma Interativo em Alta Definição
+                            </h3>
+                            <p className="text-slate-300 text-sm leading-relaxed mb-6">
+                                Na Central de Ajuda você tem acesso ao diagrama visual completo com zoom, matriz de impacto (o que acontece se você pular um passo), tabelas de dados reais associadas e botões diretos para cada tela do sistema.
+                            </p>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <Link
+                                    to="/ajuda?tab=fluxograma"
+                                    className="inline-flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-black text-sm shadow-xl shadow-amber-950/40 hover:shadow-2xl transition-all transform hover:-translate-y-0.5"
+                                >
+                                    <GitBranch className="w-4 h-4 text-slate-950" />
+                                    <span>Acessar Fluxograma do Processo</span>
+                                    <ArrowRight className="w-4 h-4 text-slate-950" />
+                                </Link>
+                                <Link
+                                    to="/ajuda"
+                                    className="inline-flex items-center gap-2 px-5 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-500 text-slate-200 hover:text-white font-bold text-sm transition-all"
+                                >
+                                    <HelpCircle className="w-4 h-4 text-slate-400" />
+                                    <span>Central de Ajuda Completa</span>
+                                </Link>
+                            </div>
+                        </div>
+
+                        {/* Thumbnail clicável do Diagrama */}
+                        <Link 
+                            to="/ajuda?tab=fluxograma" 
+                            className="relative group rounded-2xl overflow-hidden border-2 border-amber-500/40 shadow-2xl max-w-md w-full hover:border-amber-400 transition-all transform hover:scale-[1.02]"
+                            title="Clique para abrir o Fluxograma em tamanho real"
+                        >
+                            <img 
+                                src={flowchartImg} 
+                                alt="Fluxograma Operacional do Processo SINCO" 
+                                className="w-full h-auto object-cover max-h-64 filter brightness-90 group-hover:brightness-100 transition-all" 
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent flex items-end p-4">
+                                <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 text-xs font-black shadow-lg">
+                                    <Maximize2 className="w-3.5 h-3.5" />
+                                    Abrir Diagrama Interativo
+                                </span>
+                            </div>
+                        </Link>
+                    </div>
+                </div>
+            </section>
+
             {/* Principais Clientes & Casos de Sucesso (Web: Max 3 Cards, Infinite Continuous Loop) */}
             <section id="clientes" className="py-20 sm:py-24 bg-[#F4F3ED] border-b border-[#6F7170]/20 overflow-hidden">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -995,14 +1289,14 @@ const LandingPage = () => {
                             <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-[1.15]">
                                 Tecnologia Industrial 4.0 aliada à <br />
                                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-[#F9F8F3] to-[#E0E800]">
-                                    SIM Consultoria (17 Anos de Excelência)
+                                    SIM Consultoria (18 Anos de Excelência)
                                 </span>
                             </h2>
 
                             {/* Official Quote & Bio */}
                             <div className="relative pl-6 border-l-2 border-[#E0E800]/70 my-6 bg-[#23302C]/60 p-5 rounded-r-2xl border-y border-r border-[#6F7170]/40 backdrop-blur-sm">
                                 <p className="text-base sm:text-lg text-[#F9F8F3] font-normal leading-relaxed italic">
-                                    "Há 17 anos, a Sim Consultoria nasceu com o propósito de transformar ideias em resultados, levando inovação, dedicação e compromisso para cada cliente. Nossa trajetória é marcada pela busca constante da excelência, sempre pautada em valores como ética, responsabilidade e profissionalismo."
+                                    "Há 18 anos, a Sim Consultoria nasceu com o propósito de transformar ideias em resultados, levando inovação, dedicação e compromisso para cada cliente. Nossa trajetória é marcada pela busca constante da excelência, sempre pautada em valores como ética, responsabilidade e profissionalismo."
                                 </p>
                                 <span className="block mt-3 text-xs font-bold uppercase tracking-wider text-[#E0E800] not-italic">
                                     — Manifesto Oficial SIM Consultoria
@@ -1055,7 +1349,7 @@ const LandingPage = () => {
                                         </div>
                                     </div>
                                     <div className="px-3 py-1.5 rounded-xl bg-[#425750]/40 border border-[#425750]/60 text-[#F9F8F3] text-xs font-bold text-center">
-                                        17 Anos de <br /> Excelência
+                                        18 Anos de <br /> Excelência
                                     </div>
                                 </div>
 
@@ -1109,6 +1403,206 @@ const LandingPage = () => {
                                     </a>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* Dossiê Técnico & Apresentação Executiva Oficial (PDF & PPTX Download) */}
+            <section id="dossie-apresentacao" className="py-20 sm:py-24 bg-gradient-to-b from-[#151D1A] via-[#1E2825] to-[#151D1A] text-white relative overflow-hidden border-b border-[#6F7170]/30">
+                {/* Background Ambient Glows */}
+                <div className="absolute top-1/4 left-10 w-[500px] h-[350px] bg-[#425750]/20 rounded-full blur-[140px] pointer-events-none" />
+                <div className="absolute bottom-10 right-10 w-[450px] h-[300px] bg-[#E0E800]/10 rounded-full blur-[130px] pointer-events-none" />
+
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+                    <div className="text-center max-w-4xl mx-auto mb-14">
+                        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#425750]/40 border border-[#E0E800]/30 text-[#E0E800] text-xs font-bold uppercase tracking-wider mb-5 backdrop-blur-sm shadow-sm">
+                            <FileCheck className="w-4 h-4 text-[#E0E800]" />
+                            Dossiê Técnico Executivo & Diretrizes Normativas Oficiais
+                        </div>
+
+                        <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-[1.15] mb-5">
+                            Apresentação Técnica Completa: <br />
+                            <span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-[#F9F8F3] to-[#E0E800]">
+                                SINCO Suite & SIM Consultoria (18 Anos)
+                            </span>
+                        </h2>
+
+                        <p className="text-[#C6CFCB] text-sm sm:text-base lg:text-lg leading-relaxed max-w-3xl mx-auto font-normal">
+                            Baixe o material institucional técnico (14 slides widescreen 16:9) estruturado segundo as normas internacionais <strong>ISO 9001</strong>, <strong>ISO 14001</strong>, <strong>ISO 45001</strong> e <strong>ABNT NBR ISO 37000</strong>. Disponível para download gratuito e imediato nos formatos <strong>PDF de Alta Resolução</strong> e <strong>PowerPoint (.pptx editável)</strong>.
+                        </p>
+
+                        {/* Normative Badges Grid */}
+                        <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-2.5 mt-8">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#24312D] border border-[#E0E800]/40 text-[#E0E800] text-xs font-mono font-bold">
+                                ★ ISO 9001:2015 (Qualidade)
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#24312D] border border-emerald-500/40 text-emerald-400 text-xs font-mono font-bold">
+                                ★ ISO 14001:2015 (Meio Ambiente)
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#24312D] border border-sky-500/40 text-sky-400 text-xs font-mono font-bold">
+                                ★ ISO 45001:2018 (Saúde & Segurança)
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#24312D] border border-[#E0E800]/50 text-white text-xs font-mono font-bold shadow-xs">
+                                ★ ABNT NBR ISO 37000:2021 (Governança)
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#24312D] border border-[#6F7170]/40 text-[#D8DCDA] text-xs font-medium">
+                                Riscos (ISO 31000/FMEA)
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#24312D] border border-[#6F7170]/40 text-[#D8DCDA] text-xs font-medium">
+                                Gestão de Mudanças (MOC)
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#24312D] border border-[#6F7170]/40 text-[#D8DCDA] text-xs font-medium">
+                                Gestão Documental (7.5)
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#24312D] border border-[#6F7170]/40 text-[#D8DCDA] text-xs font-medium">
+                                Inspeções Fabris & RNC 5W2H
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* 2 Main Download Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl mx-auto mb-14">
+                        {/* Card PDF */}
+                        <div className="bg-gradient-to-b from-[#24312D] to-[#1E2825] border-2 border-[#E0E800]/40 hover:border-[#E0E800] rounded-3xl p-7 sm:p-8 shadow-2xl transition-all duration-300 flex flex-col justify-between group">
+                            <div>
+                                <div className="flex items-center justify-between gap-4 mb-6">
+                                    <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 group-hover:scale-105 transition-transform shadow-inner">
+                                        <FileText className="w-7 h-7 text-red-400" />
+                                    </div>
+                                    <span className="text-[10px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full bg-[#E0E800]/15 text-[#E0E800] border border-[#E0E800]/30 font-mono">
+                                        PDF 16:9 • Ultra HD
+                                    </span>
+                                </div>
+
+                                <h3 className="text-xl sm:text-2xl font-black text-white mb-2 group-hover:text-[#E0E800] transition-colors">
+                                    Apresentação Executiva (PDF)
+                                </h3>
+
+                                <p className="text-xs sm:text-sm text-[#C6CFCB] leading-relaxed mb-6">
+                                    Documento técnico oficial em alta resolução pronto para impressão executiva, auditorias e envio formal para diretorias industriais e comitês de SGQ.
+                                </p>
+
+                                <ul className="space-y-2 mb-8 border-t border-[#6F7170]/30 pt-4 text-xs text-[#D8DCDA]">
+                                    <li className="flex items-center gap-2">
+                                        <CheckCircle2 className="w-4 h-4 text-[#E0E800] flex-shrink-0" />
+                                        <span><strong>14 Slides Completos:</strong> Arquitetura, Chão de Fábrica, PCP, BOM e SGQ</span>
+                                    </li>
+                                    <li className="flex items-center gap-2">
+                                        <CheckCircle2 className="w-4 h-4 text-[#E0E800] flex-shrink-0" />
+                                        <span><strong>Normas Detalhadas:</strong> ISO 9001, ISO 14001, ISO 45001 e NBR 37000</span>
+                                    </li>
+                                    <li className="flex items-center gap-2">
+                                        <CheckCircle2 className="w-4 h-4 text-[#E0E800] flex-shrink-0" />
+                                        <span><strong>Tamanho:</strong> ~7.6 MB • Visualização nítida em qualquer dispositivo</span>
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div className="space-y-3">
+                                <a 
+                                    href="/SINCO_Apresentacao_Executiva_Lynx_SIM.pdf"
+                                    download="SINCO_Apresentacao_Executiva_Lynx_SIM.pdf"
+                                    className="w-full inline-flex items-center justify-center gap-2.5 bg-[#E0E800] hover:bg-[#c8d200] text-[#1E2825] font-black text-sm px-6 py-3.5 rounded-xl transition-all shadow-lg shadow-[#E0E800]/20 hover:shadow-xl hover:shadow-[#E0E800]/30 transform active:scale-98"
+                                >
+                                    <Download className="w-4 h-4 text-[#1E2825]" />
+                                    <span>Baixar Apresentação em PDF</span>
+                                </a>
+
+                                <a 
+                                    href="/SINCO_Apresentacao_Executiva_Lynx_SIM.pdf"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-full inline-flex items-center justify-center gap-2 bg-[#2E3D37] hover:bg-[#384A43] text-white font-semibold text-xs px-4 py-2.5 rounded-xl border border-[#6F7170]/40 transition-colors"
+                                >
+                                    <span>Visualizar no Navegador</span>
+                                    <ExternalLink className="w-3.5 h-3.5 text-[#C6CFCB]" />
+                                </a>
+                            </div>
+                        </div>
+
+                        {/* Card PPTX */}
+                        <div className="bg-gradient-to-b from-[#24312D] to-[#1E2825] border-2 border-emerald-500/40 hover:border-emerald-400 rounded-3xl p-7 sm:p-8 shadow-2xl transition-all duration-300 flex flex-col justify-between group">
+                            <div>
+                                <div className="flex items-center justify-between gap-4 mb-6">
+                                    <div className="w-14 h-14 rounded-2xl bg-orange-500/10 border border-orange-500/30 flex items-center justify-center text-orange-400 group-hover:scale-105 transition-transform shadow-inner">
+                                        <Presentation className="w-7 h-7 text-orange-400" />
+                                    </div>
+                                    <span className="text-[10px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono">
+                                        PPTX 16:9 • 100% Editável
+                                    </span>
+                                </div>
+
+                                <h3 className="text-xl sm:text-2xl font-black text-white mb-2 group-hover:text-emerald-400 transition-colors">
+                                    Apresentação PowerPoint (.pptx)
+                                </h3>
+
+                                <p className="text-xs sm:text-sm text-[#C6CFCB] leading-relaxed mb-6">
+                                    Apresentação em slides editáveis desenvolvida com identidade visual industrial oficial, perfeita para reuniões de conselho, investidores e treinamentos de chão de fábrica.
+                                </p>
+
+                                <ul className="space-y-2 mb-8 border-t border-[#6F7170]/30 pt-4 text-xs text-[#D8DCDA]">
+                                    <li className="flex items-center gap-2">
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                                        <span><strong>14 Slides Editáveis:</strong> Textos, cartões, dados técnicos e métricas</span>
+                                    </li>
+                                    <li className="flex items-center gap-2">
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                                        <span><strong>Compatibilidade Total:</strong> Microsoft PowerPoint, Google Slides e Keynote</span>
+                                    </li>
+                                    <li className="flex items-center gap-2">
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                                        <span><strong>Tamanho:</strong> ~4.3 MB • Imagens integradas e diagramação profissional</span>
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div className="space-y-3">
+                                <a 
+                                    href="/SINCO_Apresentacao_Executiva_Lynx_SIM.pptx"
+                                    download="SINCO_Apresentacao_Executiva_Lynx_SIM.pptx"
+                                    className="w-full inline-flex items-center justify-center gap-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-black text-sm px-6 py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transform active:scale-98"
+                                >
+                                    <Download className="w-4 h-4 text-white" />
+                                    <span>Baixar Apresentação (.pptx)</span>
+                                </a>
+
+                                <div className="text-center">
+                                    <span className="text-[11px] text-[#A0A8A4] font-medium">
+                                        Arquivo aberto para customização da sua marca e equipe
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Bottom Breakdown Bar (14 Slides Map) */}
+                    <div className="bg-[#1E2825]/90 border border-[#6F7170]/40 rounded-2xl p-6 backdrop-blur-md">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-[#6F7170]/30">
+                            <span className="text-xs font-bold uppercase tracking-wider text-[#E0E800] flex items-center gap-2">
+                                <Layers className="w-4 h-4" />
+                                Conteúdo Programático dos 14 Slides do Dossiê
+                            </span>
+                            <span className="text-xs font-mono text-[#A0A8A4]">
+                                Lynx EMS Sistemas ✕ SIM Consultoria (18 Anos)
+                            </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-[11px] text-[#C6CFCB]">
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 01</strong> Capa Executiva</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 02</strong> ERP vs SINCO</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 03</strong> Cockpit 360° OEE</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 04</strong> PCP no Posto</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 05</strong> Engenharia & BOM</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 06</strong> NBR ISO 37000</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 07</strong> ISO 9001/14001/45001</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 08</strong> Riscos & Mudança</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 09</strong> Gestão Documental</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 10</strong> Inspeções Fabris</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 11</strong> IA Hermes OCR</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 12</strong> Logística & Expedição</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 13</strong> Clientes Reais</div>
+                            <div className="p-2 rounded-lg bg-[#24312D]/80 border border-[#6F7170]/20"><strong className="text-white block font-mono text-[10px] text-[#E0E800]">SLIDE 14</strong> Demonstração</div>
                         </div>
                     </div>
                 </div>
@@ -1343,7 +1837,7 @@ const LandingPage = () => {
                                             Parceiro em Qualidade
                                         </span>
                                         <h5 className="text-white font-extrabold text-sm leading-tight">SIM Consultoria</h5>
-                                        <span className="text-[11px] text-[#C2C5C3] font-medium">17 Anos de História</span>
+                                        <span className="text-[11px] text-[#C2C5C3] font-medium">18 Anos de História</span>
                                     </div>
                                 </div>
                                 <p className="text-xs text-[#C2C5C3] leading-relaxed mb-4">
@@ -1370,8 +1864,9 @@ const LandingPage = () => {
                                 <li><a href="#modulos" className="hover:text-white transition-colors">SINCO ERP Nativo</a></li>
                                 <li><a href="#modulos" className="hover:text-white transition-colors">Engenharia & BOM</a></li>
                                 <li><a href="#parceria-sgq" className="hover:text-[#E0E800] transition-colors">Qualidade Total SGQ (SIM)</a></li>
+                                <li><a href="#dossie-apresentacao" className="hover:text-[#E0E800] transition-colors font-bold flex items-center gap-1.5"><Download className="w-3.5 h-3.5 text-[#E0E800]" /> Dossiê Técnico (PDF & PPTX)</a></li>
                                 <li><a href="#modulos" className="hover:text-white transition-colors">IA Hermes & OCR</a></li>
-                                <li><a href="#modulos" className="hover:text-white transition-colors">Logística & VMI</a></li>
+                                <li><a href="#modulos" className="hover:text-white transition-colors">Logística & Expedição</a></li>
                             </ul>
                         </div>
 
@@ -1380,7 +1875,10 @@ const LandingPage = () => {
                                 Acesso Rápido
                             </h4>
                             <ul className="space-y-2.5 text-xs text-[#C2C5C3]">
+                                <li><Link to="/ajuda?tab=fluxograma" className="hover:text-amber-300 transition-colors font-black text-amber-400 flex items-center gap-1.5"><GitBranch className="w-3.5 h-3.5 text-amber-400" /> Fluxograma do Processo</Link></li>
+                                <li><Link to="/ajuda" className="hover:text-white transition-colors flex items-center gap-1.5"><HelpCircle className="w-3.5 h-3.5 text-[#E0E800]" /> Central de Ajuda & Guia</Link></li>
                                 <li><Link to="/login" className="hover:text-white transition-colors font-bold text-[#E0E800]">Acessar Sistema</Link></li>
+                                <li><a href="#dossie-apresentacao" className="hover:text-white transition-colors">Baixar Apresentação</a></li>
                                 <li><a href="#clientes" className="hover:text-white transition-colors">Principais Clientes</a></li>
                                 <li><a href="#portal-cliente" className="hover:text-white transition-colors">Canal do Cliente</a></li>
                                 <li><a href="#parceria-sgq" className="hover:text-white transition-colors">Parceria SGQ</a></li>

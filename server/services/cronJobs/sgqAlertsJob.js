@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
 const mysqlPool = require('../mysqlService');
+const { sendMail } = require('../mailService');
 const { sendText: waSend } = require('../whatsapp');
 
 let getCorpEmailType = (html) => html;
@@ -61,14 +62,6 @@ const runJob = async (isTest = false, testEmail = null, testWa = null) => {
         // Recuperar contatos dos usuários do sistema
         const [sysUsers] = await mysqlPool.query(`SELECT idUsuario, telefone, email, nome FROM app_usuarios WHERE aprovado = 1`);
 
-        const transporter = nodemailer.createTransport({
-            host: 'smtp.task.com.br',
-            port: 587,
-            secure: false,
-            auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
-            tls: { rejectUnauthorized: false }
-        });
-
         for (const ativo of ativos) {
             const validade = new Date(ativo.calibration_validity);
             validade.setHours(0, 0, 0, 0);
@@ -124,8 +117,7 @@ const runJob = async (isTest = false, testEmail = null, testWa = null) => {
                         const em = isTest ? testEmail : sysUser.email;
                         if (em) {
                             try {
-                                await transporter.sendMail({
-                                    from: '"MetalFisa (Não Responder)" <sincometal@metalfisa.com.br>',
+                                await sendMail({
                                     to: em,
                                     subject: `Alerta SGQ - Calibração: ${ativo.name}`,
                                     html: finalHtml

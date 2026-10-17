@@ -66,15 +66,15 @@ const initPCPMetal = async () => {
                 (
                     'Analista SQL PCPMetal',
                     'analista_sql',
-                    'Você é um Analista de Dados especialista no ERP Protheus (PostgreSQL) e no banco de dados interno da MetalFisa (MySQL). Sua função é receber uma pergunta do usuário e das informações de contexto, e gerar as consultas SQL SELECT necessárias para coletar todos os dados relevantes. Você entende profundamente as tabelas SC5010, SC6010, SC2010, SC9010, SH6010, SA1010, SB1010 do Protheus, e as tabelas internas do App MetalFisa (como app_production_planning). Sempre filtre d_e_l_e_t_ = \\'\\' nas tabelas Protheus. Gere SQL limpo, eficiente e seguro. Você TEM PERMISSÃO para gerar comandos UPDATE e INSERT no banco MySQL para alterar planejamento (ex: tabela app_production_planning) quando o usuário solicitar mudanças ou otimizações, mas NUNCA no PostgreSQL (Protheus).',
-                    'A MetalFisa é uma indústria metalúrgica brasileira. Trabalha com pedidos de venda que envolvem produtos fabricados internamente. O PCP (Planejamento e Controle da Produção) precisa monitorar constantemente o andamento das Ordens de Produção vs datas de entrega comprometidas com os clientes.',
+                    'Você é um Analista de Dados especialista no ERP Protheus (PostgreSQL) e no banco de dados interno da Lynx (MySQL). Sua função é receber uma pergunta do usuário e das informações de contexto, e gerar as consultas SQL SELECT necessárias para coletar todos os dados relevantes. Você entende profundamente as tabelas SC5010, SC6010, SC2010, SC9010, SH6010, SA1010, SB1010 do Protheus, e as tabelas internas do App Lynx (como app_production_planning). Sempre filtre d_e_l_e_t_ = \\'\\' nas tabelas Protheus. Gere SQL limpo, eficiente e seguro. Você TEM PERMISSÃO para gerar comandos UPDATE e INSERT no banco MySQL para alterar planejamento (ex: tabela app_production_planning) quando o usuário solicitar mudanças ou otimizações, mas NUNCA no PostgreSQL (Protheus).',
+                    'A Lynx é uma indústria metalúrgica brasileira. Trabalha com pedidos de venda que envolvem produtos fabricados internamente. O PCP (Planejamento e Controle da Produção) precisa monitorar constantemente o andamento das Ordens de Produção vs datas de entrega comprometidas com os clientes.',
                     'gemini-2.5-flash'
                 ),
                 (
                     'Estrategista PCPMetal',
                     'estrategista',
-                    'Você é PCPMetal, o assistente estrategista de Planejamento e Controle da Produção da MetalFisa. Você recebe dados coletados do banco e elabora relatórios técnicos completos. Foco: entender a estrutura completa de cada OP e seus filhos, respeitando a sequência de fabricação e recursos. Você deve definir a melhor estratégia de produção, propondo antecipar (puxar) a carga de dias futuros para o dia atual quando houver capacidade ociosa disponível. Você pode alertar o usuário com dicas importantes e tem autorização para emitir comandos que alterem o planejamento (solicitando ao Analista SQL). Seus relatórios devem permitir que o usuário interaja e comente para novas análises.',
-                    'A MetalFisa opera com lead times de produção que variam de 10 a 90 dias dependendo da complexidade do produto. Priorize pedidos com data de entrega mais próxima. Considere que a engenharia precisa de pelo menos 3 dias para liberar BOM antes de iniciar a produção.',
+                    'Você é PCPMetal, o assistente estrategista de Planejamento e Controle da Produção da Lynx. Você recebe dados coletados do banco e elabora relatórios técnicos completos. Foco: entender a estrutura completa de cada OP e seus filhos, respeitando a sequência de fabricação e recursos. Você deve definir a melhor estratégia de produção, propondo antecipar (puxar) a carga de dias futuros para o dia atual quando houver capacidade ociosa disponível. Você pode alertar o usuário com dicas importantes e tem autorização para emitir comandos que alterem o planejamento (solicitando ao Analista SQL). Seus relatórios devem permitir que o usuário interaja e comente para novas análises.',
+                    'A Lynx opera com lead times de produção que variam de 10 a 90 dias dependendo da complexidade do produto. Priorize pedidos com data de entrega mais próxima. Considere que a engenharia precisa de pelo menos 3 dias para liberar BOM antes de iniciar a produção.',
                     'gemini-2.5-flash'
                 ),
                 (
@@ -87,8 +87,8 @@ const initPCPMetal = async () => {
                 (
                     'Planejamento Inteligente',
                     'especialista',
-                    'Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para a MetalFisa. Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo PCF (Programação de Capacidade Finita) e fornecer uma análise técnica aprofundada, cruzando dados históricos e de carga futura para identificar riscos de atrasos ou gargalos.',
-                    'A MetalFisa opera com lead times de 10 a 90 dias úteis. O motor PCF assume dias úteis (segunda a sexta) para o cálculo de capacidade de produção. Prazos e prioridades de entrega de pedidos urgentes devem guiar as análises de antecedência de carga.',
+                    'Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para a Lynx. Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo PCF (Programação de Capacidade Finita) e fornecer uma análise técnica aprofundada, cruzando dados históricos e de carga futura para identificar riscos de atrasos ou gargalos.',
+                    'A Lynx opera com lead times de 10 a 90 dias úteis. O motor PCF assume dias úteis (segunda a sexta) para o cálculo de capacidade de produção. Prazos e prioridades de entrega de pedidos urgentes devem guiar as análises de antecedência de carga.',
                     'gemini-2.5-flash'
                 )
             `);
@@ -107,8 +107,8 @@ const initPCPMetal = async () => {
                     (
                         'Planejamento Inteligente',
                         'especialista',
-                        'Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para a MetalFisa. Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo PCF (Programação de Capacidade Finita) e fornecer uma análise técnica aprofundada, cruzando dados históricos e de carga futura para identificar riscos de atrasos ou gargalos.',
-                        'A MetalFisa opera com lead times de 10 a 90 dias úteis. O motor PCF assume dias úteis (segunda a sexta) para o cálculo de capacidade de produção. Prazos e prioridades de entrega de pedidos urgentes devem guiar as análises de antecedência de carga.',
+                        'Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para a Lynx. Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo PCF (Programação de Capacidade Finita) e fornecer uma análise técnica aprofundada, cruzando dados históricos e de carga futura para identificar riscos de atrasos ou gargalos.',
+                        'A Lynx opera com lead times de 10 a 90 dias úteis. O motor PCF assume dias úteis (segunda a sexta) para o cálculo de capacidade de produção. Prazos e prioridades de entrega de pedidos urgentes devem guiar as análises de antecedência de carga.',
                         'gemini-2.5-flash'
                     )
                 `);
@@ -386,13 +386,13 @@ router.post('/prompt-copilot', async (req, res) => {
     const roleLabel = { analista_sql: 'Analista SQL', estrategista: 'Estrategista', orquestrador: 'Orquestrador', especialista: 'Especialista' }[agentRole] || agentRole;
 
     const SYSTEM = `Você é um especialista em engenharia de prompts para sistemas de IA industrial aplicada ao PCP (Planejamento e Controle da Produção).
-Sua missão: ajudar a criar e aprimorar o campo "${fieldLabel}" do agente "${agentNome || roleLabel}" (papel: ${roleLabel}) no sistema PCPMetal da MetalFisa.
+Sua missão: ajudar a criar e aprimorar o campo "${fieldLabel}" do agente "${agentNome || roleLabel}" (papel: ${roleLabel}) no sistema PCPMetal da Lynx.
 
 ## SOBRE O SISTEMA PCPMETAL
-Sistema multi-agente de IA para PCP de uma indústria metalúrgica brasileira (MetalFisa).
+Sistema multi-agente de IA para PCP de uma indústria metalúrgica brasileira (Lynx).
 Acesso a dois bancos:
 - PostgreSQL/Protheus: SC5010 (pedidos), SC6010 (itens), SC9010 (liberações), SC2010 (OPs), SH6010 (roteiros/apontamentos Protheus), SA1010 (clientes), SB1010 (produtos) — sempre filtrar d_e_l_e_t_ = ''
-- MySQL/App MetalFisa: app_production_appointments, app_production_planning, producao_apontamentos, sistema_avisos
+- MySQL/App Lynx: app_production_appointments, app_production_planning, producao_apontamentos, sistema_avisos
 
 ## PAPEL DO AGENTE: ${roleLabel}
 ${agentRole === 'analista_sql' ? '• Recebe perguntas e gera SQL SELECT para coletar dados\n• Nunca gera UPDATE/INSERT/DELETE\n• Deve conhecer tabelas e joins dos dois bancos' : ''}
@@ -400,7 +400,7 @@ ${agentRole === 'estrategista' ? '• Recebe dados do Analista e gera relatório
 ${agentRole === 'orquestrador' ? '• Coordena Analista + Estrategista\n• Consolida respostas em relatório coerente' : ''}
 
 ## CAMPO SENDO EDITADO: ${fieldLabel}
-${fieldType === 'system_prompt' ? '• Define personalidade, regras e capacidades do agente\n• Deve ser preciso, abrangente, guiar claramente o LLM' : '• Contexto de negócio injetado junto ao prompt\n• Regras da MetalFisa: lead times, prioridades, restrições operacionais'}
+${fieldType === 'system_prompt' ? '• Define personalidade, regras e capacidades do agente\n• Deve ser preciso, abrangente, guiar claramente o LLM' : '• Contexto de negócio injetado junto ao prompt\n• Regras da Lynx: lead times, prioridades, restrições operacionais'}
 
 ## TEXTO ATUAL DO CAMPO (base para revisão):
 ${currentText?.trim() ? '```\n' + currentText + '\n```' : '(campo vazio — crie do zero)'}

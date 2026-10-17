@@ -213,10 +213,16 @@ export default function PreEtiquetasTabletView({ onNavigateList }) {
                 op_num: data.op_num,
                 quantidade_solicitada: data.quantidade,
                 criado_por: user?.NomeCompleto || user?.nome || 'Operador',
+                cliente: row.cliente || row.nome_cliente || null,
+                cod_cliente: row.cod_cliente || row.cliente_cod || null,
+                ped_cliente: row.ped_cliente || row.pedcli || row.c6_pedcli || null,
+                ref_cliente: row.ref_cliente || null,
+                revisao: row.rev_cliente || row.c6_rev_cliente || row.rev_codigo || null,
                 pcp_forecast_id: prog?.id || null,
                 pcp_data_entrega: prog?.data_entrega_pcp || null,
                 pcp_serie_cliente: prog?.serie_cliente || null,
-                pcp_serie_metalfisa: prog?.serie_metalfisa || null,
+                pcp_serie_lynx: prog?.serie_lynx || prog?.serie_metalfisa || null,
+                pcp_serie_metalfisa: prog?.serie_lynx || prog?.serie_metalfisa || null,
                 pcp_numero_serie: prog?.numero_serie || null,
                 pcp_lote: prog?.lote || null,
                 pcp_numero_lote: prog?.numero_lote || null
@@ -353,7 +359,7 @@ export default function PreEtiquetasTabletView({ onNavigateList }) {
                                                 : 'border-slate-200 shadow-md hover:border-indigo-300'
                                     }`}
                                 >
-                                    {row.is_priority && (
+                                    {Boolean(row.is_priority) && (
                                         <div className="flex items-center gap-1.5 bg-red-100 text-red-700 p-2 sm:p-3 rounded-xl mb-4 border border-red-200">
                                             <AlertTriangle className="w-5 h-5 flex-shrink-0" />
                                             <span className="font-bold text-sm sm:text-base">
@@ -382,14 +388,44 @@ export default function PreEtiquetasTabletView({ onNavigateList }) {
                                         </div>
                                     </div>
 
-                                    <div className="bg-slate-50 rounded-xl p-3 sm:p-4 mb-4 sm:mb-6 grid grid-cols-2 gap-3 sm:gap-4">
-                                        <div className="min-w-0">
-                                            <p className="text-xs text-slate-500 font-bold uppercase mb-0.5 sm:mb-1">Cliente</p>
-                                            <p className="text-xs sm:text-sm font-bold text-slate-700 truncate" title={row.nome_cliente}>{row.nome_cliente}</p>
+                                    <div className="bg-slate-50 rounded-xl p-3 sm:p-4 mb-4 sm:mb-6 space-y-2.5 border border-slate-200/60">
+                                        <div className="grid grid-cols-2 gap-3 sm:gap-4 items-start">
+                                            <div className="min-w-0">
+                                                <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">Cliente</p>
+                                                <p className="text-xs sm:text-sm font-extrabold text-slate-800 truncate" title={row.nome_cliente}>{row.nome_cliente}</p>
+                                                {(row.cod_cliente || row.cliente_cod) && (
+                                                    <span className="inline-block mt-0.5 text-[10px] font-bold text-slate-500 bg-slate-200/80 px-1.5 py-0.5 rounded">
+                                                        Cód: {String(row.cod_cliente || row.cliente_cod).trim()}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-right sm:text-left">
+                                                <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">Saldo</p>
+                                                <p className="text-base sm:text-lg font-black text-indigo-600">{saldo} un</p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p className="text-xs text-slate-500 font-bold uppercase mb-0.5 sm:mb-1">Saldo</p>
-                                            <p className="text-base sm:text-lg font-black text-indigo-600">{saldo} un</p>
+
+                                        <div className="pt-2 border-t border-slate-200/80 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                                            <div className="flex sm:flex-col justify-between sm:justify-start items-center sm:items-start bg-white p-2 rounded-lg border border-slate-200/80">
+                                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Ped. Cliente</span>
+                                                <span className="font-extrabold text-slate-800 text-xs truncate max-w-[140px]" title={row.ped_cliente || '-'}>
+                                                    {row.ped_cliente ? String(row.ped_cliente).trim() : (row.pedcli || row.c6_pedcli || '-')}
+                                                </span>
+                                            </div>
+
+                                            <div className="flex sm:flex-col justify-between sm:justify-start items-center sm:items-start bg-white p-2 rounded-lg border border-slate-200/80">
+                                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Cód. Prod. Cliente</span>
+                                                <span className="font-extrabold text-slate-800 text-xs truncate max-w-[140px]" title={row.ref_cliente || '-'}>
+                                                    {row.ref_cliente ? String(row.ref_cliente).trim() : '-'}
+                                                </span>
+                                            </div>
+
+                                            <div className="flex sm:flex-col justify-between sm:justify-start items-center sm:items-start bg-white p-2 rounded-lg border border-slate-200/80">
+                                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Revisão</span>
+                                                <span className="font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-xs">
+                                                    Rev: {row.rev_cliente || row.c6_rev_cliente || row.rev_codigo || '-'}
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
 

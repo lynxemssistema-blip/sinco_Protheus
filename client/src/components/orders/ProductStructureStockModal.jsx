@@ -150,7 +150,7 @@ export default function ProductStructureStockModal({
                             type="button"
                             onClick={handleExportPDF}
                             disabled={loading || filteredItems.length === 0}
-                            title="Exportar Relatório em PDF (Padrão MetalFisa)"
+                            title="Exportar Relatório em PDF (Padrão Lynx)"
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                             <FileText size={15} />
@@ -160,7 +160,7 @@ export default function ProductStructureStockModal({
                             type="button"
                             onClick={handleExportExcel}
                             disabled={loading || filteredItems.length === 0}
-                            title="Exportar Relatório em Excel (Padrão MetalFisa)"
+                            title="Exportar Relatório em Excel (Padrão Lynx)"
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                             <FileSpreadsheet size={15} />

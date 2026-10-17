@@ -8,7 +8,7 @@ export function HelpProvider({ children }) {
     const [isOpen, setIsOpen] = useState(false);
     const [forcedPath, setForcedPath] = useState(null);
     const [isPinned, setIsPinned] = useState(() => {
-        return localStorage.getItem('@MetalFisa:helpPinned') === 'true';
+        return localStorage.getItem('@Lynx:helpPinned') === 'true';
     });
     
     // SGQ Database State
@@ -18,7 +18,7 @@ export function HelpProvider({ children }) {
     const togglePin = useCallback(() => {
         setIsPinned(prev => {
             const newVal = !prev;
-            localStorage.setItem('@MetalFisa:helpPinned', String(newVal));
+            localStorage.setItem('@Lynx:helpPinned', String(newVal));
             return newVal;
         });
     }, []);
@@ -33,9 +33,9 @@ export function HelpProvider({ children }) {
                 ...data
             }));
 
-            const token = localStorage.getItem('@MetalFisa:token');
+            const token = localStorage.getItem('@LynxEMS:token') || localStorage.getItem('@Lynx:token');
             // If not logged in, we still want to show help from helpContent.js
-            if (!token) {
+            if (!token || token === 'undefined') {
                 setAllModules(localModulesArr);
                 return;
             }
@@ -44,20 +44,22 @@ export function HelpProvider({ children }) {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            const dbModules = res.data || [];
+            const dbModules = Array.isArray(res?.data) ? res.data : [];
             const merged = [...localModulesArr];
             dbModules.forEach(dbMod => {
-                const existingIndex = merged.findIndex(m => m.route_path === dbMod.route_path);
-                if (existingIndex >= 0) {
-                    merged[existingIndex] = { ...merged[existingIndex], ...dbMod, path: dbMod.route_path };
-                } else {
-                    merged.push({ ...dbMod, path: dbMod.route_path });
+                if (dbMod && dbMod.route_path) {
+                    const existingIndex = merged.findIndex(m => m.route_path === dbMod.route_path);
+                    if (existingIndex >= 0) {
+                        merged[existingIndex] = { ...merged[existingIndex], ...dbMod, path: dbMod.route_path };
+                    } else {
+                        merged.push({ ...dbMod, path: dbMod.route_path });
+                    }
                 }
             });
 
             setAllModules(merged);
         } catch (e) {
-            console.error('Erro ao buscar Ajuda/SGQ:', e);
+            console.warn('⚠️ Ajuda/SGQ não pôde ser carregada da API, usando local:', e.message);
             const localModulesArr = Object.entries(HELP_CONTENT).map(([path, data], index) => ({
                 id: `local_${index}`,
                 route_path: path,

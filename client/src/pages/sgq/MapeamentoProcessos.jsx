@@ -17,7 +17,7 @@ export default function MapeamentoProcessos() {
     const loadData = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('@MetalFisa:token');
+            const token = localStorage.getItem('@Lynx:token');
             const res = await axios.get('/api/sgq/processos', {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -46,7 +46,7 @@ export default function MapeamentoProcessos() {
 
     const handleSaveProcess = async (updatedData) => {
         try {
-             const token = localStorage.getItem('@MetalFisa:token');
+             const token = localStorage.getItem('@Lynx:token');
              await axios.put(`/api/sgq/processos/${selectedProcess.id}`, updatedData, {
                  headers: { Authorization: `Bearer ${token}` }
              });

@@ -201,10 +201,10 @@ export default function CurvaSPedido({ filters }) {
                                         type="monotone" 
                                         dataKey="executado" 
                                         name="Evolução Real (Apontamentos)" 
-                                        stroke="#2563eb" 
+                                        stroke="#425750" 
                                         strokeWidth={4}
-                                        dot={{ r: 4, fill: '#2563eb', strokeWidth: 0 }}
-                                        activeDot={{ r: 8, fill: '#2563eb', stroke: '#fff', strokeWidth: 2 }}
+                                        dot={{ r: 4, fill: '#425750', strokeWidth: 0 }}
+                                        activeDot={{ r: 8, fill: '#425750', stroke: '#fff', strokeWidth: 2 }}
                                     />
                                 </LineChart>
                             </ResponsiveContainer>

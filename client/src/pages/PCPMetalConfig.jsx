@@ -59,7 +59,7 @@ function AgentFlowPanel() {
             color: 'bg-indigo-50 border-indigo-300 text-indigo-800',
             dot: 'bg-indigo-500',
             title: 'Gera as consultas SQL',
-            desc: 'Analisa a pergunta e o esquema das tabelas (Protheus + MetalFisa) e gera as consultas SELECT necessárias para coletar os dados.'
+            desc: 'Analisa a pergunta e o esquema das tabelas (Protheus + Lynx) e gera as consultas SELECT necessárias para coletar os dados.'
         },
         {
             icon: '⚙️',
@@ -67,7 +67,7 @@ function AgentFlowPanel() {
             color: 'bg-amber-50 border-amber-300 text-amber-800',
             dot: 'bg-amber-500',
             title: 'Executa as consultas',
-            desc: 'O sistema executa as queries geradas (somente SELECT) no PostgreSQL (Protheus) e/ou MySQL (App MetalFisa) de forma segura.'
+            desc: 'O sistema executa as queries geradas (somente SELECT) no PostgreSQL (Protheus) e/ou MySQL (App Lynx) de forma segura.'
         },
         {
             icon: '🧠',
@@ -137,7 +137,7 @@ function AgentFlowPanel() {
                         <ul className="space-y-1">
                             {[
                                 'O System Prompt define a personalidade e as regras do agente — seja específico e detalhado.',
-                                'O Contexto de Negócio é injetado junto com o prompt — use para descrever prazos, prioridades e regras da MetalFisa.',
+                                'O Contexto de Negócio é injetado junto com o prompt — use para descrever prazos, prioridades e regras da Lynx.',
                                 'O Contexto de Tabelas ensina ao Analista SQL quais tabelas existem e quando usá-las — quanto mais rico, melhor as queries.',
                                 'Desative agentes com o toggle para tirá-los do fluxo sem precisar deletá-los.',
                                 'O histórico de conversas fica na aba Histórico para auditoria e acompanhamento.',
@@ -481,7 +481,7 @@ export default function PCPMetalConfig() {
                                         onChange={e => setEditSchema(p => ({ ...p, banco: e.target.value }))}
                                     >
                                         <option value="postgresql">PostgreSQL (Protheus)</option>
-                                        <option value="mysql">MySQL (App MetalFisa)</option>
+                                        <option value="mysql">MySQL (App Lynx)</option>
                                     </select>
                                 </div>
                                 <div className="col-span-2">
@@ -544,7 +544,7 @@ export default function PCPMetalConfig() {
                                         <div className={`flex items-center gap-2 mb-2 mt-3 px-1`}>
                                             <Database className="w-3.5 h-3.5 text-slate-400" />
                                             <span className={`text-[10px] font-bold uppercase tracking-wider ${banco === 'postgresql' ? 'text-blue-600' : 'text-orange-600'}`}>
-                                                {banco === 'postgresql' ? 'PostgreSQL — Protheus' : 'MySQL — App MetalFisa'}
+                                                {banco === 'postgresql' ? 'PostgreSQL — Protheus' : 'MySQL — App Lynx'}
                                             </span>
                                             <span className="text-[10px] text-slate-400">({rows.length} tabela{rows.length !== 1 ? 's' : ''})</span>
                                         </div>

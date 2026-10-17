@@ -252,12 +252,12 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
 
     // ── Export ────────────────────────────────────────────────────────────────
     const handleExport = () => {
-        // Colunas: mesmo formato da planilha original + B1_COD_METALFISA e CUSTO_UNI_PROTHEUS
+        // Colunas: mesmo formato da planilha original + B1_COD_LYNX e CUSTO_UNI_PROTHEUS
         const COLS = [
             { key: 'OC',                label: 'OC',                 w: 14 },
             { key: 'ITEM_OC',           label: 'ITEM_OC',            w: 10 },
             { key: 'PRODUTO',           label: 'PRODUTO',            w: 18 },
-            { key: 'B1_COD_METALFISA',  label: 'B1_COD_METALFISA',   w: 18 },
+            { key: 'B1_COD_LYNX',  label: 'B1_COD_LYNX',   w: 18 },
             { key: 'DESC_PRODUTO',      label: 'DESC_PRODUTO',       w: 40 },
             { key: 'NOME_FORNECEDOR',   label: 'NOME_FORNECEDOR',    w: 30 },
             { key: 'DT_EMISSAO',        label: 'DT_EMISSAO',         w: 14 },
@@ -291,7 +291,7 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                     OC:                 item.oc            || '',
                     ITEM_OC:            item.item_oc       || '',
                     PRODUTO:            item.produto       || '',
-                    B1_COD_METALFISA:   item.b1_cod        || '',
+                    B1_COD_LYNX:   item.b1_cod        || '',
                     DESC_PRODUTO:       item.desc_produto  || '',
                     NOME_FORNECEDOR:    item.nome_fornecedor || '',
                     DT_EMISSAO:         fmtDtExcel(item.dt_emissao),
@@ -680,7 +680,7 @@ export default function VMIOcFornecedoresPage({ isTab = false }) {
                                     <tr className="border-b-2 border-slate-200">
                                         <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-left w-8" />
                                         <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-left">Produto (Col C)</th>
-                                        <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-left">B1_COD Metalfisa</th>
+                                        <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-left">B1_COD Lynx</th>
                                         <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-center w-10">PDF</th>
                                         <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-left">Descrição</th>
                                         <th className="px-3 py-2.5 whitespace-nowrap font-semibold text-slate-600 bg-slate-100 text-right">Qtde em Aberto</th>

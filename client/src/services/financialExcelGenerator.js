@@ -35,7 +35,7 @@ const getColLetter = (colIdx) => {
 };
 
 /**
- * Gera e dispara o download da Planilha Financeira no Padrão Corporativo Oficial MetalFisa.
+ * Gera e dispara o download da Planilha Financeira no Padrão Corporativo Oficial Lynx.
  * Inclui processamento assíncrono em lotes (chunking) com feedback de progresso em tempo real.
  *
  * @param {Array} rows - Linhas filtradas da tabela financeira
@@ -57,7 +57,7 @@ export const exportFinancialExcel = async (rows, filters = {}, grouping = 'prev_
     await new Promise(r => setTimeout(r, 20));
 
     const wb = new ExcelJS.Workbook();
-    wb.creator = 'MetalFisa ERP / S&OP';
+    wb.creator = 'Lynx ERP / S&OP';
     wb.created = new Date();
 
     const dateStr = new Date().toLocaleString('pt-BR');
@@ -65,7 +65,7 @@ export const exportFinancialExcel = async (rows, filters = {}, grouping = 'prev_
     const pad = (n) => String(n).padStart(2, '0');
     const fileTimestamp = `${nowStamp.getFullYear()}${pad(nowStamp.getMonth() + 1)}${pad(nowStamp.getDate())}_${pad(nowStamp.getHours())}${pad(nowStamp.getMinutes())}`;
 
-    // Paleta Oficial MetalFisa
+    // Paleta Oficial Lynx
     const NAVY_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
     const BLUE_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
     const SLATE_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
@@ -142,7 +142,7 @@ export const exportFinancialExcel = async (rows, filters = {}, grouping = 'prev_
     // Linha 1: Marca Corporativa
     wsAnalitica.mergeCells(`A1:${lastColLetterAnalitica}1`);
     const r1A = wsAnalitica.getCell('A1');
-    r1A.value = 'METALFISA METALÚRGICA LTDA — SISTEMA INTEGRADO DE GESTÃO (S&OP)';
+    r1A.value = 'LYNX EMS SISTEMAS LTDA — SISTEMA INTEGRADO DE GESTÃO (S&OP)';
     r1A.fill = NAVY_FILL;
     r1A.font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
     r1A.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -362,7 +362,7 @@ export const exportFinancialExcel = async (rows, filters = {}, grouping = 'prev_
 
     wsConsolidado.mergeCells(`A1:${lastColLetterConsolidado}1`);
     const r1C = wsConsolidado.getCell('A1');
-    r1C.value = 'METALFISA METALÚRGICA LTDA — SISTEMA INTEGRADO DE GESTÃO (S&OP)';
+    r1C.value = 'LYNX EMS SISTEMAS LTDA — SISTEMA INTEGRADO DE GESTÃO (S&OP)';
     r1C.fill = NAVY_FILL;
     r1C.font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
     r1C.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -481,7 +481,7 @@ export const exportFinancialExcel = async (rows, filters = {}, grouping = 'prev_
 
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const fileName = `MetalFisa_Carteira_Financeira_${fileTimestamp}.xlsx`;
+    const fileName = `Lynx_Carteira_Financeira_${fileTimestamp}.xlsx`;
 
     if (onProgress) {
         onProgress({ percent: 100, current: totalRows, total: totalRows, stepMessage: 'Concluído! Baixando arquivo...' });

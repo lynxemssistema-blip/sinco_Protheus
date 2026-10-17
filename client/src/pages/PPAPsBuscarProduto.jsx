@@ -15,7 +15,7 @@ export default function PPAPsBuscarProduto() {
     const [success, setSuccess] = useState('');
 
     // Recuperar token para autenticação
-    const token = localStorage.getItem('@MetalFisa:token');
+    const token = localStorage.getItem('@Lynx:token');
 
     // 1. Lidar com a seleção do arquivo e puxar as abas
     const handleFileChange = async (e) => {
@@ -129,7 +129,7 @@ export default function PPAPsBuscarProduto() {
                         <div>
                             <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Buscar Produtos Protheus (PPAPs)</h1>
                             <p className="text-sm text-slate-500 mt-1">
-                                Preenchimento automático do "Desenho MetalFisa" a partir do "Desenho Cliente" na coluna E.
+                                Preenchimento automático do "Desenho Lynx" a partir do "Desenho Cliente" na coluna E.
                             </p>
                             <p className="text-xs text-amber-600 mt-1 font-medium">
                                 Por definição, só preenche produtos já classificados como <strong>PPAP</strong> em algum pedido. Produtos localizados mas sem essa classificação ficam de fora (você recebe o detalhamento por e-mail).

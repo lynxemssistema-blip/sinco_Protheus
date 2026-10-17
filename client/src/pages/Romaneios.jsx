@@ -10,9 +10,9 @@ import { useAuth } from '../contexts/AuthContext';
 export default function Romaneios() {
     const { user, hasPermission } = useAuth();
     const canViewFinancials = hasPermission('valores_financeiros', 'view');
-    const [view, setView] = useStickyState('list', '@metalfisa:roma_view'); // list | form
+    const [view, setView] = useStickyState('list', '@lynxems:roma_view'); // list | form
     const [romaneios, setRomaneios] = useState([]);
-    const [selectedId, setSelectedId] = useStickyState(null, '@metalfisa:roma_selectedId');
+    const [selectedId, setSelectedId] = useStickyState(null, '@lynxems:roma_selectedId');
     const [initialStep, setInitialStep] = useState(1);
     const [formKey, setFormKey] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -27,7 +27,7 @@ export default function Romaneios() {
         status: '',
         startDate: '',
         endDate: ''
-    }, '@metalfisa:roma_filters');
+    }, '@lynxems:roma_filters');
 
     useEffect(() => {
         if (view === 'list') fetchRomaneios();
@@ -509,7 +509,7 @@ function ProductSearch() {
 
                     {/* Print Footer */}
                     <div className="hidden print:block mt-6 text-center text-xs text-slate-500">
-                        <p>MetalFisa - Sistema de Gestão de Romaneios</p>
+                        <p>Lynx - Sistema de Gestão de Romaneios</p>
                     </div>
                 </>
             ) : (

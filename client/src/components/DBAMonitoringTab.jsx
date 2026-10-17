@@ -172,7 +172,7 @@ export default function DBAMonitoringTab() {
                     <div className="bg-teal-50 px-6 py-4 border-b border-teal-100 flex justify-between items-center">
                         <div className="flex items-center gap-2 text-teal-700">
                             <Database className="w-5 h-5" />
-                            <h3 className="font-bold">MySQL (MetalFisa)</h3>
+                            <h3 className="font-bold">MySQL (Lynx)</h3>
                         </div>
                     </div>
                     <div className="p-6 space-y-6">

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db'); // Postgres (Protheus)
 const mysqlPool = require('../services/mysqlService'); // MySQL (App)
+const { getTenantContext } = require('../util/authHelper');
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 const { hasFinancialAccess } = require('../util/permissionHelper');
 const nodemailer = require('nodemailer');
@@ -3406,10 +3407,15 @@ router.get('/pendentes', async (req, res) => {
         if (rows.length > 0) {
             try {
                 const opNums = [...new Set(rows.map(r => r.op_numero).filter(Boolean))];
+                const normalizedOpNums = [...new Set([
+                    ...opNums,
+                    ...opNums.map(o => String(o).trim().padStart(6, '0')),
+                    ...opNums.map(o => String(o).trim().replace(/^0+/, ''))
+                ])].filter(Boolean);
                 console.log('[PENDENTES ENRICH] opNums count:', opNums.length, 'sample:', opNums.slice(0, 3));
 
                 const [scRes, [planRows]] = await Promise.all([
-                    opNums.length ? db.query(
+                    normalizedOpNums.length ? db.query(
                         `SELECT TRIM(c2.c2_num) as op_numero,
                             TRIM(c2.c2_item) as item_op,
                             TRIM(c2.c2_sequen) as op_sequencia,
@@ -3423,23 +3429,23 @@ router.get('/pendentes', async (req, res) => {
                             TRIM(g2.g2_descri) as desc_operacao,
                             TRIM(h1.h1_descri) as master_desc_recurso
                          FROM sc2010 c2
-                         LEFT JOIN sc5010 c5 ON TRIM(c5.c5_num) = TRIM(c2.c2_pedido)
+                         LEFT JOIN sc5010 c5 ON c5.c5_num = c2.c2_pedido
                              AND c5.c5_filial = c2.c2_filial
                              AND COALESCE(c5.d_e_l_e_t_,'') IN ('',' ')
-                         LEFT JOIN sa1010 sa1 ON TRIM(sa1.a1_cod) = TRIM(c5.c5_cliente)
+                         LEFT JOIN sa1010 sa1 ON sa1.a1_cod = c5.c5_cliente
                              AND sa1.a1_loja = c5.c5_lojacli
                              AND COALESCE(sa1.d_e_l_e_t_,'') IN ('',' ')
                          LEFT JOIN public.sg2010 g2 ON
-                             btrim(g2.g2_produto) = btrim(c2.c2_produto)
-                             AND btrim(g2.g2_filial) = btrim(c2.c2_filial)
+                             g2.g2_produto = c2.c2_produto
+                             AND g2.g2_filial = c2.c2_filial
                              AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
                          LEFT JOIN public.sh1010 h1 ON
                              h1.h1_codigo = g2.g2_recurso
                              AND h1.h1_filial = g2.g2_filial
                              AND COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
                           WHERE COALESCE(c2.d_e_l_e_t_,'') IN ('',' ')
-                          AND (TRIM(c2.c2_num) = ANY($1) OR LTRIM(TRIM(c2.c2_num), '0') = ANY($1))`,
-                        [opNums]
+                          AND c2.c2_num = ANY($1)`,
+                        [normalizedOpNums]
                     ) : Promise.resolve({ rows: [] }),
                     opNums.length ? mysqlPool.query(
                         `SELECT op_numero, op_item, op_sequencia, operacao_codigo, data_planejada_inicio, data_planejada_fim
@@ -3602,7 +3608,7 @@ DATE(data_fim) as data,
 // Cache em memória para evitar hit no PG a cada navegação
 let _processesCache = null;
 let _processesCacheTime = 0;
-const PROCESSES_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+const PROCESSES_CACHE_TTL = 30 * 1000; // 30 segundos
 
 // Fallback estático caso o PG esteja indisponível (recursos conhecidos do roteiro)
 const FALLBACK_RESOURCES = [
@@ -3617,47 +3623,42 @@ const FALLBACK_RESOURCES = [
 
 router.get('/processes', async (req, res) => {
     const force = req.query.force === '1';
+    const tenantId = getTenantContext(req) || 0;
+    const cached = _processesCache && _processesCache[tenantId];
 
     // Retorna cache se válido e não forçado
-    if (!force && _processesCache && (Date.now() - _processesCacheTime) < PROCESSES_CACHE_TTL) {
-        return res.json({ data: _processesCache, source: 'cache' });
+    if (!force && cached && (Date.now() - cached.time) < PROCESSES_CACHE_TTL) {
+        return res.json({ data: cached.data, source: 'cache' });
     }
 
     try {
-        // Query simplificada: sem EXISTS (mais rápida, mas pode trazer recursos sem OPs)
-        const resQuery = `
-          SELECT DISTINCT
-            TRIM(h1.h1_codigo) AS cod_recurso,
-            TRIM(h1.h1_descri) AS desc_recurso
-          FROM public.sh1010 h1
-          WHERE COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
-            AND TRIM(h1.h1_codigo) <> ''
-          ORDER BY TRIM(h1.h1_codigo)
+        // Catálogo nativo de recursos do SINCO (cadastro em PCP > Setores/Recursos)
+        let sql = `
+            SELECT TRIM(codigo) AS codigo,
+                   TRIM(COALESCE(NULLIF(nome, ''), descricao, '')) AS descricao
+            FROM pcp_recursos
+            WHERE TRIM(codigo) <> ''
+              AND COALESCE(ativo, 1) = 1
         `;
-
-        console.log('📋 [PROCESSES] Fetching resource list from sh1010...');
-        const pgRes = await db.query(resQuery);
-        console.log(`✅ [PROCESSES] Found ${pgRes.rows.length} resources`);
-
-        const mapped = pgRes.rows.map(r => ({
-            codigo: r.cod_recurso ? r.cod_recurso.trim() : '',
-            descricao: r.desc_recurso ? r.desc_recurso.trim() : ''
-        })).filter(r => r.codigo);
-
-        // Armazena no cache
-        _processesCache = mapped;
-        _processesCacheTime = Date.now();
-
-        res.json({ data: mapped, source: 'db' });
-    } catch (err) {
-        console.warn('⚠️ [PROCESSES] PG indisponível, usando fallback:', err.code, err.message);
-
-        // Se temos cache antigo, retorna mesmo expirado
-        if (_processesCache) {
-            return res.json({ data: _processesCache, source: 'cache_stale' });
+        const params = [];
+        if (tenantId) {
+            sql += ' AND IdEmpresa = ?';
+            params.push(tenantId);
         }
+        sql += ' ORDER BY codigo';
 
-        // Fallback estático
+        const [rows] = await mysqlPool.query(sql, params);
+        console.log(`✅ [PROCESSES] ${rows.length} recursos no SINCO (empresa ${tenantId || 'todas'})`);
+
+        _processesCache = _processesCache || {};
+        _processesCache[tenantId] = { data: rows, time: Date.now() };
+
+        res.json({ data: rows, source: 'db' });
+    } catch (err) {
+        console.warn('⚠️ [PROCESSES] Erro ao buscar recursos no SINCO:', err.code, err.message);
+        if (cached) {
+            return res.json({ data: cached.data, source: 'cache_stale' });
+        }
         res.json({ data: FALLBACK_RESOURCES, source: 'fallback' });
     }
 });
@@ -3826,7 +3827,14 @@ const trackingEvolutionHandler = async (req, res) => {
         }
 
         const td = new TextDecoder('windows-1252');
-        const decodeWin = (buf) => (buf ? td.decode(buf).trim() : '');
+        const decodeWin = (val) => {
+            if (!val) return '';
+            if (typeof val === 'string') return val.trim();
+            if (Buffer.isBuffer(val) || val instanceof Uint8Array) {
+                try { return td.decode(val).trim(); } catch (e) { return String(val).trim(); }
+            }
+            return String(val).trim();
+        };
 
         // 3. Fetch all appointments from MySQL
         const [appointments] = await mysqlPool.query(`
@@ -4616,119 +4624,58 @@ router.get('/estrutura/:codProduto', async (req, res) => {
 
         console.log(`🔍[ESTRUTURA] Buscando estrutura para: ${codLimpo} (Original: ${codProduto})`);
 
-        // 1. Tentar buscar no Protheus (Postgres) - Fonte Oficial de Engenharia
+        // 1. App BOM (erp_estruturas_bom + erp_produtos), recursive, tenant-scoped
         try {
-            const pgQuery = `
-                WITH RECURSIVE Estrutura AS(
-                        SELECT 
-                        TRIM(b1.b1_cod) as codigo,
-                        TRIM(b1.b1_desc) as descricao,
-                        TRIM(b1.b1_um) as unidade,
-                        TRIM(b1.b1_tipo) as tipo_produto,
-                        TRIM(b1.b1_xrevm) as rev_metalfisa,
-                        TRIM(b1.b1_xrevc) as rev_cliente,
-                        b1.b1_msblql as restri_sb1,
-                        COALESCE(b1.b1_uprc, 0)::numeric(18,4) as preco_padrao,
-                        1:: numeric as qtd_necessaria,
-                        0 as nivel,
-                        ARRAY[TRIM(b1.b1_cod)]:: text[] as path_array
-                    FROM public.sb1010 b1
-                    WHERE TRIM(b1.b1_cod) = $1 
-                      AND COALESCE(b1.d_e_l_e_t_, '') IN('', ' ')
-
+            const tenantId = getTenantContext(req) || req.user?.IdEmpresa || 1;
+            const [bomRows] = await mysqlPool.query(
+                `WITH RECURSIVE bom AS (
+                    SELECT p.codigo AS codigo, CAST(NULL AS CHAR(50)) AS parent_code, CAST(1 AS DECIMAL(24,6)) AS qtd_necessaria, 0 AS nivel,
+                           CAST(CONCAT(':', p.codigo, ':') AS CHAR(2000)) AS path_ids,
+                           CAST(p.codigo AS CHAR(2000)) AS path_str
+                    FROM erp_produtos p
+                    WHERE p.codigo = ? AND p.IdEmpresa = ?
                     UNION ALL
+                    SELECT b.produto_filho_codigo,
+                           e.codigo AS parent_code,
+                           CAST(e.qtd_necessaria * b.quantidade * (1 + COALESCE(b.perda_percentual, 0) / 100) AS DECIMAL(24,6)),
+                           e.nivel + 1,
+                           CONCAT(e.path_ids, b.id, ':'),
+                           CONCAT(e.path_str, '>', LPAD(COALESCE(b.ordem_sequencia, 0), 4, '0'), LPAD(b.id, 8, '0'), '|', b.produto_filho_codigo)
+                    FROM erp_estruturas_bom b
+                    JOIN bom e ON b.produto_pai_codigo = e.codigo
+                    WHERE b.IdEmpresa = ? AND COALESCE(b.ativo, 1) = 1 AND e.nivel < 10
+                      AND LOCATE(CONCAT(':', b.id, ':'), e.path_ids) = 0
+                      AND (e.parent_code IS NULL OR e.parent_code != e.codigo)
+                )
+                SELECT bom.codigo, bom.qtd_necessaria, bom.nivel, bom.path_str,
+                       p.descricao, p.unidade_medida, p.tipo, p.revisao_atual, p.status, p.custo_standard
+                FROM bom
+                LEFT JOIN erp_produtos p ON p.codigo = bom.codigo AND p.IdEmpresa = ?
+                ORDER BY bom.path_str
+                LIMIT 1000`,
+                [codLimpo, tenantId, tenantId, tenantId]
+            );
 
-                    SELECT 
-                        TRIM(g1.g1_comp) as codigo,
-                        TRIM(b1.b1_desc) as descricao,
-                        TRIM(b1.b1_um) as unidade,
-                        TRIM(b1.b1_tipo) as tipo_produto,
-                        TRIM(b1.b1_xrevm) as rev_metalfisa,
-                        TRIM(b1.b1_xrevc) as rev_cliente,
-                        b1.b1_msblql as restri_sb1,
-                        COALESCE(b1.b1_uprc, 0)::numeric(18,4) as preco_padrao,
-                        (e.qtd_necessaria * CAST(g1.g1_quant AS NUMERIC)) as qtd_necessaria,
-                        e.nivel + 1,
-                        array_append(e.path_array, TRIM(g1.g1_comp))
-                    FROM public.sg1010 g1
-                    JOIN Estrutura e ON TRIM(g1.g1_cod) = e.codigo
-                    LEFT JOIN public.sb1010 b1 ON TRIM(b1.b1_cod) = TRIM(g1.g1_comp) 
-                        AND COALESCE(b1.d_e_l_e_t_, '') IN('', ' ')
-                    WHERE COALESCE(g1.d_e_l_e_t_, '') IN('', ' ')
-                      AND NOT(TRIM(g1.g1_comp) = ANY(e.path_array))
-                    )
-                SELECT e.*,
-                       z0.z0_status as restri_sz0,
-                       z0.z0_restrics_hex
-                FROM Estrutura e 
-                LEFT JOIN LATERAL (
-                    SELECT 
-                        'P'::text as z0_status,
-                        string_agg(encode(z0_restric, 'hex'), ',' ORDER BY z0_item ASC) as z0_restrics_hex
-                    FROM public.sz0010 z0 
-                    WHERE TRIM(z0.z0_produto) = e.codigo 
-                      AND COALESCE(z0.d_e_l_e_t_, '') <> '*' 
-                      AND z0.z0_status = 'P'
-                ) z0 ON z0.z0_restrics_hex IS NOT NULL
-                ORDER BY path_array
-                LIMIT 1000;
-            `;
-
-            const pgRes = await db.query(pgQuery, [codLimpo]);
-
-            if (pgRes.rows.length > 0) {
-                console.log(`✅[ESTRUTURA] Encontrado no Protheus: ${pgRes.rows.length} itens`);
-
-                // Mapeia para o formato esperado pelo frontend e tenta enriquecer com info de arquivos (da tabela local SE)
-                const safeTrim = (v) => (v && !Buffer.isBuffer(v)) ? String(v).trim() : '';
-                // z0_restric é bytea (Latin-1 com null terminator) — decodificar corretamente
-                const decodeByteaField = (raw) => {
-                    if (!raw) return '';
-                    try {
-                        const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
-                        const cleanBuf = buf.filter(b => b !== 0);
-                        const asUtf8 = cleanBuf.toString('utf8');
-                        return (asUtf8.includes('\uFFFD')
-                            ? cleanBuf.toString('latin1')
-                            : asUtf8).trim();
-                    } catch { return ''; }
-                };
-                finalItems = pgRes.rows.map(row => {
-                    const sb1 = safeTrim(row.restri_sb1);
-                    const bloqueioSb1 = sb1 && ['1', 'S', 'T', 'Y'].includes(sb1);
-                    const restricaoSz0 = row.restri_sz0 === 'P'; // Note we only return 'P' now
-                    const isRestricted = bloqueioSb1 || restricaoSz0;
-
-                    let sz0_desc = '';
-                    if (row.z0_restrics_hex) {
-                        const hexArray = row.z0_restrics_hex.split(',');
-                        sz0_desc = hexArray.map((hex, idx) => {
-                            const text = decodeByteaField(Buffer.from(hex, 'hex'));
-                            return hexArray.length > 1 ? `(${idx + 1}) ${text}` : text;
-                        }).filter(Boolean).join(' | ');
-                    }
-
-                    return {
-                        nivel: row.nivel,
-                        codigo: safeTrim(row.codigo),
-                        descricao: safeTrim(row.descricao),
-                        unidade: safeTrim(row.unidade),
-                        tipo_produto: safeTrim(row.tipo_produto),
-                        rev_metalfisa: safeTrim(row.rev_metalfisa),
-                        rev_cliente: safeTrim(row.rev_cliente),
-                        is_restricted: !!isRestricted,
-                        restri_sb1: bloqueioSb1 ? sb1 : '',
-                        restri_sz0: restricaoSz0 ? 'P' : '',
-                        restricao_sz0_desc: sz0_desc,
-                        qtd_necessaria: Number(row.qtd_necessaria),
-                        preco_padrao: parseFloat(row.preco_padrao) || 0,
-                        tem_arquivos: false,
-                        primeiro_arquivo: null
-                    };
-                });
-            }
-        } catch (pgError) {
-            console.error('⚠️ [ESTRUTURA] Erro ao consultar Protheus, tentando fallback MySQL:', pgError.message);
+            finalItems = bomRows.map(row => ({
+                nivel: Number(row.nivel),
+                codigo: row.codigo,
+                descricao: row.descricao || '',
+                unidade: row.unidade_medida || '',
+                tipo_produto: row.tipo || '',
+                rev_metalfisa: row.revisao_atual || '',
+                rev_cliente: '',
+                is_restricted: ['bloqueado', 'inativo'].includes(String(row.status || '').toLowerCase()),
+                restri_sb1: '',
+                restri_sz0: '',
+                restricao_sz0_desc: '',
+                qtd_necessaria: Number(row.qtd_necessaria),
+                preco_padrao: parseFloat(row.custo_standard) || 0,
+                tem_arquivos: false,
+                primeiro_arquivo: null
+            }));
+            console.log(`✅[ESTRUTURA] ${finalItems.length} itens na BOM do app para ${codLimpo}`);
+        } catch (bomError) {
+            console.error('⚠️ [ESTRUTURA] Erro ao consultar BOM do app:', bomError.message);
         }
 
         // 2. Fallback: Buscar no histórico de OS do MySQL (SE não encontrou no Protheus)
@@ -4818,20 +4765,18 @@ WHERE(i.CodMatFabricante = ? OR i.CodMatFabricante = ?) AND i.ProdutoPrincipal =
             try {
                 const codigos = [...new Set(finalItems.map(i => i.codigo))];
                 if (codigos.length > 0) {
-                    const placeholders = codigos.map((_, i) => `$${i + 1} `).join(',');
-
-                    const szQuery = `
-SELECT
-TRIM(z1_produto) as produto,
-    TRIM(z1_codcli) as desenho,
-    TRIM(z1_nomecli) as cliente,
-    TRIM(z1_revisao) as revisao
-                        FROM public.sz1010 
-                        WHERE TRIM(z1_produto) IN(${placeholders}) 
-                        AND TRIM(COALESCE(d_e_l_e_t_, '')) <> '*'
-    `;
-
-                    const szRes = await db.query(szQuery, codigos);
+                    const placeholders = codigos.map(() => '?').join(',');
+                    const tenantRef = getTenantContext(req) || req.user?.IdEmpresa || 1;
+                    const [refRows] = await mysqlPool.query(
+                        `SELECT DISTINCT TRIM(pi.produto_codigo) AS produto, '' AS desenho,
+                                COALESCE(cl.nome_fantasia, cl.razao_social, pv.cliente_codigo) AS cliente, '' AS revisao
+                         FROM erp_pedidos_itens pi
+                         JOIN erp_pedidos_venda pv ON pv.numero_pedido = pi.pedido_numero AND pv.IdEmpresa = pi.IdEmpresa
+                         LEFT JOIN erp_clientes cl ON cl.codigo = pv.cliente_codigo AND cl.IdEmpresa = pv.IdEmpresa
+                         WHERE pi.IdEmpresa = ? AND TRIM(pi.produto_codigo) IN (${placeholders})`,
+                        [tenantRef, ...codigos]
+                    );
+                    const szRes = { rows: refRows };
 
                     const refMap = {};
                     szRes.rows.forEach(r => {
@@ -5256,13 +5201,7 @@ async function sendCascataErrorEmail(usuario, op_numero, missingDetails, errorMs
         const [rows] = await mysqlPool.query('SELECT Email FROM usuario WHERE NomeCompleto = ? OR Login = ?', [usuario, usuario]);
         if (rows.length === 0 || !rows[0].Email) return;
 
-        const transporter = nodemailer.createTransport({
-            host: 'smtp.task.com.br',
-            port: 587,
-            secure: false,
-            auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
-            tls: { rejectUnauthorized: false }
-        });
+        const { sendMail } = require('../services/mailService');
 
         const html = `
             <h2>Falha no Apontamento em Cascata</h2>
@@ -5291,8 +5230,7 @@ async function sendCascataErrorEmail(usuario, op_numero, missingDetails, errorMs
             <p>Por favor, avise o setor de TI ou PCP sobre este erro sistêmico.</p>
         `;
 
-        await transporter.sendMail({
-            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+        await sendMail({
             to: rows[0].Email,
             subject: `⚠️ ERRO: Baixa Automática Cascata - OP ${op_numero}`,
             html: getCorporateEmailTemplate ? getCorporateEmailTemplate(html) : html

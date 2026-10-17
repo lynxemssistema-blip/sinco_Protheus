@@ -215,12 +215,12 @@ export default function TVDashboard() {
     };
 
     return (
-        <div className="h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden flex flex-col selection:bg-indigo-500/30">
+        <div className="h-screen bg-[#1E2825] text-slate-100 font-sans overflow-hidden flex flex-col selection:bg-[#E0E800]/30">
             
             {/* TV Header */}
-            <header className="bg-slate-900 border-b border-slate-800 px-8 py-4 flex items-center justify-between shrink-0 shadow-2xl z-10">
+            <header className="bg-[#24312D] border-b border-[#425750]/50 px-8 py-4 flex items-center justify-between shrink-0 shadow-2xl z-10">
                 <div className="flex items-center gap-6">
-                    <div className="bg-slate-950/80 p-1.5 rounded-xl border border-slate-800/80 flex flex-col items-center justify-center shadow-inner select-none">
+                    <div className="bg-[#1E2825] p-1.5 rounded-xl border border-[#425750]/60 flex flex-col items-center justify-center shadow-inner select-none">
                         <img src={logo} alt="Lynx EMS Sistemas" className="h-10 w-10 rounded-lg object-cover" />
                         <span className="text-[8px] font-black tracking-widest text-slate-400 uppercase mt-0.5">
                             Lynx EMS
@@ -274,19 +274,19 @@ export default function TVDashboard() {
             </header>
 
             {/* Main Content Area - Dividido Verticalmente (60/40) */}
-            <main className="flex-1 p-6 overflow-hidden bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-slate-950 flex flex-col gap-6">
+            <main className="flex-1 p-6 overflow-hidden bg-[#1E2825] flex flex-col gap-6">
                 
                 {/* Top Section - 60% Altura */}
                 <div className="h-[60%] flex gap-6 shrink-0">
                     {/* Coluna Esquerda: Prioridades Ata Viva */}
                     <div className="w-1/2 flex flex-col justify-start h-full space-y-4">
-                        <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
+                        <div className="flex items-center justify-between border-b border-[#425750]/40 pb-3 shrink-0">
                             <h2 className="text-lg font-black text-white flex items-center gap-2 tracking-tight uppercase">
-                                <AlertTriangle className="w-5 h-5 text-red-500" />
+                                <AlertTriangle className="w-5 h-5 text-[#E0E800]" />
                                 Prioridades Operacionais (Ata Viva)
                             </h2>
                             {totalPrioridadesPages > 1 && (
-                                <span className="text-xs text-slate-400 font-bold bg-slate-900 px-2 py-1 rounded border border-slate-800">
+                                <span className="text-xs text-[#8E9F97] font-bold bg-[#24312D] px-2 py-1 rounded border border-[#425750]/50">
                                     Pág. {currentPage + 1}/{totalPrioridadesPages}
                                 </span>
                             )}
@@ -312,7 +312,7 @@ export default function TVDashboard() {
                                     return (
                                         <div 
                                             key={task.id}
-                                            className="bg-slate-900/90 border border-slate-800/80 rounded-xl p-4 shadow-lg flex flex-col justify-between hover:border-indigo-500/30 transition-all hover:bg-slate-900"
+                                            className="bg-[#24312D] border border-[#425750]/60 rounded-xl p-4 shadow-lg flex flex-col justify-between hover:border-[#E0E800]/50 transition-all hover:bg-[#2D3C37]"
                                             style={{ animationDelay: `${idx * 80}ms` }}
                                         >
                                             <div>
@@ -322,7 +322,7 @@ export default function TVDashboard() {
                                                             PEDIDO: {task.pedido || 'S/PED'}
                                                         </span>
                                                         <span className="px-2 py-0.5 bg-amber-950/40 text-amber-400 rounded-lg text-[10px] font-black border border-amber-500/20 truncate max-w-[150px]" title={task.cliente_nome}>
-                                                            {task.cliente_nome ? task.cliente_nome.toUpperCase() : 'METALFISA'}
+                                                            {task.cliente_nome ? task.cliente_nome.toUpperCase() : 'LYNX'}
                                                         </span>
                                                         {task.op_numero && (
                                                             <span className="px-2 py-0.5 bg-slate-850 text-slate-300 rounded-lg text-[10px] font-bold border border-slate-700/40 font-mono">
@@ -421,7 +421,7 @@ export default function TVDashboard() {
                                                             DATA PCP: {formatPcpDate(task.data_pcp)}
                                                         </span>
                                                         <span className="px-2 py-0.5 bg-amber-950/40 text-amber-400 rounded-lg text-[10px] font-black border border-amber-500/20 truncate max-w-[150px]" title={task.cliente_nome}>
-                                                            {task.cliente_nome ? task.cliente_nome.toUpperCase() : 'METALFISA'}
+                                                            {task.cliente_nome ? task.cliente_nome.toUpperCase() : 'LYNX'}
                                                         </span>
                                                         {task.op_numero && (
                                                             <span className="px-2 py-0.5 bg-slate-850 text-slate-300 rounded-lg text-[10px] font-bold border border-slate-700/40 font-mono">

@@ -64,21 +64,26 @@ app.use(cors({
     origin: function (origin, callback) {
         const allowedOrigins = [
             process.env.CORS_ORIGIN,
-            'https://metalfisa.lynxems.com.br',
-            'http://192.168.1.77:3001',
+            'https://lynxems.com.br',
+            'https://www.lynxems.com.br',
+            'http://lynxems.com.br',
             'http://localhost:5173',
             'http://localhost:5174',
             'http://localhost:3000',
-            'http://192.168.1.167:5173'
-        ];
-        if (!origin || allowedOrigins.includes(origin)) {
+            'http://localhost:3001',
+            'http://localhost:3003'
+        ].filter(Boolean);
+
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.lynxems.com.br')) {
             callback(null, true);
         } else {
-            callback(new Error('Not allowed by CORS'));
+            console.warn(`[CORS] Origem não permitida: ${origin}`);
+            callback(null, false);
         }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
 }));
 
 // Logging Middleware — reduced in production

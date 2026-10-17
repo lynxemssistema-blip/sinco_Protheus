@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { logoBase64 } from './metalfisaLogoBase64';
+import { getCompanyLegalName, getCompanyShortName, getCompanyAddressCnpjLine, getCompanyTagline } from './companyBranding';
 
 const formatDate = (dateStr) => {
     if (!dateStr) return '-';
@@ -39,19 +40,19 @@ export const generateFaturamentoHistoricoPdf = (viewMode, rows, includeValues = 
             } else {
                 doc.setFontSize(13);
                 doc.setFont('helvetica', 'bold');
-                doc.text('METALFISA', ML + 4, hY + 6);
+                doc.text(getCompanyShortName(), ML + 4, hY + 6);
                 doc.setFontSize(5.5);
                 doc.setFont('helvetica', 'normal');
-                doc.text('Transformando metais em excelência', ML + 4, hY + 10);
+                doc.text(getCompanyTagline(), ML + 4, hY + 10);
             }
 
             // Company Block
             doc.setFontSize(7.5);
             doc.setFont('helvetica', 'bold');
-            doc.text('METALFISA METALURGICA LTDA', col1 + 3, hY + 5.5);
+            doc.text(getCompanyLegalName(), col1 + 3, hY + 5.5);
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(6.5);
-            doc.text('R. Américo Santiago Piacenza, 516  —  CNPJ: 23.881.592/0001-01', col1 + 3, hY + 9.5);
+            doc.text(getCompanyAddressCnpjLine(), col1 + 3, hY + 9.5);
             doc.text('Faturamento Histórico', col1 + 3, hY + 13.5);
 
             // Emission Block

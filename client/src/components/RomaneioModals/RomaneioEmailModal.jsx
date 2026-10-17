@@ -39,7 +39,7 @@ const RomaneioEmailModal = ({ isOpen, onClose, romaneio, initialStatus }) => {
                 
                 setEmails(detectedEmails.length > 0 ? detectedEmails : ['']);
                 setSubject(`[METAFISA] Romaneio #${romaneio.id} - Status: ${romaneio.status?.toUpperCase() || 'ATUALIZADO'}`);
-                setMessage(`Olá,\n\nO status do Romaneio #${romaneio.id} foi alterado para ${romaneio.status?.toUpperCase()}.\nSegue em anexo o PDF atualizado para conferência.\n\nAtenciosamente,\n${user?.nome || 'Equipe MetalFisa'}`);
+                setMessage(`Olá,\n\nO status do Romaneio #${romaneio.id} foi alterado para ${romaneio.status?.toUpperCase()}.\nSegue em anexo o PDF atualizado para conferência.\n\nAtenciosamente,\n${user?.nome || 'Equipe Lynx'}`);
                 setResult(null);
             } catch (err) {
                 console.error('Erro ao carregar detalhes do e-mail:', err);
@@ -123,7 +123,7 @@ const RomaneioEmailModal = ({ isOpen, onClose, romaneio, initialStatus }) => {
                         </div>
                         <div>
                             <h3 className="text-white font-bold">Enviar Romaneio por E-mail</h3>
-                            <p className="text-slate-400 text-xs">Padrão Alfatec / MetalFisa</p>
+                            <p className="text-slate-400 text-xs">Padrão Alfatec / Lynx</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">

@@ -216,8 +216,8 @@ const BOMGenerator = () => {
                                         </td>
                                     </tr>
                                 ) : (
-                                    aglutinatedData.map((item) => (
-                                        <tr key={item.codigo} className="hover:bg-gray-50 transition-colors">
+                                    aglutinatedData.map((item, idx) => (
+                                        <tr key={`${item.codigo}-${idx}`} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-3 font-mono text-gray-600 text-xs">
                                                 {item.codigo}
                                             </td>

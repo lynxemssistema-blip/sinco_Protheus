@@ -3,6 +3,7 @@ const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { logoBase64 } from './metalfisaLogoBase64';
+import { getCompanyShortName } from './companyBranding';
 
 const NAVY = [15, 23, 42];      // #0f172a
 const BLUE = [30, 58, 95];      // #1e3a5f
@@ -12,7 +13,7 @@ const ML = 10;
 const MR = 10;
 
 /**
- * Cabeçalho Padrão MetalFisa para PDF
+ * Cabeçalho Padrão Lynx para PDF
  */
 const drawHeader = (doc, pageWidth, meta, user) => {
     const hY = 6;
@@ -43,7 +44,7 @@ const drawHeader = (doc, pageWidth, meta, user) => {
         doc.setFontSize(13);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(...BLUE);
-        doc.text('METALFISA', ML + 5, hY + 13);
+        doc.text(getCompanyShortName(), ML + 5, hY + 13);
     }
 
     // ── Título central & Dados do Produto ──
@@ -79,7 +80,7 @@ const drawHeader = (doc, pageWidth, meta, user) => {
 };
 
 /**
- * Rodapé Padrão MetalFisa
+ * Rodapé Padrão Lynx
  */
 const drawFooters = (doc, pageWidth) => {
     const pageCount = doc.internal.getNumberOfPages();
@@ -89,13 +90,13 @@ const drawFooters = (doc, pageWidth) => {
         doc.setFontSize(7.5);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(130, 130, 130);
-        doc.text(`Gerado via MetalFisa App — SINCO PCP / Controle de Estoque`, ML, pageH - 4);
+        doc.text(`Gerado via Lynx App — SINCO PCP / Controle de Estoque`, ML, pageH - 4);
         doc.text(`Página ${i} de ${pageCount}`, pageWidth - MR, pageH - 4, { align: 'right' });
     }
 };
 
 /**
- * Exportar Relatório em PDF no Padrão MetalFisa
+ * Exportar Relatório em PDF no Padrão Lynx
  * @param {Array} items Lista de itens da estrutura
  * @param {Object} meta Metadados (código, descrição, pedido, etc.)
  * @param {Object} user Usuário logado
@@ -274,7 +275,7 @@ export const exportProductStructureStockPDF = (items, meta = {}, user = null, re
 };
 
 /**
- * Exportar Relatório em Excel (XLSX) no Padrão MetalFisa
+ * Exportar Relatório em Excel (XLSX) no Padrão Lynx
  */
 export const exportProductStructureStockExcel = (items, meta = {}, user = null) => {
     if (!items || items.length === 0) return;

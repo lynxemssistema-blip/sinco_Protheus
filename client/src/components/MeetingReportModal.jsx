@@ -188,7 +188,7 @@ export default function MeetingReportModal({ isOpen, onClose, orders, filteredDa
 
             if (sendAviso && user?.id) {
                 try {
-                    const token = localStorage.getItem('@metalfisa:token');
+                    const token = localStorage.getItem('@lynxems:token');
                     // Find the order info to enrich the aviso message
                     const orderData = Object.values(reportData).find(g => g.info.pedido === order);
                     const clientName = orderData?.info?.cliente || '';

@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const nodemailer = require('nodemailer');
 const mysqlPool = require('../mysqlService');
+const { sendMail } = require('../mailService');
 const { sendText: waSend, logEmailSent, msgFaturamentoPendente } = require('../whatsapp');
 
 let getCorpEmailType = (html) => html;
@@ -114,25 +115,16 @@ const runJob = async (isTest = false, testEmail = null) => {
             return;
         }
 
-        const transporter = nodemailer.createTransport({
-            host: 'smtp.task.com.br',
-            port: 587,
-            secure: false,
-            auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
-            tls: { rejectUnauthorized: false }
-        });
-
         const htmlBody = `
             <h2 style="color: #dc2626;">🚨 Atenção! Faturamentos Diários em Aberto</h2>
             <p style="font-size: 15px;">Este é um resumo gerencial informando que temos <strong>${sols.length}</strong> lote(s) de expedição aguardando emissão e vínculo da Nota Fiscal no sistema.</p>
             <br/>
             ${conteudosHtml}
-            <p style="font-size: 12px; color: #64748b; margin-top: 30px;">Este é um alerta automático gerado pelo ERP MetalFisa SINCO (Agendador Noturno). Por favor, trate as solicitações no "Controle de Faturamento".</p>
+            <p style="font-size: 12px; color: #64748b; margin-top: 30px;">Este é um alerta automático gerado pelo ERP Lynx SINCO (Agendador Noturno). Por favor, trate as solicitações no "Controle de Faturamento".</p>
         `;
 
         const subject = `🚨 [Visão Gerencial] Temos ${sols.length} Solicitações de Faturamento Pendentes`;
-        await transporter.sendMail({
-            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+        await sendMail({
             to: recipientList.join(','),
             subject,
             html: getCorpEmailType(htmlBody)

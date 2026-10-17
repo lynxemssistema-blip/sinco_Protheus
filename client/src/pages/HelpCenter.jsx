@@ -1,17 +1,17 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link as RouterLink } from 'react-router-dom';
 import {
     Search, HelpCircle, ChevronRight, BookOpen, ShoppingCart, Factory,
     Package, Settings, Truck, FileText, BarChart, Calendar, Database,
-    ShieldCheck, Lightbulb, Zap, ArrowRight, Home, List, Grid,
+    ShieldCheck, Lightbulb, Zap, ArrowRight, ArrowLeft, Home, List, Grid,
     CheckSquare, TrendingUp, Bell, User, Layers, ClipboardCheck, Lock, GraduationCap,
     AlertOctagon, Box, Award, Smartphone, UserMinus, Wrench, Inbox, Tv, FileSpreadsheet,
-    PieChart, ArrowLeftRight, Play, BarChart2, Monitor, Landmark, Link
+    PieChart, ArrowLeftRight, Play, BarChart2, Monitor, Landmark, Link, GitBranch, Sparkles
 } from 'lucide-react';
 import { useHelp } from '../contexts/HelpContext';
 import { useAuth } from '../contexts/AuthContext';
-import RelatorioEntrega from './RelatorioEntrega';
 import TrainingPlanTab from '../components/TrainingPlanTab';
+import FluxogramaProcessoTab from '../components/help/FluxogramaProcessoTab';
 
 // ─── Icon Map ────────────────────────────────────────────────────────────────
 const ICON_MAP = {
@@ -37,8 +37,7 @@ const CATEGORY_STYLES = {
     'OP Fracionada': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
     'PCP / Chão de Fábrica': { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', badge: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500' },
     'Planejamento / PCP': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
-    'VMI / PCP': { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
-    'VMI': { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', badge: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
+
     'Engenharia': { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200', badge: 'bg-teal-100 text-teal-700', dot: 'bg-teal-500' },
     'Engenharia / CAD': { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200', badge: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
     'Engenharia / Produto': { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200', badge: 'bg-teal-100 text-teal-700', dot: 'bg-teal-500' },
@@ -63,10 +62,7 @@ const CATEGORY_STYLES = {
     'Financeiro': { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200', badge: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
     'Recursos Humanos': { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', badge: 'bg-rose-100 text-rose-700', dot: 'bg-rose-500' },
     'RH': { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', badge: 'bg-rose-100 text-rose-700', dot: 'bg-rose-500' },
-    'Gestão de Clientes / WabTec': { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', badge: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500' },
-    'WabTec': { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', badge: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-500' },
-    'Gestão de Clientes / Engetron': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
-    'Engetron': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
+
     'Manutenção de Equip.': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
     'Manutenção': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
     'Meu Painel': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
@@ -79,16 +75,30 @@ function getStyle(category) {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function HelpCenter() {
+export default function HelpCenter({ isPublic = false }) {
     const navigate = useNavigate();
-    const { isAdmin } = useAuth();
+    const location = useLocation();
+    const { user, isAdmin } = useAuth();
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedId, setSelectedId] = useState(null);
     const [activeCategory, setActiveCategory] = useState('Todos');
     const { allModules, openHelp, loadingHelp } = useHelp();
     const [activeTabId, setActiveTabId] = useState(null);
-    // Main-level tab: 'docs' (default) | 'entrega' (admin-only)
-    const [activeMainTab, setActiveMainTab] = useState('docs');
+
+    // Main-level tab: 'docs' | 'treinamento' | 'fluxograma'
+    const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+    const requestedTab = queryParams.get('tab');
+    const [activeMainTab, setActiveMainTab] = useState(
+        requestedTab && ['docs', 'treinamento', 'fluxograma'].includes(requestedTab)
+            ? requestedTab 
+            : 'docs'
+    );
+
+    useEffect(() => {
+        if (requestedTab && ['docs', 'treinamento', 'fluxograma'].includes(requestedTab)) {
+            setActiveMainTab(requestedTab);
+        }
+    }, [requestedTab]);
 
     const selectedModule = useMemo(
         () => allModules.find(m => m.id === selectedId) || null,
@@ -158,6 +168,36 @@ export default function HelpCenter() {
 
     return (
         <div className="min-h-screen bg-[#f1f5f9] font-sans">
+            {/* ── PUBLIC TOP BAR (Para visitantes vindos da Landing Page) ── */}
+            {(!user || isPublic) && (
+                <div className="bg-slate-950 border-b border-slate-800 text-white px-4 sm:px-6 py-3.5 sticky top-0 z-50 shadow-md">
+                    <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+                        <RouterLink to="/" className="flex items-center gap-2.5 text-slate-300 hover:text-white transition-all group">
+                            <ArrowLeft className="w-4 h-4 text-emerald-400 group-hover:-translate-x-1 transition-transform" />
+                            <span className="text-xs sm:text-sm font-bold">Voltar para a Página Inicial</span>
+                        </RouterLink>
+
+                        <div className="flex items-center gap-2 sm:gap-3">
+                            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
+                                <Sparkles className="w-3 h-3 text-amber-400" />
+                                Acesso Livre: A Verdade do Processo Fabril
+                            </span>
+                            <RouterLink
+                                to="/login"
+                                className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-slate-300 hover:text-white border border-slate-700 hover:bg-slate-800 transition-all"
+                            >
+                                Entrar
+                            </RouterLink>
+                            <RouterLink
+                                to="/login?mode=register&tab=empresa"
+                                className="px-4 py-1.5 rounded-lg text-xs font-black text-slate-950 bg-emerald-400 hover:bg-emerald-300 shadow-sm transition-all"
+                            >
+                                Testar 14 Dias Grátis
+                            </RouterLink>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── TOP HEADER ── */}
             <div className="bg-slate-900 text-white">
@@ -167,26 +207,26 @@ export default function HelpCenter() {
                         <div>
                             <div className="flex items-center gap-2 mb-3">
                                 <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center">
-                                    <BookOpen className="h-4 w-4 text-blue-400" />
+                                    <BookOpen className="h-4 w-4 text-emerald-400" />
                                 </div>
-                                <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">
-                                    MetalFisa PCP · Central de Ajuda
+                                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
+                                    Lynx PCP · Central de Ajuda
                                 </span>
                             </div>
                             <h1 className="text-4xl md:text-5xl font-black tracking-tight leading-none mb-2">
-                                {activeMainTab === 'entrega' ? (
-                                    <>Entrega para <span className="text-emerald-400">Produção</span></>
-                                ) : activeMainTab === 'treinamento' ? (
-                                    <>Plano de <span className="text-blue-400">Treinamento</span></>
+                                {activeMainTab === 'treinamento' ? (
+                                    <>Plano de <span className="text-emerald-400">Treinamento</span></>
+                                ) : activeMainTab === 'fluxograma' ? (
+                                    <>Fluxograma do <span className="text-amber-400">Processo SINCO</span></>
                                 ) : (
-                                    <>Documentação <span className="text-blue-400">Completa</span></>
+                                    <>Documentação <span className="text-emerald-400">Completa</span></>
                                 )}
                             </h1>
                             <p className="text-slate-400 text-base max-w-lg">
-                                {activeMainTab === 'entrega'
-                                    ? 'Relatório técnico oficial de entrega do sistema MetalFisa ERP em produção.'
-                                    : activeMainTab === 'treinamento'
+                                {activeMainTab === 'treinamento'
                                     ? 'Capacitação prática por trilhas de função, fichas passo a passo e matriz de avaliação operacional.'
+                                    : activeMainTab === 'fluxograma'
+                                    ? 'Árvore de dependências e ordem de cadastros para funcionamento perfeito da fábrica no ERP.'
                                     : `${allModules.length} módulos documentados. Clique em qualquer módulo para ver o guia detalhado de uso.`
                                 }
                             </p>
@@ -196,7 +236,23 @@ export default function HelpCenter() {
                         <div className="flex flex-col gap-3 items-end">
 
                             {/* ── Main Tab Switcher ── */}
-                            <div className="flex items-center gap-1 bg-white/10 rounded-xl p-1 ring-1 ring-white/10">
+                            <div className="flex flex-wrap items-center gap-1 bg-white/10 rounded-xl p-1 ring-1 ring-white/10">
+                                <button
+                                    id="help-tab-fluxograma"
+                                    onClick={() => setActiveMainTab('fluxograma')}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                                        activeMainTab === 'fluxograma'
+                                            ? 'bg-amber-500 text-slate-950 shadow-sm font-black'
+                                            : 'text-slate-300 hover:text-white hover:bg-white/10'
+                                    }`}
+                                >
+                                    <GitBranch className="h-4 w-4 text-amber-300" />
+                                    Fluxograma do Processo
+                                    <span className="ml-1 px-1.5 py-0.2 rounded-full bg-amber-400/20 text-amber-300 text-[9px] font-black uppercase tracking-wider ring-1 ring-amber-400/30">
+                                        Novo
+                                    </span>
+                                </button>
+
                                 <button
                                     id="help-tab-docs"
                                     onClick={() => setActiveMainTab('docs')}
@@ -222,26 +278,6 @@ export default function HelpCenter() {
                                     <GraduationCap className="h-4 w-4 text-blue-300" />
                                     Plano de Treinamento
                                 </button>
-
-                                {isAdmin && (
-                                    <button
-                                        id="help-tab-entrega"
-                                        onClick={() => setActiveMainTab('entrega')}
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                                            activeMainTab === 'entrega'
-                                                ? 'bg-emerald-500 text-white shadow-sm'
-                                                : 'text-slate-300 hover:text-white hover:bg-white/10'
-                                        }`}
-                                    >
-                                        <ClipboardCheck className="h-3.5 w-3.5" />
-                                        Entrega para Produção
-                                        {activeMainTab !== 'entrega' && (
-                                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[9px] font-black uppercase tracking-wider ring-1 ring-emerald-500/30">
-                                                Admin
-                                            </span>
-                                        )}
-                                    </button>
-                                )}
                             </div>
 
                             {/* Search — only visible on docs tab */}
@@ -268,17 +304,17 @@ export default function HelpCenter() {
                 </div>
             </div>
 
+            {/* ── FLUXOGRAMA DO PROCESSO TAB ── */}
+            {activeMainTab === 'fluxograma' && (
+                <div className="max-w-7xl mx-auto px-6 py-8">
+                    <FluxogramaProcessoTab />
+                </div>
+            )}
+
             {/* ── TREINAMENTO TAB ── */}
             {activeMainTab === 'treinamento' && (
                 <div className="max-w-7xl mx-auto px-6 py-8">
                     <TrainingPlanTab />
-                </div>
-            )}
-
-            {/* ── ENTREGA PARA PRODUÇÃO TAB (admin-only) ── */}
-            {activeMainTab === 'entrega' && isAdmin && (
-                <div className="max-w-7xl mx-auto px-6 py-4">
-                    <RelatorioEntrega embedded />
                 </div>
             )}
 
@@ -549,7 +585,7 @@ export default function HelpCenter() {
                         <div className="space-y-8">
                             {/* Workflow Fluxo */}
                             <div className="bg-white rounded-2xl border border-slate-200 p-6">
-                                <h2 className="font-black text-slate-900 text-lg mb-1">Fluxo MetalFisa PCP</h2>
+                                <h2 className="font-black text-slate-900 text-lg mb-1">Fluxo Lynx PCP</h2>
                                 <p className="text-sm text-slate-500 mb-6">O caminho do pedido: da venda à entrega.</p>
                                 <div className="flex flex-wrap gap-3 items-center">
                                     {[
@@ -613,7 +649,7 @@ export default function HelpCenter() {
             {activeMainTab === 'docs' && (
             <div className="max-w-7xl mx-auto px-6 pb-12 text-center">
                 <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">
-                    MetalFisa PCP · Central de Ajuda · {allModules.length} módulos documentados
+                    Lynx PCP · Central de Ajuda · {allModules.length} módulos documentados
                 </p>
             </div>
             )}

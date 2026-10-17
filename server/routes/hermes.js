@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const mysqlPool = require('../services/mysqlService');
 const { orchestrateHermes } = require('../services/hermes/orchestrator');
+const { isSuperAdminUser } = require('../util/authHelper');
 
 // ========= DATABASE INITIALIZATION =========
 const initHermes = async () => {
@@ -77,7 +78,7 @@ const initHermes = async () => {
             await mysqlPool.query(`
                 INSERT INTO hermes_config (system_prompt, modelo, temperature, autonomia) VALUES
                 (
-                    'Você é Hermes, o agente inteligente e assistente analítico da MetalFisa. Sua missão é apoiar a tomada de decisões de produção e planejar operações na fábrica, analisando dados de produção em tempo real. Você pode fazer consultas ao banco de dados e propor alterações.',
+                    'Você é Hermes, o agente inteligente e assistente analítico da Lynx. Sua missão é apoiar a tomada de decisões de produção e planejar operações na fábrica, analisando dados de produção em tempo real. Você pode fazer consultas ao banco de dados e propor alterações.',
                     'gemini-2.5-flash',
                     0.3,
                     0
@@ -100,7 +101,7 @@ setTimeout(initHermes, 3000);
 // GET /api/hermes/config
 router.get('/config', async (req, res) => {
     try {
-        if (!req.user || req.user.tipo !== 'SA') {
+        if (!req.user || !isSuperAdminUser(req.user)) {
             return res.status(403).json({ error: 'Acesso restrito para Super Administradores.' });
         }
         const [rows] = await mysqlPool.query('SELECT * FROM hermes_config ORDER BY id DESC LIMIT 1');
@@ -116,7 +117,7 @@ router.get('/config', async (req, res) => {
 // PUT /api/hermes/config
 router.put('/config', async (req, res) => {
     try {
-        if (!req.user || req.user.tipo !== 'SA') {
+        if (!req.user || !isSuperAdminUser(req.user)) {
             return res.status(403).json({ error: 'Acesso restrito para Super Administradores.' });
         }
         const { system_prompt, modelo, temperature, autonomia } = req.body;
@@ -278,7 +279,7 @@ router.post('/chat-stream', async (req, res) => {
 // Reuses the existing pcpmetal_agentes list of agents as behavior profiles for tasks.
 router.get('/profiles', async (req, res) => {
     try {
-        if (!req.user || req.user.tipo !== 'SA') {
+        if (!req.user || !isSuperAdminUser(req.user)) {
             return res.status(403).json({ error: 'Acesso restrito para Super Administradores.' });
         }
         // Fetch all active agents from pcpmetal_agentes
@@ -298,7 +299,7 @@ const { scheduleTaskInstance, stopTaskInstance, executeTaskImmediately } = requi
 // GET /api/hermes/tasks
 router.get('/tasks', async (req, res) => {
     try {
-        if (!req.user || req.user.tipo !== 'SA') {
+        if (!req.user || !isSuperAdminUser(req.user)) {
             return res.status(403).json({ error: 'Acesso restrito para Super Administradores.' });
         }
         const [rows] = await mysqlPool.query(`
@@ -316,7 +317,7 @@ router.get('/tasks', async (req, res) => {
 // POST /api/hermes/tasks
 router.post('/tasks', async (req, res) => {
     try {
-        if (!req.user || req.user.tipo !== 'SA') {
+        if (!req.user || !isSuperAdminUser(req.user)) {
             return res.status(403).json({ error: 'Acesso restrito para Super Administradores.' });
         }
         const { nome, descricao, perfil_id, cron_expression, prompt_execucao, alerta_email, alerta_whatsapp, temperature, autonomia } = req.body;
@@ -347,7 +348,7 @@ router.post('/tasks', async (req, res) => {
 // PUT /api/hermes/tasks/:id
 router.put('/tasks/:id', async (req, res) => {
     try {
-        if (!req.user || req.user.tipo !== 'SA') {
+        if (!req.user || !isSuperAdminUser(req.user)) {
             return res.status(403).json({ error: 'Acesso restrito para Super Administradores.' });
         }
         const { id } = req.params;
@@ -383,7 +384,7 @@ router.put('/tasks/:id', async (req, res) => {
 // POST /api/hermes/tasks/:id/toggle
 router.post('/tasks/:id/toggle', async (req, res) => {
     try {
-        if (!req.user || req.user.tipo !== 'SA') {
+        if (!req.user || !isSuperAdminUser(req.user)) {
             return res.status(403).json({ error: 'Acesso restrito para Super Administradores.' });
         }
         const { id } = req.params;
@@ -409,7 +410,7 @@ router.post('/tasks/:id/toggle', async (req, res) => {
 // DELETE /api/hermes/tasks/:id
 router.delete('/tasks/:id', async (req, res) => {
     try {
-        if (!req.user || req.user.tipo !== 'SA') {
+        if (!req.user || !isSuperAdminUser(req.user)) {
             return res.status(403).json({ error: 'Acesso restrito para Super Administradores.' });
         }
         const { id } = req.params;
@@ -426,7 +427,7 @@ router.delete('/tasks/:id', async (req, res) => {
 // POST /api/hermes/tasks/:id/execute
 router.post('/tasks/:id/execute', async (req, res) => {
     try {
-        if (!req.user || req.user.tipo !== 'SA') {
+        if (!req.user || !isSuperAdminUser(req.user)) {
             return res.status(403).json({ error: 'Acesso restrito para Super Administradores.' });
         }
         const { id } = req.params;

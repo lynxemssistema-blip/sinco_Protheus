@@ -410,7 +410,7 @@ router.post('/print-canvas', async (req, res) => {
                     .png()
                     .toBuffer();
 
-                // Header MetalFisa (8 bytes) com offset de impressão
+                // Header Lynx (8 bytes) com offset de impressão
                 const offsetX = parseInt(config.print_offset_x) || 0;
                 const offsetY = parseInt(config.print_offset_y) || 0;
                 const header = Buffer.alloc(8);
@@ -450,11 +450,11 @@ router.post('/print-canvas', async (req, res) => {
 // ── GET /api/labels/download-agent ───────────────────────────────────────────
 // Serve o print-agent.exe para download pelo usuário
 router.get('/download-agent', (_req, res) => {
-    const agentPath = path.resolve(__dirname, '../../client/public/MetalFisa-Print-Agent.ems');
+    const agentPath = path.resolve(__dirname, '../../client/public/Lynx-Print-Agent.ems');
     if (!fs.existsSync(agentPath)) {
-        return res.status(404).json({ error: 'MetalFisa-Print-Agent.ems não encontrado no servidor.' });
+        return res.status(404).json({ error: 'Lynx-Print-Agent.ems não encontrado no servidor.' });
     }
-    res.download(agentPath, 'MetalFisa-Print-Agent.ems');
+    res.download(agentPath, 'Lynx-Print-Agent.ems');
 });
 
 module.exports = router;

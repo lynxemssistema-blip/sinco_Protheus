@@ -149,6 +149,7 @@ const initDB = async () => {
                 pcp_data_entrega DATE NULL,
                 pcp_serie_cliente VARCHAR(100) NULL,
                 pcp_serie_metalfisa VARCHAR(100) NULL,
+                pcp_serie_lynx VARCHAR(100) NULL,
                 pcp_numero_serie VARCHAR(150) NULL,
                 pcp_lote VARCHAR(100) NULL,
                 pcp_numero_lote VARCHAR(150) NULL,
@@ -159,6 +160,9 @@ const initDB = async () => {
         `);
 
         // Migration query in case table exists
+        try {
+            await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN pcp_serie_lynx VARCHAR(100) NULL AFTER pcp_serie_metalfisa");
+        } catch (e) {}
         try {
             await mysqlPool.query("ALTER TABLE app_faturamento_solicitacao_itens ADD COLUMN quantidade_apontamento DECIMAL(18,6) NULL");
         } catch (e) {}
@@ -186,25 +190,29 @@ const initDB = async () => {
 };
 
 // --- HELPER FUNCTION: Gravar Auditoria ---
-const registrarAuditoria = async (connection, solicitacao_id, item_id, usuario, acao, detalhes) => {
-    await connection.query(
-        `INSERT INTO app_faturamento_auditoria (solicitacao_id, item_id, usuario, acao, detalhes) VALUES (?, ?, ?, ?, ?)`,
-        [solicitacao_id, item_id || null, usuario, acao, detalhes ? JSON.stringify(detalhes) : null]
-    );
+const registrarAuditoria = async (connection, solicitacao_id, item_id, usuario, acao, detalhes, tenantId = 1) => {
+    try {
+        await connection.query(
+            `INSERT INTO app_faturamento_auditoria (solicitacao_id, item_id, usuario, acao, detalhes, IdEmpresa) VALUES (?, ?, ?, ?, ?, ?)`,
+            [solicitacao_id, item_id || null, usuario, acao, detalhes ? JSON.stringify(detalhes) : null, tenantId]
+        );
+    } catch (err) {
+        console.error('❌ [FAT Auditoria] Erro ao gravar auditoria:', err.message);
+    }
 };
 
 // Executar init logo na montagem da rota
 initDB();
 
 // Gerar número de solicitação único (ex: FAT-20260323-001)
-const gerarNumeroSolicitacao = async () => {
+const gerarNumeroSolicitacao = async (tenantId = 1) => {
     const dataAtual = new Date();
     const prefix = `FAT-${dataAtual.getFullYear()}${String(dataAtual.getMonth() + 1).padStart(2, '0')}${String(dataAtual.getDate()).padStart(2, '0')}`;
     
-    // Busca a ultima solicitação do dia
+    // Busca a ultima solicitação do dia desta empresa
     const [rows] = await mysqlPool.query(
-        "SELECT numero_solicitacao FROM app_faturamento_solicitacoes WHERE numero_solicitacao LIKE ? ORDER BY id DESC LIMIT 1",
-        [`${prefix}-%`]
+        "SELECT numero_solicitacao FROM app_faturamento_solicitacoes WHERE numero_solicitacao LIKE ? AND IdEmpresa = ? ORDER BY id DESC LIMIT 1",
+        [`${prefix}-%`, tenantId]
     );
 
     let nextNumber = 1;
@@ -219,6 +227,7 @@ const gerarNumeroSolicitacao = async () => {
 
 // POST /api/faturamento/solicitacoes - Cria uma nova solicitação
 router.post('/solicitacoes', async (req, res) => {
+    const tenantId = req.tenantId || req.user?.IdEmpresa || 1;
     const connection = await mysqlPool.getConnection();
     try {
         const { usuario, observacao, items } = req.body;
@@ -254,13 +263,13 @@ router.post('/solicitacoes', async (req, res) => {
 
         await connection.beginTransaction();
 
-        const numero_solicitacao = await gerarNumeroSolicitacao();
+        const numero_solicitacao = await gerarNumeroSolicitacao(tenantId);
 
         // 1. Inserir cabeçalho
         const [resultHeader] = await connection.query(
-            `INSERT INTO app_faturamento_solicitacoes (numero_solicitacao, usuario, observacao, status) 
-             VALUES (?, ?, ?, 'Pendente')`,
-            [numero_solicitacao, usuario || 'Sistema', observacao || '']
+            `INSERT INTO app_faturamento_solicitacoes (numero_solicitacao, usuario, observacao, status, IdEmpresa) 
+             VALUES (?, ?, ?, 'Pendente', ?)`,
+            [numero_solicitacao, usuario || 'Sistema', observacao || '', tenantId]
         );
 
         const solicitacaoId = resultHeader.insertId;
@@ -268,7 +277,7 @@ router.post('/solicitacoes', async (req, res) => {
         // 2. Inserir itens (batch)
         const validItems = items.filter(it => it.quantidade_solicitada && it.quantidade_solicitada > 0);
         if (validItems.length > 0) {
-            const placeholders = validItems.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+            const placeholders = validItems.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
             const values = validItems.flatMap(it => [
                 solicitacaoId,
                 String(it.pedido).trim(),
@@ -284,17 +293,19 @@ router.post('/solicitacoes', async (req, res) => {
                 it.pcp_forecast_id || null,
                 it.pcp_data_entrega ? String(it.pcp_data_entrega).split('T')[0] : null,
                 it.pcp_serie_cliente || null,
-                it.pcp_serie_metalfisa || null,
+                it.pcp_serie_lynx || it.pcp_serie_metalfisa || it.pcp_numero_serie || null,
+                it.pcp_serie_lynx || it.pcp_serie_metalfisa || it.pcp_numero_serie || null,
                 it.pcp_numero_serie || null,
                 it.pcp_lote || null,
                 it.pcp_numero_lote || null,
                 it.quantidade_apontamento !== undefined && it.quantidade_apontamento !== null ? parseFloat(it.quantidade_apontamento) : null,
-                it.executar_apontamento ? 1 : 0
+                it.executar_apontamento ? 1 : 0,
+                tenantId
             ]);
             await connection.query(
                 `INSERT INTO app_faturamento_solicitacao_itens
                  (solicitacao_id, pedido, item, codigo_produto, quantidade_solicitada, saldo_faturar_momentaneo, pedido_cliente, desenho_cliente, nome_cliente, valor_unitario, valor_total,
-                  pcp_forecast_id, pcp_data_entrega, pcp_serie_cliente, pcp_serie_metalfisa, pcp_numero_serie, pcp_lote, pcp_numero_lote, quantidade_apontamento, executar_apontamento)
+                  pcp_forecast_id, pcp_data_entrega, pcp_serie_cliente, pcp_serie_metalfisa, pcp_serie_lynx, pcp_numero_serie, pcp_lote, pcp_numero_lote, quantidade_apontamento, executar_apontamento, IdEmpresa)
                  VALUES ${placeholders}`,
                 values
             );
@@ -303,7 +314,7 @@ router.post('/solicitacoes', async (req, res) => {
         await connection.commit();
         
         // Log Assíncrono fora da transação principal para não bloquear
-        registrarAuditoria(mysqlPool, solicitacaoId, null, usuario || 'Sistema', 'CRIACAO', { qtd_itens: items.length }).catch(console.error);
+        registrarAuditoria(mysqlPool, solicitacaoId, null, usuario || 'Sistema', 'CRIACAO', { qtd_itens: items.length }, tenantId).catch(console.error);
 
         // 3. Apontamento de Produção no Protheus (Síncrono com Auto-Lookup e Validação Rígida)
         const candidatosApontamento = validItems.filter(it => it.executar_apontamento);
@@ -543,13 +554,7 @@ router.post('/solicitacoes', async (req, res) => {
                                 if (utils && utils.getCorporateEmailTemplate) getCorpEmailType = utils.getCorporateEmailTemplate;
                             } catch (e) { console.warn("Could not load email template wrapper."); }
                             
-                            const transporter = nodemailer.createTransport({
-                                host: 'smtp.task.com.br',
-                                port: 587,
-                                secure: false,
-                                auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
-                                tls: { rejectUnauthorized: false }
-                            });
+                            const { sendMail } = require('../services/mailService');
 
                             let itemsHtml = items.map(it => `
                                 <tr>
@@ -588,12 +593,11 @@ router.post('/solicitacoes', async (req, res) => {
                                     </tbody>
                                 </table>
                                 <br/>
-                                <p style="font-size: 12px; color: #64748b;">Este é um alerta automático gerado pelo ERP MetalFisa SINCO. Acesse o "Controle de Faturamento" no sistema para maiores detalhes e execução.</p>
+                                <p style="font-size: 12px; color: #64748b;">Este é um alerta automático gerado pelo ERP Lynx SINCO. Acesse o "Controle de Faturamento" no sistema para maiores detalhes e execução.</p>
                             `;
 
                             const subject = `Nova Solicitacao de Faturamento: ${numero_solicitacao}`;
-                            await transporter.sendMail({
-                                from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+                            await sendMail({
                                 to: recipientList.join(','),
                                 subject,
                                 html: getCorpEmailType(htmlBody)
@@ -629,14 +633,15 @@ router.post('/solicitacoes', async (req, res) => {
 // GET /api/faturamento/solicitacoes - Lista solicitações (com busca e paginação)
 router.get('/solicitacoes', async (req, res) => {
     try {
+        const tenantId = req.tenantId || req.user?.IdEmpresa || 1;
         const canViewFinancials = await hasFinancialAccess(req);
         const { limit = 50, page = 1, status = '' } = req.query;
         const limitParsed = parseInt(limit, 10) || 50;
         const pageParsed = parseInt(page, 10) || 1;
         const offset = (pageParsed - 1) * limitParsed;
 
-        let queryParams = [];
-        let whereClause = "WHERE 1=1";
+        let queryParams = [tenantId];
+        let whereClause = "WHERE s.IdEmpresa = ?";
 
         if (status) {
             whereClause += " AND s.status = ?";
@@ -646,12 +651,12 @@ router.get('/solicitacoes', async (req, res) => {
         // Busca Cabeçalhos
         const [rows] = await mysqlPool.query(`
             SELECT s.*, 
-            (SELECT COUNT(*) FROM app_faturamento_solicitacao_itens WHERE solicitacao_id = s.id) as qtd_itens_diferentes
+            (SELECT COUNT(*) FROM app_faturamento_solicitacao_itens WHERE solicitacao_id = s.id AND IdEmpresa = ?) as qtd_itens_diferentes
             FROM app_faturamento_solicitacoes s
             ${whereClause}
             ORDER BY s.id DESC
             LIMIT ? OFFSET ?
-        `, [...queryParams, limitParsed, offset]);
+        `, [tenantId, ...queryParams, limitParsed, offset]);
 
         // Contagem Total
         const [countResult] = await mysqlPool.query(`
@@ -665,9 +670,9 @@ router.get('/solicitacoes', async (req, res) => {
             
             const [itensRows] = await mysqlPool.query(`
                 SELECT * FROM app_faturamento_solicitacao_itens 
-                WHERE solicitacao_id IN (${placeholders})
+                WHERE solicitacao_id IN (${placeholders}) AND IdEmpresa = ?
                 ORDER BY pedido ASC, item ASC
-            `, solicitacaoIds);
+            `, [...solicitacaoIds, tenantId]);
 
             // Fetch NFs from Protheus (Postgres)
             if (itensRows.length > 0) {
@@ -696,11 +701,11 @@ router.get('/solicitacoes', async (req, res) => {
                         solicitacao.nota_fiscal = nfString;
 
                         mysqlPool.query(
-                            "UPDATE app_faturamento_solicitacoes SET status = 'Atendido', nota_fiscal = ?, updated_at = NOW() WHERE id = ?",
-                            [nfString, solicitacao.id]
+                            "UPDATE app_faturamento_solicitacoes SET status = 'Atendido', nota_fiscal = ?, updated_at = NOW() WHERE id = ? AND IdEmpresa = ?",
+                            [nfString, solicitacao.id, tenantId]
                         ).then(() => {
-                            mysqlPool.query("INSERT INTO app_faturamento_auditoria (solicitacao_id, acao, usuario, detalhes) VALUES (?, ?, ?, ?)", [solicitacao.id, 'ALTERACAO_STATUS', 'Sistema (Auto)', JSON.stringify('De Pendente para Atendido')]);
-                            mysqlPool.query("INSERT INTO app_faturamento_auditoria (solicitacao_id, acao, usuario, detalhes) VALUES (?, ?, ?, ?)", [solicitacao.id, 'VINCULO_NF', 'Sistema (Auto)', JSON.stringify({ nota_fiscal: nfString })]);
+                            registrarAuditoria(mysqlPool, solicitacao.id, null, 'Sistema (Auto)', 'ALTERACAO_STATUS', 'De Pendente para Atendido', tenantId);
+                            registrarAuditoria(mysqlPool, solicitacao.id, null, 'Sistema (Auto)', 'VINCULO_NF', { nota_fiscal: nfString }, tenantId);
                         }).catch(e => console.error('[FAT Auto] Erro:', e.message));
                     }
                 }
@@ -744,9 +749,10 @@ router.get('/solicitacoes', async (req, res) => {
 // GET /api/faturamento/solicitacoes/:id
 router.get('/solicitacoes/:id', async (req, res) => {
     try {
+        const tenantId = req.tenantId || req.user?.IdEmpresa || 1;
         const canViewFinancials = await hasFinancialAccess(req);
         const { id } = req.params;
-        const [rows] = await mysqlPool.query("SELECT * FROM app_faturamento_solicitacoes WHERE id = ?", [id]);
+        const [rows] = await mysqlPool.query("SELECT * FROM app_faturamento_solicitacoes WHERE id = ? AND IdEmpresa = ?", [id, tenantId]);
         
         if (rows.length === 0) {
             return res.status(404).json({ error: 'Solicitação não encontrada' });
@@ -754,7 +760,7 @@ router.get('/solicitacoes/:id', async (req, res) => {
 
         const solicitacao = rows[0];
 
-        const [itensRows] = await mysqlPool.query("SELECT * FROM app_faturamento_solicitacao_itens WHERE solicitacao_id = ? ORDER BY pedido ASC, item ASC", [id]);
+        const [itensRows] = await mysqlPool.query("SELECT * FROM app_faturamento_solicitacao_itens WHERE solicitacao_id = ? AND IdEmpresa = ? ORDER BY pedido ASC, item ASC", [id, tenantId]);
         
         if (itensRows.length > 0) {
             try {
@@ -789,11 +795,11 @@ router.get('/solicitacoes/:id', async (req, res) => {
                 solicitacao.nota_fiscal = nfString;
 
                 mysqlPool.query(
-                    "UPDATE app_faturamento_solicitacoes SET status = 'Atendido', nota_fiscal = ?, updated_at = NOW() WHERE id = ?",
-                    [nfString, solicitacao.id]
+                    "UPDATE app_faturamento_solicitacoes SET status = 'Atendido', nota_fiscal = ?, updated_at = NOW() WHERE id = ? AND IdEmpresa = ?",
+                    [nfString, solicitacao.id, tenantId]
                 ).then(() => {
-                    mysqlPool.query("INSERT INTO app_faturamento_auditoria (solicitacao_id, acao, usuario, detalhes) VALUES (?, ?, ?, ?)", [solicitacao.id, 'ALTERACAO_STATUS', 'Sistema (Auto)', JSON.stringify('De Pendente para Atendido')]);
-                    mysqlPool.query("INSERT INTO app_faturamento_auditoria (solicitacao_id, acao, usuario, detalhes) VALUES (?, ?, ?, ?)", [solicitacao.id, 'VINCULO_NF', 'Sistema (Auto)', JSON.stringify({ nota_fiscal: nfString })]);
+                    registrarAuditoria(mysqlPool, solicitacao.id, null, 'Sistema (Auto)', 'ALTERACAO_STATUS', 'De Pendente para Atendido', tenantId);
+                    registrarAuditoria(mysqlPool, solicitacao.id, null, 'Sistema (Auto)', 'VINCULO_NF', { nota_fiscal: nfString }, tenantId);
                 }).catch(e => console.error('[FAT Auto] Erro:', e.message));
             }
         }
@@ -806,6 +812,7 @@ router.get('/solicitacoes/:id', async (req, res) => {
 
 // PUT /api/faturamento/solicitacoes/:id/status
 router.put('/solicitacoes/:id/status', async (req, res) => {
+    const tenantId = req.tenantId || req.user?.IdEmpresa || 1;
     const connection = await mysqlPool.getConnection();
     try {
         const { id } = req.params;
@@ -813,18 +820,18 @@ router.put('/solicitacoes/:id/status', async (req, res) => {
 
         await connection.beginTransaction();
 
-        const [oldItem] = await connection.query("SELECT status FROM app_faturamento_solicitacoes WHERE id = ?", [id]);
+        const [oldItem] = await connection.query("SELECT status FROM app_faturamento_solicitacoes WHERE id = ? AND IdEmpresa = ?", [id, tenantId]);
         if (oldItem.length === 0) throw new Error("Solicitação não encontrada.");
 
         const oldStatus = oldItem[0].status;
 
-        await connection.query("UPDATE app_faturamento_solicitacoes SET status = ? WHERE id = ?", [status, id]);
+        await connection.query("UPDATE app_faturamento_solicitacoes SET status = ? WHERE id = ? AND IdEmpresa = ?", [status, id, tenantId]);
 
         if (oldStatus !== status) {
             await registrarAuditoria(connection, id, null, usuario || 'Sistema', 'ALTERACAO_STATUS', { 
                 de: oldStatus, 
                 para: status 
-            });
+            }, tenantId);
         }
 
         await connection.commit();
@@ -841,8 +848,9 @@ router.put('/solicitacoes/:id/status', async (req, res) => {
 // GET /api/faturamento/solicitacoes/:id/auditoria - Resgata linha do tempo
 router.get('/solicitacoes/:id/auditoria', async (req, res) => {
     try {
+        const tenantId = req.tenantId || req.user?.IdEmpresa || 1;
         const { id } = req.params;
-        const [rows] = await mysqlPool.query("SELECT * FROM app_faturamento_auditoria WHERE solicitacao_id = ? ORDER BY id DESC", [id]);
+        const [rows] = await mysqlPool.query("SELECT * FROM app_faturamento_auditoria WHERE solicitacao_id = ? AND IdEmpresa = ? ORDER BY id DESC", [id, tenantId]);
         res.json(rows);
     } catch (error) {
         res.status(500).json({ error: 'Erro ao buscar auditoria' });
@@ -851,6 +859,7 @@ router.get('/solicitacoes/:id/auditoria', async (req, res) => {
 
 // PUT /api/faturamento/solicitacoes/:id/notafiscal - Associa NF Global
 router.put('/solicitacoes/:id/notafiscal', async (req, res) => {
+    const tenantId = req.tenantId || req.user?.IdEmpresa || 1;
     const connection = await mysqlPool.getConnection();
     try {
         const { id } = req.params;
@@ -858,9 +867,9 @@ router.put('/solicitacoes/:id/notafiscal', async (req, res) => {
 
         await connection.beginTransaction();
 
-        await connection.query("UPDATE app_faturamento_solicitacoes SET nota_fiscal = ? WHERE id = ?", [nota_fiscal, id]);
+        await connection.query("UPDATE app_faturamento_solicitacoes SET nota_fiscal = ? WHERE id = ? AND IdEmpresa = ?", [nota_fiscal, id, tenantId]);
 
-        await registrarAuditoria(connection, id, null, usuario, 'VINCULO_NF', { nota_fiscal });
+        await registrarAuditoria(connection, id, null, usuario, 'VINCULO_NF', { nota_fiscal }, tenantId);
 
         await connection.commit();
         res.json({ success: true, message: 'Nota fiscal vinculada com sucesso!' });
@@ -874,6 +883,7 @@ router.put('/solicitacoes/:id/notafiscal', async (req, res) => {
 
 // PUT /api/faturamento/solicitacoes/:id/itens/:itemId - Atualiza Quantidade ou NF de um item
 router.put('/solicitacoes/:id/itens/:itemId', async (req, res) => {
+    const tenantId = req.tenantId || req.user?.IdEmpresa || 1;
     const connection = await mysqlPool.getConnection();
     try {
         const { id, itemId } = req.params;
@@ -882,12 +892,12 @@ router.put('/solicitacoes/:id/itens/:itemId', async (req, res) => {
         await connection.beginTransaction();
 
         // Pega item antigo para o LOG
-        const [oldItem] = await connection.query("SELECT * FROM app_faturamento_solicitacao_itens WHERE id = ? AND solicitacao_id = ?", [itemId, id]);
+        const [oldItem] = await connection.query("SELECT * FROM app_faturamento_solicitacao_itens WHERE id = ? AND solicitacao_id = ? AND IdEmpresa = ?", [itemId, id, tenantId]);
         if (oldItem.length === 0) throw new Error("Item não encontrado.");
 
         await connection.query(
-            "UPDATE app_faturamento_solicitacao_itens SET quantidade_solicitada = ?, nota_fiscal = ? WHERE id = ?",
-            [quantidade_solicitada, nota_fiscal, itemId]
+            "UPDATE app_faturamento_solicitacao_itens SET quantidade_solicitada = ?, nota_fiscal = ? WHERE id = ? AND IdEmpresa = ?",
+            [quantidade_solicitada, nota_fiscal, itemId, tenantId]
         );
 
         let detalhes = {};
@@ -902,7 +912,7 @@ router.put('/solicitacoes/:id/itens/:itemId', async (req, res) => {
             acao = 'VINCULO_NF_ITEM';
         }
 
-        await registrarAuditoria(connection, id, itemId, usuario, acao, detalhes);
+        await registrarAuditoria(connection, id, itemId, usuario, acao, detalhes, tenantId);
 
         await connection.commit();
         res.json({ success: true, message: 'Item atualizado com sucesso!' });
@@ -916,6 +926,7 @@ router.put('/solicitacoes/:id/itens/:itemId', async (req, res) => {
 
 // DELETE /api/faturamento/solicitacoes/:id/itens/:itemId - Exclui um material
 router.delete('/solicitacoes/:id/itens/:itemId', async (req, res) => {
+    const tenantId = req.tenantId || req.user?.IdEmpresa || 1;
     const connection = await mysqlPool.getConnection();
     try {
         const { id, itemId } = req.params;
@@ -923,18 +934,16 @@ router.delete('/solicitacoes/:id/itens/:itemId', async (req, res) => {
 
         await connection.beginTransaction();
 
-        const [oldItem] = await connection.query("SELECT * FROM app_faturamento_solicitacao_itens WHERE id = ? AND solicitacao_id = ?", [itemId, id]);
+        const [oldItem] = await connection.query("SELECT * FROM app_faturamento_solicitacao_itens WHERE id = ? AND solicitacao_id = ? AND IdEmpresa = ?", [itemId, id, tenantId]);
         if (oldItem.length === 0) throw new Error("Item não encontrado.");
 
-        await connection.query("DELETE FROM app_faturamento_solicitacao_itens WHERE id = ?", [itemId]);
+        await connection.query("DELETE FROM app_faturamento_solicitacao_itens WHERE id = ? AND IdEmpresa = ?", [itemId, tenantId]);
 
         await registrarAuditoria(connection, id, itemId, usuario, 'EXCLUSAO_ITEM', { 
             codigo: oldItem[0].codigo_produto, 
             pedido: oldItem[0].pedido, 
             item: oldItem[0].item 
-        });
-
-
+        }, tenantId);
 
         await connection.commit();
         res.json({ success: true, message: 'Item removido da solicitação.' });
@@ -948,6 +957,7 @@ router.delete('/solicitacoes/:id/itens/:itemId', async (req, res) => {
 
 // POST /api/faturamento/solicitacoes/:id/itens - Inserir material novo na solicitação
 router.post('/solicitacoes/:id/itens', async (req, res) => {
+    const tenantId = req.tenantId || req.user?.IdEmpresa || 1;
     const connection = await mysqlPool.getConnection();
     try {
         const { id } = req.params;
@@ -957,8 +967,8 @@ router.post('/solicitacoes/:id/itens', async (req, res) => {
 
         const [resultItem] = await connection.query(
             `INSERT INTO app_faturamento_solicitacao_itens 
-             (solicitacao_id, pedido, item, codigo_produto, quantidade_solicitada, saldo_faturar_momentaneo, nota_fiscal, pedido_cliente, desenho_cliente)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (solicitacao_id, pedido, item, codigo_produto, quantidade_solicitada, saldo_faturar_momentaneo, nota_fiscal, pedido_cliente, desenho_cliente, IdEmpresa)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 id,
                 String(pedido).trim(),
@@ -968,14 +978,15 @@ router.post('/solicitacoes/:id/itens', async (req, res) => {
                 parseFloat(saldo_faturar_momentaneo || 0),
                 nota_fiscal || null,
                 ped_cliente ? String(ped_cliente).trim() : null,
-                ref_cliente ? String(ref_cliente).trim() : null
+                ref_cliente ? String(ref_cliente).trim() : null,
+                tenantId
             ]
         );
 
         await registrarAuditoria(connection, id, resultItem.insertId, usuario, 'INCLUSAO_ITEM', { 
             codigo: codigo_produto, 
             qtd: quantidade_solicitada 
-        });
+        }, tenantId);
 
         await connection.commit();
         res.json({ success: true, message: 'Novo item inserido na solicitação!', id: resultItem.insertId });
@@ -1071,24 +1082,17 @@ router.post('/enviar-email-lote', async (req, res) => {
             if (utils && utils.getCorporateEmailTemplate) getCorpEmailType = utils.getCorporateEmailTemplate;
         } catch (e) { console.warn("Could not load email template wrapper."); }
 
-        const transporter = nodemailer.createTransport({
-            host: 'smtp.task.com.br',
-            port: 587,
-            secure: false,
-            auth: { user: 'sincometal@metalfisa.com.br', pass: 'Pro1042@sm' },
-            tls: { rejectUnauthorized: false }
-        });
+        const { sendMail } = require('../services/mailService');
 
         const htmlBody = `
             <h2 style="color: #1e3a8a;">Resumo de Faturamentos Diários</h2>
             <p style="font-size: 15px;"><strong>${usuario || 'Sistema'}</strong> disparou um resumo contendo <strong>${escapedIds.length}</strong> solicitação(ões) de expedição.</p>
             <br/>
             ${conteudosHtml}
-            <p style="font-size: 12px; color: #64748b; margin-top: 30px;">Este é um alerta automático gerado pelo ERP MetalFisa SINCO. Acesse o "Controle de Faturamento" no sistema para maiores detalhes e execução.</p>
+            <p style="font-size: 12px; color: #64748b; margin-top: 30px;">Este é um alerta automático gerado pelo ERP Lynx SINCO. Acesse o "Controle de Faturamento" no sistema para maiores detalhes e execução.</p>
         `;
 
-        await transporter.sendMail({
-            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+        await sendMail({
             to: recipientList.join(','),
             subject: `Lote de Faturamentos - ${escapedIds.length} Pedido(s) Selecionados`,
             html: getCorpEmailType(htmlBody)
@@ -1156,11 +1160,12 @@ router.delete('/solicitacoes/:id/itens/:itemId', async (req, res) => {
 // GET /api/faturamento/dashboard - Dashboard gerencial de faturamento
 router.get('/dashboard', async (req, res) => {
     try {
+        const tenantId = req.tenantId || req.user?.IdEmpresa || 1;
         const canViewFinancials = await hasFinancialAccess(req);
         const { dataInicial, dataFinal, status, groupBy = 'cliente', cliente, produto } = req.query;
 
-        const params = [];
-        const whereClauses = ['1=1'];
+        const params = [tenantId];
+        const whereClauses = ['s.IdEmpresa = ?'];
 
         if (dataInicial) { whereClauses.push('DATE(s.created_at) >= ?'); params.push(dataInicial); }
         if (dataFinal)   { whereClauses.push('DATE(s.created_at) <= ?'); params.push(dataFinal); }
@@ -1182,14 +1187,14 @@ router.get('/dashboard', async (req, res) => {
                 COALESCE(SUM(i.quantidade_solicitada), 0) AS qtd_total,
                 COALESCE(SUM(i.valor_total), 0)           AS valor_total
             FROM app_faturamento_solicitacoes s
-            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
+            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id AND i.IdEmpresa = ?
             WHERE ${whereSQL}
             GROUP BY s.status
             ORDER BY s.status
-        `, params);
+        `, [tenantId, ...params]);
 
         // 2. Tendência mensal (últimos 12 meses se sem filtro de data)
-        const trendParams = [...params];
+        const trendParams = [tenantId, ...params];
         let trendWhere = whereSQL;
         if (!dataInicial && !dataFinal) {
             trendWhere = `${whereSQL} AND s.created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)`;
@@ -1203,7 +1208,7 @@ router.get('/dashboard', async (req, res) => {
                 COALESCE(SUM(i.quantidade_solicitada), 0) AS qtd_total,
                 COALESCE(SUM(i.valor_total), 0)           AS valor_total
             FROM app_faturamento_solicitacoes s
-            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
+            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id AND i.IdEmpresa = ?
             WHERE ${trendWhere}
             GROUP BY mes, s.status
             ORDER BY mes, s.status
@@ -1236,12 +1241,12 @@ router.get('/dashboard', async (req, res) => {
                 COALESCE(SUM(i.quantidade_solicitada), 0) AS qtd_total,
                 COALESCE(SUM(i.valor_total), 0)           AS valor_total
             FROM app_faturamento_solicitacoes s
-            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
+            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id AND i.IdEmpresa = ?
             WHERE ${whereSQL}
             GROUP BY label
             ORDER BY ${['dia', 'semana', 'mes'].includes(groupBy) ? 'label ASC' : 'valor_total DESC'}
             LIMIT 100
-        `, params);
+        `, [tenantId, ...params]);
 
         // 3b. Faturado (NF válida) — sempre lido do Protheus (sd2010/sf2010), nunca do valor_total
         // planejado nem de um status interno, pois o status 'Atendido' só é atualizado quando alguém
@@ -1253,9 +1258,9 @@ router.get('/dashboard', async (req, res) => {
                 SELECT s.id AS solicitacao_id, s.usuario, s.status, s.created_at,
                        i.pedido, i.item, i.codigo_produto, i.nome_cliente, i.pedido_cliente
                 FROM app_faturamento_solicitacoes s
-                JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
+                JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id AND i.IdEmpresa = ?
                 WHERE ${whereSQL} AND s.status != 'Cancelado'
-            `, params);
+            `, [tenantId, ...params]);
 
             if (itensParaNF.length > 0) {
                 const pgPool = require('../services/protheusDB');
@@ -1329,12 +1334,12 @@ router.get('/dashboard', async (req, res) => {
                 COALESCE(SUM(i.quantidade_solicitada), 0) AS qtd_total,
                 COALESCE(SUM(i.valor_total), 0)           AS valor_total
             FROM app_faturamento_solicitacoes s
-            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
+            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id AND i.IdEmpresa = ?
             WHERE ${whereSQL}
             GROUP BY label
             ORDER BY valor_total DESC
             LIMIT 10
-        `, params);
+        `, [tenantId, ...params]);
 
         // 5. Evolução diária (últimos 30 dias)
         const [evolucaoDiaria] = await mysqlPool.query(`
@@ -1345,11 +1350,11 @@ router.get('/dashboard', async (req, res) => {
                 COUNT(i.id)                    AS qtd_itens,
                 COALESCE(SUM(i.valor_total), 0) AS valor_total
             FROM app_faturamento_solicitacoes s
-            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id
-            WHERE s.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            LEFT JOIN app_faturamento_solicitacao_itens i ON i.solicitacao_id = s.id AND i.IdEmpresa = ?
+            WHERE s.IdEmpresa = ? AND s.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
             GROUP BY dia, s.status
             ORDER BY dia, s.status
-        `);
+        `, [tenantId, tenantId]);
 
         let responseKpis = kpis;
         let responseKpiFaturadoNF = kpiFaturadoNF;

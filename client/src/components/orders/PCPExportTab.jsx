@@ -543,8 +543,8 @@ const PCPExportTab = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {bomDrawings.map((draw) => (
-                                        <tr key={draw.codigo} className="hover:bg-gray-50 transition-colors">
+                                    {bomDrawings.map((draw, idx) => (
+                                        <tr key={`${draw.codigo}-${idx}`} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-4 py-3 font-mono text-gray-800 font-medium">{draw.codigo}</td>
                                             <td className="px-4 py-3 text-gray-600 max-w-md truncate" title={draw.descricao}>{draw.descricao}</td>
                                             <td className="px-4 py-3 text-right font-medium text-gray-800">

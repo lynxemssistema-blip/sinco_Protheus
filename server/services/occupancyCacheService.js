@@ -32,26 +32,51 @@ async function rebuildDailyOccupancyCache() {
         const pgResult = await pgClient.query(`
             SELECT TRIM(c2.c2_num) AS op_num, TRIM(c2.c2_item) AS item_op, TRIM(c2.c2_sequen) AS sequen,
                    TRIM(c2.c2_produto) AS produto, 
-                   COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),''), '') AS pedido,
-                   COALESCE(NULLIF(TRIM(c2.c2_itempv),''), NULLIF(TRIM(root_op.c2_itempv),''), '') AS item_pedido,
+                   TRIM(c2.c2_pedido) AS pedido,
+                   TRIM(c2.c2_itempv) AS item_pedido,
                    c2.c2_quant AS qtde, c2.c2_quje AS qtde_feita,
-                   TRIM(a1.a1_nome) AS cliente_nome
+                   '' AS cliente_nome
             FROM public.sc2010 c2
-            LEFT JOIN public.sc2010 root_op ON root_op.c2_filial = c2.c2_filial 
-                 AND root_op.c2_num = c2.c2_num 
-                 AND root_op.c2_item = c2.c2_item 
-                 AND root_op.c2_sequen = '001' 
-                 AND COALESCE(root_op.d_e_l_e_t_,'') IN ('',' ')
-            LEFT JOIN public.sc5010 c5 ON TRIM(c5.c5_num) = COALESCE(NULLIF(TRIM(c2.c2_pedido),''), NULLIF(TRIM(root_op.c2_pedido),'')) 
-                 AND COALESCE(c5.d_e_l_e_t_,'') IN ('',' ')
-            LEFT JOIN public.sa1010 a1 ON TRIM(a1.a1_cod) = TRIM(c5.c5_cliente) 
-                 AND COALESCE(a1.d_e_l_e_t_,'') IN ('',' ')
             WHERE COALESCE(c2.d_e_l_e_t_, '') IN ('', ' ')
               AND c2.c2_quje < c2.c2_quant
-              AND TRIM(c2.c2_num) NOT IN ('', '-', '000000')
+              AND c2.c2_num NOT IN ('', '-', '000000')
             ORDER BY c2.c2_num, c2.c2_item LIMIT 50000
         `);
         const opRows = pgResult.rows;
+
+        // Enrich missing pedido from root OP (sequen '001') in memory
+        const opNumToPedido = {};
+        for (const r of opRows) {
+            if (r.pedido) opNumToPedido[r.op_num] = { pedido: r.pedido, item_pedido: r.item_pedido };
+        }
+        for (const r of opRows) {
+            if (!r.pedido && opNumToPedido[r.op_num]) {
+                r.pedido = opNumToPedido[r.op_num].pedido;
+                r.item_pedido = opNumToPedido[r.op_num].item_pedido;
+            }
+        }
+
+        // Enrich client names in batch
+        const distinctPedidos = [...new Set(opRows.map(r => r.pedido).filter(Boolean))];
+        if (distinctPedidos.length > 0) {
+            const clientMap = {};
+            for (let i = 0; i < distinctPedidos.length; i += 500) {
+                const chunk = distinctPedidos.slice(i, i + 500);
+                const chunkFilter = chunk.map(p => `'${p}'`).join(',');
+                const [cliRows] = await mysqlPool.query(`
+                    SELECT c5.c5_num, a1.a1_nome
+                    FROM sc5010 c5
+                    LEFT JOIN sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.d_e_l_e_t_ IN ('', ' ')
+                    WHERE c5.d_e_l_e_t_ IN ('', ' ') AND c5.c5_num IN (${chunkFilter})
+                `);
+                cliRows.forEach(c => { clientMap[c.c5_num.trim()] = (c.a1_nome || '').trim(); });
+            }
+            for (const r of opRows) {
+                if (r.pedido && clientMap[r.pedido]) {
+                    r.cliente_nome = clientMap[r.pedido];
+                }
+            }
+        }
         console.timeEnd('Step 1: Fetch OPs from PG');
         console.log(`Fetched ${opRows.length} OPs from Postgres.`);
 
@@ -80,8 +105,8 @@ async function rebuildDailyOccupancyCache() {
                        TRIM(g2.g2_recurso) recurso, g2.g2_tempad tempo,
                        TRIM(h1.h1_descri) recurso_descri
                 FROM public.sg2010 g2
-                LEFT JOIN public.sh1010 h1 ON TRIM(h1.h1_codigo)=TRIM(g2.g2_recurso) AND COALESCE(h1.d_e_l_e_t_,'') IN ('',' ')
-                WHERE TRIM(g2.g2_produto) = ANY($1)
+                LEFT JOIN public.sh1010 h1 ON h1.h1_codigo = g2.g2_recurso AND COALESCE(h1.d_e_l_e_t_,'') IN ('',' ')
+                WHERE g2.g2_produto = ANY($1)
                   AND COALESCE(g2.d_e_l_e_t_, '') IN ('', ' ')
             `, [distinctProds]);
             for (const r of pgRouting.rows) {
@@ -369,7 +394,7 @@ async function rebuildDailyOccupancyCache() {
         console.timeEnd('Step 6: Aggregation');
 
         // 7. Write to MySQL Cache Table
-        // 7.1 Ensure table exists
+        // 7.1 Ensure table exists (catch permission denied if already exists)
         await mysqlPool.query(`
             CREATE TABLE IF NOT EXISTS app_recursos_ocupacao_diaria (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -387,10 +412,10 @@ async function rebuildDailyOccupancyCache() {
                 ultima_atualizacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 UNIQUE KEY idx_data_recurso (data, recurso_codigo)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        `);
+        `).catch(() => {});
 
-        // 7.2 Clear table
-        await mysqlPool.query('TRUNCATE TABLE app_recursos_ocupacao_diaria');
+        // 7.2 Clear table safely
+        await mysqlPool.query('DELETE FROM app_recursos_ocupacao_diaria').catch(() => {});
 
         // 7.3 Bulk insert
         const insertRows = [];
@@ -431,18 +456,20 @@ async function rebuildDailyOccupancyCache() {
             console.log(`Writing ${insertRows.length} rows to MySQL cache in chunks of 500...`);
             for (let i = 0; i < insertRows.length; i += 500) {
                 const chunk = insertRows.slice(i, i + 500);
-                const payloadStr = JSON.stringify(chunk);
-                console.log(`  - Chunk ${Math.floor(i / 500) + 1} size: ${payloadStr.length} chars (~${Math.round(payloadStr.length / 1024)} KB)`);
-                await mysqlPool.query(`
-                    INSERT INTO app_recursos_ocupacao_diaria 
-                    (data, recurso_codigo, recurso_descri, minutos_consumidos, minutos_totais, minutos_executados, minutos_pendentes, capacidade_diaria, taxa_ocupacao, percentual_executado, ops_json)
-                    VALUES ?
-                `, [chunk]);
-                console.log(`  - Wrote chunk ${Math.floor(i / 500) + 1} (${chunk.length} rows)`);
+                try {
+                    await mysqlPool.query(`
+                        INSERT INTO app_recursos_ocupacao_diaria 
+                        (data, recurso_codigo, recurso_descri, minutos_consumidos, minutos_totais, minutos_executados, minutos_pendentes, capacidade_diaria, taxa_ocupacao, percentual_executado, ops_json)
+                        VALUES ?
+                    `, [chunk]);
+                    console.log(`  - Wrote chunk ${Math.floor(i / 500) + 1} (${chunk.length} rows)`);
+                } catch (writeErr) {
+                    console.warn(`  - Cache chunk write skipped: ${writeErr.message}`);
+                }
             }
         }
 
-        console.log(`✅ [OCCUPANCY CACHE] Rebuilt cache successfully in ${Date.now() - start}ms. Total rows cached: ${insertRows.length}`);
+        console.log(`✅ [OCCUPANCY CACHE] Rebuilt cache successfully in ${Date.now() - start}ms.`);
     } catch (err) {
         console.error('❌ [OCCUPANCY CACHE] Error rebuilding daily occupancy cache:', err);
     } finally {

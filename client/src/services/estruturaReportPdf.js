@@ -2,24 +2,34 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import api from './api';
+import { 
+  getCompanyShortName, 
+  getCompanyLegalName, 
+  getCompanyCnpjCityLine, 
+  getCompanyAddressLine,
+  getCompanyLogoBase64,
+  loadCompanyBranding 
+} from './companyBranding';
 
-// ─── Paleta ──────────────────────────────────────────────────────────────────
+// ─── Paleta Oficial Lynx Forest Green ──────────────────────────────────────────
 const C = {
-  darkBlue:  [30,  64, 120],
-  lightBlue: [219, 234, 254],
-  lightGray: [243, 244, 246],
-  altRow:    [249, 250, 251],
-  white:     [255, 255, 255],
-  darkText:  [30,  41,  59],
-  midText:   [71,  85, 105],
-  mutedText: [148, 163, 184],
-  border:    [203, 213, 225],
-  red:       [220,  38,  38],
-  green:     [22,  163,  74],
-  amber:     [217, 119,   6],
-  midBlue:   [59,  130, 246],
-  opRow:     [255, 248, 220],
-  opText:    [110,  70,  10],
+  lynxForest:  [66,  87,  80],  // #425750 - Cor predominante oficial Lynx
+  lynxDark:    [44,  59,  54],  // #2c3b36 - Tom escuro executivo
+  lynxLight:   [236, 244, 241], // #ecf4f1 - Tint suave para Nível 1 e fundos
+  lynxAccent:  [80, 105,  96],  // #506960 - Subtítulos e detalhes
+  lynxBorder:  [185, 205, 198], // Bordas refinadas
+  white:       [255, 255, 255],
+  altRow:      [248, 250, 249],
+  lightGray:   [243, 245, 244],
+  darkText:    [28,   38,  34],
+  midText:     [65,   80,  75],
+  mutedText:   [115, 130, 125],
+  border:      [200, 212, 208],
+  red:         [220,  38,  38],
+  green:       [22,  163,  74],
+  amber:       [217, 119,   6],
+  opRow:       [254, 250, 238],
+  opText:      [115,  80,  15],
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -44,56 +54,101 @@ const tipoLabel = (t) => {
 
 const rowStyle = (nivel) => {
   switch (nivel) {
-    case 0:  return { fill: C.darkBlue,  text: C.white,    bold: true };
-    case 1:  return { fill: C.lightBlue, text: C.darkText, bold: false };
-    case 2:  return { fill: C.lightGray, text: C.darkText, bold: false };
-    default: return { fill: C.white,     text: C.darkText, bold: false };
+    case 0:  return { fill: C.lynxForest, text: C.white,    bold: true };
+    case 1:  return { fill: C.lynxLight,  text: C.darkText, bold: false };
+    case 2:  return { fill: C.lightGray,  text: C.darkText, bold: false };
+    default: return { fill: C.white,      text: C.darkText, bold: false };
   }
 };
 
-// ─── Cabeçalho (todas as páginas) — landscape ────────────────────────────────
+// ─── Cabeçalho Executivo (todas as páginas) — landscape ──────────────────────
 function drawPageHeader(doc, root, PW, ML, MR, dateStr, timeStr, customTitle = 'RELAÇÃO SIMPLIFICADA DAS ESTRUTURAS — MATR225Cus') {
   const MW = PW - ML - MR;
 
-  // Barra azul
-  doc.setFillColor(...C.darkBlue);
-  doc.rect(ML, 8, MW, 9, 'F');
+  // 1. Barra de Topo Executiva (Verde Lynx)
+  const headerBarH = 22;
+  doc.setFillColor(...C.lynxDark);
+  doc.rect(ML, 7, MW, headerBarH, 'F');
+
+  // Área Branca do Logotipo (esquerda da barra)
+  const logoBoxW = 28;
+  const logoBoxH = headerBarH - 2; // 20mm
+  doc.setFillColor(...C.white);
+  doc.roundedRect(ML + 1, 8, logoBoxW, logoBoxH, 1, 1, 'F');
+
+  const logoBase64 = getCompanyLogoBase64();
+  if (logoBase64) {
+    try {
+      doc.addImage(logoBase64, 'PNG', ML + 2, 9, logoBoxW - 2, logoBoxH - 2, undefined, 'FAST');
+    } catch (e) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(...C.lynxForest);
+      doc.text(getCompanyShortName(), ML + 4, 19);
+    }
+  }
+
+  // 2. Dados da Empresa Ativa (ao lado do logo)
+  const textLeftX = ML + logoBoxW + 4;
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.setTextColor(...C.white);
-  doc.text('METALFISA', ML + 4, 14);
-  doc.text(customTitle, PW / 2, 14, { align: 'center' });
+  const legalName = getCompanyLegalName();
+  doc.text(legalName, textLeftX, 13);
 
-  // Caixa de dados do produto — 4 seções
-  doc.setDrawColor(...C.border);
-  doc.setLineWidth(0.3);
-  doc.rect(ML, 18, MW, 16);
-  const col = MW / 4;
-  [1, 2, 3].forEach((n) => doc.line(ML + col * n, 18, ML + col * n, 34));
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.2);
+  doc.setTextColor(215, 230, 225);
+  const cnpjCity = getCompanyCnpjCityLine();
+  const addressLine = getCompanyAddressLine();
+  if (cnpjCity) {
+    doc.text(cnpjCity, textLeftX, 18);
+  }
+  if (addressLine) {
+    doc.text(addressLine, textLeftX, 23);
+  }
 
-  doc.setFontSize(7.5);
-  const field = (x, y, label, value, maxChars = 34) => {
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...C.midText);
-    doc.text(label, x, y);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...C.darkText);
-    const v = String(value || '—');
-    doc.text(v.length > maxChars ? v.substring(0, maxChars) + '…' : v, x, y + 4);
-  };
+  // 3. Título e Metadados do Relatório (canto direito da barra)
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(...C.white);
+  doc.text(customTitle, PW - MR - 4, 13, { align: 'right' });
 
-  const p = 3;
-  field(ML + p,           21, 'Código', root.codigo, 34);
-  field(ML + col + p,     21, 'Descrição', root.descricao, 38);
-  field(ML + col * 2 + p, 21, 'Tipo', tipoLabel(root.tipo_produto), 32);
-  field(ML + col * 3 + p, 21, 'Revisão MF', root.rev_metalfisa, 20);
-
-  doc.setFillColor(...C.lightGray);
-  doc.rect(ML, 34, MW, 5.5, 'F');
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
-  doc.setTextColor(...C.mutedText);
-  doc.text(`SIGA/MATR225Cus/v.12   ·   Grupo: GRUPO METALFISA / Filial: METALFISA MATRIZ   ·   Emissão: ${dateStr}  ${timeStr}`, ML + 3, 38.2);
+  doc.setTextColor(215, 230, 225);
+  doc.text('SINCO Suite  ·  Engenharia de Produto', PW - MR - 4, 18, { align: 'right' });
+  doc.text(`Emissão: ${dateStr} às ${timeStr}`, PW - MR - 4, 23, { align: 'right' });
+
+  // 4. Cartão de Informações do Produto Pai (y = 30 a 41 mm)
+  const prodCardY = 30;
+  const prodCardH = 11;
+  doc.setFillColor(...C.lynxLight);
+  doc.rect(ML, prodCardY, MW, prodCardH, 'F');
+  doc.setDrawColor(...C.border);
+  doc.setLineWidth(0.3);
+  doc.rect(ML, prodCardY, MW, prodCardH);
+
+  const colW = MW / 4;
+  [1, 2, 3].forEach((n) => doc.line(ML + colW * n, prodCardY, ML + colW * n, prodCardY + prodCardH));
+
+  const field = (x, y, label, value, maxChars = 38) => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
+    doc.setTextColor(...C.lynxAccent);
+    doc.text(label, x, y);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.8);
+    doc.setTextColor(...C.darkText);
+    const v = String(value || '—');
+    doc.text(v.length > maxChars ? v.substring(0, maxChars) + '…' : v, x, y + 4.5);
+  };
+
+  field(ML + 3,            prodCardY + 3.5, 'CÓDIGO INTERNO', root.codigo, 32);
+  field(ML + colW + 3,     prodCardY + 3.5, 'DESCRIÇÃO DO PRODUTO', root.descricao, 48);
+  field(ML + colW * 2 + 3, prodCardY + 3.5, 'TIPO DE ITEM', tipoLabel(root.tipo_produto), 34);
+  field(ML + colW * 3 + 3, prodCardY + 3.5, 'REVISÃO DE ENGENHARIA', root.rev_metalfisa || root.revisao || '00', 20);
 }
 
 // ─── Rodapé ───────────────────────────────────────────────────────────────────
@@ -101,13 +156,14 @@ function drawFooter(doc, pageNum, totalPages, PW, ML, MR, PH, dateStr, timeStr, 
   doc.setPage(pageNum);
   doc.setDrawColor(...C.border);
   doc.setLineWidth(0.3);
-  doc.line(ML, PH - 12, PW - MR, PH - 12);
+  doc.line(ML, PH - 10, PW - MR, PH - 10);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor(...C.mutedText);
-  doc.text(`MetalFisa  ·  MATR225Cus — ${customTitle}`, ML, PH - 8);
-  doc.text(`Emitido: ${dateStr}  ${timeStr}`, PW / 2, PH - 8, { align: 'center' });
-  doc.text(`Folha ${pageNum} de ${totalPages}`, PW - MR, PH - 8, { align: 'right' });
+  const companyShort = getCompanyShortName();
+  doc.text(`${companyShort}  ·  SINCO Suite — ${customTitle}`, ML, PH - 6);
+  doc.text(`Emitido: ${dateStr} às ${timeStr}`, PW / 2, PH - 6, { align: 'center' });
+  doc.text(`Folha ${pageNum} de ${totalPages}`, PW - MR, PH - 6, { align: 'right' });
 }
 
 // ─── Helper: carimbo de liberação (desenhado em cada página) ─────────────────
@@ -127,7 +183,7 @@ function drawStamp(doc, carimbo, PW, PH, MR) {
   }
 
   const x  = PW - MR - W;
-  const y  = PH - 14 - H;
+  const y  = PH - 12 - H;
 
   // Fundo branco semitransparente
   doc.setFillColor(255, 255, 255);
@@ -142,7 +198,7 @@ function drawStamp(doc, carimbo, PW, PH, MR) {
 
   // Título
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setTextColor(220, 38, 38);
   doc.text('LIBERADO PARA FABRICAÇÃO', x + W / 2, y + 7.5, { align: 'center' });
 
@@ -183,7 +239,7 @@ function drawStamp(doc, carimbo, PW, PH, MR) {
 // ─── Helper: próximo Y ou nova página ────────────────────────────────────────
 function nextSectionStart(doc, PH, ML, MR, root, PW, dateStr, timeStr, title, minSpace = 55) {
   const lastY = doc.lastAutoTable ? doc.lastAutoTable.finalY : null;
-  if (lastY && (PH - 15 - lastY) >= minSpace) {
+  if (lastY && (PH - 14 - lastY) >= minSpace) {
     return { y: lastY + 10, newPage: false };
   }
   doc.addPage();
@@ -201,7 +257,7 @@ function drawRestrictionsTable(doc, structure, root, PW, ML, MR, dateStr, timeSt
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.setTextColor(...C.darkBlue);
+  doc.setTextColor(...C.lynxForest);
   doc.text('RESUMO DE RESTRIÇÕES DA ESTRUTURA', ML, titleY);
 
   doc.setFont('helvetica', 'normal');
@@ -228,8 +284,8 @@ function drawRestrictionsTable(doc, structure, root, PW, ML, MR, dateStr, timeSt
     if (item.restri_sb1) fontes.push('Bloqueio Cadastro (SB1 = ' + item.restri_sb1 + ')');
     if (item.restri_sz0) fontes.push('Restrição Engenharia (SZ0 = P)');
     const refs = item.referencias && item.referencias.length > 0 ? item.referencias : [];
-    const codCli = refs.length > 0
-      ? refs.map((r) => [r.desenho, r.rev_cliente || r.revisao].filter(Boolean).join(' Rv:')).filter(Boolean).join(' / ')
+    const desenhoRef = refs.length > 0
+      ? refs.map((r) => r.desenho).filter(Boolean).join(' / ')
       : '—';
     return {
       sb1: !!item.restri_sb1,
@@ -240,8 +296,8 @@ function drawRestrictionsTable(doc, structure, root, PW, ML, MR, dateStr, timeSt
         (item.tipo_produto || '—').toUpperCase().trim(),
         item.codigo || '—',
         item.descricao || '—',
-        item.rev_metalfisa || '—',
-        codCli,
+        item.rev_metalfisa || item.revisao || '00',
+        desenhoRef,
         fontes.join('\n') || '—',
         item.restricao_sz0_desc || '—',
         'Ativo',
@@ -252,25 +308,25 @@ function drawRestrictionsTable(doc, structure, root, PW, ML, MR, dateStr, timeSt
 
   autoTable(doc, {
     startY: titleY + 14,
-    head: [['#', 'Nív', 'TP', 'Código', 'Descrição', 'Rv MF', 'Cod Prod Cliente', 'Origem da Restrição', 'Descrição da Restrição', 'Status', 'Data Emissão']],
+    head: [['#', 'NÍV', 'TP', 'CÓDIGO', 'DESCRIÇÃO', 'REVISÃO', 'DESENHO / REF.', 'ORIGEM DA RESTRIÇÃO', 'DESCRIÇÃO DA RESTRIÇÃO', 'STATUS', 'DATA EMISSÃO']],
     body: restricRows.map((r) => r.data),
     theme: 'grid',
     styles:     { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'helvetica' },
-    headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
+    headStyles: { fillColor: C.lynxForest, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
     columnStyles: {
       0: { halign: 'center', cellWidth: 10 },
       1: { halign: 'center', cellWidth: 8 },
       2: { halign: 'center', cellWidth: 8 },
-      3: { halign: 'left',   cellWidth: 26 },
+      3: { halign: 'left',   cellWidth: 28 },
       4: { halign: 'left',   overflow: 'linebreak' },
-      5: { halign: 'center', cellWidth: 10 },
-      6: { halign: 'left',   cellWidth: 26 },
-      7: { halign: 'left',   overflow: 'linebreak', cellWidth: 35 },
-      8: { halign: 'left',   overflow: 'linebreak', cellWidth: 50 },
+      5: { halign: 'center', cellWidth: 16 },
+      6: { halign: 'left',   cellWidth: 28 },
+      7: { halign: 'left',   overflow: 'linebreak', cellWidth: 36 },
+      8: { halign: 'left',   overflow: 'linebreak', cellWidth: 46 },
       9: { halign: 'center', cellWidth: 14 },
       10: { halign: 'center', cellWidth: 20 },
     },
-      didParseCell: (data) => {
+    didParseCell: (data) => {
       if (data.section !== 'body') return;
       const row = restricRows[data.row.index];
       if (!row) return;
@@ -295,15 +351,13 @@ function drawRestrictionsTable(doc, structure, root, PW, ML, MR, dateStr, timeSt
     didDrawPage: (data) => {
       if (data.pageNumber > 1) drawPageHeader(doc, root, PW, ML, MR, dateStr, timeStr, title);
     },
-    margin: { left: ML, right: MR, top: 40, bottom: 15 },
+    margin: { left: ML, right: MR, top: 43, bottom: 14 },
   });
 }
 
 // ─── Helper: tabela detalhada de registros SZ0 ────────────────────────────────
 function drawSZ0DetailsTable(doc, sz0Records, root, PW, ML, MR, dateStr, timeStr, title) {
-  // Filtra apenas as restrições com status "A" (Aprovado)
   const approvedRecords = sz0Records.filter(r => r.status === 'A');
-  
   if (!approvedRecords || approvedRecords.length === 0) return;
 
   const PH = doc.internal.pageSize.getHeight();
@@ -311,8 +365,8 @@ function drawSZ0DetailsTable(doc, sz0Records, root, PW, ML, MR, dateStr, timeStr
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.setTextColor(...C.darkBlue);
-  doc.text(`RESTRIÇÕES DE ENGENHARIA APROVADAS (SZ0) - ${root.codigo}`, ML, titleY);
+  doc.setTextColor(...C.lynxForest);
+  doc.text(`RESTRIÇÕES DE ENGENHARIA APROVADAS (SZ0) — ${root.codigo}`, ML, titleY);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
@@ -342,7 +396,7 @@ function drawSZ0DetailsTable(doc, sz0Records, root, PW, ML, MR, dateStr, timeStr
     body: sz0Rows.map(r => r.data),
     theme: 'grid',
     styles: { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'helvetica' },
-    headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
+    headStyles: { fillColor: C.lynxForest, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
     columnStyles: {
       0: { halign: 'center', cellWidth: 15 },
       1: { halign: 'center', cellWidth: 20 },
@@ -352,19 +406,23 @@ function drawSZ0DetailsTable(doc, sz0Records, root, PW, ML, MR, dateStr, timeStr
       5: { halign: 'left', cellWidth: 40 },
       6: { halign: 'center', cellWidth: 30 }
     },
-    didParseCell: (data) => {
-      // Formato padrão, sem cores customizadas por célula
-    },
     didDrawPage: (data) => {
       if (data.pageNumber > 1) drawPageHeader(doc, root, PW, ML, MR, dateStr, timeStr, title);
     },
-    margin: { left: ML, right: MR, top: 40, bottom: 15 },
+    margin: { left: ML, right: MR, top: 43, bottom: 14 },
   });
 }
 
 // ─── Exportação principal ─────────────────────────────────────────────────────
 export const generateEstruturaReport = async (structure, routesMap, options = {}) => {
   if (!structure || structure.length === 0) return;
+
+  // Garante que o perfil e branding da empresa ativa estejam carregados
+  try {
+    await loadCompanyBranding();
+  } catch (e) {
+    console.warn('[PDF] Falha ao carregar branding da empresa:', e);
+  }
 
   const { 
     title = 'RELAÇÃO SIMPLIFICADA DAS ESTRUTURAS — MATR225Cus', 
@@ -392,10 +450,8 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
 
     let seq = 1;
     const matRows = nivel1Items.map((item) => {
-      const restCount = item.is_restricted ? 1 : 0;
       const refs = item.referencias && item.referencias.length > 0 ? item.referencias : [];
-      const codCli = refs.map((r) => r.desenho).filter(Boolean).join(' / ');
-      const rvCli = refs.map((r) => r.rev_cliente || r.revisao).filter(Boolean).join(' / ') || item.rev_cliente || '';
+      const desenhoRef = refs.map((r) => r.desenho).filter(Boolean).join(' / ') || '—';
       return {
         nivel: item.nivel,
         isRestricted: item.is_restricted,
@@ -406,9 +462,8 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
           item.descricao || '—',
           fmtQtd(item.qtd_necessaria),
           item.unidade || '—',
-          item.rev_metalfisa || '',
-          codCli,
-          rvCli,
+          item.rev_metalfisa || item.revisao || '00',
+          desenhoRef,
           item.is_restricted ? 'R' : '',
           productStatuses[(item.codigo || '').trim()] || 'NORMAL'
         ],
@@ -416,32 +471,31 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
     });
 
     autoTable(doc, {
-      startY: 41,
-      head: [['ITEM', 'TP', 'CÓDIGO', 'DESCRIÇÃO', 'QTDE.NECESSÁRIA', 'UM', 'Rv MF', 'Cód Prod Cliente', 'Rv Cliente', 'Restr.', 'Status Eng.']],
+      startY: 43,
+      head: [['ITEM', 'TP', 'CÓDIGO', 'DESCRIÇÃO', 'QTDE. NECESSÁRIA', 'UM', 'REVISÃO', 'DESENHO / REF.', 'RESTR.', 'STATUS ENG.']],
       body: matRows.map((r) => r.data),
       theme: 'grid',
       styles:     { fontSize: 7, cellPadding: 1.4, textColor: C.darkText, font: 'helvetica' },
-      headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
+      headStyles: { fillColor: C.lynxForest, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
       columnStyles: {
-        0: { halign: 'center', cellWidth: 10 },
-        1: { halign: 'center', cellWidth: 8 },
-        2: { halign: 'left',   cellWidth: 32 },
+        0: { halign: 'center', cellWidth: 12 },
+        1: { halign: 'center', cellWidth: 10 },
+        2: { halign: 'left',   cellWidth: 36 },
         3: { halign: 'left',   overflow: 'linebreak' },
-        4: { halign: 'right',  cellWidth: 24 },
-        5: { halign: 'center', cellWidth: 10 },
-        6: { halign: 'center', cellWidth: 16 },
-        7: { halign: 'left',   cellWidth: 30 },
+        4: { halign: 'right',  cellWidth: 26 },
+        5: { halign: 'center', cellWidth: 12 },
+        6: { halign: 'center', cellWidth: 18 },
+        7: { halign: 'left',   cellWidth: 32 },
         8: { halign: 'center', cellWidth: 14 },
-        9: { halign: 'center', cellWidth: 12 },
-        10: { halign: 'center', cellWidth: 16 },
+        9: { halign: 'center', cellWidth: 22 },
       },
       didParseCell: (data) => {
         if (data.section !== 'body') return;
         const row = matRows[data.row.index];
         if (!row) return;
-        data.cell.styles.fillColor = C.lightBlue;
+        data.cell.styles.fillColor = C.lynxLight;
         data.cell.styles.textColor = C.darkText;
-        if (data.column.index === 9 && data.cell.raw === 'R') {
+        if (data.column.index === 8 && data.cell.raw === 'R') {
           data.cell.styles.textColor = C.red;
           data.cell.styles.fontStyle = 'bold';
         }
@@ -449,7 +503,7 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       didDrawPage: (data) => {
         if (data.pageNumber > 1) drawPageHeader(doc, root, PW, ML, MR, dateStr, timeStr, title);
       },
-      margin: { left: ML, right: MR, top: 40, bottom: 15 },
+      margin: { left: ML, right: MR, top: 43, bottom: 14 },
     });
 
     const rootOps = routesMap[(root.codigo || '').trim()] || [];
@@ -457,7 +511,7 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       const { y: opTitleY } = nextSectionStart(doc, PH, ML, MR, root, PW, dateStr, timeStr, title);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
-      doc.setTextColor(...C.darkBlue);
+      doc.setTextColor(...C.lynxForest);
       doc.text('OPERAÇÕES DE FABRICAÇÃO — PRODUTO PAI', ML, opTitleY);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7);
@@ -475,12 +529,12 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       ]);
 
       autoTable(doc, {
-        startY: opTitleY + 14,
+        startY: opTitleY + 12,
         head: [['SEQ', 'OPERAÇÃO', 'DESCRIÇÃO DA OPERAÇÃO', 'TEMPO PADRÃO (MIN)', 'RECURSO', 'DEPARTAMENTO', 'FERRAMENTA']],
         body: opRows,
         theme: 'grid',
         styles:     { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'helvetica' },
-        headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
+        headStyles: { fillColor: C.lynxDark, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
         columnStyles: {
           0: { halign: 'center', cellWidth: 14 },
           1: { halign: 'center', cellWidth: 22 },
@@ -494,13 +548,13 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
           if (data.section !== 'body') return;
           data.cell.styles.fillColor = C.opRow;
           data.cell.styles.textColor = C.opText;
-          if (data.column.index === 1) { data.cell.styles.fontStyle = 'bold'; data.cell.styles.textColor = C.midBlue; }
+          if (data.column.index === 1) { data.cell.styles.fontStyle = 'bold'; data.cell.styles.textColor = C.lynxForest; }
           if (data.column.index === 0) { data.cell.styles.fontStyle = 'bold'; }
         },
         didDrawPage: (data) => {
           if (data.pageNumber > 1) drawPageHeader(doc, root, PW, ML, MR, dateStr, timeStr, title);
         },
-        margin: { left: ML, right: MR, top: 40, bottom: 15 },
+        margin: { left: ML, right: MR, top: 43, bottom: 14 },
       });
     }
 
@@ -509,8 +563,8 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       const { y: sz1TitleY } = nextSectionStart(doc, PH, ML, MR, root, PW, dateStr, timeStr, title);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
-      doc.setTextColor(...C.darkBlue);
-      doc.text('REFERÊNCIAS DO PRODUTO PAI — HISTÓRICO SZ1', ML, sz1TitleY);
+      doc.setTextColor(...C.lynxForest);
+      doc.text('REFERÊNCIAS TÉCNICAS E DESENHOS DE ENGENHARIA', ML, sz1TitleY);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7);
       doc.setTextColor(...C.mutedText);
@@ -520,49 +574,44 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       const sz1Rows = rootRefs.map((r) => [
         String(seqSz++).padStart(3, '0'),
         r.desenho || '—',
-        r.cliente || '—',
-        r.rev_cliente || r.revisao || '—',
-        root.rev_metalfisa || '—',
+        r.revisao || r.rev_cliente || '00',
         root.codigo || '—',
         root.descricao || '—',
         dateStr,
       ]);
 
       autoTable(doc, {
-        startY: sz1TitleY + 14,
-        head: [['#', 'Cód. Produto Cliente', 'Cliente', 'Rv Cliente', 'Rv MF', 'Código MF', 'Descrição', 'Emissão']],
+        startY: sz1TitleY + 12,
+        head: [['#', 'DESENHO / REF. TÉCNICA', 'REVISÃO', 'CÓDIGO INTERNO', 'DESCRIÇÃO', 'DATA EMISSÃO']],
         body: sz1Rows,
         theme: 'grid',
         styles:     { fontSize: 7, cellPadding: 1.5, textColor: C.darkText, font: 'helvetica' },
-        headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
+        headStyles: { fillColor: C.lynxForest, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
         columnStyles: {
           0: { halign: 'center', cellWidth: 12 },
-          1: { halign: 'left',   cellWidth: 48 },
-          2: { halign: 'left',   overflow: 'linebreak' },
-          3: { halign: 'center', cellWidth: 20 },
-          4: { halign: 'center', cellWidth: 20 },
-          5: { halign: 'left',   cellWidth: 36 },
-          6: { halign: 'left',   overflow: 'linebreak', cellWidth: 60 },
-          7: { halign: 'center', cellWidth: 22 },
+          1: { halign: 'left',   cellWidth: 50 },
+          2: { halign: 'center', cellWidth: 20 },
+          3: { halign: 'left',   cellWidth: 40 },
+          4: { halign: 'left',   overflow: 'linebreak' },
+          5: { halign: 'center', cellWidth: 25 },
         },
         didParseCell: (data) => {
           if (data.section !== 'body') return;
           data.cell.styles.fillColor = data.row.index % 2 === 0 ? C.white : C.altRow;
-          if (data.column.index === 1) { data.cell.styles.fontStyle = 'bold'; data.cell.styles.textColor = C.midBlue; }
-          if (data.column.index === 3) { data.cell.styles.fontStyle = 'bold'; }
+          if (data.column.index === 1) { data.cell.styles.fontStyle = 'bold'; data.cell.styles.textColor = C.lynxDark; }
+          if (data.column.index === 2) { data.cell.styles.fontStyle = 'bold'; }
         },
         didDrawPage: (data) => {
           if (data.pageNumber > 1) drawPageHeader(doc, root, PW, ML, MR, dateStr, timeStr, title);
         },
-        margin: { left: ML, right: MR, top: 40, bottom: 15 },
+        margin: { left: ML, right: MR, top: 43, bottom: 14 },
       });
     }
-    // Nova tabela SZ0 detalhada do produto pai
+
     if (sz0Records && sz0Records.length > 0) {
       drawSZ0DetailsTable(doc, sz0Records, root, PW, ML, MR, dateStr, timeStr, title);
     }
 
-    // Nível 00 sempre exibido; subitens (Nv.01+) apenas se a opção estiver ativa
     const restrictionLevelFilter = includeSubLevelRestrictions ? null : 0;
     drawRestrictionsTable(doc, structure, root, PW, ML, MR, dateStr, timeStr, title, restrictionLevelFilter);
   } else {
@@ -574,10 +623,8 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       const nivel = item.nivel || 0;
       const nivelStr = String(nivel).padStart(2, '0');
       const indent = '  '.repeat(nivel);
-      const restCount = item.is_restricted ? 1 : 0;
       const refs = item.referencias && item.referencias.length > 0 ? item.referencias : [];
-      const codCli = refs.map((r) => r.desenho).filter(Boolean).join(' / ');
-      const rvCli = refs.map((r) => r.rev_cliente || r.revisao).filter(Boolean).join(' / ') || item.rev_cliente || '';
+      const desenhoRef = refs.map((r) => r.desenho).filter(Boolean).join(' / ') || '—';
       allRows.push({
         type: 'component',
         nivel,
@@ -589,9 +636,8 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
           indent + (item.descricao || '—'),
           fmtQtd(item.qtd_necessaria),
           item.unidade || '—',
-          item.rev_metalfisa || '',
-          codCli,
-          rvCli,
+          item.rev_metalfisa || item.revisao || '00',
+          desenhoRef,
           item.is_restricted ? 'R' : '',
           productStatuses[(item.codigo || '').trim()] || 'NORMAL'
         ],
@@ -613,7 +659,6 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
             (op.recurso || '').trim(), 
             (op.departamento || '').trim(), 
             '', 
-            '',
             ''
           ],
         });
@@ -621,24 +666,24 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
     });
 
     autoTable(doc, {
-      startY: 41,
-      head: [['ITEM', 'TP', 'NÍVEL', 'CÓDIGO', 'DESCRIÇÃO', 'QTDE.NECESSARIA', 'UM', 'Rv MF', 'Cod Prod Cliente', 'Rv Cliente', 'Restr.', 'Status Eng.']],
+      startY: 43,
+      head: [['ITEM', 'TP', 'NÍVEL', 'CÓDIGO', 'DESCRIÇÃO', 'QTDE. NECESSÁRIA', 'UM', 'REVISÃO', 'DESENHO / REF.', 'RESTR.', 'STATUS ENG.']],
       body: allRows.map((r) => r.data),
       theme: 'grid',
       styles:     { fontSize: 7, cellPadding: 1.4, textColor: C.darkText, font: 'helvetica' },
-      headStyles: { fillColor: C.darkBlue, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
+      headStyles: { fillColor: C.lynxForest, textColor: C.white, fontStyle: 'bold', fontSize: 7, font: 'helvetica' },
       columnStyles: {
         0: { halign: 'center', cellWidth: 12 },
         1: { halign: 'center', cellWidth: 10 },
         2: { halign: 'center', cellWidth: 12 },
-        3: { halign: 'left',   cellWidth: 32 },
+        3: { halign: 'left',   cellWidth: 34 },
         4: { halign: 'left',   overflow: 'linebreak' },
-        5: { halign: 'right',  cellWidth: 24 },
+        5: { halign: 'right',  cellWidth: 26 },
         6: { halign: 'center', cellWidth: 12 },
         7: { halign: 'center', cellWidth: 18 },
         8: { halign: 'left',   cellWidth: 30 },
-        9: { halign: 'center', cellWidth: 16 },
-        10: { halign: 'center', cellWidth: 16 },
+        9: { halign: 'center', cellWidth: 14 },
+        10: { halign: 'center', cellWidth: 22 },
       },
       didParseCell: (data) => {
         if (data.section !== 'body') return;
@@ -659,7 +704,7 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
       didDrawPage: (data) => {
         if (data.pageNumber > 1) drawPageHeader(doc, root, PW, ML, MR, dateStr, timeStr, title);
       },
-      margin: { left: ML, right: MR, top: 40, bottom: 15 },
+      margin: { left: ML, right: MR, top: 43, bottom: 14 },
     });
 
     if (options.sz0Records && options.sz0Records.length > 0) {
@@ -682,59 +727,82 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
   const fichaPdfBytes = doc.output('arraybuffer');
   let finalPdfBytes = fichaPdfBytes;
 
-  try {
-    const mergedDoc = await PDFDocument.create();
-    const fichaDoc = await PDFDocument.load(fichaPdfBytes);
-    const font = await mergedDoc.embedFont(StandardFonts.HelveticaBold);
-    const hasDrawing = root.tem_arquivos && root.primeiro_arquivo;
+  // Merge external drawings ONLY if explicitly requested via options.includeDrawings
+  if (options.includeDrawings) {
+    try {
+      const mergedDoc = await PDFDocument.create();
+      const fichaDoc = await PDFDocument.load(fichaPdfBytes);
+      const font = await mergedDoc.embedFont(StandardFonts.HelveticaBold);
 
-    // Merge logic
-    let targetDocs = [];
-    if (root && root.codigo) {
-      try {
-        const resp = await api.get(`/docs/${encodeURIComponent(root.codigo.trim())}`);
-        const productDocs = resp.data || [];
-        targetDocs = productDocs
-          .filter(d => ['Desenho', 'Gabarito'].includes(d.tipo))
-          .sort((a, b) => {
-            if (a.tipo === 'Desenho' && b.tipo !== 'Desenho') return -1;
-            if (a.tipo !== 'Desenho' && b.tipo === 'Desenho') return 1;
-            if (a.tipo === 'Gabarito' && b.tipo !== 'Gabarito') return -1;
-            if (a.tipo !== 'Gabarito' && b.tipo === 'Gabarito') return 1;
-            return 0;
+      // Merge logic
+      let targetDocs = [];
+      if (root && root.codigo) {
+        try {
+          const resp = await api.get(`/docs/${encodeURIComponent(root.codigo.trim())}`);
+          const productDocs = resp.data || [];
+          targetDocs = productDocs
+            .filter(d => ['Desenho', 'Gabarito'].includes(d.tipo))
+            .sort((a, b) => {
+              if (a.tipo === 'Desenho' && b.tipo !== 'Desenho') return -1;
+              if (a.tipo !== 'Desenho' && b.tipo === 'Desenho') return 1;
+              if (a.tipo === 'Gabarito' && b.tipo !== 'Gabarito') return -1;
+              if (a.tipo !== 'Gabarito' && b.tipo === 'Gabarito') return 1;
+              return 0;
+            });
+        } catch (e) {
+          console.warn('Falha ao buscar lista de documentos do produto', e);
+        }
+      }
+
+      if (isNivel1) {
+        const fichaPages = await mergedDoc.copyPages(fichaDoc, fichaDoc.getPageIndices());
+        fichaPages.forEach(p => mergedDoc.addPage(p));
+        
+        for (const docObj of targetDocs) {
+          try {
+            const resp = await api.get('/docs/view', { params: { path: docObj.url_arquivo }, responseType: 'arraybuffer' });
+            const drawDoc = await PDFDocument.load(resp.data);
+            const drawPages = await mergedDoc.copyPages(drawDoc, drawDoc.getPageIndices());
+            drawPages.forEach(p => mergedDoc.addPage(p));
+          } catch (e) { console.warn(`Falha no documento ${docObj.tipo}`, e); }
+        }
+      } else {
+        for (const docObj of targetDocs) {
+          try {
+            const resp = await api.get('/docs/view', { params: { path: docObj.url_arquivo }, responseType: 'arraybuffer' });
+            const drawDoc = await PDFDocument.load(resp.data);
+            const drawPages = await mergedDoc.copyPages(drawDoc, drawDoc.getPageIndices());
+            drawPages.forEach(p => mergedDoc.addPage(p));
+          } catch (e) { console.warn(`Falha no documento ${docObj.tipo}`, e); }
+        }
+        const fichaPages = await mergedDoc.copyPages(fichaDoc, fichaDoc.getPageIndices());
+        fichaPages.forEach(p => mergedDoc.addPage(p));
+      }
+
+      // Overlay code on ALL pages
+      if (carimbo && carimbo.codigo_liberacao) {
+        const codeText = `Liberação nº: ${carimbo.codigo_liberacao}`;
+        const pages = mergedDoc.getPages();
+        pages.forEach(page => {
+          const { width, height } = page.getSize();
+          page.drawText(codeText, {
+            x: width - 180,
+            y: 15,
+            size: 10,
+            font,
+            color: rgb(0.86, 0.15, 0.15),
           });
-      } catch (e) {
-        console.warn('Falha ao buscar lista de documentos do produto', e);
+        });
       }
+      finalPdfBytes = await mergedDoc.save();
+    } catch (err) {
+      console.error('Erro merge/overlay:', err);
     }
-
-    if (isNivel1) {
-      const fichaPages = await mergedDoc.copyPages(fichaDoc, fichaDoc.getPageIndices());
-      fichaPages.forEach(p => mergedDoc.addPage(p));
-      
-      for (const docObj of targetDocs) {
-        try {
-          const resp = await api.get('/docs/view', { params: { path: docObj.url_arquivo }, responseType: 'arraybuffer' });
-          const drawDoc = await PDFDocument.load(resp.data);
-          const drawPages = await mergedDoc.copyPages(drawDoc, drawDoc.getPageIndices());
-          drawPages.forEach(p => mergedDoc.addPage(p));
-        } catch (e) { console.warn(`Falha no documento ${docObj.tipo}`, e); }
-      }
-    } else {
-      for (const docObj of targetDocs) {
-        try {
-          const resp = await api.get('/docs/view', { params: { path: docObj.url_arquivo }, responseType: 'arraybuffer' });
-          const drawDoc = await PDFDocument.load(resp.data);
-          const drawPages = await mergedDoc.copyPages(drawDoc, drawDoc.getPageIndices());
-          drawPages.forEach(p => mergedDoc.addPage(p));
-        } catch (e) { console.warn(`Falha no documento ${docObj.tipo}`, e); }
-      }
-      const fichaPages = await mergedDoc.copyPages(fichaDoc, fichaDoc.getPageIndices());
-      fichaPages.forEach(p => mergedDoc.addPage(p));
-    }
-
-    // Overlay code on ALL pages
-    if (carimbo && carimbo.codigo_liberacao) {
+  } else if (carimbo && carimbo.codigo_liberacao) {
+    // Aplica o carimbo de liberação apenas nas páginas da própria estrutura (sem anexar PDFs externos)
+    try {
+      const mergedDoc = await PDFDocument.load(fichaPdfBytes);
+      const font = await mergedDoc.embedFont(StandardFonts.HelveticaBold);
       const codeText = `Liberação nº: ${carimbo.codigo_liberacao}`;
       const pages = mergedDoc.getPages();
       pages.forEach(page => {
@@ -747,10 +815,10 @@ export const generateEstruturaReport = async (structure, routesMap, options = {}
           color: rgb(0.86, 0.15, 0.15),
         });
       });
+      finalPdfBytes = await mergedDoc.save();
+    } catch (err) {
+      console.error('Erro overlay carimbo na ficha:', err);
     }
-    finalPdfBytes = await mergedDoc.save();
-  } catch (err) {
-    console.error('Erro merge/overlay:', err);
   }
 
   const fileName = `${isNivel1 ? 'EstruturaN1' : 'Estrutura'}_${(root.codigo || 'produto').trim()}_${dateStr.replace(/\//g, '-')}.pdf`;

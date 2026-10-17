@@ -101,7 +101,7 @@ const SGQDashboard = () => {
                                 <Building2 className="h-10 w-10 text-blue-600" />
                                 <h1 className="text-3xl font-bold text-gray-900">Sistema de Gestão da Qualidade</h1>
                             </div>
-                            <p className="text-gray-600">Gerencie todos os aspectos da qualidade da METALFISA com rigor metrológico e conformidade normativa</p>
+                            <p className="text-gray-600">Gerencie todos os aspectos da qualidade da LYNX com rigor metrológico e conformidade normativa</p>
                         </div>
 
                         {/* Co-Branding SIM Consultoria */}
@@ -114,8 +114,8 @@ const SGQDashboard = () => {
                             <div>
                                 <div className="flex items-center gap-2">
                                     <span className="text-xs font-black text-slate-900">SIM Consultoria</span>
-                                    <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                                        17 Anos
+                                    <span className="text-[10px] font-bold text-[#425750] bg-[#425750]/10 px-2 py-0.5 rounded-full">
+                                        18 Anos
                                     </span>
                                 </div>
                                 <p className="text-[11px] text-slate-500 font-medium mt-0.5">
@@ -198,7 +198,7 @@ const SGQDashboard = () => {
                             <Building2 className="h-6 w-6 text-blue-600" />
                         </div>
                         <div>
-                            <h4 className="font-semibold text-gray-900 mb-1">Bem-vindo ao SGQ METALFISA</h4>
+                            <h4 className="font-semibold text-gray-900 mb-1">Bem-vindo ao SGQ LYNX</h4>
                             <p className="text-gray-600 text-sm">
                                 Sistema integrado para gestão da qualidade. Clique em qualquer módulo acima para começar.
                             </p>

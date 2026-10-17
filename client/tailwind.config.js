@@ -7,18 +7,37 @@ export default {
     theme: {
         extend: {
             colors: {
+                // Paleta Primária Institucional: Lynx Deep Forest & Pine Green
+                // Mantém a chave 'blue' para garantir que mais de 100 páginas herdem a nova identidade instantaneamente
                 blue: {
-                    50: '#f4f6f9',
-                    100: '#e9eef4',
-                    200: '#c8d4e4',
-                    300: '#a7bad3',
-                    400: '#6586b2',
-                    500: '#325886',
-                    600: '#1f365c', // Metalfisa Exact Blue
-                    700: '#1a2e4e',
-                    800: '#15253f',
-                    900: '#111e33',
-                    950: '#0a121e',
+                    50: '#f0f4f2',
+                    100: '#e0eae5',
+                    200: '#c3d5cc',
+                    300: '#9fbcb0',
+                    400: '#6f9585',
+                    500: '#425750', // Lynx Forest Green (Primary)
+                    600: '#32423d', // Lynx Dark Forest (Corporate Base)
+                    700: '#283531',
+                    800: '#1e2825', // Lynx Deep Forest Background
+                    900: '#161e1c',
+                    950: '#0d1311',
+                },
+                // Aliases semânticos universais
+                primary: {
+                    50: '#f0f4f2',
+                    100: '#e0eae5',
+                    200: '#c3d5cc',
+                    300: '#9fbcb0',
+                    400: '#6f9585',
+                    500: '#425750',
+                    600: '#32423d',
+                    700: '#283531',
+                    800: '#1e2825',
+                    900: '#161e1c',
+                    DEFAULT: '#425750',
+                    hover: '#32423d',
+                    dark: '#1e2825',
+                    accent: '#e0e800',
                 },
                 orange: {
                     50: '#fff9f0',

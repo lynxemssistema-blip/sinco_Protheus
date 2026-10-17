@@ -1,6 +1,7 @@
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
+import { getCompanyShortName } from './companyBranding';
 
 
 /**
@@ -26,7 +27,7 @@ export const generateOPMirrorPdf = (mirrorData) => {
         doc.rect(10, 5, 40, 15, 'F');
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(12);
-        doc.text("METALFISA", 30, 14, { align: 'center' });
+        doc.text(getCompanyShortName(), 30, 14, { align: 'center' });
         doc.setTextColor(0, 0, 0);
 
         doc.setFontSize(16);
@@ -75,7 +76,7 @@ export const generateOPMirrorPdf = (mirrorData) => {
             if (!headerItem) return;
 
             // Header Section for the Final Product
-            doc.setFillColor(30, 58, 95); // Metalfisa blue
+            doc.setFillColor(30, 58, 95); // Lynx blue
             doc.rect(10, yOffset, pageWidth - 20, 8, 'F');
             doc.setTextColor(255, 255, 255);
             doc.setFontSize(9);
@@ -191,7 +192,7 @@ export const generateOPMirrorPdf = (mirrorData) => {
 
             // Signature / Report date
             const dataGeracao = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-            doc.text(`MetalFisa - App Gerado em: ${dataGeracao}`, 10, doc.internal.pageSize.getHeight() - 10);
+            doc.text(`Lynx - App Gerado em: ${dataGeracao}`, 10, doc.internal.pageSize.getHeight() - 10);
         }
 
         const opNumRaw = mirrorData.opNumFromTable || ((mirrorData.items && mirrorData.items.length > 0) ? (mirrorData.items[0].op_num_completa || mirrorData.items[0].op_num || '') : '');

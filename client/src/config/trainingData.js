@@ -230,7 +230,7 @@ export const ALL_TRAINING_SCREENS = [
             {
                 step: 1,
                 title: 'Pesquisa Global',
-                action: 'Busque por código MetalFisa, descrição técnica ou tipo de item (PA, PI, MP, MC).'
+                action: 'Busque por código Lynx, descrição técnica ou tipo de item (PA, PI, MP, MC).'
             },
             {
                 step: 2,
@@ -888,54 +888,7 @@ export const ALL_TRAINING_SCREENS = [
         ]
     },
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // 7. VMI & DEMANDAS DE CLIENTES
-    // ═══════════════════════════════════════════════════════════════════════════
-    {
-        id: 'vmi_demanda_mes',
-        name: 'Demanda Mês (Cruzamento VMI & PCP)',
-        path: '/vmi/demanda-mes',
-        badge: 'Inteligência VMI',
-        category: 'VMI',
-        targetAudience: 'Analistas VMI, Planejadores de PCP e Faturamento',
-        durationHours: 2.0,
-        durationLabel: '2h 00min',
-        structure: '45min Regras de Cruzamento e Revisão + 1h15min Distribuição Automática',
-        summary: 'Cruzamento automático entre a planilha de demanda mensal enviada pelo cliente VMI e as ordens em carteira no Protheus.',
-        objective: 'Rastrear saldos, desconsiderar revisões (.00/.01) para unificar produtos e auto-distribuir OPs nas datas de entrega (Seg/Qua/Sex).',
-        prerequisites: ['Planilha de demandas em formato .xlsx fornecida pelo cliente'],
-        workflowSteps: [
-            {
-                step: 1,
-                title: 'Upload da Planilha de Demanda',
-                action: 'Arraste o arquivo Excel do cliente na área de upload e clique em "Cruzar Dados com SINCO".'
-            },
-            {
-                step: 2,
-                title: 'Análise de Saldos e Gaps',
-                action: 'Verifique quais itens possuem saldo suficiente em carteira e quais estão em vermelho (saldo insuficiente).'
-            },
-            {
-                step: 3,
-                title: 'Auto-Distribuição de Carga PCP',
-                action: 'Clique em "Auto-Distribuir Carga PCP (Seg/Qua/Sex)" para simular as datas de entrega ideais nos meses de demanda.'
-            },
-            {
-                step: 4,
-                title: 'Gravação no SINCO e Exportação',
-                action: 'Valide as propostas simuladas, grave no banco de dados e gere a planilha preenchida para devolver ao cliente.'
-            }
-        ],
-        criticalAlerts: [
-            'Sempre confira se a planilha possui as colunas de meses de demanda a partir da coluna D.',
-            'Lembre-se que o sistema agora desconsidera automaticamente os 2 últimos dígitos de revisão (.00, .01) para agrupar o saldo total do item.'
-        ],
-        verificationChecklist: [
-            'Sei fazer o upload e cruzar a planilha de demandas VMI',
-            'Sei rodar a Auto-Distribuição de Carga PCP',
-            'Sei exportar o arquivo preenchido para o cliente'
-        ]
-    },
+
 
     // ═══════════════════════════════════════════════════════════════════════════
     // 8. MANUTENÇÃO DE EQUIPAMENTOS
@@ -1004,14 +957,13 @@ export const ALL_TRAINING_TRACKS = [
         subtitle: 'Para analistas de planejamento, controle de produção e sequenciamento',
         icon: 'Layers',
         badge: 'bg-indigo-100 text-indigo-800',
-        estimatedTime: '10h 30min',
-        moduleCount: 6,
+        estimatedTime: '8h 30min',
+        moduleCount: 5,
         description: 'Explosão de estruturas BOM, roteamento pull, sequenciamento no Gantt, Curva S de avanço físico e gestão de gargalos.',
-        modules: ['planejamento_estrutura_routing', 'planejamento_gantt', 'curva_s_pedido', 'pcp_fila_dependencias', 'visao_fabrica', 'vmi_demanda_mes'],
+        modules: ['planejamento_estrutura_routing', 'planejamento_gantt', 'curva_s_pedido', 'pcp_fila_dependencias', 'visao_fabrica'],
         keySkills: [
             'Executar explosão de BOM com lead time reverso (Pull)',
-            'Sequenciar OPs no Gantt considerando restrições de máquina',
-            'Cruzar e auto-distribuir demandas de clientes no VMI'
+            'Sequenciar OPs no Gantt considerando restrições de máquina'
         ]
     },
     {

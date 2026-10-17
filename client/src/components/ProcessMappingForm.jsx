@@ -99,10 +99,10 @@ const ProcessMappingForm = ({ onClose, onSave, initialData = null }) => {
     return (
         <div className="fixed inset-0 bg-black/50 z-[1001] flex items-center justify-center p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto animate-slideUp print:max-h-none print:h-auto print:overflow-visible print:shadow-none">
-                {/* PRINT HEADER - METALFISA STANDARD */}
+                {/* PRINT HEADER - LYNX STANDARD */}
                 <div className="hidden print:flex flex-col border-b border-black mb-6">
                     <div className="flex border-b border-black">
-                        <div className="w-40 p-4 border-r border-black flex items-center justify-center font-bold text-2xl tracking-wider bg-gray-100">METALFISA</div>
+                        <div className="w-40 p-4 border-r border-black flex items-center justify-center font-bold text-2xl tracking-wider bg-gray-100">LYNX</div>
                         <div className="flex-1 p-2 flex items-center justify-center font-bold text-xl uppercase tracking-wide">Mapeamento de Processo</div>
                         <div className="w-40 text-xs flex flex-col text-center">
                             <div className="border-b border-black p-2 flex-1 flex items-center justify-center font-mono">DATA: {new Date().toLocaleDateString('pt-BR')}</div>

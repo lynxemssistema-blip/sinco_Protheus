@@ -11,7 +11,7 @@ import api from '../../services/api';
 function PrintSetupModal({ onClose, localAgentUrl, onSave }) {
     const [hostInput, setHostInput]         = useState('');
     const [agentUrlInput, setAgentUrlInput] = useState(localAgentUrl === 'http://localhost:9101' ? '' : localAgentUrl);
-    const [printerNameInput, setPrinterNameInput] = useState(localStorage.getItem('@metalfisa:localPrinterName') || '');
+    const [printerNameInput, setPrinterNameInput] = useState(localStorage.getItem('@lynxems:localPrinterName') || '');
     const [steps, setSteps]                 = useState([]);
     const [running, setRunning]             = useState(false);
     const [discovered, setDiscovered]       = useState(null);
@@ -131,9 +131,9 @@ function PrintSetupModal({ onClose, localAgentUrl, onSave }) {
 
     const handleSave = () => {
         const url = agentUrlInput.trim();
-        if (url) localStorage.setItem('@metalfisa:agentUrl', url);
-        else localStorage.removeItem('@metalfisa:agentUrl');
-        if (printerNameInput.trim()) localStorage.setItem('@metalfisa:localPrinterName', printerNameInput.trim());
+        if (url) localStorage.setItem('@lynxems:agentUrl', url);
+        else localStorage.removeItem('@lynxems:agentUrl');
+        if (printerNameInput.trim()) localStorage.setItem('@lynxems:localPrinterName', printerNameInput.trim());
         onSave({ agentUrl: url || 'http://localhost:9101', printerName: printerNameInput.trim() });
         onClose();
     };
@@ -310,8 +310,8 @@ function PrintSetupModal({ onClose, localAgentUrl, onSave }) {
 }
 
 const LOCAL_AGENT_URL   = 'http://localhost:9101';
-const AGENT_PRINTER_KEY = '@metalfisa:localPrinterName';
-const AGENT_URL_KEY     = '@metalfisa:agentUrl';
+const AGENT_PRINTER_KEY = '@lynxems:localPrinterName';
+const AGENT_URL_KEY     = '@lynxems:agentUrl';
 
 export default function LabelPrintModal({ items, onClose }) {
     const [selectedItems, setSelectedItems] = useState(items.map(i => {
@@ -348,7 +348,7 @@ export default function LabelPrintModal({ items, onClose }) {
     const [activeTemplateId, setActiveTemplateId] = useState('');
 
     const [printQuality, setPrintQuality] = useState(() => {
-        return parseInt(localStorage.getItem('@metalfisa:printQuality')) || 5;
+        return parseInt(localStorage.getItem('@lynxems:printQuality')) || 5;
     });
 
     const [printing, setPrinting] = useState(false);
@@ -376,7 +376,7 @@ export default function LabelPrintModal({ items, onClose }) {
 
     // ── Salvar preferências ────────────────────────────────────────────────────
     useEffect(() => {
-        localStorage.setItem('@metalfisa:printQuality', printQuality);
+        localStorage.setItem('@lynxems:printQuality', printQuality);
     }, [printQuality]);
 
     const savePrinterName = (name) => {
@@ -631,7 +631,7 @@ export default function LabelPrintModal({ items, onClose }) {
             setResults([{
                 item: 'Print Agent',
                 ok: false,
-                error: 'O Print Agent não está rodando neste computador. Baixe e inicie o MetalFisa Print Agent em Configurações > Etiquetas.',
+                error: 'O Print Agent não está rodando neste computador. Baixe e inicie o Lynx Print Agent em Configurações > Etiquetas.',
             }]);
             return;
         }
@@ -714,7 +714,7 @@ export default function LabelPrintModal({ items, onClose }) {
                         item: payloadItem.itemId,
                         ok: false,
                         error: (err.name === 'TypeError' && err.message.includes('Failed to fetch'))
-                            ? 'Print Agent fechado. Inicie o MetalFisa Print Agent no seu PC.'
+                            ? 'Print Agent fechado. Inicie o Lynx Print Agent no seu PC.'
                             : (err.name === 'AbortError' || err.name === 'TimeoutError'
                                 ? 'Timeout — Print Agent não respondeu em 35s'
                                 : err.message),
@@ -803,7 +803,7 @@ export default function LabelPrintModal({ items, onClose }) {
                         </div>
                         <a
                             href="/api/labels/download-agent"
-                            download="MetalFisa-Print-Agent.ems"
+                            download="Lynx-Print-Agent.ems"
                             className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap ml-4"
                         >
                             <Download className="h-3.5 w-3.5" />
@@ -1056,14 +1056,14 @@ export default function LabelPrintModal({ items, onClose }) {
                                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700 space-y-2">
                                     <p className="font-semibold">Como instalar o Print Agent:</p>
                                     <ol className="list-decimal list-inside space-y-1">
-                                        <li>Baixe o arquivo <em>MetalFisa-Print-Agent.ems</em></li>
-                                        <li>Renomeie para <em>MetalFisa-Print-Agent.exe</em></li>
+                                        <li>Baixe o arquivo <em>Lynx-Print-Agent.ems</em></li>
+                                        <li>Renomeie para <em>Lynx-Print-Agent.exe</em></li>
                                         <li>Execute o arquivo para iniciar o agente</li>
                                         <li>Reabra este modal para imprimir</li>
                                     </ol>
                                     <a
                                         href="/api/labels/download-agent"
-                                        download="MetalFisa-Print-Agent.ems"
+                                        download="Lynx-Print-Agent.ems"
                                         className="flex items-center gap-1.5 font-semibold text-amber-800 hover:text-amber-900 mt-2"
                                     >
                                         <Download className="h-3.5 w-3.5" />

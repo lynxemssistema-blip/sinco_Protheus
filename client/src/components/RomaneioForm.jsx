@@ -17,6 +17,7 @@ import { toast } from 'react-toastify';
 import RomaneioPrint from './RomaneioPrint';
 import NfSearchModal from './RomaneioModals/NfSearchModal';
 import NfMirrorModal from './RomaneioModals/NfMirrorModal';
+import { Button, IconButton } from './ui';
 
 export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess }) {
     const { user, hasPermission } = useAuth();
@@ -528,15 +529,30 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                             <FileText className="w-4 h-4" /> 
                             {loadingBundle ? 'Gerando...' : 'Gerar conjunto de PDF'}
                         </button>
-                        <button onClick={() => setShowRevisions(!showRevisions)} className="text-slate-600 hover:bg-slate-100 p-2 rounded flex gap-2 items-center text-xs border">
-                            <History className="w-4 h-4" /> Histórico ({revisions.length})
-                        </button>
-                        <button onClick={handleCreateRevision} className="text-slate-600 hover:bg-slate-100 p-2 rounded flex gap-2 items-center text-xs border">
-                            <Save className="w-4 h-4" /> Nova Revisão
-                        </button>
-                        <button onClick={handlePrint} className="bg-slate-800 text-white hover:bg-slate-900 px-3 py-2 rounded flex gap-2 items-center text-xs">
-                            <Printer className="w-4 h-4" /> Imprimir / PDF
-                        </button>
+                        <Button
+                            variant="light"
+                            size="sm"
+                            icon={History}
+                            onClick={() => setShowRevisions(!showRevisions)}
+                        >
+                            Histórico ({revisions.length})
+                        </Button>
+                        <Button
+                            variant="light"
+                            size="sm"
+                            icon={Save}
+                            onClick={handleCreateRevision}
+                        >
+                            Nova Revisão
+                        </Button>
+                        <Button
+                            variant="primary"
+                            size="sm"
+                            icon={Printer}
+                            onClick={handlePrint}
+                        >
+                            Imprimir / PDF
+                        </Button>
                     </div>
                 )}
             </div>
@@ -865,19 +881,25 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                     </div>
 
                     <div className="flex gap-4 mt-4">
-                        <button onClick={saveHeader} disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded flex gap-2 items-center hover:bg-blue-700 transition">
-                            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : (currRomaneioId ? <Save className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />)}
+                        <Button
+                            variant="primary"
+                            size="md"
+                            onClick={saveHeader}
+                            loading={loading}
+                            icon={currRomaneioId ? Save : ArrowRight}
+                        >
                             {currRomaneioId ? 'Salvar Alterações' : 'Avançar'}
-                        </button>
+                        </Button>
 
                         {currRomaneioId && (
-                            <button 
+                            <Button 
+                                variant="secondary"
+                                size="md"
                                 onClick={() => setStep(2)} 
-                                className="bg-emerald-600 text-white px-4 py-2 rounded flex gap-2 items-center hover:bg-emerald-700 transition shadow"
+                                icon={Plus}
                             >
-                                <Plus className="w-4 h-4" />
                                 Adicionar/Editar Item
-                            </button>
+                            </Button>
                         )}
                     </div>
                 </div>
@@ -1159,9 +1181,9 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                     {/* Manual Results */}
                                     {manualItem.results.length > 0 && !manualItem.selected && (
                                         <div className="max-h-48 overflow-auto border rounded bg-slate-50">
-                                            {manualItem.results.map(prod => (
+                                            {manualItem.results.map((prod, idx) => (
                                                 <div
-                                                    key={prod.codigo}
+                                                    key={`${prod.codigo}-${idx}`}
                                                     className="p-2 border-b hover:bg-slate-100 flex items-center text-xs"
                                                 >
                                                     <div
@@ -1304,9 +1326,22 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                     )}
                                     <td className="p-2 w-24">
                                         {currRomaneioData?.status === 'Rascunho' && (
-                                            <div className="flex gap-2 justify-end">
-                                                <button onClick={() => startEditItem(it)} className="text-blue-600 hover:bg-blue-100 p-1 rounded"><Edit className="w-4 h-4" /></button>
-                                                <button onClick={() => handleDeleteItem(it.id)} className="text-red-600 hover:bg-red-100 p-1 rounded"><Trash2 className="w-4 h-4" /></button>
+                                            <div className="flex gap-1.5 justify-end">
+                                                <IconButton
+                                                    icon={Edit}
+                                                    title="Editar Item"
+                                                    onClick={() => startEditItem(it)}
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="text-slate-500 hover:text-white hover:bg-[#425750]"
+                                                />
+                                                <IconButton
+                                                    icon={Trash2}
+                                                    title="Remover Item"
+                                                    onClick={() => handleDeleteItem(it.id)}
+                                                    variant="danger"
+                                                    size="sm"
+                                                />
                                             </div>
                                         )}
                                     </td>

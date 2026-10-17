@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import ExcelJS from 'exceljs';
 import { logoBase64 } from './metalfisaLogoBase64.js';
 import { toast } from 'react-toastify';
+import { getCompanyShortName } from './companyBranding';
 
 // ─── Helpers de Formatação ───────────────────────────────────────────────────
 
@@ -202,7 +203,7 @@ export const exportVisaoSetoresPdf = async (rawSetoresData, filters = {}, target
             docInstance.setFont('helvetica', 'bold');
             docInstance.setFontSize(9);
             docInstance.setTextColor(255, 255, 255);
-            docInstance.text('METALFISA', ML + 16, y0 + 9);
+            docInstance.text(getCompanyShortName(), ML + 16, y0 + 9);
             docInstance.setFont('helvetica', 'normal');
             docInstance.setFontSize(6.5);
             docInstance.text('Metalúrgica Ltda', ML + 16, y0 + 13.5);
@@ -467,7 +468,7 @@ export const exportVisaoSetoresPdf = async (rawSetoresData, filters = {}, target
             // Bottom footer
             doc.setFontSize(6.5);
             doc.setTextColor(160, 174, 192);
-            doc.text(`MetalFisa Antigravity ERP - Relatório Gerencial de Direcionamento por Setores`, ML, pageHeight - 5);
+            doc.text(`Lynx Antigravity ERP - Relatório Gerencial de Direcionamento por Setores`, ML, pageHeight - 5);
         }
 
         const fileName = targetSetorObj 
@@ -495,7 +496,7 @@ export const exportVisaoSetoresExcel = async (rawSetoresData, filters = {}) => {
         }
 
         const workbook = new ExcelJS.Workbook();
-        workbook.creator = 'MetalFisa ERP';
+        workbook.creator = 'Lynx ERP';
         workbook.created = new Date();
 
         // Estilos Padrão
@@ -521,7 +522,7 @@ export const exportVisaoSetoresExcel = async (rawSetoresData, filters = {}) => {
         // Banner Superior
         wsGeral.mergeCells('A1:F1');
         const cellA1 = wsGeral.getCell('A1');
-        cellA1.value = 'METALFISA - RELATÓRIO DE DIRECIONAMENTO DE PRODUTOS POR SETORES (FÁBRICA)';
+        cellA1.value = 'LYNX - RELATÓRIO DE DIRECIONAMENTO DE PRODUTOS POR SETORES (FÁBRICA)';
         cellA1.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF1E3A5F' } };
 
         wsGeral.mergeCells('A2:F2');
@@ -728,7 +729,7 @@ export const exportVisaoSetoresExcel = async (rawSetoresData, filters = {}) => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `Direcionamento_Setores_MetalFisa_${new Date().toISOString().split('T')[0]}.xlsx`;
+        a.download = `Direcionamento_Setores_Lynx_${new Date().toISOString().split('T')[0]}.xlsx`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

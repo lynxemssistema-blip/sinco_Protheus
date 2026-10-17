@@ -1,20 +1,14 @@
 const Firebird = require('node-firebird');
 require('dotenv').config();
 
-const options = {
-    host: process.env.FB_HOST || '192.168.1.253',
-    port: parseInt(process.env.FB_PORT || '3050', 10),
-    database: process.env.FB_DATABASE || '/opt/firebird/database/metalfisa.fdb',
-    user: process.env.FB_USER || 'SYSDBA',
-    password: process.env.FB_PASSWORD || 'buana',
-    lowercase_keys: false,
-    role: null,
-    pageSize: 4096,
-    blobAsString: true
-};
+// =============================================================================
+// PREMISSA INVIOLÁVEL: FIREBIRD PERMANENTEMENTE DESATIVADO
+// =============================================================================
+const isEnabled = false;
+const options = null;
+const pool = null;
 
-// Pool assíncrono para reutilização de conexões (máx 10)
-const pool = Firebird.pool(10, options);
+console.log('ℹ️ [Firebird DB] Conexão externa bloqueada permanentemente pela premissa SINCO.');
 
 /**
  * Utilitário para limpar espaços em branco de strings em linhas do Firebird (CHAR/VARCHAR)
@@ -39,6 +33,10 @@ function cleanRow(row) {
  */
 function queryFirebird(sql, params = []) {
     return new Promise((resolve, reject) => {
+        if (!pool) {
+            return resolve([]);
+        }
+
         // Garantia de segurança: Proibir operações de escrita
         const trimmedSql = sql.trim().toUpperCase();
         if (
@@ -54,8 +52,8 @@ function queryFirebird(sql, params = []) {
 
         pool.get((err, db) => {
             if (err) {
-                console.error('❌ Erro ao obter conexão do pool Firebird:', err.message);
-                return reject(err);
+                console.warn('⚠️ [Firebird] Não foi possível conectar:', err.message);
+                return resolve([]);
             }
 
             db.query(sql, params, (queryErr, result) => {

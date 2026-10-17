@@ -34,7 +34,7 @@ export default function PurchaseFlowToInvoice() {
         sc_solicitante: '',
         cliente: '',
         op_numero: ''
-    }, '@metalfisa:purchase_flow_filters');
+    }, '@lynxems:purchase_flow_filters');
     const [showValues, setShowValues] = useState(false);
 
     useEffect(() => {

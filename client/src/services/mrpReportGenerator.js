@@ -1,11 +1,12 @@
 /**
  * mrpReportGenerator.js
- * Gerador de relatórios S&OP MRP — PDF (A4 deitado, padrão MetalFisa) + Excel
+ * Gerador de relatórios S&OP MRP — PDF (A4 deitado, padrão Lynx) + Excel
  */
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { logoBase64 } from './metalfisaLogoBase64';
+import { getCompanyShortName } from './companyBranding';
 
 // ─── Layout ──────────────────────────────────────────────────────────────────
 const ML     = 10;
@@ -15,7 +16,7 @@ const BRAND_W = 42;
 const LOGO_W  = 14;
 const LOGO_H  = 14;
 
-// ─── Cabeçalho padrão MetalFisa (reutiliza exato padrão do sistema) ───────────
+// ─── Cabeçalho padrão Lynx (reutiliza exato padrão do sistema) ───────────
 const drawHeader = (doc, pageWidth, title, subtitle = '') => {
     const y0 = 6;
 
@@ -26,7 +27,7 @@ const drawHeader = (doc, pageWidth, title, subtitle = '') => {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(255, 255, 255);
-    doc.text('METALFISA', ML + 18, y0 + 11);
+    doc.text(getCompanyShortName(), ML + 18, y0 + 11);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6);
     doc.text('Metalúrgica Ltda', ML + 18, y0 + 15.5);
@@ -186,7 +187,7 @@ export const generateMrpPdf = (resultados, filtrosLabel = '') => {
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(150, 150, 150);
         doc.text(`Página ${i} de ${pageCount}`, pageWidth - MR, pageHeight - 5, { align: 'right' });
-        doc.text('MetalFisa — S&OP / Planejamento de Materiais', ML, pageHeight - 5);
+        doc.text('Lynx — S&OP / Planejamento de Materiais', ML, pageHeight - 5);
     }
 
     const ts = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 16);
@@ -228,7 +229,7 @@ export const generateMrpExcel = (resultados, filtrosLabel = '') => {
 
     // Linhas de meta-informação no topo
     const metaRows = [
-        ['MetalFisa — S&OP / Planejamento de Necessidades de Material (MRP)'],
+        ['Lynx — S&OP / Planejamento de Necessidades de Material (MRP)'],
         [`Emissão: ${new Date().toLocaleString('pt-BR')}`],
         [`Base de cálculo: ${resultados.items_base} produtos a fabricar`],
         filtrosLabel ? [`Filtros aplicados: ${filtrosLabel}`] : [],
@@ -267,7 +268,7 @@ export const generateMrpExcel = (resultados, filtrosLabel = '') => {
     const emAberto = resultados.materiais.filter(m => Number(m.necessidade_liquida) > 0);
     if (emAberto.length > 0) {
         const wsAberto = XLSX.utils.aoa_to_sheet([
-            ['MetalFisa — Itens com Necessidade em Aberto'],
+            ['Lynx — Itens com Necessidade em Aberto'],
             [`Emissão: ${new Date().toLocaleString('pt-BR')}`],
             [],
             ['Código MP', 'Descrição', 'Un', 'Qtd Necessária', 'Almox 01', 'Nec. Líquida'],
@@ -296,7 +297,7 @@ export const generateMrpExcel = (resultados, filtrosLabel = '') => {
             : `Recurso de SOLDA: ${resultados.recurso_solda || 'MO0020'}`;
 
         const wsSolda = XLSX.utils.aoa_to_sheet([
-            ['MetalFisa — Materiais de SOLDA (MIG/TIG)'],
+            ['Lynx — Materiais de SOLDA (MIG/TIG)'],
             [`Emissão: ${new Date().toLocaleString('pt-BR')}`],
             [soldaProdutosLabel],
             [],

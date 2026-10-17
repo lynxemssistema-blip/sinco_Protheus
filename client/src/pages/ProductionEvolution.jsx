@@ -10,7 +10,7 @@ const RANK_COLORS = [
     '#f59e0b', // 1st - Gold
     '#94a3b8', // 2nd - Silver
     '#d97706', // 3rd - Bronze
-    '#3b82f6', '#6366f1', '#14b8a6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4',
+    '#425750', '#6366f1', '#14b8a6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4',
 ];
 
 const RANK_ICONS = [
@@ -223,8 +223,8 @@ export default function ProductionEvolution() {
                                 <AreaChart data={data}>
                                     <defs>
                                         <linearGradient id="colorQtd" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#2563eb" stopOpacity={0.8} />
-                                            <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                                            <stop offset="5%" stopColor="#425750" stopOpacity={0.8} />
+                                            <stop offset="95%" stopColor="#425750" stopOpacity={0} />
                                         </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -238,7 +238,7 @@ export default function ProductionEvolution() {
                                         type="monotone"
                                         dataKey="total"
                                         name="Total Produzido"
-                                        stroke="#2563eb"
+                                        stroke="#425750"
                                         fillOpacity={1}
                                         fill="url(#colorQtd)"
                                     />

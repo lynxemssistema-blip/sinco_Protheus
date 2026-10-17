@@ -13,29 +13,29 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 
 const IMAP_CONFIG = {
     imap: {
-        user: 'sincometal@metalfisa.com.br',
-        password: 'Pro1042@sm',
-        host: 'imap.task.com.br',
-        port: 143,
-        tls: false,
-        authTimeout: 10000
+        user: process.env.IMAP_USER || 'suporte@lynxems.com.br',
+        password: process.env.IMAP_PASSWORD || '10207597Rdv*',
+        host: process.env.IMAP_HOST || 'imap.hostinger.com',
+        port: parseInt(process.env.IMAP_PORT, 10) || 993,
+        tls: true,
+        authTimeout: 15000
     }
 };
 
 const SMTP_CONFIG = {
-    host: 'smtp.task.com.br',
-    port: 587,
-    secure: false,
+    host: process.env.SMTP_HOST || 'smtp.hostinger.com',
+    port: parseInt(process.env.SMTP_PORT, 10) || 465,
+    secure: true,
     auth: {
-        user: 'sincometal@metalfisa.com.br',
-        pass: 'Pro1042@sm'
+        user: process.env.SMTP_USER || 'suporte@lynxems.com.br',
+        pass: process.env.SMTP_PASS || '10207597Rdv*'
     },
     tls: {
         rejectUnauthorized: false
     },
-    connectionTimeout: 30000,   // 30s para conectar ao SMTP
-    greetingTimeout:  15000,   // 15s para o EHLO
-    socketTimeout:    120000,  // 2min para envio (PDFs grandes)
+    connectionTimeout: 30000,
+    greetingTimeout:  15000,
+    socketTimeout:    120000,
 };
 
 // --- MIGRATION (Auto-run) ---
@@ -107,7 +107,7 @@ router.post('/send', upload.array('attachments'), async (req, res) => {
         }
 
         const mailOptions = {
-            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+            from: process.env.SMTP_FROM || '"SINCO / Lynx" <suporte@lynxems.com.br>',
             to,
             subject: subject || 'Sem Assunto',
             text: text || '',
@@ -131,8 +131,8 @@ router.post('/send', upload.array('attachments'), async (req, res) => {
                      VALUES (?, 'SENT', ?, ?, ?, ?, ?, ?, ?, NOW())`,
                     [
                         info.messageId || null,
-                        'MetalFisa ERP',
-                        'sincometal@metalfisa.com.br',
+                        'SINCO / Lynx',
+                        process.env.SMTP_USER || 'suporte@lynxems.com.br',
                         to,
                         subject || 'Sem Assunto',
                         text || '',
@@ -161,7 +161,7 @@ router.post('/system-error', upload.none(), async (req, res) => {
         const transporter = nodemailer.createTransport(SMTP_CONFIG);
 
         const mailOptions = {
-            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+            from: process.env.SMTP_FROM || '"SINCO / Lynx" <suporte@lynxems.com.br>',
             to,
             subject: subject || 'Erro no Sistema',
             text: text || '',
@@ -176,7 +176,7 @@ router.post('/system-error', upload.none(), async (req, res) => {
             [
                 info.messageId || null,
                 'Sistema - Logger',
-                'sincometal@metalfisa.com.br',
+                process.env.SMTP_USER || 'suporte@lynxems.com.br',
                 to,
                 subject || 'Erro',
                 text || '',

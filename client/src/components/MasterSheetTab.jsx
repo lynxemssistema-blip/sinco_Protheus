@@ -469,7 +469,7 @@ const DocsTab = () => (
         <div>
             <h3 className="text-lg font-bold text-[#0D6EFD] mb-2 border-b pb-1">Unidades de Medida e Regras</h3>
             <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 text-sm text-yellow-800 space-y-2">
-                <p><strong>Atenção (Regra de 50 Minutos):</strong> Na aba Pedidos e Resumo, os valores de tempo de recursos são mostrados em HORAS PRODUTIVAS utilizando a métrica de eficiência padrão MetalFisa.</p>
+                <p><strong>Atenção (Regra de 50 Minutos):</strong> Na aba Pedidos e Resumo, os valores de tempo de recursos são mostrados em HORAS PRODUTIVAS utilizando a métrica de eficiência padrão Lynx.</p>
                 <p><strong>1 HORA PRODUTIVA = 50 MINUTOS</strong> de trabalho líquido (excluindo pausas, setups extra, etc).</p>
             </div>
             <p className="text-sm mt-3 text-slate-700">
@@ -1490,11 +1490,11 @@ const CapacidadeGraficoTab = ({ data, filterParams }) => {
                         <Bar
                             dataKey="cargaPrevistaHrs"
                             name="Demanda (h)"
-                            fill="#3b82f6"
+                            fill="#425750"
                             radius={[4, 4, 0, 0]}
                             barSize={30}
                         >
-                            <LabelList dataKey="cargaPrevistaHrs" position="top" angle={-90} offset={12} fill="#2563eb" fontSize={11} fontWeight="bold" />
+                            <LabelList dataKey="cargaPrevistaHrs" position="top" angle={-90} offset={12} fill="#24312D" fontSize={11} fontWeight="bold" />
                         </Bar>
                     </BarChart>
                 </ResponsiveContainer>

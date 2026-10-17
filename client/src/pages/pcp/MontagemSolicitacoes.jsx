@@ -522,7 +522,7 @@ export default function MontagemSolicitacoes() {
     const [emailPdfBlob, setEmailPdfBlob] = useState(null);
     const [emailPdfName, setEmailPdfName] = useState('');
 
-    const usuario = JSON.parse(localStorage.getItem('@MetalFisa:user') || '{}');
+    const usuario = JSON.parse(localStorage.getItem('@Lynx:user') || '{}');
 
     const carregar = useCallback(async () => {
         setLoading(true);

@@ -53,6 +53,7 @@ const VirtualFlatList = ({
     onOpenClassificacaoModal,
     onOpenBomStructure,
     onOpenStructureStock,
+    onExcluirOp,
     canEdit,
 }) => {
     const sentinelRef = useRef(null);
@@ -160,6 +161,7 @@ const VirtualFlatList = ({
                         onOpenClassificacaoModal={onOpenClassificacaoModal}
                         onOpenBomStructure={onOpenBomStructure}
                         onOpenStructureStock={onOpenStructureStock}
+                        onExcluirOp={onExcluirOp}
                         canEdit={canEdit}
                     />
                 );

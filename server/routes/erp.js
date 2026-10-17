@@ -2,26 +2,180 @@ const express = require('express');
 const router = express.Router();
 const mysql = require('../services/mysqlService');
 const ErpValidator = require('../services/erpValidationService');
+const fs = require('fs');
+const path = require('path');
+
+// ── Drawing single source of truth: produtos_docs + server/uploads/docs ──
+// The same table/files are used by the SINCO formulário (/engenharia/sinco/formulario).
+const DOCS_DIR = path.join(__dirname, '../uploads/docs');
+const DRAWING_EXTS = ['pdf', 'dwg', 'dxf'];
+const docViewUrl = (filePath) => `/api/docs/view?path=${encodeURIComponent(filePath)}`;
+const extOf = (name = '') => (String(name).split('?')[0].split('.').pop() || '').toLowerCase();
+
+// Ensure per-line observation column on order items (idempotent)
+(async () => {
+    try {
+        const [cols] = await mysql.query("SHOW COLUMNS FROM erp_pedidos_itens LIKE 'observacao'");
+        if (!cols.length) {
+            await mysql.query('ALTER TABLE erp_pedidos_itens ADD COLUMN observacao TEXT NULL');
+            console.log('✅ [ERP] Coluna erp_pedidos_itens.observacao adicionada.');
+        }
+    } catch (err) {
+        console.warn('⚠️ [ERP] Falha ao garantir coluna observacao:', err.message);
+    }
+})();
+
+// Order lifecycle: orcamento -> pedido (requires customer PO + attachment) | cancelado
+const STATUS_PEDIDO = ['orcamento', 'pedido', 'cancelado'];
+const PEDIDO_ANEXOS_DIR = path.join(__dirname, '../uploads/pedidos_anexos');
+
+(async () => {
+    try {
+        const [cols] = await mysql.query("SHOW COLUMNS FROM erp_pedidos_venda LIKE 'pedido_cliente'");
+        if (!cols.length) {
+            await mysql.query('ALTER TABLE erp_pedidos_venda ADD COLUMN pedido_cliente VARCHAR(60) NULL');
+            console.log('✅ [ERP] Coluna erp_pedidos_venda.pedido_cliente adicionada.');
+        }
+        await mysql.query(`
+            CREATE TABLE IF NOT EXISTS erp_pedidos_anexos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                IdEmpresa INT NOT NULL,
+                pedido_numero VARCHAR(30) NOT NULL,
+                nome_original VARCHAR(255) NOT NULL,
+                caminho VARCHAR(500) NOT NULL,
+                tamanho INT NULL,
+                mime VARCHAR(150) NULL,
+                created_by VARCHAR(100) NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_pedido (IdEmpresa, pedido_numero)
+            )
+        `);
+        // Legacy statuses collapse into the new 3-state lifecycle
+        await mysql.query("UPDATE erp_pedidos_venda SET status = 'orcamento' WHERE status IS NULL OR status IN ('', 'aberto')");
+        await mysql.query("UPDATE erp_pedidos_venda SET status = 'pedido' WHERE status IN ('faturado', 'em_producao')");
+    } catch (err) {
+        console.warn('⚠️ [ERP] Falha ao preparar status/anexos de pedidos:', err.message);
+    }
+})();
+
+const multer = require('multer');
+const uploadPedidoAnexos = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => {
+            const dir = path.join(PEDIDO_ANEXOS_DIR, String(getTenantId(req) || 1));
+            fs.mkdirSync(dir, { recursive: true });
+            cb(null, dir);
+        },
+        filename: (req, file, cb) => {
+            const original = Buffer.from(file.originalname, 'latin1').toString('utf8');
+            file.originalUtf8 = original;
+            const safe = original.replace(/[^\w.\-]+/g, '_').slice(-120);
+            cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}-${safe}`);
+        }
+    }),
+    limits: { fileSize: 30 * 1024 * 1024, files: 20 }
+});
+
+/**
+ * Persists a base64 drawing uploaded from the product registration into produtos_docs
+ * and returns the values to store on erp_produtos (a viewer URL instead of base64).
+ */
+async function syncDesenhoDoc(codigo, desenho_url, desenho_nome, desenho_tipo) {
+    if (!desenho_url || !String(desenho_url).startsWith('data:')) {
+        return { desenho_url: desenho_url || null, desenho_nome: desenho_nome || null, desenho_tipo: desenho_tipo || null };
+    }
+    const base64 = String(desenho_url).split(',')[1] || '';
+    const tipo = (desenho_tipo || extOf(desenho_nome) || 'pdf').toLowerCase();
+    const nomeOriginal = desenho_nome || `${codigo}.${tipo}`;
+    const cleanName = nomeOriginal.replace(/[^a-zA-Z0-9._-]/g, '_');
+    if (!fs.existsSync(DOCS_DIR)) fs.mkdirSync(DOCS_DIR, { recursive: true });
+    const filePath = path.join(DOCS_DIR, `${Date.now()}-${Math.round(Math.random() * 1e4)}-${cleanName}`);
+    fs.writeFileSync(filePath, Buffer.from(base64, 'base64'));
+
+    await mysql.query(
+        'INSERT INTO produtos_docs (produto_codigo, titulo, url_arquivo, tipo) VALUES (?, ?, ?, ?)',
+        [codigo, nomeOriginal, filePath, 'Desenho']
+    );
+    return { desenho_url: docViewUrl(filePath), desenho_nome: nomeOriginal, desenho_tipo: tipo };
+}
+
+/** Overlays the latest drawing from produtos_docs onto product rows. */
+async function attachDesenhos(rows) {
+    const codigos = [...new Set(rows.map(r => String(r.codigo || '').trim()).filter(Boolean))];
+    if (!codigos.length) return rows;
+    const [docs] = await mysql.query(
+        `SELECT TRIM(produto_codigo) AS produto_codigo, titulo, url_arquivo
+         FROM produtos_docs
+         WHERE TRIM(produto_codigo) IN (?)
+         ORDER BY created_at DESC, id DESC`,
+        [codigos]
+    );
+    const latest = {};
+    for (const d of docs) {
+        const tipo = extOf(d.url_arquivo);
+        if (!DRAWING_EXTS.includes(tipo) || latest[d.produto_codigo]) continue;
+        latest[d.produto_codigo] = { desenho_url: docViewUrl(d.url_arquivo), desenho_nome: d.titulo, desenho_tipo: tipo };
+    }
+    return rows.map(r => {
+        const doc = latest[String(r.codigo || '').trim()];
+        return doc ? { ...r, ...doc } : r;
+    });
+}
+
+/**
+ * Helper para extrair o IdEmpresa (Tenant) de forma segura:
+ * - Se SuperAdmin sem impersonation: retorna null (acesso global irrestrito)
+ * - Se empresa selecionada ou usuário comum: retorna o IdEmpresa do tenant ativo
+ */
+function getTenantId(req) {
+    if (req.tenantId !== undefined && req.tenantId !== null) {
+        return req.tenantId;
+    }
+    if (req.isSuperAdmin && !req.headers['x-tenant-override'] && !req.query.tenant_id) {
+        return null;
+    }
+    return req.user?.IdEmpresa || 1;
+}
 
 // 1. Dashboard / Estatísticas do ERP Nativo (100% MySQL - Paralelizado via Promise.all)
 router.get('/stats', async (req, res) => {
     try {
+        const tenantId = getTenantId(req);
+        const whereEmpresa = tenantId ? ' WHERE IdEmpresa = ?' : '';
+        const params = tenantId ? [tenantId] : [];
+        const opsWhere = tenantId 
+            ? ' WHERE IdEmpresa = ? AND status != "cancelada"' 
+            : ' WHERE status != "cancelada"';
+
+        const paWhere = tenantId ? ' WHERE IdEmpresa = ? AND tipo = "PA"' : ' WHERE tipo = "PA"';
+        const piWhere = tenantId ? ' WHERE IdEmpresa = ? AND tipo = "PI"' : ' WHERE tipo = "PI"';
+        const mpWhere = tenantId ? ' WHERE IdEmpresa = ? AND tipo = "MP"' : ' WHERE tipo = "MP"';
+
         const [
             [[prod]],
+            [[prodPA]],
+            [[prodPI]],
+            [[prodMP]],
             [[cli]],
             [[forn]],
             [[ped]],
             [[ops]]
         ] = await Promise.all([
-            mysql.query('SELECT COUNT(*) as total FROM erp_produtos'),
-            mysql.query('SELECT COUNT(*) as total FROM erp_clientes'),
-            mysql.query('SELECT COUNT(*) as total FROM erp_fornecedores'),
-            mysql.query('SELECT COUNT(*) as total FROM erp_pedidos_venda'),
-            mysql.query('SELECT COUNT(*) as total FROM erp_ordens_producao WHERE status != "cancelada"')
+            mysql.query(`SELECT COUNT(*) as total FROM erp_produtos${whereEmpresa}`, params),
+            mysql.query(`SELECT COUNT(*) as total FROM erp_produtos${paWhere}`, params),
+            mysql.query(`SELECT COUNT(*) as total FROM erp_produtos${piWhere}`, params),
+            mysql.query(`SELECT COUNT(*) as total FROM erp_produtos${mpWhere}`, params),
+            mysql.query(`SELECT COUNT(*) as total FROM erp_clientes${whereEmpresa}`, params),
+            mysql.query(`SELECT COUNT(*) as total FROM erp_fornecedores${whereEmpresa}`, params),
+            mysql.query(`SELECT COUNT(*) as total FROM erp_pedidos_venda${whereEmpresa}`, params),
+            mysql.query(`SELECT COUNT(*) as total FROM erp_ordens_producao${opsWhere}`, params)
         ]);
 
         res.json({
             produtos: prod?.total || 0,
+            pa: prodPA?.total || 0,
+            pi: prodPI?.total || 0,
+            mp: prodMP?.total || 0,
             clientes: cli?.total || 0,
             fornecedores: forn?.total || 0,
             pedidos: ped?.total || 0,
@@ -33,9 +187,10 @@ router.get('/stats', async (req, res) => {
     }
 });
 
-// 1.1 PRODUTOS: Próximo código automático no padrão Protheus (MATA010) com base no prefixo (mínimo 4 dígitos)
+// 1.1 PRODUTOS: Próximo código automático no padrão Protheus com base no prefixo (mínimo 4 dígitos)
 router.get('/produtos/proximo-codigo', async (req, res) => {
     try {
+        const tenantId = getTenantId(req);
         let { prefixo = '', tipo = 'PA' } = req.query;
         prefixo = (prefixo || '').trim().toUpperCase().replace(/[-_ ]+$/, '');
         if (!prefixo) {
@@ -50,10 +205,17 @@ router.get('/produtos/proximo-codigo', async (req, res) => {
 
         const prefixoComHifen = `${prefixo}-`;
 
-        // 1. Busca o maior número sequencial existente para esse prefixo exato
+        // 1. Busca o maior número sequencial existente para esse prefixo exato na empresa
+        let where = " WHERE codigo LIKE ? AND codigo REGEXP ?";
+        let params = [`${prefixoComHifen}%`, `^${prefixo}-[0-9]+$`];
+        if (tenantId) {
+            where = " WHERE IdEmpresa = ? AND codigo LIKE ? AND codigo REGEXP ?";
+            params = [tenantId, `${prefixoComHifen}%`, `^${prefixo}-[0-9]+$`];
+        }
+
         const [rows] = await mysql.query(
-            "SELECT MAX(CAST(SUBSTRING_INDEX(codigo, '-', -1) AS UNSIGNED)) as max_num FROM erp_produtos WHERE codigo LIKE ? AND codigo REGEXP ?",
-            [`${prefixoComHifen}%`, `^${prefixo}-[0-9]+$`]
+            `SELECT MAX(CAST(SUBSTRING_INDEX(codigo, '-', -1) AS UNSIGNED)) as max_num FROM erp_produtos${where}`,
+            params
         );
 
         let proximoNumero = (rows[0]?.max_num || 0) + 1;
@@ -62,9 +224,15 @@ router.get('/produtos/proximo-codigo', async (req, res) => {
         let seqStr = String(proximoNumero).padStart(Math.max(4, String(proximoNumero).length), '0');
         let proximoCodigo = `${prefixoComHifen}${seqStr}`;
 
-        // 3. Garantia de unicidade / colisão ExistChav (Protheus)
+        // 3. Garantia de unicidade / colisão ExistChav (Protheus) na empresa
         while (true) {
-            const [[exists]] = await mysql.query('SELECT id FROM erp_produtos WHERE codigo = ? LIMIT 1', [proximoCodigo]);
+            let existsQuery = 'SELECT id FROM erp_produtos WHERE codigo = ? LIMIT 1';
+            let existsParams = [proximoCodigo];
+            if (tenantId) {
+                existsQuery = 'SELECT id FROM erp_produtos WHERE IdEmpresa = ? AND codigo = ? LIMIT 1';
+                existsParams = [tenantId, proximoCodigo];
+            }
+            const [[exists]] = await mysql.query(existsQuery, existsParams);
             if (!exists) break;
             proximoNumero++;
             seqStr = String(proximoNumero).padStart(Math.max(4, String(proximoNumero).length), '0');
@@ -81,6 +249,7 @@ router.get('/produtos/proximo-codigo', async (req, res) => {
 // 2. PRODUTOS: Lookup com filtros avançados para autocomplete e modal de seleção
 router.get('/produtos/lookup', async (req, res) => {
     try {
+        const tenantId = getTenantId(req);
         const { 
             q = '', 
             tipo = '', 
@@ -97,11 +266,12 @@ router.get('/produtos/lookup', async (req, res) => {
             format = ''
         } = req.query;
 
-        let baseQuery = `
-            FROM erp_produtos
-            WHERE status = 'ativo'
-        `;
+        let baseQuery = " FROM erp_produtos WHERE status = 'ativo'";
         const params = [];
+        if (tenantId) {
+            baseQuery += ' AND IdEmpresa = ?';
+            params.push(tenantId);
+        }
 
         // Filtro Textual Inteligente
         if (q && q.trim()) {
@@ -118,8 +288,8 @@ router.get('/produtos/lookup', async (req, res) => {
                 const words = trimmed.split(/\s+/).filter(w => w.length > 0);
                 for (const word of words) {
                     const term = `%${word}%`;
-                    baseQuery += ' AND (codigo LIKE ? OR descricao LIKE ? OR ncm LIKE ?)';
-                    params.push(term, term, term);
+                    baseQuery += ' AND (codigo LIKE ? OR descricao LIKE ? OR ncm LIKE ? OR b1_xproc1 LIKE ? OR b1_xrevm LIKE ? OR b1_xrevc LIKE ?)';
+                    params.push(term, term, term, term, term, term);
                 }
             }
         }
@@ -185,13 +355,21 @@ router.get('/produtos/lookup', async (req, res) => {
         const parsedOffset = Math.max(parseInt(offset) || 0, 0);
 
         const selectQuery = `
-            SELECT codigo, descricao, tipo, unidade_medida, ncm, peso_liquido, preco_venda, armazem_padrao
+            SELECT codigo, descricao, tipo, unidade_medida, ncm, peso_liquido, preco_venda, armazem_padrao,
+                   desenho_url, desenho_nome, desenho_tipo
             ${baseQuery}
             ${orderClause}
             LIMIT ? OFFSET ?
         `;
         const queryParams = [...params, parsedLimit, parsedOffset];
-        const [rows] = await mysql.query(selectQuery, queryParams);
+        let [rows] = await mysql.query(selectQuery, queryParams);
+        try {
+            rows = await attachDesenhos(rows);
+        } catch (docErr) {
+            console.warn('[ERP] Lookup: falha ao anexar desenhos:', docErr.message);
+        }
+        // Base64 drawings must never travel in list payloads
+        rows = rows.map(r => (String(r.desenho_url || '').startsWith('data:') ? { ...r, desenho_url: null } : r));
 
         if (format === 'paged') {
             return res.json({
@@ -213,15 +391,22 @@ router.get('/produtos/lookup', async (req, res) => {
 // 2.1 PRODUTOS: Listagem de Grupos/Prefixos disponíveis para filtros
 router.get('/produtos/grupos', async (req, res) => {
     try {
+        const tenantId = getTenantId(req);
+        let where = " WHERE codigo LIKE '%-%'";
+        const params = [];
+        if (tenantId) {
+            where = " WHERE IdEmpresa = ? AND codigo LIKE '%-%'";
+            params.push(tenantId);
+        }
+
         const [rows] = await mysql.query(`
             SELECT TRIM(SUBSTRING_INDEX(codigo, '-', 1)) as sigla, COUNT(*) as total
             FROM erp_produtos
-            WHERE codigo LIKE '%-%'
+            ${where}
             GROUP BY sigla
-            HAVING total >= 50
             ORDER BY total DESC
             LIMIT 40
-        `);
+        `, params);
         res.json(rows);
     } catch (err) {
         console.error('Erro em /api/erp/produtos/grupos:', err);
@@ -232,22 +417,33 @@ router.get('/produtos/grupos', async (req, res) => {
 // 3. PRODUTOS: Listar com busca e paginação
 router.get('/produtos', async (req, res) => {
     try {
+        const tenantId = getTenantId(req);
         const { search = '', tipo = '', limit = 50, offset = 0 } = req.query;
         let query = `
             SELECT p.*, 
-                   EXISTS(SELECT 1 FROM erp_estruturas_bom WHERE produto_pai_codigo = p.codigo LIMIT 1) as tem_estrutura
+                   EXISTS(
+                       SELECT 1 FROM erp_estruturas_bom 
+                       WHERE produto_pai_codigo = p.codigo 
+                       ${tenantId ? 'AND IdEmpresa = p.IdEmpresa' : ''} 
+                       LIMIT 1
+                   ) as tem_estrutura
             FROM erp_produtos p
             WHERE 1=1
         `;
         const params = [];
 
+        if (tenantId) {
+            query += ' AND p.IdEmpresa = ?';
+            params.push(tenantId);
+        }
+
         if (search) {
-            query += ' AND (p.codigo LIKE ? OR p.descricao LIKE ? OR p.ncm LIKE ?)';
             const term = `%${search}%`;
-            params.push(term, term, term);
+            query += ' AND (p.codigo LIKE ? OR p.descricao LIKE ? OR p.ncm LIKE ? OR p.b1_xproc1 LIKE ? OR p.b1_xrevm LIKE ? OR p.b1_xrevc LIKE ?)';
+            params.push(term, term, term, term, term, term);
         }
         if (tipo) {
-            query += ' AND p.tipo = ?';
+            query += ' AND UPPER(TRIM(p.tipo)) = UPPER(TRIM(?))';
             params.push(tipo);
         }
 
@@ -255,7 +451,13 @@ router.get('/produtos', async (req, res) => {
         params.push(parseInt(limit), parseInt(offset));
 
         const [rows] = await mysql.query(query, params);
-        res.json(rows);
+        let result = rows;
+        try {
+            result = await attachDesenhos(rows);
+        } catch (docErr) {
+            console.warn('[ERP] Falha ao anexar desenhos de produtos_docs:', docErr.message);
+        }
+        res.json(result);
     } catch (err) {
         console.error('Erro em GET /api/erp/produtos:', err);
         res.status(500).json({ error: 'Erro ao listar produtos', detail: err.message });
@@ -265,42 +467,334 @@ router.get('/produtos', async (req, res) => {
 // 4. PRODUTOS: Criar Novo Produto com Validação
 router.post('/produtos', async (req, res) => {
     try {
+        const tenantId = getTenantId(req) || 1;
         const validacao = ErpValidator.validarProduto(req.body);
         if (!validacao.valido) {
             return res.status(400).json({ error: 'Falha na validação do produto', erros: validacao.erros });
         }
 
+        const parseNum = (v) => {
+            if (v === null || v === undefined || v === '') return 0;
+            const s = String(v).trim().replace(/\s/g, '').replace(',', '.');
+            const n = parseFloat(s);
+            return isNaN(n) ? 0 : n;
+        };
+
         const {
             codigo, descricao, tipo = 'PA', unidade_medida = 'UN', ncm = '',
             armazem_padrao = '01', peso_liquido = 0, peso_bruto = 0,
-            custo_standard = 0, preco_venda = 0, lead_time_dias = 0
+            custo_standard = 0, preco_venda = 0, lead_time_dias = 0,
+            foto_url = null, desenho_url = null, desenho_nome = null, desenho_tipo = null,
+            b1_xrevm = '0', b1_xproc1 = '', b1_xrevc = '0'
         } = req.body;
+
+        const codLimpo = codigo.trim().toUpperCase();
+        const revProd = String(b1_xrevm || '0').trim();
+        const desCli = String(b1_xproc1 || '').trim();
+        const revCli = String(b1_xrevc || '0').trim();
+
+        // Verificar duplicidade no escopo da empresa
+        const [existente] = await mysql.query('SELECT id FROM erp_produtos WHERE IdEmpresa = ? AND codigo = ?', [tenantId, codLimpo]);
+        if (existente.length > 0) {
+            return res.status(400).json({ error: `O produto com código "${codLimpo}" já existe nesta empresa.` });
+        }
+
+        const desenho = await syncDesenhoDoc(codLimpo, desenho_url, desenho_nome, desenho_tipo);
 
         const [result] = await mysql.query(`
             INSERT INTO erp_produtos (
                 codigo, descricao, tipo, unidade_medida, ncm, armazem_padrao,
-                peso_liquido, peso_bruto, custo_standard, preco_venda, lead_time_dias
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [codigo.trim().toUpperCase(), descricao.trim(), tipo, unidade_medida, ncm, armazem_padrao, peso_liquido, peso_bruto, custo_standard, preco_venda, lead_time_dias]);
+                peso_liquido, peso_bruto, custo_standard, preco_venda, lead_time_dias,
+                foto_url, desenho_url, desenho_nome, desenho_tipo, b1_xrevm, b1_xproc1, b1_xrevc, IdEmpresa
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            codLimpo, descricao.trim(), tipo, unidade_medida, ncm,
+            armazem_padrao, parseNum(peso_liquido), parseNum(peso_bruto), parseNum(custo_standard),
+            parseNum(preco_venda), parseInt(lead_time_dias, 10) || 0,
+            foto_url || null, desenho.desenho_url, desenho.desenho_nome, desenho.desenho_tipo,
+            revProd, desCli, revCli, tenantId
+        ]);
 
-        res.status(201).json({ id: result.insertId, codigo, message: 'Produto cadastrado com sucesso!' });
+        // Sincroniza também no espelho Protheus sb1010
+        try {
+            await mysql.query(`
+                INSERT INTO sb1010 (
+                    b1_filial, b1_cod, b1_desc, b1_tipo, b1_um, b1_locpad, b1_posipi,
+                    b1_peso, b1_pesbru, b1_custd, b1_prv1, b1_revatu, b1_xrevm, b1_xproc1, b1_xrevc,
+                    d_e_l_e_t_, IdEmpresa
+                ) VALUES (
+                    '0101', ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, '00', ?, ?, ?,
+                    '', ?
+                ) ON DUPLICATE KEY UPDATE
+                    b1_desc = VALUES(b1_desc),
+                    b1_tipo = VALUES(b1_tipo),
+                    b1_um = VALUES(b1_um),
+                    b1_locpad = VALUES(b1_locpad),
+                    b1_posipi = VALUES(b1_posipi),
+                    b1_peso = VALUES(b1_peso),
+                    b1_pesbru = VALUES(b1_pesbru),
+                    b1_custd = VALUES(b1_custd),
+                    b1_prv1 = VALUES(b1_prv1),
+                    b1_xrevm = VALUES(b1_xrevm),
+                    b1_xproc1 = VALUES(b1_xproc1),
+                    b1_xrevc = VALUES(b1_xrevc)
+            `, [
+                codLimpo, descricao.trim(), tipo, unidade_medida, armazem_padrao, ncm,
+                parseNum(peso_liquido), parseNum(peso_bruto), parseNum(custo_standard), parseNum(preco_venda),
+                revProd, desCli, revCli, tenantId
+            ]);
+        } catch (sb1Err) {
+            console.warn('[ERP] Erro ao sincronizar SB1010:', sb1Err.message);
+        }
+
+        // Sincroniza sz1010 se informado código/desenho do cliente
+        if (desCli) {
+            try {
+                await mysql.query(`
+                    INSERT INTO sz1010 (z1_filial, z1_cliente, z1_loja, z1_nomecli, z1_produto, z1_codcli, z1_desccli, z1_revisao, z1_tes, d_e_l_e_t_, IdEmpresa)
+                    VALUES ('0101', '000001', '01', '', ?, ?, '', ?, '', '', ?)
+                    ON DUPLICATE KEY UPDATE z1_codcli = VALUES(z1_codcli), z1_revisao = VALUES(z1_revisao)
+                `, [codLimpo, desCli, revCli, tenantId]);
+            } catch (sz1Err) {
+                console.warn('[ERP] Erro ao sincronizar SZ1010:', sz1Err.message);
+            }
+        }
+
+        res.status(201).json({ id: result.insertId, codigo: codLimpo, message: 'Produto cadastrado com sucesso!' });
     } catch (err) {
         console.error('Erro em POST /api/erp/produtos:', err);
         res.status(500).json({ error: 'Erro ao criar produto', detail: err.message });
     }
 });
 
+// 4.1 PRODUTOS: Atualizar Produto existente
+router.put('/produtos/:codigo', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        const { codigo } = req.params;
+        const codLimpo = decodeURIComponent(codigo || '').trim().toUpperCase();
+        const {
+            descricao, tipo, unidade_medida, ncm, armazem_padrao,
+            peso_liquido, peso_bruto, custo_standard, preco_venda, lead_time_dias,
+            foto_url, desenho_url, desenho_nome, desenho_tipo, status,
+            b1_xrevm, b1_xproc1, b1_xrevc
+        } = req.body;
+
+        const parseNum = (v) => {
+            if (v === null || v === undefined || v === '') return 0;
+            const s = String(v).trim().replace(/\s/g, '').replace(',', '.');
+            const n = parseFloat(s);
+            return isNaN(n) ? 0 : n;
+        };
+
+        const revProd = b1_xrevm !== undefined ? String(b1_xrevm || '0').trim() : null;
+        const desCli = b1_xproc1 !== undefined ? String(b1_xproc1 || '').trim() : null;
+        const revCli = b1_xrevc !== undefined ? String(b1_xrevc || '0').trim() : null;
+
+        const desenho = await syncDesenhoDoc(codLimpo, desenho_url, desenho_nome, desenho_tipo);
+        if (!desenho.desenho_url) {
+            // Drawing removed in the registration: remove the drawing shown (latest in shared docs)
+            const [docs] = await mysql.query(
+                'SELECT id, url_arquivo FROM produtos_docs WHERE TRIM(produto_codigo) = ? ORDER BY created_at DESC, id DESC',
+                [codLimpo]
+            );
+            const atual = docs.find(d => DRAWING_EXTS.includes(extOf(d.url_arquivo)));
+            if (atual) await mysql.query('DELETE FROM produtos_docs WHERE id = ?', [atual.id]);
+        }
+
+        const [result] = await mysql.query(`
+            UPDATE erp_produtos SET
+                descricao = COALESCE(?, descricao),
+                tipo = COALESCE(?, tipo),
+                unidade_medida = COALESCE(?, unidade_medida),
+                ncm = COALESCE(?, ncm),
+                armazem_padrao = COALESCE(?, armazem_padrao),
+                peso_liquido = ?,
+                peso_bruto = ?,
+                custo_standard = ?,
+                preco_venda = ?,
+                lead_time_dias = COALESCE(?, lead_time_dias),
+                foto_url = ?,
+                desenho_url = ?,
+                desenho_nome = ?,
+                desenho_tipo = ?,
+                status = COALESCE(?, status),
+                b1_xrevm = COALESCE(?, b1_xrevm),
+                b1_xproc1 = COALESCE(?, b1_xproc1),
+                b1_xrevc = COALESCE(?, b1_xrevc)
+            WHERE (codigo = ? OR id = ?) AND IdEmpresa = ?
+        `, [
+            descricao ? descricao.trim() : null,
+            tipo || null,
+            unidade_medida || null,
+            ncm || null,
+            armazem_padrao || null,
+            parseNum(peso_liquido),
+            parseNum(peso_bruto),
+            parseNum(custo_standard),
+            parseNum(preco_venda),
+            lead_time_dias !== undefined ? parseInt(lead_time_dias, 10) : null,
+            foto_url || null,
+            desenho.desenho_url,
+            desenho.desenho_nome,
+            desenho.desenho_tipo,
+            status || null,
+            revProd,
+            desCli,
+            revCli,
+            codLimpo,
+            isNaN(parseInt(codLimpo, 10)) ? -1 : parseInt(codLimpo, 10),
+            tenantId
+        ]);
+
+        if (result.affectedRows === 0) {
+            await mysql.query(`
+                UPDATE erp_produtos SET
+                    descricao = COALESCE(?, descricao),
+                    tipo = COALESCE(?, tipo),
+                    unidade_medida = COALESCE(?, unidade_medida),
+                    ncm = COALESCE(?, ncm),
+                    armazem_padrao = COALESCE(?, armazem_padrao),
+                    peso_liquido = ?,
+                    peso_bruto = ?,
+                    custo_standard = ?,
+                    preco_venda = ?,
+                    lead_time_dias = COALESCE(?, lead_time_dias),
+                    foto_url = ?,
+                    desenho_url = ?,
+                    desenho_nome = ?,
+                    desenho_tipo = ?,
+                    status = COALESCE(?, status),
+                    b1_xrevm = COALESCE(?, b1_xrevm),
+                    b1_xproc1 = COALESCE(?, b1_xproc1),
+                    b1_xrevc = COALESCE(?, b1_xrevc)
+                WHERE codigo = ? OR id = ?
+            `, [
+                descricao ? descricao.trim() : null,
+                tipo || null,
+                unidade_medida || null,
+                ncm || null,
+                armazem_padrao || null,
+                parseNum(peso_liquido),
+                parseNum(peso_bruto),
+                parseNum(custo_standard),
+                parseNum(preco_venda),
+                lead_time_dias !== undefined ? parseInt(lead_time_dias, 10) : null,
+                foto_url || null,
+                desenho.desenho_url,
+                desenho.desenho_nome,
+                desenho.desenho_tipo,
+                status || null,
+                revProd,
+                desCli,
+                revCli,
+                codLimpo,
+                isNaN(parseInt(codLimpo, 10)) ? -1 : parseInt(codLimpo, 10)
+            ]);
+        }
+
+        // Sincronizar também no SB1010
+        try {
+            await mysql.query(`
+                UPDATE sb1010 SET
+                    b1_desc = COALESCE(?, b1_desc),
+                    b1_tipo = COALESCE(?, b1_tipo),
+                    b1_um = COALESCE(?, b1_um),
+                    b1_locpad = COALESCE(?, b1_locpad),
+                    b1_posipi = COALESCE(?, b1_posipi),
+                    b1_peso = ?,
+                    b1_pesbru = ?,
+                    b1_custd = ?,
+                    b1_prv1 = ?,
+                    b1_xrevm = COALESCE(?, b1_xrevm),
+                    b1_xproc1 = COALESCE(?, b1_xproc1),
+                    b1_xrevc = COALESCE(?, b1_xrevc)
+                WHERE b1_cod = ?
+            `, [
+                descricao ? descricao.trim() : null,
+                tipo || null,
+                unidade_medida || null,
+                armazem_padrao || null,
+                ncm || null,
+                parseNum(peso_liquido),
+                parseNum(peso_bruto),
+                parseNum(custo_standard),
+                parseNum(preco_venda),
+                revProd,
+                desCli,
+                revCli,
+                codLimpo
+            ]);
+        } catch (sb1Err) {
+            console.warn('[ERP] Erro ao sincronizar SB1010 no update:', sb1Err.message);
+        }
+
+        // Sincronizar em cascata para os pedidos de venda (sc6010 e erp_pedidos_itens)
+        try {
+            if (revProd !== null || desCli !== null || revCli !== null) {
+                await mysql.query(`
+                    UPDATE sc6010 SET
+                        c6_xrevm = COALESCE(?, c6_xrevm),
+                        c6_xproc1 = COALESCE(?, c6_xproc1),
+                        c6_xrevc = COALESCE(?, c6_xrevc)
+                    WHERE c6_produto = ?
+                `, [revProd, desCli, revCli, codLimpo]);
+
+                await mysql.query(`
+                    UPDATE erp_pedidos_itens SET
+                        c6_xrevm = COALESCE(?, c6_xrevm),
+                        c6_xproc1 = COALESCE(?, c6_xproc1),
+                        c6_xrevc = COALESCE(?, c6_xrevc)
+                    WHERE produto_codigo = ?
+                `, [revProd, desCli, revCli, codLimpo]);
+            }
+        } catch (ordersErr) {
+            console.warn('[ERP] Erro ao sincronizar pedidos após alteração do produto:', ordersErr.message);
+        }
+
+        // Sincronizar sz1010
+        if (desCli) {
+            try {
+                const [[sz1Exist]] = await mysql.query('SELECT r_e_c_n_o_ FROM sz1010 WHERE z1_produto = ? LIMIT 1', [codLimpo]);
+                if (sz1Exist) {
+                    await mysql.query('UPDATE sz1010 SET z1_codcli = ?, z1_revisao = ? WHERE r_e_c_n_o_ = ?', [desCli, revCli || '0', sz1Exist.r_e_c_n_o_]);
+                } else {
+                    await mysql.query(`
+                        INSERT INTO sz1010 (z1_filial, z1_cliente, z1_loja, z1_nomecli, z1_produto, z1_codcli, z1_desccli, z1_revisao, z1_tes, d_e_l_e_t_, IdEmpresa)
+                        VALUES ('0101', '000001', '01', '', ?, ?, '', ?, '', '', ?)
+                    `, [codLimpo, desCli, revCli || '0', tenantId]);
+                }
+            } catch (sz1Err) {
+                console.warn('[ERP] Erro ao atualizar SZ1010:', sz1Err.message);
+            }
+        }
+
+        res.json({ message: 'Produto atualizado com sucesso e refletido nos pedidos!' });
+    } catch (err) {
+        console.error('Erro em PUT /api/erp/produtos/:codigo:', err);
+        res.status(500).json({ error: 'Erro ao atualizar produto', detail: err.message });
+    }
+});
+
 // 5. CLIENTES: Lookup rápido para autocomplete nos pedidos
 router.get('/clientes/lookup', async (req, res) => {
     try {
+        const tenantId = getTenantId(req);
         const { q = '' } = req.query;
         const term = `%${q.trim()}%`;
+        let where = ' WHERE (codigo LIKE ? OR razao_social LIKE ? OR nome_fantasia LIKE ? OR cnpj_cpf LIKE ?)';
+        const params = [term, term, term, term];
+        if (tenantId) {
+            where = ' WHERE IdEmpresa = ? AND (codigo LIKE ? OR razao_social LIKE ? OR nome_fantasia LIKE ? OR cnpj_cpf LIKE ?)';
+            params.unshift(tenantId);
+        }
         const [rows] = await mysql.query(`
             SELECT codigo, loja, razao_social, nome_fantasia, cnpj_cpf, cidade, uf, status
             FROM erp_clientes
-            WHERE (codigo LIKE ? OR razao_social LIKE ? OR nome_fantasia LIKE ? OR cnpj_cpf LIKE ?)
+            ${where}
             ORDER BY razao_social ASC LIMIT 25
-        `, [term, term, term, term]);
+        `, params);
         res.json(rows);
     } catch (err) {
         console.error('Erro em /api/erp/clientes/lookup:', err);
@@ -308,12 +802,41 @@ router.get('/clientes/lookup', async (req, res) => {
     }
 });
 
+// 5.1. CNPJ: Consulta de Dados Cadastrais via BrasilAPI
+router.get('/cnpj/:cnpj', async (req, res) => {
+    try {
+        const cnpjLimpo = (req.params.cnpj || '').replace(/\D/g, '');
+        if (cnpjLimpo.length !== 14) {
+            return res.status(400).json({ error: 'CNPJ deve conter 14 dígitos' });
+        }
+        const axios = require('axios');
+        const response = await axios.get(`https://brasilapi.com.br/api/cnpj/v1/${cnpjLimpo}`, {
+            timeout: 10000,
+            headers: { 'User-Agent': 'SINCO-Suite/1.0' }
+        });
+        res.json(response.data);
+    } catch (err) {
+        console.warn(`[BrasilAPI] Erro ao consultar CNPJ ${req.params.cnpj}:`, err.message);
+        const status = err.response?.status || 500;
+        res.status(status).json({
+            error: err.response?.data?.message || 'Falha ao consultar CNPJ na BrasilAPI',
+            detail: err.message
+        });
+    }
+});
+
 // 6. CLIENTES: Listar
 router.get('/clientes', async (req, res) => {
     try {
+        const tenantId = getTenantId(req);
         const { search = '', limit = 50 } = req.query;
         let query = 'SELECT * FROM erp_clientes WHERE 1=1';
         const params = [];
+
+        if (tenantId) {
+            query += ' AND IdEmpresa = ?';
+            params.push(tenantId);
+        }
 
         if (search) {
             query += ' AND (codigo LIKE ? OR razao_social LIKE ? OR cnpj_cpf LIKE ? OR nome_fantasia LIKE ?)';
@@ -325,17 +848,47 @@ router.get('/clientes', async (req, res) => {
         params.push(parseInt(limit));
 
         const [rows] = await mysql.query(query, params);
-        res.json(rows);
+        const formatados = rows.map(r => ({
+            ...r,
+            enderecos_adicionais: typeof r.enderecos_adicionais === 'string'
+                ? (() => { try { return JSON.parse(r.enderecos_adicionais); } catch { return []; } })()
+                : (r.enderecos_adicionais || []),
+            dados_receita: typeof r.dados_receita === 'string'
+                ? (() => { try { return JSON.parse(r.dados_receita); } catch { return null; } })()
+                : (r.dados_receita || null),
+            contatos: typeof r.contatos === 'string'
+                ? (() => { try { return JSON.parse(r.contatos); } catch { return []; } })()
+                : (r.contatos || [])
+        }));
+        res.json(formatados);
     } catch (err) {
         console.error('Erro em GET /api/erp/clientes:', err);
         res.status(500).json({ error: 'Erro ao listar clientes', detail: err.message });
     }
 });
 
-// 6.1. CLIENTES: Criar Novo Cliente (MATA030)
+// 6.0. CLIENTES: Obter Próximo Código Sequencial (6 dígitos, ex: 000001)
+router.get('/clientes/proximo-codigo', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        const [[maxRow]] = await mysql.query(
+            'SELECT MAX(CAST(codigo AS UNSIGNED)) as max_cod FROM erp_clientes WHERE IdEmpresa = ? AND codigo REGEXP "^[0-9]+$"',
+            [tenantId]
+        );
+        const proximo = (maxRow?.max_cod || 0) + 1;
+        const proximoCodigo = String(proximo).padStart(6, '0');
+        res.json({ proximo_codigo: proximoCodigo });
+    } catch (err) {
+        console.error('Erro em /api/erp/clientes/proximo-codigo:', err);
+        res.status(500).json({ error: 'Erro ao calcular próximo código' });
+    }
+});
+
+// 6.1. CLIENTES: Criar Novo Cliente
 router.post('/clientes', async (req, res) => {
     try {
-        const validacao = ErpValidator.validarCliente(req.body);
+        const tenantId = getTenantId(req) || 1;
+        const validacao = ErpValidator.validarCliente(req.body, false);
         if (!validacao.valido) {
             return res.status(400).json({ error: 'Falha na validação do cliente', erros: validacao.erros });
         }
@@ -344,42 +897,64 @@ router.post('/clientes', async (req, res) => {
             codigo, loja = '01', razao_social, nome_fantasia = '', cnpj_cpf = '',
             inscricao_estadual = '', tipo_pessoa = 'J', endereco = '', bairro = '',
             cidade = '', uf = 'SP', cep = '', telefone = '', email = '', contato = '',
-            condicao_pagamento_padrao = '30 DDL', status = 'ativo'
+            condicao_pagamento_padrao = '30 DDL', status = 'ativo',
+            enderecos_adicionais = [], logo_url = '', dados_receita = null,
+            contatos = []
         } = req.body;
 
-        // Verificar duplicidade de CNPJ/CPF
+        // Verificar duplicidade de CNPJ/CPF na mesma empresa
         if (cnpj_cpf && cnpj_cpf.trim() !== '') {
             const limpo = cnpj_cpf.replace(/\D/g, '');
-            const [dupl] = await mysql.query('SELECT codigo, razao_social FROM erp_clientes WHERE REPLACE(REPLACE(REPLACE(cnpj_cpf, ".", ""), "/", ""), "-", "") = ?', [limpo]);
+            const [dupl] = await mysql.query(
+                'SELECT codigo, razao_social FROM erp_clientes WHERE IdEmpresa = ? AND REPLACE(REPLACE(REPLACE(cnpj_cpf, ".", ""), "/", ""), "-", "") = ?',
+                [tenantId, limpo]
+            );
             if (dupl.length > 0) {
                 return res.status(400).json({ error: `Já existe um cliente cadastrado com este CNPJ/CPF: Código ${dupl[0].codigo} (${dupl[0].razao_social})` });
             }
         }
 
-        // Gerar código se não fornecido
+        // Gerar código se não fornecido para este tenant (6 dígitos, ex: 000001)
         let codFinal = codigo ? codigo.trim().toUpperCase() : '';
         if (!codFinal) {
-            const [[maxRow]] = await mysql.query('SELECT MAX(CAST(codigo AS UNSIGNED)) as max_cod FROM erp_clientes WHERE codigo REGEXP "^[0-9]+$"');
-            const proximo = (maxRow?.max_cod || 1000) + 1;
+            const [[maxRow]] = await mysql.query('SELECT MAX(CAST(codigo AS UNSIGNED)) as max_cod FROM erp_clientes WHERE IdEmpresa = ? AND codigo REGEXP "^[0-9]+$"', [tenantId]);
+            const proximo = (maxRow?.max_cod || 0) + 1;
             codFinal = String(proximo).padStart(6, '0');
         } else {
-            const [codExistente] = await mysql.query('SELECT codigo FROM erp_clientes WHERE codigo = ?', [codFinal]);
+            // Garantir que códigos numéricos manuais também fiquem com 6 dígitos se menores
+            if (/^\d+$/.test(codFinal) && codFinal.length < 6) {
+                codFinal = codFinal.padStart(6, '0');
+            }
+            const [codExistente] = await mysql.query('SELECT codigo FROM erp_clientes WHERE IdEmpresa = ? AND codigo = ?', [tenantId, codFinal]);
             if (codExistente.length > 0) {
-                return res.status(400).json({ error: `O código de cliente "${codFinal}" já está em uso` });
+                return res.status(400).json({ error: `O código de cliente "${codFinal}" já está em uso nesta empresa` });
             }
         }
+
+        const endAdicionaisStr = typeof enderecos_adicionais === 'string'
+            ? enderecos_adicionais
+            : JSON.stringify(enderecos_adicionais || []);
+
+        const dadosReceitaStr = dados_receita
+            ? (typeof dados_receita === 'string' ? dados_receita : JSON.stringify(dados_receita))
+            : null;
+
+        const contatosStr = typeof contatos === 'string'
+            ? contatos
+            : JSON.stringify(contatos || []);
 
         const [result] = await mysql.query(`
             INSERT INTO erp_clientes (
                 codigo, loja, razao_social, nome_fantasia, cnpj_cpf, inscricao_estadual,
                 tipo_pessoa, endereco, bairro, cidade, uf, cep, telefone, email,
-                contato, condicao_pagamento_padrao, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                contato, condicao_pagamento_padrao, status, enderecos_adicionais, logo_url, dados_receita, contatos, IdEmpresa
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             codFinal, loja, razao_social.trim(), nome_fantasia.trim(), cnpj_cpf.trim(),
             inscricao_estadual.trim(), tipo_pessoa, endereco.trim(), bairro.trim(),
             cidade.trim(), uf.trim().toUpperCase(), cep.trim(), telefone.trim(),
-            email.trim(), contato.trim(), condicao_pagamento_padrao.trim(), status
+            email.trim(), contato.trim(), condicao_pagamento_padrao.trim(), status,
+            endAdicionaisStr, logo_url || null, dadosReceitaStr, contatosStr, tenantId
         ]);
 
         res.status(201).json({
@@ -394,11 +969,12 @@ router.post('/clientes', async (req, res) => {
     }
 });
 
-// 6.2. CLIENTES: Atualizar Cliente (MATA030)
+// 6.2. CLIENTES: Atualizar Cliente
 router.put('/clientes/:codigo', async (req, res) => {
     try {
+        const tenantId = getTenantId(req);
         const { codigo } = req.params;
-        const validacao = ErpValidator.validarCliente({ ...req.body, codigo });
+        const validacao = ErpValidator.validarCliente({ ...req.body, codigo }, true);
         if (!validacao.valido) {
             return res.status(400).json({ error: 'Falha na validação do cliente', erros: validacao.erros });
         }
@@ -407,22 +983,45 @@ router.put('/clientes/:codigo', async (req, res) => {
             razao_social, nome_fantasia = '', cnpj_cpf = '', inscricao_estadual = '',
             tipo_pessoa = 'J', endereco = '', bairro = '', cidade = '', uf = 'SP',
             cep = '', telefone = '', email = '', contato = '', condicao_pagamento_padrao = '30 DDL',
-            status = 'ativo'
+            status = 'ativo', enderecos_adicionais = [], logo_url = '', dados_receita = null,
+            contatos = []
         } = req.body;
+
+        const endAdicionaisStr = typeof enderecos_adicionais === 'string'
+            ? enderecos_adicionais
+            : JSON.stringify(enderecos_adicionais || []);
+
+        const dadosReceitaStr = dados_receita
+            ? (typeof dados_receita === 'string' ? dados_receita : JSON.stringify(dados_receita))
+            : null;
+
+        const contatosStr = typeof contatos === 'string'
+            ? contatos
+            : JSON.stringify(contatos || []);
+
+        let whereClause = 'WHERE codigo = ?';
+        const params = [
+            razao_social.trim(), nome_fantasia.trim(), cnpj_cpf.trim(), inscricao_estadual.trim(),
+            tipo_pessoa, endereco.trim(), bairro.trim(), cidade.trim(), uf.trim().toUpperCase(),
+            cep.trim(), telefone.trim(), email.trim(), contato.trim(), condicao_pagamento_padrao.trim(),
+            status, endAdicionaisStr, logo_url || null, dadosReceitaStr, contatosStr
+        ];
+
+        if (tenantId) {
+            whereClause = 'WHERE IdEmpresa = ? AND codigo = ?';
+            params.push(tenantId, codigo);
+        } else {
+            params.push(codigo);
+        }
 
         await mysql.query(`
             UPDATE erp_clientes SET
                 razao_social = ?, nome_fantasia = ?, cnpj_cpf = ?, inscricao_estadual = ?,
                 tipo_pessoa = ?, endereco = ?, bairro = ?, cidade = ?, uf = ?,
                 cep = ?, telefone = ?, email = ?, contato = ?, condicao_pagamento_padrao = ?,
-                status = ?
-            WHERE codigo = ?
-        `, [
-            razao_social.trim(), nome_fantasia.trim(), cnpj_cpf.trim(), inscricao_estadual.trim(),
-            tipo_pessoa, endereco.trim(), bairro.trim(), cidade.trim(), uf.trim().toUpperCase(),
-            cep.trim(), telefone.trim(), email.trim(), contato.trim(), condicao_pagamento_padrao.trim(),
-            status, codigo
-        ]);
+                status = ?, enderecos_adicionais = ?, logo_url = ?, dados_receita = ?, contatos = ?
+            ${whereClause}
+        `, params);
 
         res.json({ success: true, message: `Cliente ${codigo} atualizado com sucesso!` });
     } catch (err) {
@@ -432,34 +1031,51 @@ router.put('/clientes/:codigo', async (req, res) => {
 });
 
 // Helper: Obter próximo número sequencial de pedido (Padrão Protheus GetSXENum SC5)
-async function getProximoNumeroPedido(conn) {
+async function getProximoNumeroPedido(conn, tenantId) {
     const clientConn = conn || mysql;
     let protheusMax = 0;
-    try {
-        const pg = require('../db');
-        const res = await pg.query("SELECT MAX(c5_num) as max_num FROM sc5010 WHERE d_e_l_e_t_ = ' ' AND c5_num ~ '^[0-9]+$'");
-        if (res.rows && res.rows[0]?.max_num) {
-            protheusMax = parseInt(res.rows[0].max_num, 10) || 0;
+
+    // Apenas consulta Postgres se for a empresa 1 (Metalfisa Matriz histórica)
+    if (tenantId === 1) {
+        try {
+            const pg = require('../db');
+            const res = await pg.query("SELECT MAX(c5_num) as max_num FROM sc5010 WHERE d_e_l_e_t_ = ' ' AND c5_num ~ '^[0-9]+$'");
+            if (res.rows && res.rows[0]?.max_num) {
+                protheusMax = parseInt(res.rows[0].max_num, 10) || 0;
+            }
+        } catch (e) {
+            // Postgres Protheus offline ou inacessível, continua com MySQL
         }
-    } catch (e) {
-        // Postgres Protheus offline ou inacessível, continua com MySQL
+    }
+
+    let whereClause = "WHERE numero_pedido REGEXP '^[0-9]+$'";
+    let params = [];
+    if (tenantId) {
+        whereClause = "WHERE IdEmpresa = ? AND numero_pedido REGEXP '^[0-9]+$'";
+        params = [tenantId];
     }
 
     const [[mysqlMax]] = await clientConn.query(`
         SELECT MAX(CAST(numero_pedido AS UNSIGNED)) as max_num 
         FROM erp_pedidos_venda 
-        WHERE numero_pedido REGEXP '^[0-9]+$'
-    `);
+        ${whereClause}
+    `, params);
     const mysqlMaxNum = mysqlMax?.max_num || 0;
 
     let candidate = Math.max(protheusMax, mysqlMaxNum) + 1;
 
-    // Protheus ExistChav check: garante que o código não existe previamente
+    // Protheus ExistChav check: garante que o código não existe previamente no tenant
     let exists = true;
     let formatted = '';
     while (exists) {
         formatted = String(candidate).padStart(6, '0');
-        const [[check]] = await clientConn.query('SELECT 1 FROM erp_pedidos_venda WHERE numero_pedido = ? LIMIT 1', [formatted]);
+        let checkSql = 'SELECT 1 FROM erp_pedidos_venda WHERE numero_pedido = ? LIMIT 1';
+        let checkParams = [formatted];
+        if (tenantId) {
+            checkSql = 'SELECT 1 FROM erp_pedidos_venda WHERE IdEmpresa = ? AND numero_pedido = ? LIMIT 1';
+            checkParams = [tenantId, formatted];
+        }
+        const [[check]] = await clientConn.query(checkSql, checkParams);
         if (!check) {
             exists = false;
         } else {
@@ -473,7 +1089,8 @@ async function getProximoNumeroPedido(conn) {
 // 6.5 PEDIDOS DE VENDA: Próximo número sequencial no padrão Protheus (GetSXENum SC5)
 router.get('/pedidos/proximo-numero', async (req, res) => {
     try {
-        const proximoNumero = await getProximoNumeroPedido();
+        const tenantId = getTenantId(req);
+        const proximoNumero = await getProximoNumeroPedido(null, tenantId);
         res.json({
             proximoNumero,
             tamanho: 6,
@@ -489,9 +1106,15 @@ router.get('/pedidos/proximo-numero', async (req, res) => {
 // 7. PEDIDOS DE VENDA: Listar com cliente e totais (Otimizado: CTE + Agregação sem subqueries correlacionadas)
 router.get('/pedidos', async (req, res) => {
     try {
+        const tenantId = getTenantId(req);
         const { search = '', status = '', limit = 150 } = req.query;
         let whereClause = ' WHERE 1=1';
         const params = [];
+
+        if (tenantId) {
+            whereClause += ' AND p.IdEmpresa = ?';
+            params.push(tenantId);
+        }
 
         if (search) {
             whereClause += ' AND (p.numero_pedido LIKE ? OR c.razao_social LIKE ? OR c.nome_fantasia LIKE ?)';
@@ -507,15 +1130,16 @@ router.get('/pedidos', async (req, res) => {
         const parsedLimit = Math.min(Math.max(parseInt(limit) || 150, 1), 500);
         params.push(parsedLimit);
 
-        // Otimização: CTE top_pedidos seleciona os pedidos filtrados primeiro (150 linhas)
-        // e faz JOIN com itens agrupados apenas desses pedidos, eliminando 600 passes de subquery correlacionada
+        const itemsWhere = tenantId ? 'WHERE i.IdEmpresa = ?' : '';
+        const itemsParams = tenantId ? [tenantId] : [];
+
         const query = `
             WITH top_pedidos AS (
                 SELECT p.id, p.numero_pedido, p.cliente_codigo, p.data_emissao, p.condicao_pagamento,
-                       p.valor_total, p.peso_total, p.tipo_frete, p.transportadora, p.status, p.observacoes, p.created_at,
+                       p.valor_total, p.peso_total, p.tipo_frete, p.transportadora, p.status, p.observacoes, p.created_at, p.pedido_cliente,
                        c.razao_social as cliente_nome, c.nome_fantasia as cliente_fantasia
                 FROM erp_pedidos_venda p
-                LEFT JOIN erp_clientes c ON p.cliente_codigo = c.codigo
+                LEFT JOIN erp_clientes c ON (p.cliente_codigo = c.codigo ${tenantId ? 'AND c.IdEmpresa = p.IdEmpresa' : ''})
                 ${whereClause}
                 ORDER BY p.id DESC 
                 LIMIT ?
@@ -527,11 +1151,12 @@ router.get('/pedidos', async (req, res) => {
                        SUM(COALESCE(NULLIF(i.valor_total, 0), i.quantidade * i.preco_unitario)) as valor_calculado
                 FROM erp_pedidos_itens i
                 INNER JOIN top_pedidos tp ON tp.numero_pedido = i.pedido_numero
+                ${itemsWhere}
                 GROUP BY i.pedido_numero
             )
             SELECT p.id, p.numero_pedido, p.cliente_codigo, p.data_emissao, p.condicao_pagamento,
                    COALESCE(NULLIF(p.valor_total, 0), it.valor_calculado, 0) as valor_total,
-                   p.peso_total, p.tipo_frete, p.transportadora, p.status, p.observacoes, p.created_at,
+                   p.peso_total, p.tipo_frete, p.transportadora, p.status, p.observacoes, p.created_at, p.pedido_cliente,
                    p.cliente_nome, p.cliente_fantasia,
                    COALESCE(it.total_itens, 0) as total_itens,
                    it.data_entrega_prevista,
@@ -541,7 +1166,7 @@ router.get('/pedidos', async (req, res) => {
             ORDER BY p.id DESC
         `;
 
-        const [rows] = await mysql.query(query, params);
+        const [rows] = await mysql.query(query, [...params, ...itemsParams]);
         res.json(rows);
     } catch (err) {
         console.error('Erro em GET /api/erp/pedidos:', err);
@@ -549,22 +1174,286 @@ router.get('/pedidos', async (req, res) => {
     }
 });
 
+// Client logos map ({ codigo: logo }) — kept separate from the order list to avoid repeating base64 per row
+router.get('/clientes-logos', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const codigos = String(req.query.codigos || '').split(',').map(c => c.trim()).filter(Boolean).slice(0, 300);
+        if (!codigos.length) return res.json({});
+        let sql = "SELECT codigo, logo_url FROM erp_clientes WHERE codigo IN (?) AND logo_url IS NOT NULL AND logo_url != ''";
+        const params = [codigos];
+        if (tenantId) {
+            sql += ' AND IdEmpresa = ?';
+            params.push(tenantId);
+        }
+        const [rows] = await mysql.query(sql, params);
+        res.json(Object.fromEntries(rows.map(r => [r.codigo, r.logo_url])));
+    } catch (err) {
+        console.error('Erro em GET /api/erp/clientes-logos:', err);
+        res.status(500).json({ error: 'Erro ao buscar logos dos clientes', detail: err.message });
+    }
+});
+
+// 7.1 PEDIDOS DE VENDA: Editar cabeçalho (emissão, pagamento, frete, transportadora, observações)
+router.put('/pedidos/:numero', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const { numero } = req.params;
+        const { data_emissao, condicao_pagamento, tipo_frete, transportadora, observacoes } = req.body;
+
+        let findSql = 'SELECT id, status FROM erp_pedidos_venda WHERE numero_pedido = ?';
+        const findParams = [numero];
+        if (tenantId) {
+            findSql += ' AND IdEmpresa = ?';
+            findParams.push(tenantId);
+        }
+        const [found] = await mysql.query(findSql, findParams);
+        if (!found.length) return res.status(404).json({ error: 'Pedido não encontrado.' });
+        if (['cancelado', 'faturado'].includes(found[0].status)) {
+            return res.status(400).json({ error: `Pedido ${found[0].status} não pode ser alterado.` });
+        }
+
+        const emissao = data_emissao ? String(data_emissao).split('T')[0] : null;
+        if (emissao && !/^\d{4}-\d{2}-\d{2}$/.test(emissao)) {
+            return res.status(400).json({ error: 'Data de emissão inválida.' });
+        }
+        const frete = ['FOB', 'CIF'].includes(tipo_frete) ? tipo_frete : 'FOB';
+
+        await mysql.query(
+            `UPDATE erp_pedidos_venda
+             SET data_emissao = COALESCE(?, data_emissao), condicao_pagamento = ?, tipo_frete = ?,
+                 transportadora = ?, observacoes = ?
+             WHERE id = ?`,
+            [emissao, String(condicao_pagamento || '').trim(), frete,
+             String(transportadora || '').trim(), String(observacoes || '').trim() || null, found[0].id]
+        );
+
+        const [[pedido]] = await mysql.query(
+            'SELECT data_emissao, condicao_pagamento, tipo_frete, transportadora, observacoes FROM erp_pedidos_venda WHERE id = ?',
+            [found[0].id]
+        );
+        res.json({ success: true, message: 'Cabeçalho do pedido atualizado!', pedido });
+    } catch (err) {
+        console.error('Erro em PUT /api/erp/pedidos/:numero:', err);
+        res.status(500).json({ error: 'Falha ao atualizar o pedido', detail: err.message });
+    }
+});
+
+async function findPedidoHeader(tenantId, numero, conn = mysql) {
+    let sql = 'SELECT id, numero_pedido, status, cliente_codigo, pedido_cliente, IdEmpresa FROM erp_pedidos_venda WHERE numero_pedido = ?';
+    const params = [numero];
+    if (tenantId) {
+        sql += ' AND IdEmpresa = ?';
+        params.push(tenantId);
+    }
+    const [rows] = await conn.query(sql, params);
+    return rows[0] || null;
+}
+
+async function listPedidoAnexos(idEmpresa, numero) {
+    const [rows] = await mysql.query(
+        'SELECT id, nome_original, tamanho, mime, created_by, created_at FROM erp_pedidos_anexos WHERE IdEmpresa = ? AND pedido_numero = ? ORDER BY id',
+        [idEmpresa, numero]
+    );
+    return rows;
+}
+
+// 7.2 PEDIDOS DE VENDA: Mudança de status (Orçamento / Pedido / Cancelado)
+router.put('/pedidos/:numero/status', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const { numero } = req.params;
+        const novoStatus = String(req.body.status || '').toLowerCase();
+        const pedidoCliente = String(req.body.pedido_cliente || '').trim();
+
+        if (!STATUS_PEDIDO.includes(novoStatus)) {
+            return res.status(400).json({ error: 'Status inválido. Use: Orçamento, Pedido ou Cancelado.' });
+        }
+        const pedido = await findPedidoHeader(tenantId, numero);
+        if (!pedido) return res.status(404).json({ error: 'Pedido não encontrado.' });
+        if (pedido.status === novoStatus) {
+            return res.status(400).json({ error: 'O pedido já está neste status.' });
+        }
+
+        if (novoStatus === 'pedido') {
+            if (pedido.status !== 'orcamento') {
+                return res.status(400).json({ error: 'Somente um Orçamento pode ser convertido em Pedido.' });
+            }
+            if (!pedidoCliente) {
+                return res.status(400).json({ error: 'Informe o número do pedido do cliente.' });
+            }
+            const [[{ total }]] = await mysql.query(
+                'SELECT COUNT(*) AS total FROM erp_pedidos_anexos WHERE IdEmpresa = ? AND pedido_numero = ?',
+                [pedido.IdEmpresa, numero]
+            );
+            if (!total) {
+                return res.status(400).json({ error: 'Anexe pelo menos um arquivo do pedido do cliente.' });
+            }
+        }
+
+        if (novoStatus === 'orcamento' && pedido.status !== 'cancelado') {
+            return res.status(400).json({ error: 'Um Pedido não pode voltar para Orçamento.' });
+        }
+
+        if (novoStatus === 'cancelado') {
+            const [ops] = await mysql.query(
+                `SELECT numero_op FROM erp_ordens_producao
+                 WHERE IdEmpresa = ? AND TRIM(pedido_venda) = TRIM(?) AND status != 'cancelada' LIMIT 1`,
+                [pedido.IdEmpresa, numero]
+            );
+            if (ops.length) {
+                return res.status(400).json({ error: `Não é possível cancelar: existe OP ativa (${ops[0].numero_op}). Cancele a OP primeiro.` });
+            }
+        }
+
+        await mysql.query(
+            'UPDATE erp_pedidos_venda SET status = ?, pedido_cliente = COALESCE(?, pedido_cliente) WHERE id = ?',
+            [novoStatus, pedidoCliente || null, pedido.id]
+        );
+        const labels = { orcamento: 'Orçamento', pedido: 'Pedido', cancelado: 'Cancelado' };
+        res.json({
+            success: true,
+            message: `Status alterado para ${labels[novoStatus]}.`,
+            status: novoStatus,
+            pedido_cliente: pedidoCliente || pedido.pedido_cliente
+        });
+    } catch (err) {
+        console.error('Erro em PUT /api/erp/pedidos/:numero/status:', err);
+        res.status(500).json({ error: 'Falha ao alterar status do pedido', detail: err.message });
+    }
+});
+
+// 7.3 PEDIDOS DE VENDA: Anexos (qualquer extensão, múltiplos arquivos)
+router.get('/pedidos/:numero/anexos', async (req, res) => {
+    try {
+        const pedido = await findPedidoHeader(getTenantId(req), req.params.numero);
+        if (!pedido) return res.status(404).json({ error: 'Pedido não encontrado.' });
+        res.json(await listPedidoAnexos(pedido.IdEmpresa, pedido.numero_pedido));
+    } catch (err) {
+        res.status(500).json({ error: 'Erro ao listar anexos', detail: err.message });
+    }
+});
+
+router.post('/pedidos/:numero/anexos', (req, res) => {
+    uploadPedidoAnexos.array('arquivos', 20)(req, res, async (uploadErr) => {
+        const files = req.files || [];
+        const cleanup = () => files.forEach(f => fs.promises.unlink(f.path).catch(() => {}));
+        if (uploadErr) {
+            cleanup();
+            const msg = uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Arquivo excede o limite de 30 MB.' : uploadErr.message;
+            return res.status(400).json({ error: msg });
+        }
+        try {
+            if (!files.length) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+            const pedido = await findPedidoHeader(getTenantId(req), req.params.numero);
+            if (!pedido) {
+                cleanup();
+                return res.status(404).json({ error: 'Pedido não encontrado.' });
+            }
+            const user = req.user?.username || req.user?.nome || req.user?.email || null;
+            for (const f of files) {
+                await mysql.query(
+                    `INSERT INTO erp_pedidos_anexos (IdEmpresa, pedido_numero, nome_original, caminho, tamanho, mime, created_by)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [pedido.IdEmpresa, pedido.numero_pedido, f.originalUtf8 || f.originalname, f.path, f.size, f.mimetype, user]
+                );
+            }
+            res.json({
+                success: true,
+                message: `${files.length} arquivo(s) anexado(s).`,
+                anexos: await listPedidoAnexos(pedido.IdEmpresa, pedido.numero_pedido)
+            });
+        } catch (err) {
+            cleanup();
+            console.error('Erro em POST /api/erp/pedidos/:numero/anexos:', err);
+            res.status(500).json({ error: 'Falha ao anexar arquivos', detail: err.message });
+        }
+    });
+});
+
+async function findAnexo(req) {
+    const tenantId = getTenantId(req);
+    let sql = 'SELECT * FROM erp_pedidos_anexos WHERE id = ?';
+    const params = [req.params.id];
+    if (tenantId) {
+        sql += ' AND IdEmpresa = ?';
+        params.push(tenantId);
+    }
+    const [rows] = await mysql.query(sql, params);
+    return rows[0] || null;
+}
+
+router.get('/pedidos-anexos/:id/download', async (req, res) => {
+    try {
+        const anexo = await findAnexo(req);
+        if (!anexo || !fs.existsSync(anexo.caminho)) return res.status(404).json({ error: 'Anexo não encontrado.' });
+        const inline = req.query.inline === '1';
+        res.setHeader('Content-Type', anexo.mime || 'application/octet-stream');
+        res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(anexo.nome_original)}`);
+        fs.createReadStream(anexo.caminho).pipe(res);
+    } catch (err) {
+        res.status(500).json({ error: 'Erro ao baixar anexo', detail: err.message });
+    }
+});
+
+router.delete('/pedidos-anexos/:id', async (req, res) => {
+    try {
+        const anexo = await findAnexo(req);
+        if (!anexo) return res.status(404).json({ error: 'Anexo não encontrado.' });
+        const pedido = await findPedidoHeader(anexo.IdEmpresa, anexo.pedido_numero);
+        if (pedido?.status === 'pedido') {
+            const [[{ total }]] = await mysql.query(
+                'SELECT COUNT(*) AS total FROM erp_pedidos_anexos WHERE IdEmpresa = ? AND pedido_numero = ?',
+                [anexo.IdEmpresa, anexo.pedido_numero]
+            );
+            if (total <= 1) {
+                return res.status(400).json({ error: 'Um Pedido precisa manter pelo menos um anexo do cliente.' });
+            }
+        }
+        await mysql.query('DELETE FROM erp_pedidos_anexos WHERE id = ?', [anexo.id]);
+        fs.promises.unlink(anexo.caminho).catch(() => {});
+        res.json({ success: true, message: 'Anexo removido.' });
+    } catch (err) {
+        res.status(500).json({ error: 'Erro ao remover anexo', detail: err.message });
+    }
+});
+
 // 8. PEDIDOS DE VENDA: Detalhes de um pedido específico + itens do grid com detecção de OPs
 router.get('/pedidos/:numero', async (req, res) => {
     try {
+        const tenantId = getTenantId(req);
         const { numero } = req.params;
+
+        let wherePed = 'WHERE p.numero_pedido = ?';
+        let paramsPed = [numero];
+        if (tenantId) {
+            wherePed = 'WHERE p.IdEmpresa = ? AND p.numero_pedido = ?';
+            paramsPed = [tenantId, numero];
+        }
+
         const [pedidos] = await mysql.query(`
             SELECT p.id, p.numero_pedido, p.cliente_codigo, p.data_emissao, p.condicao_pagamento,
-                   COALESCE(NULLIF(p.valor_total, 0), (SELECT SUM(COALESCE(NULLIF(valor_total, 0), quantidade * preco_unitario)) FROM erp_pedidos_itens WHERE pedido_numero = p.numero_pedido), 0) as valor_total,
-                   p.peso_total, p.tipo_frete, p.transportadora, p.status, p.observacoes, p.created_at,
-                   c.razao_social as cliente_nome, c.cnpj_cpf, c.cidade, c.uf, c.telefone, c.email
+                   COALESCE(NULLIF(p.valor_total, 0), (
+                       SELECT SUM(COALESCE(NULLIF(valor_total, 0), quantidade * preco_unitario)) 
+                       FROM erp_pedidos_itens 
+                       WHERE pedido_numero = p.numero_pedido ${tenantId ? 'AND IdEmpresa = p.IdEmpresa' : ''}
+                   ), 0) as valor_total,
+                   p.peso_total, p.tipo_frete, p.transportadora, p.status, p.observacoes, p.created_at, p.pedido_cliente, p.IdEmpresa,
+                   c.razao_social as cliente_nome, c.cnpj_cpf, c.cidade, c.uf, c.telefone, c.email, c.logo_url as cliente_logo
             FROM erp_pedidos_venda p
-            LEFT JOIN erp_clientes c ON p.cliente_codigo = c.codigo
-            WHERE p.numero_pedido = ?
-        `, [numero]);
+            LEFT JOIN erp_clientes c ON (p.cliente_codigo = c.codigo ${tenantId ? 'AND c.IdEmpresa = p.IdEmpresa' : ''})
+            ${wherePed}
+        `, paramsPed);
 
         if (pedidos.length === 0) {
             return res.status(404).json({ error: 'Pedido não encontrado' });
+        }
+
+        let whereItens = 'WHERE i.pedido_numero = ?';
+        let paramsItens = [numero];
+        if (tenantId) {
+            whereItens = 'WHERE i.IdEmpresa = ? AND i.pedido_numero = ?';
+            paramsItens = [tenantId, numero];
         }
 
         const [itens] = await mysql.query(`
@@ -576,7 +1465,7 @@ router.get('/pedidos/:numero', async (req, res) => {
                        ELSE 1
                    END as pode_editar
             FROM erp_pedidos_itens i
-            LEFT JOIN erp_produtos pr ON i.produto_codigo = pr.codigo
+            LEFT JOIN erp_produtos pr ON (i.produto_codigo = pr.codigo ${tenantId ? 'AND pr.IdEmpresa = i.IdEmpresa' : ''})
             LEFT JOIN erp_ordens_producao op ON (
                 TRIM(op.pedido_venda) = TRIM(i.pedido_numero) 
                 AND (
@@ -584,15 +1473,20 @@ router.get('/pedidos/:numero', async (req, res) => {
                     OR (COALESCE(TRIM(op.item_pedido), '') = '' AND TRIM(op.produto_codigo) = TRIM(i.produto_codigo))
                 )
                 AND op.status != 'cancelada'
+                ${tenantId ? 'AND op.IdEmpresa = i.IdEmpresa' : ''}
             )
-            WHERE i.pedido_numero = ?
+            ${whereItens}
             GROUP BY i.id
             ORDER BY CAST(i.item_seq AS UNSIGNED) ASC, i.id ASC
-        `, [numero]);
+        `, paramsItens);
+
+        const itensComDesenho = (await attachDesenhos(itens.map(i => ({ ...i, codigo: i.produto_codigo }))))
+            .map(({ codigo, ...rest }) => rest);
 
         res.json({
             pedido: pedidos[0],
-            itens
+            itens: itensComDesenho,
+            anexos: await listPedidoAnexos(pedidos[0].IdEmpresa, pedidos[0].numero_pedido)
         });
     } catch (err) {
         console.error('Erro em GET /api/erp/pedidos/:numero:', err);
@@ -600,34 +1494,57 @@ router.get('/pedidos/:numero', async (req, res) => {
     }
 });
 
-
 // 8.1 PEDIDOS DE VENDA: Atualizar item individualmente (apenas se não houver OP emitida)
 router.put('/pedidos/:numero/itens/:itemId', async (req, res) => {
     const conn = await mysql.getConnection();
     try {
+        const tenantId = getTenantId(req);
         await conn.beginTransaction();
         const { numero, itemId } = req.params;
-        const { quantidade, preco_unitario, data_entrega_prevista } = req.body;
+        const { quantidade, preco_unitario, data_entrega_prevista, observacao } = req.body;
+        const onlyObs = quantidade === undefined && preco_unitario === undefined && data_entrega_prevista === undefined;
 
-        // 1. Busca item e verifica se pertence ao pedido
-        const [items] = await conn.query(
-            'SELECT * FROM erp_pedidos_itens WHERE id = ? AND pedido_numero = ? FOR UPDATE',
-            [itemId, numero]
-        );
+        // 1. Busca item e verifica se pertence ao pedido e tenant
+        let itemSql = 'SELECT * FROM erp_pedidos_itens WHERE id = ? AND pedido_numero = ? FOR UPDATE';
+        let itemParams = [itemId, numero];
+        if (tenantId) {
+            itemSql = 'SELECT * FROM erp_pedidos_itens WHERE id = ? AND pedido_numero = ? AND IdEmpresa = ? FOR UPDATE';
+            itemParams = [itemId, numero, tenantId];
+        }
 
+        const [items] = await conn.query(itemSql, itemParams);
         if (items.length === 0) {
             await conn.rollback();
             return res.status(404).json({ error: 'Item não encontrado para este pedido.' });
         }
 
         const item = items[0];
+        const novaObs = observacao === undefined ? (item.observacao ?? null) : (String(observacao).trim() || null);
 
-        // 2. Verifica se já possui OP emitida (regra de integridade fabril do Protheus)
+        // Observation-only update is allowed even when an OP exists (does not affect production)
+        if (onlyObs) {
+            await conn.query('UPDATE erp_pedidos_itens SET observacao = ? WHERE id = ?', [novaObs, item.id]);
+            await conn.commit();
+            return res.json({
+                success: true,
+                message: 'Observação do item atualizada!',
+                item: {
+                    id: item.id,
+                    quantidade: item.quantidade,
+                    preco_unitario: item.preco_unitario,
+                    valor_total: item.valor_total,
+                    data_entrega_prevista: item.data_entrega_prevista,
+                    observacao: novaObs
+                }
+            });
+        }
+
+        // 2. Verifica se já possui OP emitida
         let hasOp = Boolean(item.numero_op_gerada && item.numero_op_gerada.trim());
         let opNum = item.numero_op_gerada || '';
 
         if (!hasOp) {
-            const [ops] = await conn.query(`
+            let opSql = `
                 SELECT numero_op FROM erp_ordens_producao 
                 WHERE TRIM(pedido_venda) = TRIM(?) 
                   AND (
@@ -636,8 +1553,24 @@ router.put('/pedidos/:numero/itens/:itemId', async (req, res) => {
                   )
                   AND status != 'cancelada'
                 LIMIT 1
-            `, [numero, item.item_seq, item.produto_codigo]);
+            `;
+            let opParams = [numero, item.item_seq, item.produto_codigo];
+            if (tenantId) {
+                opSql = `
+                    SELECT numero_op FROM erp_ordens_producao 
+                    WHERE IdEmpresa = ?
+                      AND TRIM(pedido_venda) = TRIM(?) 
+                      AND (
+                          TRIM(item_pedido) = TRIM(?) 
+                          OR (COALESCE(TRIM(item_pedido), '') = '' AND TRIM(produto_codigo) = TRIM(?))
+                      )
+                      AND status != 'cancelada'
+                    LIMIT 1
+                `;
+                opParams = [tenantId, numero, item.item_seq, item.produto_codigo];
+            }
 
+            const [ops] = await conn.query(opSql, opParams);
             if (ops.length > 0) {
                 hasOp = true;
                 opNum = ops[0].numero_op;
@@ -669,28 +1602,30 @@ router.put('/pedidos/:numero/itens/:itemId', async (req, res) => {
         const novaDataEntrega = data_entrega_prevista ? String(data_entrega_prevista).split('T')[0] : item.data_entrega_prevista;
 
         // 4. Atualiza o item na base de dados
-        await conn.query(`
-            UPDATE erp_pedidos_itens 
-            SET quantidade = ?,
-                preco_unitario = ?,
-                valor_total = ?,
-                data_entrega_prevista = ?
-            WHERE id = ?
-        `, [novaQtd, novoPreco, novoValorTotal, novaDataEntrega, itemId]);
+        let updateItemSql = 'UPDATE erp_pedidos_itens SET quantidade = ?, preco_unitario = ?, valor_total = ?, data_entrega_prevista = ?, observacao = ? WHERE id = ?';
+        let updateItemParams = [novaQtd, novoPreco, novoValorTotal, novaDataEntrega, novaObs, itemId];
+        if (tenantId) {
+            updateItemSql = 'UPDATE erp_pedidos_itens SET quantidade = ?, preco_unitario = ?, valor_total = ?, data_entrega_prevista = ?, observacao = ? WHERE id = ? AND IdEmpresa = ?';
+            updateItemParams.push(tenantId);
+        }
+        await conn.query(updateItemSql, updateItemParams);
 
         // 5. Recalcula o cabeçalho do pedido
-        const [[totais]] = await conn.query(`
-            SELECT COALESCE(SUM(valor_total), 0) as total_pedido,
-                   COUNT(*) as total_itens
-            FROM erp_pedidos_itens 
-            WHERE pedido_numero = ?
-        `, [numero]);
+        let sumSql = 'SELECT COALESCE(SUM(valor_total), 0) as total_pedido, COUNT(*) as total_itens FROM erp_pedidos_itens WHERE pedido_numero = ?';
+        let sumParams = [numero];
+        if (tenantId) {
+            sumSql = 'SELECT COALESCE(SUM(valor_total), 0) as total_pedido, COUNT(*) as total_itens FROM erp_pedidos_itens WHERE IdEmpresa = ? AND pedido_numero = ?';
+            sumParams = [tenantId, numero];
+        }
+        const [[totais]] = await conn.query(sumSql, sumParams);
 
-        await conn.query(`
-            UPDATE erp_pedidos_venda 
-            SET valor_total = ?
-            WHERE numero_pedido = ?
-        `, [totais.total_pedido, numero]);
+        let updatePedSql = 'UPDATE erp_pedidos_venda SET valor_total = ? WHERE numero_pedido = ?';
+        let updatePedParams = [totais.total_pedido, numero];
+        if (tenantId) {
+            updatePedSql = 'UPDATE erp_pedidos_venda SET valor_total = ? WHERE IdEmpresa = ? AND numero_pedido = ?';
+            updatePedParams = [totais.total_pedido, tenantId, numero];
+        }
+        await conn.query(updatePedSql, updatePedParams);
 
         await conn.commit();
 
@@ -702,7 +1637,8 @@ router.put('/pedidos/:numero/itens/:itemId', async (req, res) => {
                 quantidade: novaQtd,
                 preco_unitario: novoPreco,
                 valor_total: novoValorTotal,
-                data_entrega_prevista: novaDataEntrega
+                data_entrega_prevista: novaDataEntrega,
+                observacao: novaObs
             },
             total_pedido: totais.total_pedido
         });
@@ -719,14 +1655,16 @@ router.put('/pedidos/:numero/itens/:itemId', async (req, res) => {
 router.post('/pedidos/:numero/itens', async (req, res) => {
     const conn = await mysql.getConnection();
     try {
+        const tenantId = getTenantId(req) || 1;
         await conn.beginTransaction();
         const { numero } = req.params;
-        const { produto_codigo, quantidade, preco_unitario, data_entrega_prevista } = req.body;
+        const { produto_codigo, quantidade, preco_unitario, data_entrega_prevista, observacao } = req.body;
+        const obs = String(observacao || '').trim() || null;
 
-        // 1. Verifica se o pedido existe e não está cancelado / faturado
+        // 1. Verifica se o pedido existe e pertence a esta empresa
         const [pedidos] = await conn.query(
-            'SELECT * FROM erp_pedidos_venda WHERE numero_pedido = ? FOR UPDATE',
-            [numero]
+            'SELECT * FROM erp_pedidos_venda WHERE IdEmpresa = ? AND numero_pedido = ? FOR UPDATE',
+            [tenantId, numero]
         );
         if (pedidos.length === 0) {
             await conn.rollback();
@@ -742,16 +1680,16 @@ router.post('/pedidos/:numero/itens', async (req, res) => {
             return res.status(400).json({ error: 'Não é possível adicionar produtos a um pedido faturado.' });
         }
 
-        // 2. Valida o produto
+        // 2. Valida o produto na empresa
         const prodCod = String(produto_codigo || '').trim().toUpperCase();
         if (!prodCod) {
             await conn.rollback();
             return res.status(400).json({ error: 'Código do produto é obrigatório.' });
         }
-        const [prods] = await conn.query('SELECT codigo, descricao, unidade_medida, peso_liquido FROM erp_produtos WHERE codigo = ?', [prodCod]);
+        const [prods] = await conn.query('SELECT codigo, descricao, unidade_medida, peso_liquido FROM erp_produtos WHERE IdEmpresa = ? AND codigo = ?', [tenantId, prodCod]);
         if (prods.length === 0) {
             await conn.rollback();
-            return res.status(400).json({ error: `Produto "${prodCod}" não encontrado no cadastro.` });
+            return res.status(400).json({ error: `Produto "${prodCod}" não encontrado no catálogo desta empresa.` });
         }
         const prod = prods[0];
 
@@ -771,8 +1709,8 @@ router.post('/pedidos/:numero/itens', async (req, res) => {
 
         // 4. Determina o próximo item_seq (01, 02, 03...)
         const [existingItems] = await conn.query(
-            'SELECT item_seq FROM erp_pedidos_itens WHERE pedido_numero = ?',
-            [numero]
+            'SELECT item_seq FROM erp_pedidos_itens WHERE IdEmpresa = ? AND pedido_numero = ?',
+            [tenantId, numero]
         );
         let maxNum = 0;
         for (const it of existingItems) {
@@ -781,28 +1719,30 @@ router.post('/pedidos/:numero/itens', async (req, res) => {
         }
         const nextSeq = String(maxNum + 1).padStart(2, '0');
 
-        // 5. Insere o item
+        // 5. Insere o item com IdEmpresa
         const [insertRes] = await conn.query(`
             INSERT INTO erp_pedidos_itens (
                 pedido_numero, item_seq, produto_codigo, quantidade, quantidade_original,
                 quantidade_entregue, quantidade_saldo, preco_unitario, valor_total,
-                data_entrega_prevista, status
-            ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'aberto')
-        `, [numero, nextSeq, prodCod, qtd, qtd, qtd, preco, subtotal, dataEntrega]);
+                data_entrega_prevista, status, observacao, IdEmpresa
+            ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 'aberto', ?, ?)
+        `, [numero, nextSeq, prodCod, qtd, qtd, qtd, preco, subtotal, dataEntrega, obs, tenantId]);
+
+        const [novoComDesenho] = await attachDesenhos([{ codigo: prodCod }]);
 
         // 6. Recalcula o cabeçalho do pedido
         const [[totais]] = await conn.query(`
             SELECT COALESCE(SUM(valor_total), 0) as total_pedido,
                    COUNT(*) as total_itens
             FROM erp_pedidos_itens 
-            WHERE pedido_numero = ?
-        `, [numero]);
+            WHERE IdEmpresa = ? AND pedido_numero = ?
+        `, [tenantId, numero]);
 
         await conn.query(`
             UPDATE erp_pedidos_venda 
             SET valor_total = ?
-            WHERE numero_pedido = ?
-        `, [totais.total_pedido, numero]);
+            WHERE IdEmpresa = ? AND numero_pedido = ?
+        `, [totais.total_pedido, tenantId, numero]);
 
         await conn.commit();
 
@@ -825,7 +1765,9 @@ router.post('/pedidos/:numero/itens', async (req, res) => {
                 data_entrega_prevista: dataEntrega,
                 numero_op_efetiva: null,
                 pode_editar: 1,
-                status: 'aberto'
+                status: 'aberto',
+                observacao: obs,
+                desenho_url: novoComDesenho?.desenho_url || null
             },
             total_pedido: totais.total_pedido
         });
@@ -842,13 +1784,18 @@ router.post('/pedidos/:numero/itens', async (req, res) => {
 router.delete('/pedidos/:numero/itens/:itemId', async (req, res) => {
     const conn = await mysql.getConnection();
     try {
+        const tenantId = getTenantId(req);
         await conn.beginTransaction();
         const { numero, itemId } = req.params;
 
-        const [items] = await conn.query(
-            'SELECT * FROM erp_pedidos_itens WHERE id = ? AND pedido_numero = ? FOR UPDATE',
-            [itemId, numero]
-        );
+        let findSql = 'SELECT * FROM erp_pedidos_itens WHERE id = ? AND pedido_numero = ? FOR UPDATE';
+        let findParams = [itemId, numero];
+        if (tenantId) {
+            findSql = 'SELECT * FROM erp_pedidos_itens WHERE id = ? AND pedido_numero = ? AND IdEmpresa = ? FOR UPDATE';
+            findParams = [itemId, numero, tenantId];
+        }
+
+        const [items] = await conn.query(findSql, findParams);
         if (items.length === 0) {
             await conn.rollback();
             return res.status(404).json({ error: 'Item não encontrado para este pedido.' });
@@ -859,13 +1806,27 @@ router.delete('/pedidos/:numero/itens/:itemId', async (req, res) => {
         let hasOp = Boolean(item.numero_op_gerada && item.numero_op_gerada.trim());
         let opNum = item.numero_op_gerada || '';
         if (!hasOp) {
-            const [ops] = await conn.query(`
+            let opCheckSql = `
                 SELECT numero_op FROM erp_ordens_producao 
                 WHERE TRIM(pedido_venda) = TRIM(?) 
                   AND (TRIM(item_pedido) = TRIM(?) OR (COALESCE(TRIM(item_pedido), '') = '' AND TRIM(produto_codigo) = TRIM(?)))
                   AND status != 'cancelada'
                 LIMIT 1
-            `, [numero, item.item_seq, item.produto_codigo]);
+            `;
+            let opCheckParams = [numero, item.item_seq, item.produto_codigo];
+            if (tenantId) {
+                opCheckSql = `
+                    SELECT numero_op FROM erp_ordens_producao 
+                    WHERE IdEmpresa = ?
+                      AND TRIM(pedido_venda) = TRIM(?) 
+                      AND (TRIM(item_pedido) = TRIM(?) OR (COALESCE(TRIM(item_pedido), '') = '' AND TRIM(produto_codigo) = TRIM(?)))
+                      AND status != 'cancelada'
+                    LIMIT 1
+                `;
+                opCheckParams = [tenantId, numero, item.item_seq, item.produto_codigo];
+            }
+
+            const [ops] = await conn.query(opCheckSql, opCheckParams);
             if (ops.length > 0) {
                 hasOp = true;
                 opNum = ops[0].numero_op;
@@ -878,21 +1839,30 @@ router.delete('/pedidos/:numero/itens/:itemId', async (req, res) => {
             });
         }
 
-        await conn.query('DELETE FROM erp_pedidos_itens WHERE id = ?', [itemId]);
+        let delSql = 'DELETE FROM erp_pedidos_itens WHERE id = ?';
+        let delParams = [itemId];
+        if (tenantId) {
+            delSql = 'DELETE FROM erp_pedidos_itens WHERE id = ? AND IdEmpresa = ?';
+            delParams = [itemId, tenantId];
+        }
+        await conn.query(delSql, delParams);
 
         // Recalcula totais
-        const [[totais]] = await conn.query(`
-            SELECT COALESCE(SUM(valor_total), 0) as total_pedido,
-                   COUNT(*) as total_itens
-            FROM erp_pedidos_itens 
-            WHERE pedido_numero = ?
-        `, [numero]);
+        let sumSql = 'SELECT COALESCE(SUM(valor_total), 0) as total_pedido, COUNT(*) as total_itens FROM erp_pedidos_itens WHERE pedido_numero = ?';
+        let sumParams = [numero];
+        if (tenantId) {
+            sumSql = 'SELECT COALESCE(SUM(valor_total), 0) as total_pedido, COUNT(*) as total_itens FROM erp_pedidos_itens WHERE IdEmpresa = ? AND pedido_numero = ?';
+            sumParams = [tenantId, numero];
+        }
+        const [[totais]] = await conn.query(sumSql, sumParams);
 
-        await conn.query(`
-            UPDATE erp_pedidos_venda 
-            SET valor_total = ?
-            WHERE numero_pedido = ?
-        `, [totais.total_pedido, numero]);
+        let updatePedSql = 'UPDATE erp_pedidos_venda SET valor_total = ? WHERE numero_pedido = ?';
+        let updatePedParams = [totais.total_pedido, numero];
+        if (tenantId) {
+            updatePedSql = 'UPDATE erp_pedidos_venda SET valor_total = ? WHERE IdEmpresa = ? AND numero_pedido = ?';
+            updatePedParams = [totais.total_pedido, tenantId, numero];
+        }
+        await conn.query(updatePedSql, updatePedParams);
 
         await conn.commit();
 
@@ -915,17 +1885,18 @@ router.delete('/pedidos/:numero/itens/:itemId', async (req, res) => {
 router.post('/pedidos', async (req, res) => {
     const conn = await mysql.getConnection();
     try {
+        const tenantId = getTenantId(req) || 1;
         const { cabecalho, itens } = req.body;
 
         if (!cabecalho) {
             return res.status(400).json({ error: 'Dados do cabeçalho do pedido não informados' });
         }
 
-        // A. Validação Protheus-Grade
-        const validacao = await ErpValidator.validarPedidoVenda(cabecalho, itens, conn);
+        // A. Validação Protheus-Grade no escopo da empresa
+        const validacao = await ErpValidator.validarPedidoVenda(cabecalho, itens, conn, tenantId);
         if (!validacao.valido) {
+            console.warn('⚠️ [ERP PEDIDO] Validação reprovada:', validacao.erros);
             return res.status(400).json({
-                error: 'O pedido não passou nas validações de integridade',
                 erros: validacao.erros
             });
         }
@@ -935,13 +1906,13 @@ router.post('/pedidos', async (req, res) => {
         // Gerar ou validar número de pedido conforme padrão Protheus
         let numPedido = cabecalho.numero_pedido ? cabecalho.numero_pedido.trim().toUpperCase() : '';
         if (!numPedido) {
-            numPedido = await getProximoNumeroPedido(conn);
+            numPedido = await getProximoNumeroPedido(conn, tenantId);
         } else {
-            // Validar ExistChav
-            const [[existente]] = await conn.query('SELECT 1 FROM erp_pedidos_venda WHERE numero_pedido = ? LIMIT 1', [numPedido]);
+            // Validar ExistChav na empresa
+            const [[existente]] = await conn.query('SELECT 1 FROM erp_pedidos_venda WHERE IdEmpresa = ? AND numero_pedido = ? LIMIT 1', [tenantId, numPedido]);
             if (existente) {
                 await conn.rollback();
-                return res.status(400).json({ error: `O número de pedido "${numPedido}" já existe no banco de dados.` });
+                return res.status(400).json({ error: `O número de pedido "${numPedido}" já existe no banco de dados desta empresa.` });
             }
         }
 
@@ -954,18 +1925,18 @@ router.post('/pedidos', async (req, res) => {
             const preco = parseFloat(item.preco_unitario) || 0;
             valorTotal += (qtd * preco);
 
-            const [[prodInfo]] = await conn.query('SELECT peso_liquido FROM erp_produtos WHERE codigo = ?', [item.produto_codigo]);
+            const [[prodInfo]] = await conn.query('SELECT peso_liquido FROM erp_produtos WHERE IdEmpresa = ? AND codigo = ?', [tenantId, item.produto_codigo]);
             pesoTotal += (qtd * (parseFloat(prodInfo?.peso_liquido) || 0));
         }
 
         valorTotal = parseFloat(valorTotal.toFixed(2));
 
-        // Inserir Cabeçalho
+        // Inserir Cabeçalho com IdEmpresa
         await conn.query(`
             INSERT INTO erp_pedidos_venda (
                 numero_pedido, cliente_codigo, data_emissao, condicao_pagamento,
-                valor_total, peso_total, tipo_frete, transportadora, status, observacoes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'aberto', ?)
+                valor_total, peso_total, tipo_frete, transportadora, status, observacoes, IdEmpresa
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'orcamento', ?, ?)
         `, [
             numPedido,
             cabecalho.cliente_codigo.trim(),
@@ -975,10 +1946,11 @@ router.post('/pedidos', async (req, res) => {
             pesoTotal,
             cabecalho.tipo_frete || 'FOB',
             cabecalho.transportadora || '',
-            cabecalho.observacoes || ''
+            cabecalho.observacoes || '',
+            tenantId
         ]);
 
-        // Inserir Itens do Grid com valor_total
+        // Inserir Itens do Grid com valor_total e IdEmpresa
         for (let i = 0; i < itens.length; i++) {
             const item = itens[i];
             const seq = String(i + 1).padStart(2, '0');
@@ -989,8 +1961,8 @@ router.post('/pedidos', async (req, res) => {
             await conn.query(`
                 INSERT INTO erp_pedidos_itens (
                     pedido_numero, item_seq, produto_codigo, quantidade,
-                    quantidade_entregue, preco_unitario, valor_total, data_entrega_prevista, status
-                ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'aberto')
+                    quantidade_entregue, preco_unitario, valor_total, data_entrega_prevista, status, observacao, IdEmpresa
+                ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'aberto', ?, ?)
             `, [
                 numPedido,
                 seq,
@@ -998,11 +1970,18 @@ router.post('/pedidos', async (req, res) => {
                 qtd,
                 preco,
                 itemSubtotal,
-                item.data_entrega_prevista || cabecalho.data_emissao
+                item.data_entrega_prevista || cabecalho.data_emissao,
+                (item.observacao || '').trim() || null,
+                tenantId
             ]);
         }
 
         await conn.commit();
+
+        // Sincroniza em background para visualização imediata na Visão Geral e relatórios Protheus
+        const { syncErpToProtheus } = require('../scripts/sync_erp_to_protheus');
+        syncErpToProtheus().catch(e => console.warn('Aviso sync ERP->Protheus:', e.message));
+
         res.status(201).json({
             success: true,
             numero_pedido: numPedido,
@@ -1023,16 +2002,25 @@ router.post('/pedidos', async (req, res) => {
 // 10. ESTRUTURA / BOM: Buscar componentes para explosão na OP
 router.get('/estruturas/:codigo', async (req, res) => {
     try {
+        const tenantId = getTenantId(req);
         const { codigo } = req.params;
+
+        let whereClause = 'WHERE b.produto_pai_codigo = ?';
+        let params = [codigo];
+        if (tenantId) {
+            whereClause = 'WHERE b.IdEmpresa = ? AND b.produto_pai_codigo = ?';
+            params = [tenantId, codigo];
+        }
+
         const [componentes] = await mysql.query(`
             SELECT b.*, p.descricao as componente_descricao, p.tipo as componente_tipo,
                    p.peso_liquido, COALESCE(s.saldo_atual, 0) as saldo_estoque
             FROM erp_estruturas_bom b
-            LEFT JOIN erp_produtos p ON b.produto_filho_codigo = p.codigo
-            LEFT JOIN erp_estoque_saldos s ON b.produto_filho_codigo = s.produto_codigo AND s.armazem = '01'
-            WHERE b.produto_pai_codigo = ?
+            LEFT JOIN erp_produtos p ON (b.produto_filho_codigo = p.codigo ${tenantId ? 'AND p.IdEmpresa = b.IdEmpresa' : ''})
+            LEFT JOIN erp_estoque_saldos s ON (b.produto_filho_codigo = s.produto_codigo AND s.armazem = '01' ${tenantId ? 'AND s.IdEmpresa = b.IdEmpresa' : ''})
+            ${whereClause}
             ORDER BY CAST(b.ordem_sequencia AS UNSIGNED) ASC
-        `, [codigo]);
+        `, params);
 
         res.json(componentes);
     } catch (err) {
@@ -1044,45 +2032,48 @@ router.get('/estruturas/:codigo', async (req, res) => {
 // 11. ORDENS DE PRODUÇÃO: Listar OPs com filtros e joins
 router.get('/ordens-producao', async (req, res) => {
     try {
+        const tenantId = getTenantId(req);
         const { search = '', status = '', limit = 50, offset = 0 } = req.query;
-        let query = `
-            SELECT op.*, p.descricao as produto_descricao, p.unidade_medida, p.tipo as produto_tipo,
-                   p.peso_liquido, (op.quantidade_planejada * COALESCE(p.peso_liquido, 0)) as peso_total_planejado
-            FROM erp_ordens_producao op
-            LEFT JOIN erp_produtos p ON op.produto_codigo = p.codigo
-            WHERE 1=1
-        `;
+
+        let where = 'WHERE 1=1';
         const params = [];
+        if (tenantId) {
+            where += ' AND op.IdEmpresa = ?';
+            params.push(tenantId);
+        }
 
         if (search) {
-            query += ' AND (op.numero_op LIKE ? OR op.produto_codigo LIKE ? OR p.descricao LIKE ? OR op.pedido_venda LIKE ?)';
+            where += ' AND (op.numero_op LIKE ? OR op.produto_codigo LIKE ? OR p.descricao LIKE ? OR op.pedido_venda LIKE ?)';
             const term = `%${search}%`;
             params.push(term, term, term, term);
         }
 
         if (status) {
-            query += ' AND op.status = ?';
+            where += ' AND op.status = ?';
             params.push(status);
         }
 
-        query += ' ORDER BY op.id DESC LIMIT ? OFFSET ?';
-        params.push(parseInt(limit), parseInt(offset));
+        const query = `
+            SELECT op.*, p.descricao as produto_descricao, p.unidade_medida, p.tipo as produto_tipo,
+                   p.peso_liquido, (op.quantidade_planejada * COALESCE(p.peso_liquido, 0)) as peso_total_planejado
+            FROM erp_ordens_producao op
+            LEFT JOIN erp_produtos p ON (op.produto_codigo = p.codigo ${tenantId ? 'AND p.IdEmpresa = op.IdEmpresa' : ''})
+            ${where}
+            ORDER BY op.id DESC 
+            LIMIT ? OFFSET ?
+        `;
+        const queryParams = [...params, parseInt(limit), parseInt(offset)];
 
-        const [rows] = await mysql.query(query, params);
+        const [rows] = await mysql.query(query, queryParams);
 
         // Contagem total para paginação
-        let countQuery = 'SELECT COUNT(*) as total FROM erp_ordens_producao op LEFT JOIN erp_produtos p ON op.produto_codigo = p.codigo WHERE 1=1';
-        const countParams = [];
-        if (search) {
-            countQuery += ' AND (op.numero_op LIKE ? OR op.produto_codigo LIKE ? OR p.descricao LIKE ? OR op.pedido_venda LIKE ?)';
-            const term = `%${search}%`;
-            countParams.push(term, term, term, term);
-        }
-        if (status) {
-            countQuery += ' AND op.status = ?';
-            countParams.push(status);
-        }
-        const [[countRes]] = await mysql.query(countQuery, countParams);
+        let countQuery = `
+            SELECT COUNT(*) as total 
+            FROM erp_ordens_producao op 
+            LEFT JOIN erp_produtos p ON (op.produto_codigo = p.codigo ${tenantId ? 'AND p.IdEmpresa = op.IdEmpresa' : ''}) 
+            ${where}
+        `;
+        const [[countRes]] = await mysql.query(countQuery, params);
 
         res.json({
             total: countRes.total,
@@ -1098,7 +2089,8 @@ router.get('/ordens-producao', async (req, res) => {
 router.post('/ordens-producao', async (req, res) => {
     const conn = await mysql.getConnection();
     try {
-        const validacao = await ErpValidator.validarOrdemProducao(req.body, conn);
+        const tenantId = getTenantId(req) || 1;
+        const validacao = await ErpValidator.validarOrdemProducao(req.body, conn, tenantId);
         if (!validacao.valido) {
             return res.status(400).json({ error: 'Falha na validação da OP', erros: validacao.erros });
         }
@@ -1112,10 +2104,10 @@ router.post('/ordens-producao', async (req, res) => {
 
         await conn.beginTransaction();
 
-        // Gerar número de OP se não fornecido
+        // Gerar número de OP se não fornecido para esta empresa
         let numOpFinal = numero_op ? numero_op.trim().toUpperCase() : '';
         if (!numOpFinal) {
-            const [[maxOp]] = await conn.query('SELECT MAX(CAST(REGEXP_REPLACE(numero_op, "[^0-9]", "") AS UNSIGNED)) as max_num FROM erp_ordens_producao');
+            const [[maxOp]] = await conn.query('SELECT MAX(CAST(REGEXP_REPLACE(numero_op, "[^0-9]", "") AS UNSIGNED)) as max_num FROM erp_ordens_producao WHERE IdEmpresa = ?', [tenantId]);
             const proximo = (maxOp?.max_num || 10000) + 1;
             numOpFinal = `OP-${String(proximo).padStart(6, '0')}`;
         }
@@ -1124,8 +2116,8 @@ router.post('/ordens-producao', async (req, res) => {
             INSERT INTO erp_ordens_producao (
                 numero_op, produto_codigo, quantidade_planejada, quantidade_produzida,
                 quantidade_perdida, pedido_venda, item_pedido, data_emissao,
-                data_inicio_prevista, data_fim_prevista, prioridade, status, observacoes
-            ) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, 'aberta', ?)
+                data_inicio_prevista, data_fim_prevista, prioridade, status, observacoes, IdEmpresa
+            ) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, 'aberta', ?, ?)
         `, [
             numOpFinal,
             produto_codigo.trim().toUpperCase(),
@@ -1136,7 +2128,8 @@ router.post('/ordens-producao', async (req, res) => {
             data_inicio_prevista || data_emissao,
             data_fim_prevista || data_emissao,
             prioridade,
-            observacoes.trim()
+            observacoes.trim(),
+            tenantId
         ]);
 
         await conn.commit();
@@ -1158,4 +2151,3 @@ router.post('/ordens-producao', async (req, res) => {
 });
 
 module.exports = router;
-

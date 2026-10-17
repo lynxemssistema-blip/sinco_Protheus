@@ -216,7 +216,7 @@ export default function ConsolidadoView({ ops = [] }) {
                                 const isAlerta = g.pct < 100 && g.data_mais_cedo && new Date(g.data_mais_cedo) < new Date();
 
                                 return (
-                                    <React.Fragment key={g.cod}>
+                                    <React.Fragment key={`${g.cod}-${idx}`}>
                                         {/* ── Linha do produto ── */}
                                         <tr
                                             className={`cursor-pointer transition-colors hover:bg-slate-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'} ${isAlerta ? 'border-l-2 border-l-red-400' : ''}`}

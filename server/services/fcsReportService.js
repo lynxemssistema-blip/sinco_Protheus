@@ -1,7 +1,7 @@
 /**
  * fcsReportService.js
  * Geracao de relatorios Excel para o Planejamento Inteligente (FCS).
- * Estilo MetalFisa - mesma paleta de cores dos demais relatorios do sistema.
+ * Estilo Lynx - mesma paleta de cores dos demais relatorios do sistema.
  */
 const ExcelJS = require("exceljs");
 const path    = require("path");
@@ -54,7 +54,7 @@ const fmtMin = (m) => {
     // Formato brasileiro: 19:31 (quando tem horas) ou 45min (só minutos)
     return h > 0 ? `${h}:${String(mn).padStart(2, "0")}` : `${mn}min`;
 };
-// Conversão MetalFisa: 1 hora produtiva = 50 minutos (padrão da empresa)
+// Conversão Lynx: 1 hora produtiva = 50 minutos (padrão da empresa)
 const MF_MIN_POR_HORA = 50;
 const fmtHoras = (m) => {
     if (!m || m <= 0) return "0,0 h";
@@ -99,7 +99,7 @@ function buildHeader(wb, ws, cols, titulo, subtitulo, planejador, dataBase, gera
     ws.views = [{ showGridLines: false }];
     ws.mergeCells("A1:" + cols + "2");
     const hCell = ws.getCell("A1");
-    hCell.value = "METALFISA INDUSTRIA E COMERCIO LTDA";
+    hCell.value = "LYNX INDUSTRIA E COMERCIO LTDA";
     setFill(hCell, NAVY); setFont(hCell, { bold: true, size: 16, color: { argb: WHITE } });
     setAlign(hCell, "center", "middle");
     ws.getRow(1).height = 22; ws.getRow(2).height = 22;
@@ -199,7 +199,7 @@ function buildSheetCapa(wb, ws, report, meta) {
     curRow += 2;
     ws.mergeCells("A"+curRow+":F"+curRow);
     const foot = ws.getCell("A"+curRow);
-    foot.value = "Gerado pelo Agente de Planejamento FCS - MetalFisa Sistema - " + meta.geradoEm;
+    foot.value = "Gerado pelo Agente de Planejamento FCS - Lynx Sistema - " + meta.geradoEm;
     setFont(foot, { size: 8, italic: true, color: { argb: ACCENT } }); setAlign(foot, "center");
 }
 
@@ -245,7 +245,7 @@ function buildSheetEntendame(ws) {
     // ═══════════════════════════════════════════════════════════════
     ws.mergeCells("A"+r+":B"+r);
     const cover = ws.getCell("A"+r);
-    cover.value = "📖  GUIA COMPLETO DA PLANILHA DE PLANEJAMENTO FCS — MetalFisa";
+    cover.value = "📖  GUIA COMPLETO DA PLANILHA DE PLANEJAMENTO FCS — Lynx";
     cover.fill = { type:"pattern", pattern:"solid", fgColor:{ argb: NAVY } };
     cover.font = { bold:true, size:14, color:{ argb: WHITE } };
     cover.alignment = { horizontal:"center", vertical:"middle" };
@@ -265,12 +265,12 @@ function buildSheetEntendame(ws) {
     // ═══════════════════════════════════════════════════════════════
     title("📋  1. O QUE É ESTA PLANILHA?");
     sub("Para que serve?",
-        "Esta planilha é gerada automaticamente pelo Agente de Planejamento FCS (Finite Capacity Scheduling — Planejamento de Capacidade Finita) da MetalFisa. "
+        "Esta planilha é gerada automaticamente pelo Agente de Planejamento FCS (Finite Capacity Scheduling — Planejamento de Capacidade Finita) da Lynx. "
         + "Ela mostra QUANDO cada produto deve ser fabricado, por QUAL máquina/operador (recurso) e se a fábrica tem CAPACIDADE suficiente para cumprir todos os pedidos no prazo.");
     sub("Quem deve usar?",
         "PCP (Planejamento e Controle da Produção), gerentes de fábrica, supervisores de produção e qualquer pessoa que precise entender a situação de capacidade da planta industrial.");
     sub("Quando é gerada?",
-        "Toda vez que o usuário clica em 'Planejamento Inteligente' no sistema MetalFisa e executa o agente FCS para um grupo de Ordens de Produção (OPs). A data de geração aparece na aba Capa.");
+        "Toda vez que o usuário clica em 'Planejamento Inteligente' no sistema Lynx e executa o agente FCS para um grupo de Ordens de Produção (OPs). A data de geração aparece na aba Capa.");
     spacer();
 
     // ═══════════════════════════════════════════════════════════════
@@ -288,12 +288,12 @@ function buildSheetEntendame(ws) {
         + "Cada recurso tem uma CAPACIDADE DIÁRIA — quantos minutos por dia ele pode produzir.");
     sub("Capacidade Diária",
         "É o total de minutos que um recurso pode trabalhar em 1 dia. Exemplo: se uma máquina trabalha 8h/dia, sua capacidade é 480 minutos/dia. "
-        + "Na MetalFisa, a jornada padrão pode ser diferente por recurso — verifique a coluna 'Cap/Dia' nas abas.");
-    sub("Hora MetalFisa (1h = 50 min)",
-        "ATENÇÃO: Na MetalFisa, 1 hora produtiva equivale a 50 minutos de tempo cronológico — não 60 minutos! "
+        + "Na Lynx, a jornada padrão pode ser diferente por recurso — verifique a coluna 'Cap/Dia' nas abas.");
+    sub("Hora Lynx (1h = 50 min)",
+        "ATENÇÃO: Na Lynx, 1 hora produtiva equivale a 50 minutos de tempo cronológico — não 60 minutos! "
         + "Isso porque existem paradas programadas (limpeza, setup, descanso) dentro de cada hora de trabalho. "
-        + "Por isso, todos os valores de HORAS nesta planilha usam a conversão: minutos ÷ 50 = horas MetalFisa. "
-        + "Exemplo: 500 minutos ÷ 50 = 10,0 h MetalFisa.");
+        + "Por isso, todos os valores de HORAS nesta planilha usam a conversão: minutos ÷ 50 = horas Lynx. "
+        + "Exemplo: 500 minutos ÷ 50 = 10,0 h Lynx.");
     sub("FCS — Capacidade Finita",
         "O sistema FCS respeita que cada recurso só pode trabalhar até sua capacidade máxima por dia. Se o recurso MO0001 tem 480 min/dia e já foram alocados 400 min, "
         + "só restam 80 min para mais trabalho naquele dia. O agente distribui automaticamente o excesso para o próximo dia útil.");
@@ -311,10 +311,10 @@ function buildSheetEntendame(ws) {
     // ═══════════════════════════════════════════════════════════════
     title("📄  3. ABA: CAPA", BLUE);
     sub("O que mostra?",
-        "É o resumo executivo do planejamento. Apresenta os 3 principais indicadores: Capacidade Total, Demanda Total e Saldo — todos em Horas MetalFisa.");
+        "É o resumo executivo do planejamento. Apresenta os 3 principais indicadores: Capacidade Total, Demanda Total e Saldo — todos em Horas Lynx.");
     sub("⚡ CAPACIDADE TOTAL",
         "Soma de todos os minutos disponíveis em todos os recursos durante os dias do período planejado. "
-        + "Exemplo: se temos 5 recursos com 480 min/dia cada, trabalhando 10 dias = 5 × 480 × 10 = 24.000 min = 480 h MetalFisa.");
+        + "Exemplo: se temos 5 recursos com 480 min/dia cada, trabalhando 10 dias = 5 × 480 × 10 = 24.000 min = 480 h Lynx.");
     sub("📦 DEMANDA TOTAL",
         "Soma de todos os minutos necessários para fabricar TODAS as peças de TODAS as OPs planejadas. "
         + "Este é o trabalho que precisa ser feito para cumprir os pedidos.");
@@ -398,7 +398,7 @@ function buildSheetEntendame(ws) {
         ["Saldo",            "Capacidade Total − Demanda Total. Indica se a fábrica tem folga (positivo) ou déficit de capacidade (negativo) para o período planejado."],
         ["Entrega PCP",      "Data prometida ao cliente para entrega do pedido, registrada no ERP Protheus. O agente prioriza as OPs com entrega mais próxima."],
         ["Pedido",           "Pedido de venda — número do pedido do cliente, vinculado a uma ou mais OPs. Ex: pedido 004618 pode ter as OPs 000497, 000498, 000499."],
-        ["Horas MetalFisa",  "Unidade de medida de tempo produtivo adotada pela MetalFisa. 1 hora MetalFisa = 50 minutos cronológicos. Todos os valores de \"horas\" nesta planilha usam esta conversão."],
+        ["Horas Lynx",  "Unidade de medida de tempo produtivo adotada pela Lynx. 1 hora Lynx = 50 minutos cronológicos. Todos os valores de \"horas\" nesta planilha usam esta conversão."],
     ];
     glossario.forEach(([term, def]) => sub(term, def));
     spacer();
@@ -421,7 +421,7 @@ function buildSheetEntendame(ws) {
     // ═══════════════════════════════════════════════════════════════
     ws.mergeCells("A"+r+":B"+r);
     const foot = ws.getCell("A"+r);
-    foot.value = "Agente FCS — MetalFisa Sistema — Este guia foi gerado automaticamente. Em caso de dúvidas, consulte o setor de PCP.";
+    foot.value = "Agente FCS — Lynx Sistema — Este guia foi gerado automaticamente. Em caso de dúvidas, consulte o setor de PCP.";
     foot.fill = { type:"pattern", pattern:"solid", fgColor:{ argb: LGRAY } };
     foot.font = { size:8, italic:true, color:{ argb: DGRAY } };
     foot.alignment = { horizontal:"center", wrapText:true };
@@ -556,7 +556,7 @@ function buildSheetPorRecurso(wb, ws, report) {
 
     ws.mergeCells("A"+curRow+":J"+curRow);
     const foot = ws.getCell("A"+curRow);
-    foot.value = "Agente FCS - MetalFisa Sistema - " + geradoEm + " - Planejador: " + report.planejador;
+    foot.value = "Agente FCS - Lynx Sistema - " + geradoEm + " - Planejador: " + report.planejador;
     setFont(foot, { size: 7, italic: true, color: { argb: ACCENT } }); setAlign(foot, "center");
 }
 
@@ -639,7 +639,7 @@ function buildSheetCargaGeral(wb, ws, report) {
     }); curRow += 5;
     ws.mergeCells("A"+curRow+":"+lastCol+curRow);
     const foot = ws.getCell("A"+curRow);
-    foot.value = "Agente FCS - MetalFisa Sistema - " + geradoEm + " - Planejador: " + report.planejador;
+    foot.value = "Agente FCS - Lynx Sistema - " + geradoEm + " - Planejador: " + report.planejador;
     setFont(foot, { size: 7, italic: true, color: { argb: ACCENT } }); setAlign(foot, "center");
 }
 
@@ -649,7 +649,7 @@ function buildSheetResumoAnalise(wb, ws, report) {
     [20, 18, 18, 18, 18, 22].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
     const geradoEm = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit" });
     buildHeader(wb, ws, "F", "Resumo Executivo e Analise Critica",
-        "Carga Normal x Sobrecarga por Recurso | 1 hora = 50 min (padrao MetalFisa)",
+        "Carga Normal x Sobrecarga por Recurso | 1 hora = 50 min (padrao Lynx)",
         report.planejador, report.data_base, geradoEm);
 
     const RED_HDR = "FFDC2626"; const RED_ROW = "FFFEE2E2";
@@ -666,7 +666,7 @@ function buildSheetResumoAnalise(wb, ws, report) {
     // Nota de conversão
     ws.mergeCells("A"+curRow+":F"+curRow);
     const nota = ws.getCell("A"+curRow);
-    nota.value = "  ⚠️  Conversão de horas: 1 hora produtiva = 50 minutos (padrão MetalFisa)";
+    nota.value = "  ⚠️  Conversão de horas: 1 hora produtiva = 50 minutos (padrão Lynx)";
     setFill(nota, "FFFFF7ED"); setFont(nota, { size: 8, italic: true, color: { argb: "FFB45309" } });
     setAlign(nota, "left", "middle"); ws.getRow(curRow).height = 14; curRow++;
 
@@ -828,7 +828,7 @@ function buildSheetResumoAnalise(wb, ws, report) {
     curRow++;
     ws.mergeCells("A"+curRow+":F"+curRow);
     const foot = ws.getCell("A"+curRow);
-    foot.value = "Agente FCS - MetalFisa Sistema - " + geradoEm;
+    foot.value = "Agente FCS - Lynx Sistema - " + geradoEm;
     setFont(foot, { size: 7, italic: true, color: { argb: ACCENT } }); setAlign(foot, "center");
 }
 
@@ -979,7 +979,7 @@ function buildSheetProgDiaria(wb, ws, report) {
     // Footer
     ws.mergeCells("A"+curRow+":I"+curRow);
     const foot = ws.getCell("A"+curRow);
-    foot.value = "Agente FCS — MetalFisa Sistema — " + geradoEm + "  |  ⚠️ = Sobrecarga (além da capacidade normal)";
+    foot.value = "Agente FCS — Lynx Sistema — " + geradoEm + "  |  ⚠️ = Sobrecarga (além da capacidade normal)";
     setFont(foot, { size: 7, italic: true, color: { argb: ACCENT } }); setAlign(foot, "center");
 }
 
@@ -988,7 +988,7 @@ async function generateExcelReport(report) {
         timeZone: "America/Sao_Paulo", day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit"
     });
     const wb = new ExcelJS.Workbook();
-    wb.creator = "MetalFisa - Agente FCS"; wb.created = new Date(); wb.modified = new Date();
+    wb.creator = "Lynx - Agente FCS"; wb.created = new Date(); wb.modified = new Date();
     buildSheetCapa(wb, wb.addWorksheet("Capa"), report, { geradoEm });
     buildSheetProgDiaria(wb, wb.addWorksheet("Prog. Diária"), report);
     buildSheetPorRecurso(wb, wb.addWorksheet("Por Recurso"), report);

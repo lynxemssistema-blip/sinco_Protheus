@@ -2,7 +2,7 @@ import React from 'react';
 import {
     Search, Filter, Calendar, AlertCircle, Package,
     AlignJustify, List, FileSpreadsheet, FileText,
-    Loader2, StickyNote, HelpCircle
+    Loader2, StickyNote, HelpCircle, Factory
 } from 'lucide-react';
 import { useHelp } from '../../contexts/HelpContext';
 
@@ -115,9 +115,9 @@ const OrderFiltersBar = ({
                     </div>
                 </div>
 
-                {/* Item Pedido Metalfisa */}
+                {/* Item Pedido Lynx */}
                 <div className="flex flex-col gap-1">
-                    <label className="text-[11px] font-medium text-gray-600 ml-1" title="Item do Pedido Metalfisa (SC6)">Item Pedido:</label>
+                    <label className="text-[11px] font-medium text-gray-600 ml-1" title="Item do Pedido Lynx (SC6)">Item Pedido:</label>
                     <div className="relative">
                         <Filter className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
                         <input
@@ -127,7 +127,7 @@ const OrderFiltersBar = ({
                             value={filters.item || ''}
                             onChange={onFilterChange}
                             className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
-                            title="Filtrar por item do pedido Metalfisa (ex: 01, 02)"
+                            title="Filtrar por item do pedido Lynx (ex: 01, 02)"
                         />
                     </div>
                 </div>
@@ -313,16 +313,7 @@ const OrderFiltersBar = ({
                         {downloadingPDF ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                     </button>
 
-                    <button
-                        type="button"
-                        onClick={onOpenReport}
-                        disabled={loading}
-                        className="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 font-medium rounded-lg text-sm px-3 py-2.5 text-center transition-colors flex items-center justify-center gap-2 disabled:opacity-40"
-                        title="Gerar Ata (Pedidos da Tela)"
-                    >
-                        <StickyNote className="h-4 w-4" />
-                        <span>Ata</span>
-                    </button>
+
                 </div>
 
                 {/* Footer Controls (Apenas Pendentes + Ordenação) */}
@@ -351,32 +342,7 @@ const OrderFiltersBar = ({
                         </div>
                     </div>
 
-                    <div className="flex flex-col gap-1">
-                        <label className="text-[11px] font-medium text-gray-600">Ordenar por:</label>
-                        <div className="flex gap-2">
-                            <select 
-                                name="sortBy" 
-                                value={filters.sortBy || 'emissao'} 
-                                onChange={onFilterChange}
-                                className="w-40 rounded border border-gray-200 bg-white p-1 text-[11px] outline-none"
-                            >
-                                <option value="pedido">Pedido/Item</option>
-                                <option value="emissao">Data do Pedido</option>
-                                <option value="entrega">Data de Entrega (Pedido)</option>
-                                <option value="entrega_pcp">Data de Entrega PCP</option>
-                                <option value="prev_fat">Prev. Fat. (Faturamento)</option>
-                            </select>
-                            <select 
-                                name="sortOrder" 
-                                value={filters.sortOrder || 'DESC'} 
-                                onChange={onFilterChange}
-                                className="w-24 rounded border border-gray-200 bg-white p-1 text-[11px] outline-none"
-                            >
-                                <option value="DESC">Recentes</option>
-                                <option value="ASC">Antigos</option>
-                            </select>
-                        </div>
-                    </div>
+
                 </div>
             </form>
             </div>

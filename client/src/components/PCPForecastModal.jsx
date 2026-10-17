@@ -11,6 +11,7 @@ const EMPTY_FORM = {
     observacao: '',
     numero_serie: '',
     serie_cliente: '',
+    serie_lynx: '',
     serie_metalfisa: '',
     lote: '',
     numero_lote: '',
@@ -91,11 +92,11 @@ const ProgForm = ({ value, onChange, onSubmit, onCancel, saving, qtdDisponivel, 
                 onChange={e => onChange(p => ({ ...p, serie_cliente: e.target.value }))} />
         </div>
         <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Série MetalFisa</label>
-            <input type="text" placeholder="Ex: SM-001"
+            <label className="block text-xs font-medium text-gray-600 mb-1">Série Lynx</label>
+            <input type="text" placeholder="Ex: SL-001"
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                value={value.serie_metalfisa}
-                onChange={e => onChange(p => ({ ...p, serie_metalfisa: e.target.value }))} />
+                value={value.serie_lynx || value.serie_metalfisa || ''}
+                onChange={e => onChange(p => ({ ...p, serie_lynx: e.target.value, serie_metalfisa: e.target.value }))} />
         </div>
         <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Número de Série</label>
@@ -373,7 +374,8 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                     observacao: formData.observacao || null,
                     numero_serie: formData.numero_serie || null,
                     serie_cliente: formData.serie_cliente || null,
-                    serie_metalfisa: formData.serie_metalfisa || null,
+                    serie_lynx: formData.serie_lynx || formData.serie_metalfisa || null,
+                    serie_metalfisa: formData.serie_lynx || formData.serie_metalfisa || null,
                     lote: formData.lote || null,
                     numero_lote: formData.numero_lote || null,
                     sobrescrever_existente: formData.sobrescrever_existente
@@ -462,7 +464,8 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                 observacao: formData.observacao || null,
                 numero_serie: formData.numero_serie || null,
                 serie_cliente: formData.serie_cliente || null,
-                serie_metalfisa: formData.serie_metalfisa || null,
+                serie_lynx: formData.serie_lynx || formData.serie_metalfisa || null,
+                serie_metalfisa: formData.serie_lynx || formData.serie_metalfisa || null,
                 lote: formData.lote || `Lote ${fractionSuffix}`,
                 numero_lote: formData.numero_lote || fractionSuffix,
                 qtd_total_item: isFracionadoItem ? undefined : (qtdTotal > 0 ? qtdTotal : undefined),
@@ -492,7 +495,8 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
             observacao: prog.observacao || '',
             numero_serie: prog.numero_serie || '',
             serie_cliente: prog.serie_cliente || '',
-            serie_metalfisa: prog.serie_metalfisa || '',
+            serie_lynx: prog.serie_lynx || prog.serie_metalfisa || '',
+            serie_metalfisa: prog.serie_lynx || prog.serie_metalfisa || '',
             lote: prog.lote || '',
             numero_lote: prog.numero_lote || '',
             gerar_op_protheus: false
@@ -558,7 +562,8 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                 observacao: editForm.observacao || null,
                 numero_serie: editForm.numero_serie || null,
                 serie_cliente: editForm.serie_cliente || null,
-                serie_metalfisa: editForm.serie_metalfisa || null,
+                serie_lynx: editForm.serie_lynx || editForm.serie_metalfisa || null,
+                serie_metalfisa: editForm.serie_lynx || editForm.serie_metalfisa || null,
                 lote: editForm.lote || null,
                 numero_lote: editForm.numero_lote || null,
                 usuario: user?.nome || user?.name || user?.login || 'Usuário',
@@ -804,10 +809,10 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                                                     <div className="space-y-1.5 pl-2 mt-2 border-l-2 border-gray-200">
                                                         {prog.observacao && <div className="text-xs text-gray-600"><span className="font-semibold text-gray-500">Obs:</span> {prog.observacao}</div>}
                                                         {prog.numero_serie && <div className="text-xs text-gray-600"><span className="font-semibold text-gray-500">Nº Série:</span> {prog.numero_serie}</div>}
-                                                        {(prog.serie_cliente || prog.serie_metalfisa) && (
+                                                        {(prog.serie_cliente || prog.serie_lynx || prog.serie_metalfisa) && (
                                                             <div className="flex gap-4 text-xs text-gray-600">
                                                                 {prog.serie_cliente && <div><span className="font-semibold text-gray-500">SC:</span> {prog.serie_cliente}</div>}
-                                                                {prog.serie_metalfisa && <div><span className="font-semibold text-gray-500">SM:</span> {prog.serie_metalfisa}</div>}
+                                                                {(prog.serie_lynx || prog.serie_metalfisa) && <div><span className="font-semibold text-gray-500">Série Lynx:</span> {prog.serie_lynx || prog.serie_metalfisa}</div>}
                                                             </div>
                                                         )}
                                                         {(prog.lote || prog.numero_lote) && (

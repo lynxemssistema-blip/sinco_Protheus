@@ -1,4 +1,5 @@
 const mysqlPool = require('../services/mysqlService');
+const { isSuperAdminUser } = require('../util/authHelper');
 
 /**
  * Middleware para validar permissões de acesso baseadas em RBAC
@@ -15,8 +16,8 @@ const requirePermission = (pageId, action = 'view') => {
 
             const tipo = (user.tipo || '').trim();
 
-            // Regra hardcoded: A (Admin) e SA (SuperAdmin) têm acesso total
-            if (tipo === 'A' || tipo === 'SA') {
+            // Regra Máxima: SuperAdmin, Admin (A) e Master da Empresa têm acesso total irrestrito
+            if (isSuperAdminUser(user) || req.isSuperAdmin || user.is_master === 1 || user.is_master === true || tipo === 'A' || tipo === 'SA' || tipo === 'SUPERADMIN') {
                 return next();
             }
 

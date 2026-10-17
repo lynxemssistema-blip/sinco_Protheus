@@ -389,11 +389,11 @@ export default function DemandaVMIPage({ isTab = false }) {
         });
     };
 
-    const handleFetchMetalfisa = async () => {
+    const handleFetchLynx = async () => {
         if (!data || data.length === 0) return;
         setConfirm({
             isOpen: true,
-            title: 'Sincronizar Pedidos Metalfisa',
+            title: 'Sincronizar Pedidos Lynx',
             message: 'Deseja buscar o status de faturamento (SC6) dos pedidos no Protheus para os itens mapeados?',
             confirmText: 'Sincronizar',
             danger: false,
@@ -448,7 +448,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                         });
                         setData(newData);
                         const matched = newData.filter(d => d.pedido_metalfisa && d.pedido_metalfisa !== '-').length;
-                        showToast(`Sincronizado! ${matched} linhas com pedido Metalfisa encontrado.`, 'success');
+                        showToast(`Sincronizado! ${matched} linhas com pedido Lynx encontrado.`, 'success');
                     }
                 } catch (err) {
                     console.error(err);
@@ -740,12 +740,12 @@ export default function DemandaVMIPage({ isTab = false }) {
                 'Cód. Produto':       r.codigo_produto_cliente,
                 'Descrição Produto':  r.descricao_produto_cliente || '',
                 'Rev. Cliente':       r.rev_cliente || '',
-                'Rev. Metalfisa':     r.rev_metalfisa || '',
+                'Rev. Lynx':     r.rev_metalfisa || '',
                 'Tipo':               r.status_tipo_item || 'PCP',
                 'Cód. Protheus':      r.b1_cod || '',
                 'Status Detalhe':     r.status_tipo_detalhe || '',
                 'Desc. Protheus':     r.b1_desc || '',
-                'Ped. Metalfisa':     r.pedido_metalfisa || '-',
+                'Ped. Lynx':     r.pedido_metalfisa || '-',
                 'Qtd. Pedido':        r.qtd_pedido || 0,
                 'Qtd. Entregue':      r.qtd_entregue || 0,
                 'Saldo a Entregar':   r.saldo_entregar || 0,
@@ -767,7 +767,7 @@ export default function DemandaVMIPage({ isTab = false }) {
         });
         Object.entries(grpPai).sort(([a],[b]) => a.localeCompare(b)).forEach(([key, g]) => {
             // Linha de totais do grupo
-            const hdr = { 'Produto Pai': key, 'Equipamento': g.label, 'Cód. Produto': '', 'Descrição': '', 'Rev.': '', 'Rev. Metalfisa': '', 'Tipo': '', 'Cód. Protheus': '', 'Desc. Protheus': '', 'Ped. Metalfisa': '', 'Qtd. Pedido': '', 'Qtd. Entregue': '', 'Saldo a Entregar': '' };
+            const hdr = { 'Produto Pai': key, 'Equipamento': g.label, 'Cód. Produto': '', 'Descrição': '', 'Rev.': '', 'Rev. Lynx': '', 'Tipo': '', 'Cód. Protheus': '', 'Desc. Protheus': '', 'Ped. Lynx': '', 'Qtd. Pedido': '', 'Qtd. Entregue': '', 'Saldo a Entregar': '' };
             meses.forEach(m => { hdr[m] = g.tot[m] || 0; });
             hdr['TOTAL'] = meses.reduce((s, m) => s + (g.tot[m] || 0), 0);
             sheet2.push(hdr);
@@ -779,11 +779,11 @@ export default function DemandaVMIPage({ isTab = false }) {
                     'Cód. Produto': r.codigo_produto_cliente, 
                     'Descrição': r.descricao_produto_cliente || '', 
                     'Rev.': r.rev_cliente || '', 
-                    'Rev. Metalfisa': r.rev_metalfisa || '',
+                    'Rev. Lynx': r.rev_metalfisa || '',
                     'Tipo': r.status_tipo_item || 'PCP',
                     'Cód. Protheus': r.b1_cod || '', 
                     'Desc. Protheus': r.b1_desc || '',
-                    'Ped. Metalfisa': r.pedido_metalfisa || '-',
+                    'Ped. Lynx': r.pedido_metalfisa || '-',
                     'Qtd. Pedido': r.qtd_pedido || 0,
                     'Qtd. Entregue': r.qtd_entregue || 0,
                     'Saldo a Entregar': r.saldo_entregar || 0,
@@ -805,7 +805,7 @@ export default function DemandaVMIPage({ isTab = false }) {
             meses.forEach(m => { grpPed[key].tot[m] = (grpPed[key].tot[m] || 0) + (r.meses[m] || 0); });
         });
         Object.entries(grpPed).sort(([a],[b]) => a.localeCompare(b)).forEach(([key, g]) => {
-            const hdr = { 'Pedido': key, 'Produto Pai': '', 'Cód. Produto': '', 'Descrição': '', 'Rev.': '', 'Rev. Metalfisa': '', 'Tipo': '', 'Cód. Protheus': '', 'Desc. Protheus': '', 'Ped. Metalfisa': '', 'Qtd. Pedido': '', 'Qtd. Entregue': '', 'Saldo a Entregar': '' };
+            const hdr = { 'Pedido': key, 'Produto Pai': '', 'Cód. Produto': '', 'Descrição': '', 'Rev.': '', 'Rev. Lynx': '', 'Tipo': '', 'Cód. Protheus': '', 'Desc. Protheus': '', 'Ped. Lynx': '', 'Qtd. Pedido': '', 'Qtd. Entregue': '', 'Saldo a Entregar': '' };
             meses.forEach(m => { hdr[m] = g.tot[m] || 0; });
             hdr['TOTAL'] = meses.reduce((s, m) => s + (g.tot[m] || 0), 0);
             sheet3.push(hdr);
@@ -816,11 +816,11 @@ export default function DemandaVMIPage({ isTab = false }) {
                     'Cód. Produto': r.codigo_produto_cliente, 
                     'Descrição': r.descricao_produto_cliente || '', 
                     'Rev.': r.rev_cliente || '', 
-                    'Rev. Metalfisa': r.rev_metalfisa || '',
+                    'Rev. Lynx': r.rev_metalfisa || '',
                     'Tipo': r.status_tipo_item || 'PCP',
                     'Cód. Protheus': r.b1_cod || '', 
                     'Desc. Protheus': r.b1_desc || '',
-                    'Ped. Metalfisa': r.pedido_metalfisa || '-',
+                    'Ped. Lynx': r.pedido_metalfisa || '-',
                     'Qtd. Pedido': r.qtd_pedido || 0,
                     'Qtd. Entregue': r.qtd_entregue || 0,
                     'Saldo a Entregar': r.saldo_entregar || 0,
@@ -1143,7 +1143,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                         <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar
                     </button>
                     {data.length > 0 && (
-                        <button onClick={handleFetchMetalfisa}
+                        <button onClick={handleFetchLynx}
                             className="px-3 py-2 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 rounded-lg flex items-center gap-2 text-sm font-medium transition shadow-sm">
                             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Sincronizar Protheus
                         </button>
@@ -1413,7 +1413,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                                     </th>
                                     {renderHeader('codigo_produto_cliente', 'Cód. Produto', 'sticky left-[164px] z-20 bg-slate-50 w-[160px]')}
                                     {renderHeader('b1_cod', 'Cód. Protheus', 'sticky left-[324px] z-20 bg-slate-50 w-[152px]')}
-                                    {renderHeader('pedido_metalfisa', 'Ped. Metalfisa', 'sticky left-[476px] z-20 bg-slate-50 w-[132px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]')}
+                                    {renderHeader('pedido_metalfisa', 'Ped. Lynx', 'sticky left-[476px] z-20 bg-slate-50 w-[132px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]')}
                                     {renderHeader('ops_relacionadas', 'OPs', 'min-w-[140px]')}
                                     {renderHeader('qtd_pedido', 'Qtd. Pedido', 'min-w-[90px] text-center')}
                                     {renderHeader('qtd_entregue', 'Qtd. Entregue', 'min-w-[90px] text-center')}
@@ -1421,7 +1421,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                                     {renderHeader('data_entrega_comercial', 'Dt. Entrega', 'min-w-[90px] text-center')}
                                     {renderHeader('data_entrega_pcp', 'Dt. PCP', 'min-w-[90px] text-center')}
                                     {renderHeader('data_prevista_faturamento', 'Prev. Fat.', 'min-w-[90px] text-center')}
-                                    {renderHeader('rev_metalfisa', 'Rev. Metalfisa', 'min-w-[60px]')}
+                                    {renderHeader('rev_metalfisa', 'Rev. Lynx', 'min-w-[60px]')}
                                     {/* {renderHeader('produto_pai', 'Produto Pai', 'border-r border-slate-200 min-w-[120px]')} */}
                                     {(previewMode ? previewMeses : meses).map(m => (
                                         <th key={m} className="px-4 py-3 text-center bg-indigo-50 border-r border-white min-w-[80px]">{m}</th>
@@ -1438,7 +1438,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                                         <td className="sticky left-[52px] z-20 bg-slate-50 px-2 py-1 w-[112px]"><input type="text" value={columnFilters.ordem_compra_cliente} onChange={e => setColumnFilters({...columnFilters, ordem_compra_cliente: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="Ped. Cli..." /></td>
                                         <td className="sticky left-[164px] z-20 bg-slate-50 px-2 py-1 w-[160px]"><input type="text" value={columnFilters.codigo_produto_cliente} onChange={e => setColumnFilters({...columnFilters, codigo_produto_cliente: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="Produto..." /></td>
                                         <td className="sticky left-[324px] z-20 bg-slate-50 px-2 py-1 w-[152px]"><input type="text" value={columnFilters.b1_cod} onChange={e => setColumnFilters({...columnFilters, b1_cod: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="Protheus..." /></td>
-                                        <td className="sticky left-[476px] z-20 bg-slate-50 px-2 py-1 w-[132px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]"><input type="text" value={columnFilters.pedido_metalfisa} onChange={e => setColumnFilters({...columnFilters, pedido_metalfisa: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="Metalfisa..." /></td>
+                                        <td className="sticky left-[476px] z-20 bg-slate-50 px-2 py-1 w-[132px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]"><input type="text" value={columnFilters.pedido_metalfisa} onChange={e => setColumnFilters({...columnFilters, pedido_metalfisa: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono" placeholder="Lynx..." /></td>
                                         <td className="px-2 py-1" />
                                         <td className="px-2 py-1"><input type="text" value={columnFilters.qtd_pedido} onChange={e => setColumnFilters({...columnFilters, qtd_pedido: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Qtd..." /></td>
                                         <td className="px-2 py-1"><input type="text" value={columnFilters.qtd_entregue} onChange={e => setColumnFilters({...columnFilters, qtd_entregue: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Entregue..." /></td>
@@ -1446,7 +1446,7 @@ export default function DemandaVMIPage({ isTab = false }) {
                                         <td className="px-2 py-1" />
                                         <td className="px-2 py-1" />
                                         <td className="px-2 py-1" />
-                                        <td className="px-2 py-1"><input type="text" value={columnFilters.rev_metalfisa} onChange={e => setColumnFilters({...columnFilters, rev_metalfisa: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Rev. Metalfisa..." /></td>
+                                        <td className="px-2 py-1"><input type="text" value={columnFilters.rev_metalfisa} onChange={e => setColumnFilters({...columnFilters, rev_metalfisa: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Rev. Lynx..." /></td>
                                         {/* <!--<td className="px-2 py-1 border-r border-slate-200"><input type="text" value={columnFilters.produto_pai} onChange={e => setColumnFilters({...columnFilters, produto_pai: e.target.value})} className="w-full px-2 py-1 text-[11px] border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" placeholder="Pai..." /></td> */}
                                         {meses.map(m => (
                                             <td key={m} className="px-4 py-2 border-r border-slate-50" />

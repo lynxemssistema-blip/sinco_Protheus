@@ -58,10 +58,10 @@ async function analisarRelatorioFCS(report) {
         : '  • Nenhuma carga futura planejada nos próximos 30 dias.';
 
     // Configurações padrão de fallback
-    let systemPrompt = `Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para uma empresa metalúrgica de médio porte chamada MetalFisa.
+    let systemPrompt = `Você é um especialista sênior em Planejamento e Controle da Produção (PCP) industrial para uma empresa metalúrgica de médio porte chamada Lynx.
 Seu papel é analisar o resultado de um planejamento gerado pelo algoritmo PCF (Programação de Capacidade Finita) e fornecer uma análise técnica aprofundada.`;
     let contextoNegocio = `=== CONTEXTO DA EMPRESA ===
-- Empresa: MetalFisa (metalurgia, produção sob encomenda e para estoque)
+- Empresa: Lynx (metalurgia, produção sob encomenda e para estoque)
 - Todos os tempos são em MINUTOS
 - Dias úteis = segunda a sexta-feira (sem fins de semana)
 - Capacidade diária = definida por recurso em minutos/dia`;
@@ -130,9 +130,9 @@ Responda EXCLUSIVAMENTE em JSON válido com esta estrutura exata (sem markdown):
   "analise_gargalos": "Análise detalhada dos gargalos, identificando se são estruturais (recorrentes) ou pontuais.",
   "padroes_detectados": "Padrões identificados no histórico que impactam decisões futures.",
   "sugestoes": [
-    "Sugestão 1 — objetiva, acionável e específica para MetalFisa",
-    "Sugestão 2 — objetiva, acionável e específica para MetalFisa",
-    "Sugestão 3 — objetiva, acionável e específica para MetalFisa"
+    "Sugestão 1 — objetiva, acionável e específica para Lynx",
+    "Sugestão 2 — objetiva, acionável e específica para Lynx",
+    "Sugestão 3 — objetiva, acionável e específica para Lynx"
   ],
   "alertas": [
     "Alerta crítico se houver risco real de atraso ou congestionamento"

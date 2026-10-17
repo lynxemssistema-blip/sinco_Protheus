@@ -438,7 +438,7 @@ const EspelhoNFViewer = () => {
                                 <thead className="border-b border-black bg-gray-50 sticky top-0 z-10 shadow">
                                     <tr className="uppercase text-gray-700">
                                         <th className="p-2 border-r border-black w-24">Cód. Forn.</th>
-                                        <th className="p-2 border-r border-black w-24">Cód. MetalFisa</th>
+                                        <th className="p-2 border-r border-black w-24">Cód. Lynx</th>
                                         <th className="p-2 border-r border-black">Descrição do Produto</th>
                                         <th className="p-2 border-r border-black text-center w-10">UN</th>
                                         <th className="p-2 border-r border-black text-right w-16">Qtd NF</th>
@@ -528,7 +528,7 @@ const EspelhoNFViewer = () => {
                                     <th className="px-3 py-1 border-r border-black print:border-gray-400 w-28">Data / Hora</th>
                                     <th className="px-3 py-1 border-r border-black print:border-gray-400 w-32">Usuário</th>
                                     <th className="px-3 py-1 border-r border-black print:border-gray-400 w-24">Cód. Forn.</th>
-                                    <th className="px-3 py-1 border-r border-black print:border-gray-400 w-24">Cód. MetalFisa</th>
+                                    <th className="px-3 py-1 border-r border-black print:border-gray-400 w-24">Cód. Lynx</th>
                                     <th className="px-3 py-1 border-r border-black print:border-gray-400">Produto</th>
                                     <th className="px-3 py-1 text-right w-24">Qtd Recebida</th>
                                 </tr>
@@ -622,7 +622,7 @@ const EspelhoNFViewer = () => {
                                 <input 
                                     required
                                     type="text" 
-                                    placeholder="engenharia@metalfisa.com.br, compras@metalfisa.com.br"
+                                    placeholder="engenharia@lynxems.com.br, compras@lynxems.com.br"
                                     className="w-full border rounded p-2 focus:ring focus:ring-blue-200 outline-none"
                                     value={emailData.destinatarios}
                                     onChange={(e) => setEmailData({...emailData, destinatarios: e.target.value})}

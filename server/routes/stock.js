@@ -690,8 +690,8 @@ function buildStockQuery({ empresa, filial, almoxarifado, codigo, prefixo, descr
     const params = [];
     let paramCount = 1;
 
-    let whereClause = "WHERE TRIM(COALESCE(s.d_e_l_e_t_, '')) = '' AND TRIM(COALESCE(p.d_e_l_e_t_, '')) = '' ";
-    whereClause += "AND s.b2_cod !~ '^MT[0-9]' "; // Exclusão MT
+    let whereClause = "WHERE s.d_e_l_e_t_ = ' ' AND p.d_e_l_e_t_ = ' ' ";
+    whereClause += "AND s.b2_cod NOT REGEXP '^MT[0-9]' "; // Exclusão MT
 
     if (codigo) {
         params.push(`%${codigo.toUpperCase()}%`);
@@ -730,7 +730,7 @@ function buildStockQuery({ empresa, filial, almoxarifado, codigo, prefixo, descr
     if (!empresa || empresa === '010') {
         queries.push(`(
             SELECT
-                '010'::text as empresa,
+                '010' as empresa,
                 s.b2_filial as filial,
                 s.b2_local as almoxarifado,
                 s.b2_cod as cod_produto,
@@ -741,7 +741,7 @@ function buildStockQuery({ empresa, filial, almoxarifado, codigo, prefixo, descr
                 s.b2_qatu as saldo_atual,
                 s.b2_qemp as empenho
             FROM public.sb2010 s
-            JOIN public.sb1010 p ON TRIM(p.b1_cod) = TRIM(s.b2_cod)
+            JOIN public.sb1010 p ON p.b1_cod = s.b2_cod
             ${whereClause}
             LIMIT $${limitParam}
         )`);
@@ -750,7 +750,7 @@ function buildStockQuery({ empresa, filial, almoxarifado, codigo, prefixo, descr
     if (!empresa || empresa === '990') {
         queries.push(`(
             SELECT
-                '990'::text as empresa,
+                '990' as empresa,
                 s.b2_filial as filial,
                 s.b2_local as almoxarifado,
                 s.b2_cod as cod_producto,
@@ -761,7 +761,7 @@ function buildStockQuery({ empresa, filial, almoxarifado, codigo, prefixo, descr
                 s.b2_qatu as saldo_atual,
                 s.b2_qemp as empenho
             FROM public.sb2990 s
-            JOIN public.sb1990 p ON TRIM(p.b1_cod) = TRIM(s.b2_cod)
+            JOIN public.sb1990 p ON p.b1_cod = s.b2_cod
             ${whereClause}
             LIMIT $${limitParam}
         )`);
@@ -1150,28 +1150,26 @@ router.get('/balances', async (req, res) => {
 
         // --- ENRICHMENT (DOCUMENTOS) ---
         if (rows.length > 0) {
-            let connection;
             try {
                 // Collect codes (handling potential alias typo from query)
                 const codigos = rows.map(r => (r.cod_produto || r.cod_producto || '').trim()).filter(c => c);
 
                 if (codigos.length > 0) {
-                    connection = await mysql.createConnection(dbConfig);
-
-                    // Create placeholders
                     const placeholders = codigos.map(() => '?').join(',');
 
-                    const [docs] = await connection.execute(
+                    const [docs] = await mysqlPool.query(
                         `SELECT produto_codigo, url_arquivo FROM produtos_docs WHERE produto_codigo IN (${placeholders}) ORDER BY id ASC`,
                         codigos
                     );
 
                     const docMap = {};
-                    docs.forEach(d => {
-                        if (!docMap[d.produto_codigo]) {
-                            docMap[d.produto_codigo] = d.url_arquivo;
-                        }
-                    });
+                    if (Array.isArray(docs)) {
+                        docs.forEach(d => {
+                            if (!docMap[d.produto_codigo]) {
+                                docMap[d.produto_codigo] = d.url_arquivo;
+                            }
+                        });
+                    }
 
                     rows.forEach(row => {
                         const code = (row.cod_produto || row.cod_producto || '').trim();
@@ -1181,9 +1179,7 @@ router.get('/balances', async (req, res) => {
                     });
                 }
             } catch (errDocs) {
-                console.error('Erro ao buscar documentos para o saldo:', errDocs);
-            } finally {
-                if (connection) await connection.end();
+                // Silently bypass document enrichment if tabela is not present
             }
         }
 

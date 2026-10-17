@@ -125,11 +125,11 @@ const MSMetalProductStructure = () => {
                     <h2 className="text-lg font-black text-slate-900">Falha ao carregar estrutura</h2>
                     <p className="text-xs text-red-600 mt-1 mb-6">{error || 'Estrutura não encontrada.'}</p>
                     <button
-                        onClick={() => navigate('/engenharia/msmetal/produtos')}
+                        onClick={() => navigate('/produtos')}
                         className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
                     >
                         <ArrowLeft size={15} />
-                        <span>Voltar ao Catálogo MS Metal</span>
+                        <span>Voltar ao Catálogo de Produtos</span>
                     </button>
                 </div>
             </div>
@@ -146,11 +146,11 @@ const MSMetalProductStructure = () => {
                 {/* Breadcrumbs e Botão Voltar */}
                 <div className="flex items-center justify-between gap-4 mb-4">
                     <button
-                        onClick={() => navigate('/engenharia/msmetal/produtos')}
+                        onClick={() => navigate('/produtos')}
                         className="inline-flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors cursor-pointer bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs"
                     >
                         <ArrowLeft size={14} />
-                        <span>Voltar ao Catálogo MS Metal</span>
+                        <span>Voltar ao Catálogo de Produtos</span>
                     </button>
 
                     <div className="flex items-center gap-2">

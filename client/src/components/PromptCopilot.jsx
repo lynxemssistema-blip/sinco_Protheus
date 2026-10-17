@@ -7,7 +7,7 @@ import { Sparkles, X, Send, Loader2, Copy, Check, ChevronDown, ChevronUp } from 
  * Props:
  *  - fieldType:   'system_prompt' | 'contexto_negocio'
  *  - agentRole:   e.g. 'analista_sql'
- *  - agentNome:   e.g. 'Analista SQL MetalFisa'
+ *  - agentNome:   e.g. 'Analista SQL Lynx'
  *  - currentText: current value of the textarea being helped
  *  - onApply:     callback(text) → called when the user clicks "Aplicar"
  */

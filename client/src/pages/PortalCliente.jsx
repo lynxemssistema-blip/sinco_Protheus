@@ -245,11 +245,11 @@ const fmtDateBR = (d) => {
     return s || '—';
 };
 
-// ─── Carrossel de Imagens MetalFisa durante o Carregamento ───────────────────
+// ─── Carrossel de Imagens Lynx durante o Carregamento ───────────────────
 const SLIDES = [
     {
         image: '/images/carrossel/laser.png',
-        tag: 'TECNOLOGIA FABRIL METALFISA',
+        tag: 'TECNOLOGIA FABRIL LYNX',
         title: 'Corte a Laser de Alta Precisão (CNC)',
         desc: 'Tecnologia de fibra de alta velocidade para corte em aços carbono, inox e alumínio com tolerâncias micrométricas e máxima produtividade.'
     },
@@ -267,13 +267,13 @@ const SLIDES = [
     },
     {
         image: '/images/carrossel/laser.png',
-        tag: 'GESTÃO INTEGRADA METALFISA.COM.BR',
+        tag: 'GESTÃO INTEGRADA LYNX.COM.BR',
         title: 'Rastreabilidade Total & Transparência PCP',
         desc: 'Acompanhamento em tempo real de saldo a faturar, emissão de notas fiscais, datas de produção e consulta de folhas técnicas em PDF.'
     }
 ];
 
-const MetalFisaLoadingCarousel = () => {
+const LynxLoadingCarousel = () => {
     const [currentSlide, setCurrentSlide] = useState(0);
 
     useEffect(() => {
@@ -328,15 +328,15 @@ const MetalFisaLoadingCarousel = () => {
                 {/* Rodapé: Link Institucional & Dots de Navegação */}
                 <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-white/10">
                     <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-400">MetalFisa Metalúrgica</span>
+                        <span className="text-xs font-bold text-slate-400">Lynx Metalúrgica</span>
                         <span className="text-slate-600">·</span>
                         <a
-                            href="https://metalfisa.com.br/"
+                            href="https://lynxems.com.br/"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-xs text-blue-400 hover:text-blue-300 hover:underline flex items-center gap-1 font-semibold"
                         >
-                            <span>metalfisa.com.br</span>
+                            <span>lynxems.com.br</span>
                             <ExternalLink className="w-3 h-3" />
                         </a>
                     </div>
@@ -412,7 +412,7 @@ const PortalCliente = ({ defaultTab }) => {
     const [hasMore, setHasMore]   = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
     const [showLandingModal, setShowLandingModal] = useState(() => {
-        const seen = sessionStorage.getItem('@MetalFisa:landingSeen');
+        const seen = sessionStorage.getItem('@Lynx:landingSeen');
         const isClient = user?.tipo === 'E' || user?.tipoExterno === 'cliente' || !!user?.idCliente;
         return (!seen && isClient);
     });
@@ -490,7 +490,7 @@ const PortalCliente = ({ defaultTab }) => {
                 ];
 
                 const metaHeader = [
-                    ['METALFISA METALÚRGICA LTDA — SISTEMA DE GESTÃO INTEGRADO (PCP)'],
+                    ['LYNX EMS SISTEMAS LTDA — SISTEMA DE GESTÃO INTEGRADO (PCP)'],
                     ['RELATÓRIO: CANAL DO CLIENTE — TABELA COMPLETA (NOTAS FISCAIS & ENTREGAS)'],
                     [`Data de Emissão: ${dateStr}  |  Usuário: ${user?.nome || 'Portal Cliente'}  |  Filtros Aplicados: ${filterLabel}`],
                     [], // Linha em branco
@@ -507,7 +507,7 @@ const PortalCliente = ({ defaultTab }) => {
                     { wch: 14 }, { wch: 20 }, { wch: 14 }, { wch: 14 }
                 ];
                 XLSX.utils.book_append_sheet(wb, ws, 'Tabela Completa (NFs)');
-                XLSX.writeFile(wb, `MetalFisa_Canal_Cliente_NFs_${fileDate}.xlsx`);
+                XLSX.writeFile(wb, `Lynx_Canal_Cliente_NFs_${fileDate}.xlsx`);
             } else {
                 const headerRow = [
                     'PEDIDO', 'EMISSÃO PEDIDO', 'CLIENTE', 'ORDEM DE COMPRA (PC)', 'REF. CLIENTE',
@@ -550,7 +550,7 @@ const PortalCliente = ({ defaultTab }) => {
                 ];
 
                 const metaHeader = [
-                    ['METALFISA METALÚRGICA LTDA — SISTEMA DE GESTÃO INTEGRADO (PCP)'],
+                    ['LYNX EMS SISTEMAS LTDA — SISTEMA DE GESTÃO INTEGRADO (PCP)'],
                     ['RELATÓRIO: CANAL DO CLIENTE — ITENS COM SALDO A FATURAR'],
                     [`Data de Emissão: ${dateStr}  |  Usuário: ${user?.nome || 'Portal Cliente'}  |  Filtros Aplicados: ${filterLabel}`],
                     [], // Linha em branco
@@ -567,7 +567,7 @@ const PortalCliente = ({ defaultTab }) => {
                     { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 20 }
                 ];
                 XLSX.utils.book_append_sheet(wb, ws, 'Saldo a Faturar');
-                XLSX.writeFile(wb, `MetalFisa_Canal_Cliente_Saldo_${fileDate}.xlsx`);
+                XLSX.writeFile(wb, `Lynx_Canal_Cliente_Saldo_${fileDate}.xlsx`);
             }
         } catch (err) {
             console.error('Erro ao exportar para Excel:', err);
@@ -1053,10 +1053,10 @@ const PortalCliente = ({ defaultTab }) => {
                                         type="button"
                                         onClick={() => setShowLandingModal(true)}
                                         className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-800 rounded-xl text-xs font-semibold border border-purple-200 transition-all shadow-2xs cursor-pointer ml-1"
-                                        title="Conheça a MetalFisa e visite o site oficial"
+                                        title="Conheça a Lynx e visite o site oficial"
                                     >
                                         <Globe className="w-4 h-4 text-purple-600" />
-                                        <span>Sobre a MetalFisa</span>
+                                        <span>Sobre a Lynx</span>
                                     </button>
 
                                     <button
@@ -1234,7 +1234,7 @@ const PortalCliente = ({ defaultTab }) => {
                         className="flex-1 overflow-auto min-h-0"
                     >
                         {loading && items.length === 0 ? (
-                            <MetalFisaLoadingCarousel />
+                            <LynxLoadingCarousel />
                         ) : error ? (
                             <div className="flex flex-col items-center justify-center h-56 gap-3 text-red-500">
                                 <AlertTriangle className="w-7 h-7" />
@@ -1371,7 +1371,7 @@ const PortalCliente = ({ defaultTab }) => {
                                 </div>
                             ) : (
                                 <table className="min-w-full text-sm border-collapse">
-                                    <thead className="bg-[#1e3a5f] text-white sticky top-0 z-10">
+                                    <thead className="bg-[#24312D] text-white sticky top-0 z-10">
                                         <tr>
                                             {COLS_DETALHADO.map((h, i) => (
                                                 <th key={i} className={`px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap border-b border-slate-700 ${
@@ -1519,7 +1519,7 @@ const PortalCliente = ({ defaultTab }) => {
                                 </div>
                             ) : (
                                 <table className="min-w-full text-sm border-collapse">
-                                    <thead className="bg-[#1e3a5f] text-white sticky top-0 z-10">
+                                    <thead className="bg-[#24312D] text-white sticky top-0 z-10">
                                         <tr>
                                             {COLS_SALDO.map((h, i) => (
                                                 <th key={i} className={`px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap border-b border-slate-700 ${
@@ -1749,7 +1749,7 @@ const PortalCliente = ({ defaultTab }) => {
                     <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden my-auto relative">
                         
                         {/* Header Banner */}
-                        <div className="relative bg-gradient-to-r from-[#1e3a5f] via-[#0f2744] to-[#1e3a5f] text-white p-6 sm:p-8 flex flex-col justify-between overflow-hidden">
+                        <div className="relative bg-gradient-to-r from-[#1E2825] via-[#24312D] to-[#32423D] text-white p-6 sm:p-8 flex flex-col justify-between overflow-hidden border-b border-[#425750]/40">
                             <div className="absolute -right-10 -bottom-10 opacity-10 pointer-events-none">
                                 <Factory className="w-80 h-80 text-white" />
                             </div>
@@ -1763,7 +1763,7 @@ const PortalCliente = ({ defaultTab }) => {
                                 </div>
                                 <button
                                     onClick={() => {
-                                        sessionStorage.setItem('@MetalFisa:landingSeen', 'true');
+                                        sessionStorage.setItem('@Lynx:landingSeen', 'true');
                                         setShowLandingModal(false);
                                     }}
                                     className="p-2 text-slate-300 hover:text-white hover:bg-white/10 rounded-full transition-colors cursor-pointer"
@@ -1775,7 +1775,7 @@ const PortalCliente = ({ defaultTab }) => {
 
                             <div className="z-10 space-y-2">
                                 <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight">
-                                    METALFISA METALÚRGICA
+                                    LYNX METALÚRGICA
                                 </h2>
                                 <p className="text-sm sm:text-base text-blue-200 font-medium max-w-2xl">
                                     Excelência em Conformação Metálica, Corte a Laser de Alta Precisão e Tecnologia Industrial de Ponta.
@@ -1786,14 +1786,14 @@ const PortalCliente = ({ defaultTab }) => {
                         {/* Scrollable Body Content */}
                         <div className="p-6 sm:p-8 overflow-y-auto space-y-8 bg-slate-50/50">
 
-                            {/* Sobre a MetalFisa */}
+                            {/* Sobre a Lynx */}
                             <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-2xs space-y-3">
                                 <div className="flex items-center gap-2.5 text-slate-900 font-bold text-base">
                                     <Sparkles className="w-5 h-5 text-blue-600" />
                                     <h3>Tradição, Inovação e Qualidade Sem Concorrência</h3>
                                 </div>
                                 <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                                    Com vasta experiência no mercado de transformação de aços e metais, a <strong>MetalFisa Metalúrgica</strong> combina 
+                                    Com vasta experiência no mercado de transformação de aços e metais, a <strong>Lynx Metalúrgica</strong> combina 
                                     tecnologia fabril automatizada com rigorosas diretrizes de engenharia. Atendemos aos mais exigentes 
                                     segmentos industriais com soluções customizadas de alto desempenho.
                                 </p>
@@ -1840,12 +1840,12 @@ const PortalCliente = ({ defaultTab }) => {
                                     <p className="text-xs text-slate-300">Acesse nosso site oficial e veja todos os detalhes de nossa infraestrutura fabril.</p>
                                 </div>
                                 <a
-                                    href="https://metalfisa.com.br/"
+                                    href="https://lynxems.com.br/"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all shadow-md whitespace-nowrap cursor-pointer hover:scale-105"
                                 >
-                                    <span>Visitar metalfisa.com.br</span>
+                                    <span>Visitar lynxems.com.br</span>
                                     <ExternalLink className="w-4 h-4" />
                                 </a>
                             </div>
@@ -1856,11 +1856,11 @@ const PortalCliente = ({ defaultTab }) => {
                         <div className="p-4 sm:p-6 bg-slate-100 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
                             <div className="flex items-center gap-2 text-xs text-slate-500">
                                 <Globe className="w-4 h-4 text-blue-600" />
-                                <span>https://metalfisa.com.br/ · Soluções Industriais</span>
+                                <span>https://lynxems.com.br/ · Soluções Industriais</span>
                             </div>
                             <button
                                 onClick={() => {
-                                    sessionStorage.setItem('@MetalFisa:landingSeen', 'true');
+                                    sessionStorage.setItem('@Lynx:landingSeen', 'true');
                                     setShowLandingModal(false);
                                 }}
                                 className="w-full sm:w-auto px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"

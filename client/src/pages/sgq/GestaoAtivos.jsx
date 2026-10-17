@@ -10,9 +10,9 @@ import { logoBase64 as metalfisaLogoBase64 } from '../../services/metalfisaLogoB
 export default function GestaoAtivos() {
     const [ativos, setAtivos] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('@MetalFisa:sgq_assets_search') || '');
+    const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('@Lynx:sgq_assets_search') || '');
     const [selectedRow, setSelectedRow] = useState(null);
-    const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('@MetalFisa:sgq_assets_status') || 'all');
+    const [statusFilter, setStatusFilter] = useState(() => localStorage.getItem('@Lynx:sgq_assets_status') || 'all');
     const [columnFilters, setColumnFilters] = useState({
         patrimonio: '',
         name: '',
@@ -22,19 +22,19 @@ export default function GestaoAtivos() {
         certificado: ''
     });
 
-    const [globalTab, setGlobalTab] = useState(() => localStorage.getItem('@MetalFisa:sgq_assets_tab') || 'ativos'); // 'ativos' | 'calibracoes' | 'historico'
+    const [globalTab, setGlobalTab] = useState(() => localStorage.getItem('@Lynx:sgq_assets_tab') || 'ativos'); // 'ativos' | 'calibracoes' | 'historico'
     const [historico, setHistorico] = useState([]);
 
     useEffect(() => {
-        localStorage.setItem('@MetalFisa:sgq_assets_search', searchTerm);
+        localStorage.setItem('@Lynx:sgq_assets_search', searchTerm);
     }, [searchTerm]);
 
     useEffect(() => {
-        localStorage.setItem('@MetalFisa:sgq_assets_status', statusFilter);
+        localStorage.setItem('@Lynx:sgq_assets_status', statusFilter);
     }, [statusFilter]);
 
     useEffect(() => {
-        localStorage.setItem('@MetalFisa:sgq_assets_tab', globalTab);
+        localStorage.setItem('@Lynx:sgq_assets_tab', globalTab);
     }, [globalTab]);
 
     // Modal states
@@ -722,10 +722,10 @@ export default function GestaoAtivos() {
                                         <td className="p-4 text-center">
                                             {a.main_photo_id ? (
                                                 <img 
-                                                    src={`/api/sgq/assets/attachments/${a.main_photo_id}/download?token=${localStorage.getItem('@MetalFisa:token')}`} 
+                                                    src={`/api/sgq/assets/attachments/${a.main_photo_id}/download?token=${localStorage.getItem('@Lynx:token')}`} 
                                                     alt={a.name} 
                                                     className="w-10 h-10 object-cover rounded-md border border-slate-200 shadow-sm mx-auto cursor-pointer hover:scale-110 transition-transform"
-                                                    onClick={() => window.open(`/api/sgq/assets/attachments/${a.main_photo_id}/download?token=${localStorage.getItem('@MetalFisa:token')}`, '_blank')}
+                                                    onClick={() => window.open(`/api/sgq/assets/attachments/${a.main_photo_id}/download?token=${localStorage.getItem('@Lynx:token')}`, '_blank')}
                                                     title="Clique para ampliar"
                                                 />
                                             ) : (
@@ -905,10 +905,10 @@ export default function GestaoAtivos() {
                                                 <td className="p-4 text-center">
                                                     {a.main_photo_id ? (
                                                         <img 
-                                                            src={`/api/sgq/assets/attachments/${a.main_photo_id}/download?token=${localStorage.getItem('@MetalFisa:token')}`} 
+                                                            src={`/api/sgq/assets/attachments/${a.main_photo_id}/download?token=${localStorage.getItem('@Lynx:token')}`} 
                                                             alt={a.name} 
                                                             className="w-10 h-10 object-cover rounded-md border border-slate-200 shadow-sm mx-auto cursor-pointer hover:scale-110 transition-transform"
-                                                            onClick={() => window.open(`/api/sgq/assets/attachments/${a.main_photo_id}/download?token=${localStorage.getItem('@MetalFisa:token')}`, '_blank')}
+                                                            onClick={() => window.open(`/api/sgq/assets/attachments/${a.main_photo_id}/download?token=${localStorage.getItem('@Lynx:token')}`, '_blank')}
                                                             title="Clique para ampliar"
                                                         />
                                                     ) : (
@@ -1470,7 +1470,7 @@ export default function GestaoAtivos() {
                                                                     {a.is_main && !mainPhotoName && a.file_type === 'photo' && <span className="bg-yellow-100 text-yellow-800 text-[10px] px-1.5 py-0.5 rounded font-bold ml-1">Principal</span>}
                                                                 </div>
                                                                 <div className="flex items-center gap-2">
-                                                                    <a href={`/api/sgq/assets/attachments/${a.id}/download?token=${localStorage.getItem('@MetalFisa:token')}`} target="_blank" rel="noreferrer" className="text-indigo-600 hover:text-indigo-800 p-1" title="Download">
+                                                                    <a href={`/api/sgq/assets/attachments/${a.id}/download?token=${localStorage.getItem('@Lynx:token')}`} target="_blank" rel="noreferrer" className="text-indigo-600 hover:text-indigo-800 p-1" title="Download">
                                                                         <Download size={16} />
                                                                     </a>
                                                                     <button type="button" onClick={() => handleDeleteAttachment(a.id)} className="text-red-500 hover:text-red-700 p-1" title="Remover">

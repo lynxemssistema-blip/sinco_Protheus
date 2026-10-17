@@ -1,8 +1,14 @@
 import jsPDFLib from 'jspdf';
 const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
 import autoTable from 'jspdf-autotable';
-import { logoBase64 } from './metalfisaLogoBase64';
 import { toast } from 'react-toastify';
+import { 
+    getCompanyShortName, 
+    getCompanyLegalName, 
+    getCompanyCnpjCityLine, 
+    getCompanyAddressLine,
+    getCompanyLogoBase64 
+} from './companyBranding';
 
 // Helper para converter URL em Base64
 const getBase64ImageFromUrl = async (url) => {
@@ -46,67 +52,71 @@ export const generateChecklistPdf = async (checklist, targetRow, currentUser, in
         const MR = 14;
         const usableW = pageWidth - ML - MR; // 269mm
 
-        // --- CABEÇALHO PADRÃO ---
+        // --- CABEÇALHO PADRÃO EXECUTIVO (SINCO Suite / Multi-Tenant) ---
         const drawHeader = (pageDoc, currentY, pageNumber) => {
-            let hY = currentY || 5;
-            const hH = 16;
+            let hY = currentY || 7;
+            const hH = 22;
 
-            // Box principal do Header
-            pageDoc.setDrawColor(30, 58, 95);
-            pageDoc.setLineWidth(0.3);
-            pageDoc.rect(ML, hY, usableW, hH);
+            // 1. Barra de Topo Executiva (Lynx Dark)
+            pageDoc.setFillColor(44, 59, 54);
+            pageDoc.rect(ML, hY, usableW, hH, 'F');
 
-            const col1 = ML + 55;  // Linha da logo (69mm)
-            const col2 = ML + 185; // Linha do título (199mm)
+            // 2. Área Branca do Logotipo
+            const logoBoxW = 28;
+            const logoBoxH = hH - 2; // 20mm
+            pageDoc.setFillColor(255, 255, 255);
+            pageDoc.roundedRect(ML + 1, hY + 1, logoBoxW, logoBoxH, 1, 1, 'F');
 
-            pageDoc.setLineWidth(0.2);
-            pageDoc.line(col1, hY, col1, hY + hH);
-            pageDoc.line(col2, hY, col2, hY + hH);
-
-            // Logotipo
-            try {
-                if (logoBase64) {
-                    pageDoc.addImage(logoBase64, 'PNG', ML + 6, hY + 1.5, 36, 13);
-                } else {
-                    pageDoc.setFontSize(12);
+            const logoImg = getCompanyLogoBase64();
+            if (logoImg) {
+                try {
+                    pageDoc.addImage(logoImg, 'PNG', ML + 2, hY + 2, logoBoxW - 2, logoBoxH - 2, undefined, 'FAST');
+                } catch (e) {
                     pageDoc.setFont('helvetica', 'bold');
-                    pageDoc.setTextColor(30, 58, 95);
-                    pageDoc.text('METALFISA', ML + 10, hY + 10);
+                    pageDoc.setFontSize(8);
+                    pageDoc.setTextColor(66, 87, 80);
+                    pageDoc.text(getCompanyShortName(), ML + 4, hY + 12);
                 }
-            } catch (e) {
-                pageDoc.setFontSize(12);
-                pageDoc.setFont('helvetica', 'bold');
-                pageDoc.setTextColor(30, 58, 95);
-                pageDoc.text('METALFISA', ML + 10, hY + 10);
-            }
-
-            // Título
-            pageDoc.setTextColor(30, 58, 95);
-            pageDoc.setFontSize(12);
-            pageDoc.setFont('helvetica', 'bold');
-            pageDoc.text('Checklist de Montagem de Conjuntos', col1 + 6, hY + 8);
-
-            pageDoc.setFontSize(8.5);
-            pageDoc.setFont('helvetica', 'normal');
-            pageDoc.setTextColor(80, 80, 80);
-            if (includeParent) {
-                pageDoc.text(`OP: ${targetRow.op}-${targetRow.item_op}`, col1 + 6, hY + 13);
             } else {
-                pageDoc.text('Relatório Avulso de Componentes', col1 + 6, hY + 13);
+                pageDoc.setFont('helvetica', 'bold');
+                pageDoc.setFontSize(8);
+                pageDoc.setTextColor(66, 87, 80);
+                pageDoc.text(getCompanyShortName(), ML + 4, hY + 12);
             }
 
-            // Metadados do relatório
-            pageDoc.setFontSize(7.5);
-            pageDoc.setTextColor(50, 50, 50);
-            pageDoc.text(`Data/Hora Impressão: ${new Date().toLocaleString('pt-BR')}`, col2 + 4, hY + 6);
-            pageDoc.text(`Operador: ${currentUser?.nome || 'Sistema'}`, col2 + 4, hY + 10);
-            pageDoc.text(`Pág: ${pageNumber}`, col2 + 4, hY + 14);
+            // 3. Dados da Empresa Ativa
+            const textLeftX = ML + logoBoxW + 4;
+            pageDoc.setFont('helvetica', 'bold');
+            pageDoc.setFontSize(9.5);
+            pageDoc.setTextColor(255, 255, 255);
+            pageDoc.text(getCompanyLegalName(), textLeftX, hY + 6);
 
-            return hY + hH + 6;
+            pageDoc.setFont('helvetica', 'normal');
+            pageDoc.setFontSize(7.2);
+            pageDoc.setTextColor(215, 230, 225);
+            const cnpjCity = getCompanyCnpjCityLine();
+            const addressLine = getCompanyAddressLine();
+            if (cnpjCity) pageDoc.text(cnpjCity, textLeftX, hY + 11);
+            if (addressLine) pageDoc.text(addressLine, textLeftX, hY + 16);
+
+            // 4. Título do Relatório & Metadados (à direita)
+            pageDoc.setFont('helvetica', 'bold');
+            pageDoc.setFontSize(9.5);
+            pageDoc.setTextColor(255, 255, 255);
+            pageDoc.text('CHECKLIST DE MONTAGEM DE CONJUNTOS', pageWidth - MR - 4, hY + 6, { align: 'right' });
+
+            pageDoc.setFont('helvetica', 'normal');
+            pageDoc.setFontSize(7.2);
+            pageDoc.setTextColor(215, 230, 225);
+            const opSub = includeParent ? `OP: ${targetRow.op}-${targetRow.item_op}` : 'Relatório Avulso de Componentes';
+            pageDoc.text(`${opSub}  ·  Operador: ${currentUser?.nome || 'Sistema'}`, pageWidth - MR - 4, hY + 11, { align: 'right' });
+            pageDoc.text(`Emissão: ${new Date().toLocaleString('pt-BR')}  ·  Folha ${pageNumber}`, pageWidth - MR - 4, hY + 16, { align: 'right' });
+
+            return hY + hH + 5;
         };
 
         // Primeira página
-        let y = drawHeader(doc, 5, 1);
+        let y = drawHeader(doc, 7, 1);
 
         // --- SEÇÃO DE DETALHES DO CHECKLIST ---
         doc.setDrawColor(220, 225, 230);
@@ -192,7 +202,7 @@ export const generateChecklistPdf = async (checklist, targetRow, currentUser, in
             body: tableRows,
             theme: 'grid',
             headStyles: {
-                fillColor: [30, 58, 95],
+                fillColor: [44, 59, 54],
                 textColor: [255, 255, 255],
                 fontSize: 8,
                 halign: 'left',
@@ -211,7 +221,7 @@ export const generateChecklistPdf = async (checklist, targetRow, currentUser, in
                 5: { cellWidth: 60 },
                 6: { cellWidth: 15, halign: 'center' }
             },
-            margin: { top: 28, left: ML, right: MR }, // top margin garante que páginas subsequentes não sobreponham o header
+            margin: { top: 35, left: ML, right: MR }, // top margin garante que páginas subsequentes não sobreponham o header
             didParseCell: (data) => {
                 if (data.column.index === 0 && data.cell.text[0] === '[ ] NÃO') {
                     data.cell.styles.textColor = [185, 28, 28]; // Vermelho para o Não montado
@@ -219,7 +229,7 @@ export const generateChecklistPdf = async (checklist, targetRow, currentUser, in
             },
             didDrawPage: (data) => {
                 if (data.pageNumber > 1) {
-                    drawHeader(doc, 5, data.pageNumber);
+                    drawHeader(doc, 7, data.pageNumber);
                 }
             }
         });
@@ -230,8 +240,8 @@ export const generateChecklistPdf = async (checklist, targetRow, currentUser, in
         // Verifica se cabe na página atual (Landscape), senão quebra página
         if (finalY + 25 > 200) {
             doc.addPage();
-            drawHeader(doc, 5, doc.internal.getNumberOfPages());
-            finalY = 28;
+            drawHeader(doc, 7, doc.internal.getNumberOfPages());
+            finalY = 35;
         }
 
         doc.setDrawColor(200, 200, 200);
@@ -241,7 +251,7 @@ export const generateChecklistPdf = async (checklist, targetRow, currentUser, in
 
         doc.setFontSize(8.5);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(30, 58, 95);
+        doc.setTextColor(44, 59, 54);
         doc.text('OBSERVAÇÕES / NOTAS GERAIS DO CHECKLIST', ML + 4, finalY + 5);
 
         doc.setFontSize(8);
@@ -264,12 +274,12 @@ export const generateChecklistPdf = async (checklist, targetRow, currentUser, in
                 if (base64) {
                     doc.addPage();
                     photoPageNum++;
-                    drawHeader(doc, 5, photoPageNum);
+                    drawHeader(doc, 7, photoPageNum);
 
                     // Título do Anexo
                     doc.setFontSize(10);
                     doc.setFont('helvetica', 'bold');
-                    doc.setTextColor(30, 58, 95);
+                    doc.setTextColor(44, 59, 54);
                     doc.text('ANEXO FOTOGRÁFICO - PRODUTO PAI (GERAL)', ML, 28);
                     
                     doc.setFontSize(8.5);

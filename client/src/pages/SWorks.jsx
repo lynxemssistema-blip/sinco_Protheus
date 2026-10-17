@@ -118,7 +118,7 @@ const SWorks = () => {
           </h3>
           <p className="text-slate-300 leading-relaxed mb-4">
             Como esta interface roda na web, ela não tem permissão para acessar o SolidWorks diretamente no seu computador.
-            Para fazer a ponte, você precisa baixar e executar o nosso <strong>Agente Metalfisa-SW</strong>.
+            Para fazer a ponte, você precisa baixar e executar o nosso <strong>Agente Lynx-SW</strong>.
           </p>
           
           <div className="bg-slate-900 rounded border border-slate-700 p-4 font-mono text-sm text-slate-300 mb-4">

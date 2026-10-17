@@ -88,7 +88,7 @@ export default function SincoNodeManager({
         tipo_restricao: 'PROCESSO',
         cod_maquina: '',
         status: 'P',
-        revMetalfisa: ''
+        revLynx: ''
     });
 
     // Modais de Seleção no Protheus
@@ -112,14 +112,13 @@ export default function SincoNodeManager({
 
     const handleSearchMaterial = async (q) => {
         const query = (q !== undefined ? q : searchMaterialQuery).trim();
-        if (query.length < 2) return;
         setSearchingMaterial(true);
         try {
             const res = await searchSincoProdutos(query);
             setSearchMaterialResults(Array.isArray(res) ? res : []);
         } catch (err) {
             console.error('Erro ao buscar materiais:', err);
-            showMsg('Erro ao buscar materiais no Protheus', 'error');
+            showMsg('Erro ao buscar materiais no SINCO', 'error');
         } finally {
             setSearchingMaterial(false);
         }
@@ -130,9 +129,7 @@ export default function SincoNodeManager({
         setSearchMaterialQuery(initialQuery);
         setSearchMaterialResults([]);
         setShowSearchMaterialModal(true);
-        if (initialQuery && initialQuery.length >= 2) {
-            handleSearchMaterial(initialQuery);
-        }
+        handleSearchMaterial(initialQuery || '');
     };
 
     const handleSearchCliente = async (q) => {
@@ -143,7 +140,7 @@ export default function SincoNodeManager({
             setSearchClienteResults(Array.isArray(res) ? res : []);
         } catch (err) {
             console.error('Erro ao buscar clientes:', err);
-            showMsg('Erro ao buscar clientes no Protheus', 'error');
+            showMsg('Erro ao buscar clientes no SINCO', 'error');
         } finally {
             setSearchingCliente(false);
         }
@@ -503,7 +500,7 @@ export default function SincoNodeManager({
             if (isNovoRoteiro) {
                 showMsg('Nenhuma operação preenchida para criar o roteiro.', 'warning');
             } else {
-                showMsg('O Protheus exige pelo menos uma operação ativa no roteiro.', 'warning');
+                showMsg('O SINCO exige pelo menos uma operação ativa no roteiro.', 'warning');
             }
             return;
         }
@@ -720,7 +717,7 @@ export default function SincoNodeManager({
                         Z0_RESPONS: (user?.nome || user?.login || 'ENGENHARIA').toUpperCase().substring(0, 15),
                         Z0_DTULTAL: dtHoje,
                         Z0_HRULTAL: hrAgora,
-                        Z0_XREVM: (novoSz0.revMetalfisa || dadosGerais?.rev || '').substring(0, 2)
+                        Z0_XREVM: (novoSz0.revLynx || dadosGerais?.rev || '').substring(0, 2)
                     }]
                 }
             });
@@ -732,7 +729,7 @@ export default function SincoNodeManager({
                 tipo_restricao: 'PROCESSO',
                 cod_maquina: '',
                 status: 'P',
-                revMetalfisa: ''
+                revLynx: ''
             });
             await carregarTudo(true);
             if (onSuccessRefresh) onSuccessRefresh(cleanCodigo, 'sz0');
@@ -745,7 +742,7 @@ export default function SincoNodeManager({
     };
 
     const handleLiberarSz0 = async (r) => {
-        if (!confirm(`Deseja excluir a restrição ${r.item}? O status será atualizado para Liberado (L) no Protheus e ela será considerada excluída.`)) return;
+        if (!confirm(`Deseja excluir a restrição ${r.item}? O status será atualizado para Liberado (L) e ela será considerada excluída.`)) return;
 
         setSaving(true);
         try {
@@ -771,7 +768,7 @@ export default function SincoNodeManager({
                     }]
                 }
             });
-            showMsg('Restrição excluída com sucesso (status L no Protheus)!', 'success');
+            showMsg('Restrição excluída com sucesso!', 'success');
             await carregarTudo(true);
             if (onSuccessRefresh) onSuccessRefresh(cleanCodigo, 'sz0');
         } catch (err) {
@@ -838,7 +835,7 @@ export default function SincoNodeManager({
                                         className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white rounded text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
                                     >
                                         {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                                        <span>Salvar no Protheus</span>
+                                        <span>Salvar no SINCO</span>
                                     </button>
                                 )}
                             </div>
@@ -889,7 +886,7 @@ export default function SincoNodeManager({
                                                             type="button"
                                                             onClick={() => handleOpenSearchMaterial(idx, mat.componente || '')}
                                                             className="p-1 text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors shrink-0"
-                                                            title="Buscar e Selecionar Material no Protheus (SB1010)"
+                                                            title="Buscar e Selecionar Material no SINCO (SB1010)"
                                                         >
                                                             <Search size={12} />
                                                         </button>
@@ -972,7 +969,7 @@ export default function SincoNodeManager({
                             <div>
                                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
                                     <Building2 className="w-4 h-4 text-blue-600" />
-                                    Produto Metalfisa / Cliente (SZ1)
+                                    Produto Lynx / Cliente (SZ1)
                                 </h4>
                                 <p className="text-[11px] text-slate-500">Part numbers de montadoras e clientes vinculados a este código ({clientesSz1.filter(c => !c.deleted).length} vínculos)</p>
                             </div>
@@ -993,7 +990,7 @@ export default function SincoNodeManager({
                                         className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white rounded text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
                                     >
                                         {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                                        <span>Salvar no Protheus</span>
+                                        <span>Salvar no SINCO</span>
                                     </button>
                                 )}
                             </div>
@@ -1038,7 +1035,7 @@ export default function SincoNodeManager({
                                                             type="button"
                                                             onClick={() => handleOpenSearchCliente(idx, cli.cliente || '')}
                                                             className="p-1 text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition-colors shrink-0"
-                                                            title="Buscar e Selecionar Cliente no Protheus (SA1010)"
+                                                            title="Buscar e Selecionar Cliente no SINCO (SA1010)"
                                                         >
                                                             <Search size={12} />
                                                         </button>
@@ -1146,7 +1143,7 @@ export default function SincoNodeManager({
                                         className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white rounded text-xs font-semibold flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
                                     >
                                         {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                                        <span>Salvar no Protheus</span>
+                                        <span>Salvar no SINCO</span>
                                     </button>
                                 )}
                             </div>
@@ -1278,8 +1275,7 @@ export default function SincoNodeManager({
                                 </tbody>
                             </table>
                             <datalist id="node-recursos-list">
-                                {processList.map(p => (
-                                    <option key={p.codigo} value={p.codigo}>{p.codigo} — {p.descricao}</option>
+                                {processList.map((p, idx) => (<option key={`${p.codigo}-${idx}`} value={p.codigo}>{p.codigo} — {p.descricao}</option>
                                 ))}
                             </datalist>
                         </div>
@@ -1404,7 +1400,7 @@ export default function SincoNodeManager({
                                                         type="button"
                                                         onClick={() => handleLiberarSz0(r)}
                                                         className="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded text-[10px] font-bold transition-colors cursor-pointer inline-flex items-center gap-1"
-                                                        title="Excluir restrição (Status L no Protheus)"
+                                                        title="Excluir restrição"
                                                     >
                                                         <Trash2 size={11} />
                                                         <span>Excluir</span>
@@ -1643,7 +1639,7 @@ export default function SincoNodeManager({
                             <div>
                                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                                     <Search className="w-4 h-4 text-emerald-600" />
-                                    Selecionar Material / Insumo no Protheus
+                                    Selecionar Material / Insumo no SINCO
                                 </h3>
                                 <p className="text-[11px] text-slate-500">Busque por código ou descrição oficial na tabela SB1010.</p>
                             </div>
@@ -1688,7 +1684,7 @@ export default function SincoNodeManager({
                             {searchingMaterial ? (
                                 <div className="flex flex-col items-center justify-center h-full text-xs text-slate-400 gap-2">
                                     <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
-                                    <span>Buscando materiais no Protheus...</span>
+                                    <span>Buscando materiais no SINCO...</span>
                                 </div>
                             ) : searchMaterialResults.length === 0 ? (
                                 <div className="flex items-center justify-center h-full text-xs text-slate-400 italic p-6 text-center">
@@ -1751,7 +1747,7 @@ export default function SincoNodeManager({
                             <div>
                                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                                     <Building2 className="w-4 h-4 text-blue-600" />
-                                    Selecionar Cliente no Protheus
+                                    Selecionar Cliente no SINCO
                                 </h3>
                                 <p className="text-[11px] text-slate-500">Busque por código, razão social ou CNPJ na tabela SA1010.</p>
                             </div>
@@ -1796,7 +1792,7 @@ export default function SincoNodeManager({
                             {searchingCliente ? (
                                 <div className="flex flex-col items-center justify-center h-full text-xs text-slate-400 gap-2">
                                     <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-                                    <span>Buscando clientes no Protheus...</span>
+                                    <span>Buscando clientes no SINCO...</span>
                                 </div>
                             ) : searchClienteResults.length === 0 ? (
                                 <div className="flex items-center justify-center h-full text-xs text-slate-400 italic p-6 text-center">
@@ -1856,7 +1852,7 @@ export default function SincoNodeManager({
                             <div>
                                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
                                     <Search className="w-4 h-4 text-amber-600" />
-                                    Selecionar Recurso / Máquina no Protheus
+                                    Selecionar Recurso / Máquina no SINCO
                                 </h3>
                                 <p className="text-[11px] text-slate-500">Selecione o centro de trabalho / máquina cadastrada (tabela SH1010).</p>
                             </div>

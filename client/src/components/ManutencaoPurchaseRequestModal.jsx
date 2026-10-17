@@ -98,7 +98,7 @@ const ManutencaoPurchaseRequestModal = ({ isOpen, onClose, selectedMaterials, on
 
                 ${matTableHtml}
 
-                <p style="font-size: 12px; color: #64748b;">Este é um e-mail automático gerado pelo sistema MetalFisa (Módulo de Manutenção).</p>
+                <p style="font-size: 12px; color: #64748b;">Este é um e-mail automático gerado pelo sistema Lynx (Módulo de Manutenção).</p>
             `;
 
             // 3. Enviar via endpoint de email padrão

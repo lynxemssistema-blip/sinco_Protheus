@@ -152,31 +152,6 @@ router.get('/', async (req, res) => {
         const pageParsed = parseInt(page, 10) || 1;
         const offset = (pageParsed - 1) * limitParsed;
 
-        // Fetch forecasts from MySQL first
-        let valuesList = "(CAST('DUMMY' AS varchar), CAST('DUMMY' AS varchar), CAST(NULL AS varchar), CAST(NULL AS varchar))";
-        try {
-            const [forecastRows] = await mysqlPool.query(`
-                SELECT TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, data_prevista_faturamento 
-                FROM app_pcp_delivery_forecasts
-                WHERE pedido IS NOT NULL AND item IS NOT NULL
-            `);
-            if (forecastRows.length > 0) {
-                const formatDateForPg = (d) => {
-                    if (!d) return 'NULL';
-                    const dateObj = new Date(d);
-                    if (isNaN(dateObj.getTime())) return 'NULL';
-                    return `'${dateObj.toISOString().slice(0, 19).replace('T', ' ')}'`;
-                };
-                valuesList = forecastRows.map(row => {
-                    const entregaPcpStr = formatDateForPg(row.data_entrega_pcp);
-                    const prevFatStr = formatDateForPg(row.data_prevista_faturamento);
-                    return `(CAST('${row.pedido}' AS varchar), CAST('${row.item}' AS varchar), CAST(${entregaPcpStr} AS varchar), CAST(${prevFatStr} AS varchar))`;
-                }).join(', ');
-            }
-        } catch (err) {
-            console.error('Error fetching forecasts for virtual join:', err);
-        }
-
         // Parâmetros para query
         const params = [];
         let paramCount = 1;
@@ -601,9 +576,7 @@ router.get('/', async (req, res) => {
               MIN(fc.data_entrega_pcp) AS min_entrega_pcp,
               MAX(fc.data_prevista_faturamento) AS max_prev_fat
           FROM public.sc6010 c6
-          LEFT JOIN (
-              VALUES ${valuesList}
-          ) AS fc(pedido, item, data_entrega_pcp, data_prevista_faturamento)
+          LEFT JOIN app_pcp_delivery_forecasts fc
               ON fc.pedido = TRIM(c6.c6_num) AND fc.item = TRIM(c6.c6_item)
           WHERE COALESCE(c6.d_e_l_e_t_, '') = ''
           GROUP BY c6.c6_num, c6.c6_filial
@@ -1294,27 +1267,11 @@ router.get('/flat', async (req, res) => {
         let fcJoin = '';
         let countFcJoin = '';
 
-        if (needsFcJoin && forecastMap.size > 0) {
-            const fcPedidos = [], fcItems = [], fcDatas = [], fcPrevFats = [];
-            for (const [key, val] of forecastMap) {
-                const [p, i] = key.split('|');
-                fcPedidos.push(p);
-                fcItems.push(i);
-                fcDatas.push(val.data_entrega_pcp ? new Date(val.data_entrega_pcp) : null);
-                fcPrevFats.push(val.data_prevista_faturamento ? new Date(val.data_prevista_faturamento) : null);
-            }
-            const fcBase = paramCount;
-            params.push(fcPedidos, fcItems, fcDatas, fcPrevFats);
-            countParams.push(fcPedidos, fcItems, fcDatas, fcPrevFats);
-            paramCount += 4;
-            countParamCount += 4;
-
+        if (needsFcJoin) {
             const fcJoinSql = `
                 LEFT JOIN (
-                    SELECT DISTINCT ON (fc_pedido, fc_item) * FROM unnest(
-                        $${fcBase}::text[], $${fcBase+1}::text[],
-                        $${fcBase+2}::timestamp[], $${fcBase+3}::timestamp[]
-                    ) AS t(fc_pedido, fc_item, data_entrega_pcp, data_prevista_faturamento)
+                    SELECT pedido as fc_pedido, item as fc_item, data_entrega_pcp, data_prevista_faturamento
+                    FROM app_pcp_delivery_forecasts
                 ) fc ON fc.fc_pedido = TRIM(c6.c6_num) AND fc.fc_item = TRIM(c6.c6_item)
             `;
             fcJoin = fcJoinSql;
@@ -1546,10 +1503,16 @@ router.get('/flat', async (req, res) => {
                     fractionForecasts = fcRows || [];
 
                     const newRows = [];
+                    const processedBases = new Set();
                     for (const row of result.rows) {
                         const ped = String(row.pedido || '').trim();
                         const itm = String(row.item || '').trim();
                         const itmBase = itm.replace(/[A-Z]+$/i, '').padStart(2, '0');
+                        const baseKey = `${ped}_${itmBase}`;
+                        if (processedBases.has(baseKey)) {
+                            continue;
+                        }
+                        processedBases.add(baseKey);
 
                         // Busca OPs deste pedido e item base (apenas produto pai / is_sub_op = 0)
                         const itemOps = mysqlOps.filter(o => 
@@ -2175,7 +2138,7 @@ router.get('/flat', async (req, res) => {
                 if (uniquePedidos.length > 0) {
                     const placeholders = uniquePedidos.map(() => '?').join(',');
                     const [allForecastRows] = await mysqlPool.query(
-                        `SELECT id, pedido, item, data_entrega_pcp, data_prevista_faturamento, quantidade_pcp, observacao, lote, numero_lote, op_protheus, numero_serie, serie_cliente, serie_metalfisa, lpf_codigo, usuario
+                        `SELECT id, pedido, item, data_entrega_pcp, data_prevista_faturamento, quantidade_pcp, observacao, lote, numero_lote, op_protheus, numero_serie, serie_cliente, serie_metalfisa, serie_lynx, lpf_codigo, usuario
                          FROM app_pcp_delivery_forecasts
                          WHERE TRIM(pedido) IN (${placeholders})
                          ORDER BY id ASC`,
@@ -2184,6 +2147,11 @@ router.get('/flat', async (req, res) => {
 
                     const forecastsByItem = new Map();
                     for (const fc of allForecastRows) {
+                        const valLynx = fc.serie_lynx || fc.serie_metalfisa || fc.numero_serie || '';
+                        fc.serie_lynx = valLynx;
+                        fc.serie_metalfisa = valLynx;
+                        fc.pcp_serie_lynx = valLynx;
+                        fc.pcp_serie_metalfisa = valLynx;
                         const k = `${String(fc.pedido).trim()}|${String(fc.item).trim()}`;
                         if (!forecastsByItem.has(k)) forecastsByItem.set(k, []);
                         forecastsByItem.get(k).push(fc);
@@ -3651,7 +3619,8 @@ router.get('/:pedido/items/:item/history', checkOrderAccess, async (req, res) =>
 
 router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req, res) => {
     try {
-        const { items, data_entrega_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote } = req.body;
+        const { items, data_entrega_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, serie_lynx, lote, numero_lote } = req.body;
+        const effectiveSerieLynx = serie_lynx || serie_metalfisa || numero_serie || null;
 
         if (!items || !Array.isArray(items) || items.length === 0 || !data_entrega_pcp || !usuario) {
             return res.status(400).json({ error: 'Dados incompletos para o planejamento Lote PCP.' });
@@ -3699,8 +3668,8 @@ router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req
                     if (req.body.sobrescrever_existente) {
                         const existingId = dupCheck[0].id;
                         await connection.query(
-                            'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, lote=?, numero_lote=?, op_protheus=? WHERE id=?',
-                            [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, it.op_protheus || null, existingId]
+                            'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, serie_lynx=?, lote=?, numero_lote=?, op_protheus=? WHERE id=?',
+                            [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, it.op_protheus || null, existingId]
                         );
                         savedItems.push({ id: existingId, pedido: String(pedido).trim(), item: String(item).trim(), quantidade_pcp });
                     }
@@ -3724,8 +3693,8 @@ router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req
                 }
 
                 const [result] = await connection.query(
-                    'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, op_protheus) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, it.op_protheus || null]
+                    'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, serie_lynx, lote, numero_lote, op_protheus) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, it.op_protheus || null]
                 );
 
                 savedItems.push({ id: result.insertId, pedido: String(pedido).trim(), item: String(item).trim(), quantidade_pcp });
@@ -3748,7 +3717,8 @@ router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req
 
 router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
     try {
-        const { pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, qtd_total_item, data_prevista_faturamento } = req.body;
+        const { pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, serie_lynx, lote, numero_lote, qtd_total_item, data_prevista_faturamento } = req.body;
+        const effectiveSerieLynx = serie_lynx || serie_metalfisa || numero_serie || null;
 
         if (!pedido || !item || !data_entrega_pcp || quantidade_pcp === undefined || !usuario) {
             return res.status(400).json({ error: 'Dados incompletos para o planejamento PCP.' });
@@ -3780,8 +3750,8 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
         // Se veio ID específico para edição, atualiza a programação existente
         if (req.body.id) {
             await mysqlPool.query(
-                'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, lote=?, numero_lote=?, op_protheus=?, data_prevista_faturamento=? WHERE id=?',
-                [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, req.body.op_protheus || null, data_prevista_faturamento || null, req.body.id]
+                'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, serie_lynx=?, lote=?, numero_lote=?, op_protheus=?, data_prevista_faturamento=? WHERE id=?',
+                [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, req.body.op_protheus || null, data_prevista_faturamento || null, req.body.id]
             );
             invalidateForecastCache();
             return res.json({ success: true, id: req.body.id, updated: true });
@@ -3796,8 +3766,8 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
             if (existingByOp.length > 0) {
                 const existingId = existingByOp[0].id;
                 await mysqlPool.query(
-                    'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, lote=?, numero_lote=?, data_prevista_faturamento=? WHERE id=?',
-                    [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, data_prevista_faturamento || null, existingId]
+                    'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, serie_lynx=?, lote=?, numero_lote=?, data_prevista_faturamento=? WHERE id=?',
+                    [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, data_prevista_faturamento || null, existingId]
                 );
                 invalidateForecastCache();
                 return res.json({ success: true, id: existingId, updated: true });
@@ -3820,8 +3790,8 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
         }
 
         const [result] = await mysqlPool.query(
-            'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, op_protheus, data_prevista_faturamento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, req.body.op_protheus || null, data_prevista_faturamento || null]
+            'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, serie_lynx, lote, numero_lote, op_protheus, data_prevista_faturamento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, req.body.op_protheus || null, data_prevista_faturamento || null]
         );
 
         invalidateForecastCache();
@@ -4173,9 +4143,10 @@ router.post('/split-op', async (req, res) => {
             const fracLote = frac.lote || `Lote ${letter}`;
             const fracNumLote = frac.numero_lote || letter;
 
+            const fracSerieLynx = frac.serie_lynx || frac.serie_metalfisa || frac.numero_serie || null;
             const [ins] = await connection.query(
-                'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, op_protheus, data_prevista_faturamento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [pedidoClean, itemClean, fracDate, fracQtd, usuario || 'Gestão de OPs', fracObs, frac.numero_serie || null, frac.serie_cliente || null, frac.serie_metalfisa || null, fracLote, fracNumLote, fracOp, frac.data_prevista_faturamento || null]
+                'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, serie_lynx, lote, numero_lote, op_protheus, data_prevista_faturamento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [pedidoClean, itemClean, fracDate, fracQtd, usuario || 'Gestão de OPs', fracObs, frac.numero_serie || null, frac.serie_cliente || null, fracSerieLynx, fracSerieLynx, fracLote, fracNumLote, fracOp, frac.data_prevista_faturamento || null]
             );
 
             // 3. Grava o planejamento detalhado das operações por recurso no app_production_planning
@@ -4280,7 +4251,8 @@ router.delete('/split-op/:pedido/:item', async (req, res) => {
 router.put('/pcp-forecasts/:id', validate(rules.pcpForecastUpdate), async (req, res) => {
     try {
         const { id } = req.params;
-        const { data_entrega_pcp, quantidade_pcp, observacao, numero_serie, serie_cliente, serie_metalfisa, lote, numero_lote, usuario, qtd_total_item, data_prevista_faturamento } = req.body;
+        const { data_entrega_pcp, quantidade_pcp, observacao, numero_serie, serie_cliente, serie_metalfisa, serie_lynx, lote, numero_lote, usuario, qtd_total_item, data_prevista_faturamento } = req.body;
+        const effectiveSerieLynx = serie_lynx || serie_metalfisa || numero_serie || null;
 
         if (!data_entrega_pcp || quantidade_pcp === undefined) {
             return res.status(400).json({ error: 'Data e quantidade são obrigatórios.' });
@@ -4320,8 +4292,8 @@ router.put('/pcp-forecasts/:id', validate(rules.pcpForecastUpdate), async (req, 
         }
 
         await mysqlPool.query(
-            'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = ?, quantidade_pcp = ?, observacao = ?, numero_serie = ?, serie_cliente = ?, serie_metalfisa = ?, lote = ?, numero_lote = ?, data_prevista_faturamento = ? WHERE id = ?',
-            [data_entrega_pcp, parseFloat(quantidade_pcp), observacao || null, numero_serie || null, serie_cliente || null, serie_metalfisa || null, lote || null, numero_lote || null, data_prevista_faturamento || null, id]
+            'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = ?, quantidade_pcp = ?, observacao = ?, numero_serie = ?, serie_cliente = ?, serie_metalfisa = ?, serie_lynx = ?, lote = ?, numero_lote = ?, data_prevista_faturamento = ? WHERE id = ?',
+            [data_entrega_pcp, parseFloat(quantidade_pcp), observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, data_prevista_faturamento || null, id]
         );
 
         invalidateForecastCache();
@@ -4396,14 +4368,216 @@ router.patch('/pcp-forecasts/:id/op', async (req, res) => {
     }
 });
 
+async function deleteOpAndUnifyFractions(conn, { pedido, item, op }) {
+    const pedidoStr = String(pedido).trim().padStart(6, '0');
+    const itemStr = String(item).trim();
+    const baseItem = itemStr.replace(/[A-Z]+$/i, '').padStart(2, '0');
+    const opClean = String(op || '').trim();
+
+    // 1. Localizar as OPs correspondentes
+    let opNumbersToDelete = new Set();
+    if (opClean && opClean !== '-') {
+        opNumbersToDelete.add(opClean);
+    }
+
+    // Buscar em erp_ordens_producao
+    const [erpOps] = await conn.query(`
+        SELECT numero_op, item_pedido, quantidade_planejada 
+        FROM erp_ordens_producao 
+        WHERE (pedido_venda = ? OR pedido_venda = ?) 
+          AND (item_pedido = ? OR numero_op = ? OR numero_op LIKE ?)
+    `, [pedidoStr, parseInt(pedidoStr, 10) || 0, itemStr, opClean, `${opClean}%`]);
+
+    erpOps.forEach(o => {
+        if (o.numero_op) opNumbersToDelete.add(String(o.numero_op).trim());
+    });
+
+    // Buscar em sc2010
+    const [sc2Ops] = await conn.query(`
+        SELECT c2_num, c2_item, c2_sequen, c2_op 
+        FROM sc2010 
+        WHERE (c2_pedido = ? OR c2_pedido = ?) 
+          AND (c2_itempv = ? OR c2_item = ? OR c2_op LIKE ? OR c2_num = ?)
+    `, [pedidoStr, parseInt(pedidoStr, 10) || 0, itemStr, itemStr, `${opClean}%`, opClean]);
+
+    sc2Ops.forEach(o => {
+        if (o.c2_op) opNumbersToDelete.add(String(o.c2_op).trim());
+        if (o.c2_num) opNumbersToDelete.add(String(o.c2_num).trim());
+    });
+
+    const opList = Array.from(opNumbersToDelete).filter(Boolean);
+
+    // 2. Deletar de todas as tabelas de OP
+    if (opList.length > 0) {
+        await conn.query(`DELETE FROM erp_ordens_producao WHERE numero_op IN (?) OR op_pai IN (?)`, [opList, opList]);
+        await conn.query(`DELETE FROM sc2010 WHERE c2_op IN (?) OR c2_num IN (?)`, [opList, opList]);
+        try { await conn.query(`DELETE FROM sd4010 WHERE d4_op IN (?)`, [opList]); } catch (_) {}
+        try { await conn.query(`DELETE FROM sh6010 WHERE h6_op IN (?)`, [opList]); } catch (_) {}
+    }
+
+    // Deletar também por pedido e item diretamente
+    await conn.query(`
+        DELETE FROM erp_ordens_producao 
+        WHERE (pedido_venda = ? OR pedido_venda = ?) AND item_pedido = ?
+    `, [pedidoStr, parseInt(pedidoStr, 10) || 0, itemStr]);
+
+    await conn.query(`
+        DELETE FROM sc2010 
+        WHERE (c2_pedido = ? OR c2_pedido = ?) AND (c2_itempv = ? OR c2_item = ?)
+    `, [pedidoStr, parseInt(pedidoStr, 10) || 0, itemStr, itemStr]);
+
+    // Limpar forecast do PCP para este item/OP
+    await conn.query(`
+        DELETE FROM app_pcp_delivery_forecasts 
+        WHERE pedido = ? AND (item = ? OR op_protheus IN (?) OR op_protheus = ?)
+    `, [pedidoStr, itemStr, opList.length > 0 ? opList : ['__none__'], opClean]);
+
+    // 3. RECUPERAR QUANTIDADE ORIGINAL E UNIFICAR FRAÇÕES
+    const [[baseItemRow]] = await conn.query(`
+        SELECT quantidade, quantidade_original, quantidade_saldo, preco_unitario 
+        FROM erp_pedidos_itens 
+        WHERE (pedido_numero = ? OR pedido_numero = ?) AND item_seq = ?
+    `, [pedidoStr, parseInt(pedidoStr, 10) || 0, baseItem]);
+
+    let totalOriginal = parseFloat(baseItemRow?.quantidade_original || 0);
+
+    if (!totalOriginal || totalOriginal <= 0) {
+        const [[sc6Row]] = await conn.query(`
+            SELECT c6_qtdven FROM sc6010 
+            WHERE c6_num = ? AND (c6_item = ? OR CAST(c6_item AS UNSIGNED) = CAST(? AS UNSIGNED))
+        `, [pedidoStr, baseItem, parseInt(baseItem, 10) || 0]);
+        totalOriginal = parseFloat(sc6Row?.c6_qtdven || baseItemRow?.quantidade || 0);
+    }
+
+    const isFracao = itemStr !== baseItem || /[A-Z]/i.test(itemStr);
+
+    if (isFracao) {
+        // Remove a linha desta fração de erp_pedidos_itens
+        await conn.query(`
+            DELETE FROM erp_pedidos_itens 
+            WHERE (pedido_numero = ? OR pedido_numero = ?) AND item_seq = ?
+        `, [pedidoStr, parseInt(pedidoStr, 10) || 0, itemStr]);
+
+        // Também limpa sc6010 se houver linha desta fração
+        await conn.query(`
+            DELETE FROM sc6010 
+            WHERE c6_num = ? AND c6_item = ?
+        `, [pedidoStr, itemStr]);
+
+        // Verifica se ainda existem OUTRAS frações deste item base
+        const [remainingFractions] = await conn.query(`
+            SELECT item_seq, quantidade 
+            FROM erp_pedidos_itens 
+            WHERE (pedido_numero = ? OR pedido_numero = ?) 
+              AND item_seq LIKE ? AND item_seq <> ?
+        `, [pedidoStr, parseInt(pedidoStr, 10) || 0, `${baseItem}%`, baseItem]);
+
+        // Também verifica se existem OPs restantes deste item base
+        const [remainingOps] = await conn.query(`
+            SELECT numero_op, quantidade_planejada 
+            FROM erp_ordens_producao 
+            WHERE (pedido_venda = ? OR pedido_venda = ?) 
+              AND item_pedido LIKE ?
+        `, [pedidoStr, parseInt(pedidoStr, 10) || 0, `${baseItem}%`]);
+
+        if (remainingFractions.length === 0 && remainingOps.length === 0) {
+            // TODAS AS FRAÇÕES FORAM EXCLUÍDAS: UNIFICAR TOTALMENTE DE VOLTA AO ITEM ORIGINAL
+            await conn.query(`
+                UPDATE erp_pedidos_itens 
+                SET quantidade = ?,
+                    quantidade_original = ?,
+                    quantidade_saldo = ?,
+                    numero_op_gerada = NULL,
+                    status = 'aberto'
+                WHERE (pedido_numero = ? OR pedido_numero = ?) AND item_seq = ?
+            `, [totalOriginal, totalOriginal, totalOriginal, pedidoStr, parseInt(pedidoStr, 10) || 0, baseItem]);
+
+            await conn.query(`
+                UPDATE sc6010 
+                SET c6_qtdven = ?,
+                    c6_numop = ''
+                WHERE c6_num = ? AND (c6_item = ? OR CAST(c6_item AS UNSIGNED) = CAST(? AS UNSIGNED))
+            `, [totalOriginal, pedidoStr, baseItem, parseInt(baseItem, 10) || 0]);
+        } else {
+            // AINDA HÁ FRAÇÕES RESTANTES: recalculamos o saldo disponível no item base
+            const remainingSum = remainingFractions.reduce((s, r) => s + (parseFloat(r.quantidade) || 0), 0);
+            const newSaldo = Math.max(0, totalOriginal - remainingSum);
+
+            await conn.query(`
+                UPDATE erp_pedidos_itens 
+                SET quantidade = ?,
+                    quantidade_saldo = ?,
+                    numero_op_gerada = NULL,
+                    status = ?
+                WHERE (pedido_numero = ? OR pedido_numero = ?) AND item_seq = ?
+            `, [newSaldo, newSaldo, newSaldo > 0 ? 'aberto' : 'em_producao', pedidoStr, parseInt(pedidoStr, 10) || 0, baseItem]);
+
+            await conn.query(`
+                UPDATE sc6010 
+                SET c6_qtdven = ?
+                WHERE c6_num = ? AND (c6_item = ? OR CAST(c6_item AS UNSIGNED) = CAST(? AS UNSIGNED))
+            `, [totalOriginal, pedidoStr, baseItem, parseInt(baseItem, 10) || 0]);
+        }
+    } else {
+        // ITEM NÃO FRACIONADO (OP DIRETA 100% NO ITEM)
+        await conn.query(`
+            UPDATE erp_pedidos_itens 
+            SET numero_op_gerada = NULL,
+                status = 'aberto',
+                quantidade_saldo = COALESCE(quantidade_original, quantidade)
+            WHERE (pedido_numero = ? OR pedido_numero = ?) AND item_seq = ?
+        `, [pedidoStr, parseInt(pedidoStr, 10) || 0, baseItem]);
+
+        await conn.query(`
+            UPDATE sc6010 
+            SET c6_numop = ''
+            WHERE c6_num = ? AND (c6_item = ? OR CAST(c6_item AS UNSIGNED) = CAST(? AS UNSIGNED))
+        `, [pedidoStr, baseItem]);
+    }
+}
+
 router.delete('/pcp-forecasts/:id', async (req, res) => {
+    const conn = await mysqlPool.getConnection();
     try {
-        await mysqlPool.query('DELETE FROM app_pcp_delivery_forecasts WHERE id = ?', [req.params.id]);
+        await conn.beginTransaction();
+        const [rows] = await conn.query('SELECT pedido, item, op_protheus FROM app_pcp_delivery_forecasts WHERE id = ?', [req.params.id]);
+        if (rows.length > 0) {
+            const { pedido, item, op_protheus } = rows[0];
+            await deleteOpAndUnifyFractions(conn, { pedido, item, op: op_protheus });
+        } else {
+            await conn.query('DELETE FROM app_pcp_delivery_forecasts WHERE id = ?', [req.params.id]);
+        }
+        await conn.commit();
         invalidateForecastCache();
-        res.json({ success: true });
+        res.json({ success: true, message: 'Programação e vínculos removidos com sucesso!' });
     } catch (err) {
+        await conn.rollback();
         console.error('Error deleting PCP forecast:', err);
         res.status(500).json({ error: err.message });
+    } finally {
+        conn.release();
+    }
+});
+
+// Endpoint dedicado para Excluir OP e unificar frações a partir de Visão Geral ou PCP
+router.post('/excluir-op', async (req, res) => {
+    const conn = await mysqlPool.getConnection();
+    try {
+        const { pedido, item, op } = req.body;
+        if (!pedido || !item) {
+            return res.status(400).json({ error: 'Pedido e Item são obrigatórios para excluir a OP.' });
+        }
+        await conn.beginTransaction();
+        await deleteOpAndUnifyFractions(conn, { pedido, item, op });
+        await conn.commit();
+        invalidateForecastCache();
+        res.json({ success: true, message: `OP referente ao item ${item} do pedido ${pedido} excluída com sucesso! Quantidades unificadas.` });
+    } catch (err) {
+        await conn.rollback();
+        console.error('Error excluding OP:', err);
+        res.status(500).json({ error: err.message || 'Erro ao excluir OP' });
+    } finally {
+        conn.release();
     }
 });
 router.post('/pcp-forecasts/balance', async (req, res) => {
@@ -5312,7 +5486,7 @@ router.get('/portal-cliente', async (req, res) => {
                 rev_cliente: row.rev_cliente,
                 valor_unitario: parseFloat(row.valor_unitario),
                 valor_total: parseFloat(row.valor_total),
-                observacoes: row.observacoes,
+                observacoes: Buffer.isBuffer(row.observacoes) ? row.observacoes.toString('utf8') : (row.observacoes || ''),
                 qtd_vendida: parseFloat(row.qtd_vendida),
                 qtd_faturada: qtdFaturada,
                 saldo_faturar: saldo,

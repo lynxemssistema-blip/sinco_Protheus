@@ -68,7 +68,7 @@ export default function NovasFuncionalidades() {
     return (
         <div className="min-h-screen bg-slate-50 text-slate-800 pb-16">
             {/* Header Hero */}
-            <div className="bg-[#1F365C] text-white py-10 px-6 sm:px-12 shadow-lg border-b border-slate-700 relative overflow-hidden">
+            <div className="bg-gradient-to-r from-[#1E2825] via-[#24312D] to-[#32423D] text-white py-10 px-6 sm:px-12 shadow-lg border-b border-[#425750]/40 relative overflow-hidden">
                 <div className="absolute right-0 top-0 bottom-0 opacity-10 pointer-events-none flex items-center pr-12">
                     <Sparkles className="w-96 h-96 text-white" />
                 </div>
@@ -88,7 +88,7 @@ export default function NovasFuncionalidades() {
                         Novas Funcionalidades do App
                     </h1>
                     <p className="text-slate-200 text-sm sm:text-base max-w-3xl leading-relaxed">
-                        Registro oficial de todas as implementações, inovações e melhorias incorporadas ao Portal MetalFisa
+                        Registro oficial de todas as implementações, inovações e melhorias incorporadas ao Portal Lynx
                         a partir da data de entrega do sistema (<strong>09/09/2026</strong>).
                     </p>
 
@@ -140,7 +140,7 @@ export default function NovasFuncionalidades() {
                                 placeholder="Buscar por recurso, palavra-chave, módulo ou melhoria..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1F365C] transition-all"
+                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#425750] transition-all"
                             />
                         </div>
 
@@ -154,7 +154,7 @@ export default function NovasFuncionalidades() {
                                         onClick={() => setSelectedModule(mod.id)}
                                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
                                             selectedModule === mod.id
-                                                ? 'bg-[#1F365C] text-white shadow-sm'
+                                                ? 'bg-[#425750] text-white shadow-sm'
                                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                         }`}
                                     >
@@ -181,7 +181,7 @@ export default function NovasFuncionalidades() {
                             return (
                                 <div key={item.id} className="relative group">
                                     {/* Timeline Marker Dot */}
-                                    <div className="absolute -left-[35px] sm:-left-[43px] top-6 w-8 h-8 rounded-full bg-white border-2 border-slate-300 group-hover:border-[#1F365C] shadow-sm flex items-center justify-center transition-colors">
+                                    <div className="absolute -left-[35px] sm:-left-[43px] top-6 w-8 h-8 rounded-full bg-white border-2 border-slate-300 group-hover:border-[#425750] shadow-sm flex items-center justify-center transition-colors">
                                         {getIconByType(item.tipo)}
                                     </div>
 
@@ -202,7 +202,7 @@ export default function NovasFuncionalidades() {
                                                 </span>
 
                                                 {/* Módulo */}
-                                                <span className="bg-[#1F365C]/10 text-[#1F365C] px-2.5 py-0.5 rounded-full text-xs font-semibold">
+                                                <span className="bg-[#425750]/10 text-[#425750] px-2.5 py-0.5 rounded-full text-xs font-semibold">
                                                     {item.moduloLabel}
                                                 </span>
 
@@ -240,7 +240,7 @@ export default function NovasFuncionalidades() {
                                                 <ul className="space-y-2">
                                                     {item.destaques.map((dest, i) => (
                                                         <li key={i} className="text-xs text-slate-700 flex items-start gap-2 leading-relaxed">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-[#1F365C] mt-1.5 flex-shrink-0" />
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-[#425750] mt-1.5 flex-shrink-0" />
                                                             <span>{dest}</span>
                                                         </li>
                                                     ))}
@@ -257,7 +257,7 @@ export default function NovasFuncionalidades() {
                                             {item.linkAcao && (
                                                 <Link
                                                     to={item.linkAcao}
-                                                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#1F365C] hover:text-[#FFB536] transition-colors"
+                                                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#425750] hover:text-[#23302C] transition-colors"
                                                 >
                                                     <span>{item.linkLabel || 'Acessar no Sistema'}</span>
                                                     <ArrowRight className="w-3.5 h-3.5" />

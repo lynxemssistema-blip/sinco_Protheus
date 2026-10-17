@@ -290,7 +290,7 @@ export default function OrdersTimelineTab({ filters }) {
         }));
     };
 
-    // ── Cabeçalho padrão MetalFisa ──────────────────────────────────────────
+    // ── Cabeçalho padrão Lynx ──────────────────────────────────────────
     const drawCronogramaHeader = (doc, pageWidth, title, subtitle) => {
         const ML = 10, y0 = 6, BRAND_W = 42, HDR_H = 28;
         const LOGO_W = 14, LOGO_H = 14;
@@ -302,7 +302,7 @@ export default function OrdersTimelineTab({ filters }) {
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
         doc.setTextColor(255, 255, 255);
-        doc.text('METALFISA', ML + 18, y0 + 11);
+        doc.text('LYNX', ML + 18, y0 + 11);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(6);
         doc.text('Metalúrgica Ltda', ML + 18, y0 + 15.5);
@@ -333,7 +333,7 @@ export default function OrdersTimelineTab({ filters }) {
         return y0 + HDR_H + 4;
     };
 
-    // Generate PDF in MetalFisa standard format
+    // Generate PDF in Lynx standard format
     const generateTimelinePDF = (target) => {
         const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
         const pageWidth  = doc.internal.pageSize.getWidth();  // 297
@@ -475,7 +475,7 @@ export default function OrdersTimelineTab({ filters }) {
                 doc.setFontSize(7);
                 doc.setFont('helvetica', 'normal');
                 doc.setTextColor(150, 150, 150);
-                doc.text('MetalFisa — Cronograma de Entrega e Produção', 10, pageHeight - 5);
+                doc.text('Lynx — Cronograma de Entrega e Produção', 10, pageHeight - 5);
                 doc.text(`Página ${pageNumber} de ${totalPages}`, pageWidth - 10, pageHeight - 5, { align: 'right' });
             },
         });
@@ -486,7 +486,7 @@ export default function OrdersTimelineTab({ filters }) {
         doc.setFontSize(7);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(150, 150, 150);
-        doc.text('MetalFisa — Cronograma de Entrega e Produção', 10, pageHeight - 5);
+        doc.text('Lynx — Cronograma de Entrega e Produção', 10, pageHeight - 5);
         doc.text(`Página ${pageCount} de ${pageCount}`, pageWidth - 10, pageHeight - 5, { align: 'right' });
 
         return {
@@ -636,7 +636,7 @@ export default function OrdersTimelineTab({ filters }) {
 
             summaryData.push({
                 'PC (Pedido de Compra)': pcName,
-                'Pedido MetalFisa': uniquePedidos || '-',
+                'Pedido Lynx': uniquePedidos || '-',
                 'Início do Processo': formatDateObj(minDate),
                 'Fim do Processo': formatDateObj(maxDate),
                 'Total Vendido': totalVendida,
@@ -650,7 +650,7 @@ export default function OrdersTimelineTab({ filters }) {
             const wsSummary = XLSX.utils.json_to_sheet(summaryData);
             wsSummary['!cols'] = [
                 { wch: 30 }, // PC / Grupo
-                { wch: 25 }, // Pedido MetalFisa
+                { wch: 25 }, // Pedido Lynx
                 { wch: 22 }, // Início do Processo
                 { wch: 22 }, // Fim do Processo
                 { wch: 15 }, // Total Vendido
@@ -719,7 +719,7 @@ export default function OrdersTimelineTab({ filters }) {
         setSelectedEmailTarget({ type, name: targetName, email: emailAddress, rawNode: node });
         setEmailTo([emailAddress || '']);
         setEmailSubject(`Cronograma de Entrega / Produção - ${targetName}`);
-        setEmailMessage(`Prezado Cliente,\n\nSegue em anexo o cronograma de entrega e progresso de produção dos seus pedidos na MetalFisa.\n\nQualquer dúvida, estamos à disposição.\n\nAtenciosamente,\nPlanejamento de Produção - MetalFisa`);
+        setEmailMessage(`Prezado Cliente,\n\nSegue em anexo o cronograma de entrega e progresso de produção dos seus pedidos na Lynx.\n\nQualquer dúvida, estamos à disposição.\n\nAtenciosamente,\nPlanejamento de Produção - Lynx`);
         setEmailModalOpen(true);
     };
 
@@ -1091,8 +1091,7 @@ export default function OrdersTimelineTab({ filters }) {
                                                             <Folder className="w-3.5 h-3.5" /> Pedido: {p.pedido}
                                                         </h4>
                                                         <div className="pl-4 flex flex-col gap-4">
-                                                            {p.itens.map(item => (
-                                                                <div key={item.item} className="grid grid-cols-1 md:grid-cols-12 items-center gap-4 border-b border-gray-50 pb-3 last:border-b-0 last:pb-0">
+                                                            {p.itens.map((item, idx) => (<div key={`${item.item}-${idx}`} className="grid grid-cols-1 md:grid-cols-12 items-center gap-4 border-b border-gray-50 pb-3 last:border-b-0 last:pb-0">
                                                                     <div className="md:col-span-4 flex flex-col gap-0.5">
                                                                         <span className="text-xs font-bold text-gray-800">{item.produto}</span>
                                                                         <span className="text-xs text-gray-500 truncate max-w-sm" title={item.descricao}>{item.descricao}</span>
@@ -1110,8 +1109,7 @@ export default function OrdersTimelineTab({ filters }) {
                                                     </div>
                                                 ))
                                             ) : (
-                                                node.itens.map(item => (
-                                                    <div key={item.item} className="grid grid-cols-1 md:grid-cols-12 items-center gap-4 p-4 hover:bg-gray-50/50 transition-colors">
+                                                node.itens.map((item, idx) => (<div key={`${item.item}-${idx}`} className="grid grid-cols-1 md:grid-cols-12 items-center gap-4 p-4 hover:bg-gray-50/50 transition-colors">
                                                         <div className="md:col-span-4 flex flex-col gap-0.5">
                                                             <span className="text-xs font-bold text-gray-800">{item.produto}</span>
                                                             <span className="text-xs text-gray-500 truncate max-w-sm" title={item.descricao}>{item.descricao}</span>

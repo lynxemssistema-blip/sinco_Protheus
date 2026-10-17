@@ -170,7 +170,7 @@ const MaterialRequirementsTab = ({ setPageBlocking = () => {} }) => {
                                 <button
                                     onClick={handleExportPdf}
                                     disabled={!!exporting || loading}
-                                    title="Exportar PDF (A4 deitado, padrão MetalFisa)"
+                                    title="Exportar PDF (A4 deitado, padrão Lynx)"
                                     className="bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg font-medium shadow-sm transition-colors flex items-center gap-2 disabled:opacity-60"
                                 >
                                     {exporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}

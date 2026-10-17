@@ -252,7 +252,7 @@ const CurriculosAnalyzer = () => {
                         <Users className="w-7 h-7 text-indigo-600" />
                         Análise de Currículos com IA
                     </h1>
-                    <p className="text-slate-500 text-sm mt-1">Automatize a triagem e avaliação de candidatos para os cargos da MetalFisa.</p>
+                    <p className="text-slate-500 text-sm mt-1">Automatize a triagem e avaliação de candidatos para os cargos da Lynx.</p>
                 </div>
                 <button 
                     onClick={() => setIsUploadModalOpen(true)}

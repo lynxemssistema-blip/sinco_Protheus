@@ -4,6 +4,7 @@ import autoTable from 'jspdf-autotable';
 import { PDFDocument } from 'pdf-lib';
 import { logoBase64 } from './metalfisaLogoBase64';
 import api, { getProductDocs } from './api';
+import { getCompanyShortName } from './companyBranding';
 
 const BLUE = [30, 58, 95];
 const ML = 10;
@@ -17,7 +18,7 @@ const STATUS_LABEL = {
 };
 
 /**
- * Cabeçalho Padrão MetalFisa
+ * Cabeçalho Padrão Lynx
  */
 const drawHeader = (doc, pageWidth, meta) => {
     const hY = 6;
@@ -48,7 +49,7 @@ const drawHeader = (doc, pageWidth, meta) => {
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(...BLUE);
-        doc.text('METALFISA', ML + 4, hY + 13);
+        doc.text(getCompanyShortName(), ML + 4, hY + 13);
     }
 
     // Título central
@@ -87,7 +88,7 @@ const drawHeader = (doc, pageWidth, meta) => {
 };
 
 /**
- * Rodapé Padrão MetalFisa
+ * Rodapé Padrão Lynx
  */
 const drawFooters = (doc, pageWidth) => {
     const pageCount = doc.internal.getNumberOfPages();
@@ -97,7 +98,7 @@ const drawFooters = (doc, pageWidth) => {
         doc.setFontSize(7.5);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(140, 140, 140);
-        doc.text('MetalFisa System — Gestão Integrada de Produção & PCP', ML, pageH - 4.5);
+        doc.text('Lynx System — Gestão Integrada de Produção & PCP', ML, pageH - 4.5);
         doc.text(`Página ${i} de ${pageCount}`, pageWidth - MR, pageH - 4.5, { align: 'right' });
     }
 };
@@ -265,7 +266,7 @@ export const generatePendenciasReportPdf = async ({
                     if (resDrawing?.data) {
                         const mergedDoc = await PDFDocument.create();
 
-                        // 1. Relatório de Pendências MetalFisa
+                        // 1. Relatório de Pendências Lynx
                         const relDoc = await PDFDocument.load(relatorioPdfBytes);
                         const relPages = await mergedDoc.copyPages(relDoc, relDoc.getPageIndices());
                         relPages.forEach(p => mergedDoc.addPage(p));

@@ -45,7 +45,7 @@ async function queryPostgres(sql, params = []) {
 }
 
 /**
- * Execute a query on MySQL (App MetalFisa)
+ * Execute a query on MySQL (App Lynx)
  * @param {string} sql - SQL query (SELECT only)
  * @param {Array} params - Query parameters
  * @returns {Promise<Object>} { rows, rowCount, fields }

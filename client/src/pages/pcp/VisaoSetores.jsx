@@ -30,7 +30,7 @@ const fmtFull = (iso) => {
     } catch { return iso; }
 };
 
-const ProgressBar = ({ value, color = '#3b82f6' }) => (
+const ProgressBar = ({ value, color = '#425750' }) => (
     <div className="flex flex-col items-center gap-1 w-full">
         <div className="w-full max-w-[100px] h-1.5 bg-slate-200 rounded-full overflow-hidden">
             <div
@@ -100,7 +100,7 @@ export default function VisaoSetores() {
         data_inicio: '', data_fim: '',
         status: '', apenas_pendentes: true,
         agrupamento: 'pedido'
-    }, '@metalfisa:visao_setores_filters');
+    }, '@lynxems:visao_setores_filters');
 
     // Carregamento contínuo em lotes (sem limites)
     const load = useCallback(async () => {
@@ -324,7 +324,7 @@ export default function VisaoSetores() {
         try {
             const payload = { filters, tipo, canal: notifyCanal };
             if (tipo === 'me') {
-                const meuUserStr = localStorage.getItem('@metalfisa:user');
+                const meuUserStr = localStorage.getItem('@lynxems:user');
                 if (meuUserStr) {
                     const u = JSON.parse(meuUserStr);
                     payload.telefone = u.telefone;
@@ -431,7 +431,7 @@ export default function VisaoSetores() {
                                             className="text-left px-3 py-2.5 rounded-lg border border-slate-200 hover:border-blue-400 hover:bg-slate-50 transition-colors flex items-center justify-between text-xs font-semibold text-slate-700 cursor-pointer"
                                         >
                                             <div className="flex items-center gap-2 truncate">
-                                                <div className="w-2.5 h-2.5 rounded-full flex-none" style={{ backgroundColor: setor.cor || '#3b82f6' }} />
+                                                <div className="w-2.5 h-2.5 rounded-full flex-none" style={{ backgroundColor: setor.cor || '#425750' }} />
                                                 <span className="truncate">{setor.nome}</span>
                                             </div>
                                             <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded font-mono">

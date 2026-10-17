@@ -621,7 +621,7 @@ const VisaoGerencialProdutos = () => {
                                                 if (name.includes('Restrição')) color = '#ef4444';
                                                 else if (name.includes('Revisão')) color = '#eab308';
                                                 else if (name.includes('Novo')) color = '#14b8a6';
-                                                else if (name === 'PCP (Com OP)') color = '#3b82f6';
+                                                else if (name === 'PCP (Com OP)') color = '#425750';
                                                 else if (name.includes('Sem OP')) color = '#f97316';
                                                 return <Cell key={`pie-cell-${index}`} fill={color} />;
                                             })}

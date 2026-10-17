@@ -298,7 +298,7 @@ export default function LynxConfigTab() {
         setMessages(prev => [...prev, { id: thinkMsgId, role: 'thinking', steps: [] }]);
 
         try {
-            const token = localStorage.getItem('@MetalFisa:token') || '';
+            const token = localStorage.getItem('@Lynx:token') || '';
             const response = await fetch('/api/hermes/chat-stream', {
                 method: 'POST',
                 headers: {
@@ -1112,7 +1112,7 @@ export default function LynxConfigTab() {
                                             value={taskForm.alerta_email}
                                             onChange={(e) => setTaskForm(t => ({ ...t, alerta_email: e.target.value }))}
                                             className="w-full p-2 border border-slate-200 rounded-lg text-xs text-slate-700"
-                                            placeholder="exemplo@metalfisa.com.br"
+                                            placeholder="exemplo@lynxems.com.br"
                                         />
                                     </div>
                                     <div>

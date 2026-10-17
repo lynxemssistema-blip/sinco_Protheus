@@ -249,114 +249,131 @@ async function explodirOrdemProducao({
     console.log(`⚙️ [OP EXPLOSION ENGINE] Iniciando explosão completa para OP ${cleanOp} | Produto: ${cleanProd} | Quantidade: ${opQty}`);
 
     // Limpa empenhos e operações pré-existentes da OP principal e de suas sub-OPs (idempotência)
-    const opPrefix = cleanOp.length > 3 ? cleanOp.slice(0, -3) : cleanOp;
-    const baseOpPattern = `${opPrefix}%`;
+    const baseOpPattern = `${cleanOp}%`;
     await client.query('DELETE FROM erp_ordens_producao_materiais WHERE numero_op LIKE ?', [baseOpPattern]);
     await client.query('DELETE FROM sd4010 WHERE d4_op LIKE ?', [baseOpPattern]);
     await client.query('DELETE FROM erp_ordens_producao_operacoes WHERE numero_op LIKE ?', [baseOpPattern]);
+    await client.query('DELETE FROM sh6010 WHERE h6_op LIKE ?', [baseOpPattern]);
     await client.query('DELETE FROM erp_ordens_producao WHERE op_pai = ?', [cleanOp]);
     await client.query('DELETE FROM sc2010 WHERE c2_op LIKE ? AND c2_sequen > "001"', [baseOpPattern]);
 
     const generatedSubOps = [];
     let subOpSeq = 1;
 
-    // Fila recursiva para processar árvore de produto
-    async function processarEstruturaRecursiva(parentCode, parentOpNum, parentMultiplier, currentLevel) {
+    // Fila recursiva para processar árvore de produto (todos os níveis e subníveis)
+    async function processarEstruturaRecursiva(parentCode, parentOpNum, parentMultiplier, currentLevel, visitedSet = new Set()) {
         if (currentLevel > 10) return; // Limite de segurança de recursão
+
+        const currentVisited = new Set(visitedSet);
+        currentVisited.add(parentCode);
 
         const bom = await fetchProductBom(parentCode, client);
         if (!bom || bom.length === 0) return;
 
         for (const item of bom) {
+            // Identificação de auto-referência direta (ex: MT2-0003 consome MT2-0003 como matéria-prima base)
+            const isSelfReference = (item.componente === parentCode);
+            // Prevenção de loop cíclico ancestral (se já foi visitado acima na árvore, exceto auto-referência direta de 1 nível)
+            const isAncestorCycle = currentVisited.has(item.componente) && !isSelfReference;
+
+            if (isAncestorCycle) {
+                console.warn(`[OP Explosion] Referência cíclica ancestral ignorada: ${parentCode} -> ${item.componente}`);
+                continue;
+            }
+
             const fatorPerda = 1 + (item.perda_percentual / 100);
             const qtdNecessaria = item.qtd_base * parentMultiplier * fatorPerda;
-            const isManufactured = (item.tipo === 'PI' || item.tipo === 'PA');
 
             let subOpParaItem = null;
 
-            // Se for semiacabado fabricado, verificar se possui estrutura filha e gerar Sub-OP
-            if (isManufactured) {
+            // Busca se o componente possui sub-estrutura técnica (BOM em qualquer nível)
+            // Se for auto-referência (insumo homônimo), ele NÃO gera outra Sub-OP para si mesmo (evita loop infinito de OPs)
+            let hasChildren = false;
+            let isManufactured = false;
+
+            if (!isSelfReference) {
                 const subBom = await fetchProductBom(item.componente, client);
-                if (subBom && subBom.length > 0) {
-                    subOpSeq += 1;
-                    const subSeqStr = String(subOpSeq).padStart(3, '0');
-                    // Numeração de sub-op padrão Protheus: base da OP + item + sequência (ex: 00680914002 ou 00680901A002)
-                    const baseOp = opPrefix;
-                    subOpParaItem = `${baseOp}${subSeqStr}`;
+                hasChildren = subBom && subBom.length > 0;
+                isManufactured = hasChildren || item.tipo === 'PI' || item.tipo === 'PA' || item.tipo === 'SL';
+            }
+            if (isManufactured && hasChildren) {
+                subOpSeq += 1;
+                const subSeqStr = String(subOpSeq).padStart(3, '0');
+                // Numeração de sub-op padrão Protheus: base da OP + sequência (ex: 00000101002)
+                subOpParaItem = `${cleanOp}${subSeqStr}`;
 
-                    // Inserir registro de Sub-OP em erp_ordens_producao
-                    try {
-                        await client.query(`
-                            INSERT INTO erp_ordens_producao (
-                                numero_op, produto_codigo, quantidade_planejada, quantidade_produzida,
-                                quantidade_perdida, pedido_venda, item_pedido, data_emissao,
-                                data_inicio_prevista, data_fim_prevista, prioridade, status,
-                                op_pai, is_sub_op, nivel, observacoes
-                            ) VALUES (?, ?, ?, 0, 0, ?, ?, CURRENT_DATE, ?, ?, 5, 'aberta', ?, 1, ?, ?)
-                            ON DUPLICATE KEY UPDATE 
-                                quantidade_planejada = VALUES(quantidade_planejada),
-                                op_pai = VALUES(op_pai),
-                                is_sub_op = 1
-                        `, [
-                            subOpParaItem,
-                            item.componente,
-                            qtdNecessaria,
-                            pedido_venda,
-                            item_pedido,
-                            data_inicio,
-                            data_fim,
-                            parentOpNum,
-                            currentLevel,
-                            `Sub-OP gerada para componente ${item.componente} da OP Pai ${cleanOp}`
-                        ]);
+                // Inserir registro de Sub-OP em erp_ordens_producao
+                try {
+                    await client.query(`
+                        INSERT INTO erp_ordens_producao (
+                            numero_op, produto_codigo, quantidade_planejada, quantidade_produzida,
+                            quantidade_perdida, pedido_venda, item_pedido, data_emissao,
+                            data_inicio_prevista, data_fim_prevista, prioridade, status,
+                            op_pai, is_sub_op, nivel, observacoes
+                        ) VALUES (?, ?, ?, 0, 0, ?, ?, CURRENT_DATE, ?, ?, 5, 'aberta', ?, 1, ?, ?)
+                        ON DUPLICATE KEY UPDATE 
+                            quantidade_planejada = VALUES(quantidade_planejada),
+                            op_pai = VALUES(op_pai),
+                            is_sub_op = 1
+                    `, [
+                        subOpParaItem,
+                        item.componente,
+                        qtdNecessaria,
+                        pedido_venda,
+                        item_pedido,
+                        data_inicio,
+                        data_fim,
+                        parentOpNum,
+                        currentLevel,
+                        `Sub-OP nível ${currentLevel} para ${item.componente} da OP ${cleanOp}`
+                    ]);
 
-                        // Inserir espelho Protheus em sc2010
-                        await client.query(`
-                            INSERT INTO sc2010 (
-                                c2_filial, c2_num, c2_item, c2_sequen, c2_produto,
-                                c2_local, c2_quant, c2_um, c2_datpri, c2_datprf,
-                                c2_obs, c2_emissao, c2_prior, c2_quje, c2_status,
-                                c2_perda, c2_roteiro, c2_recurso, c2_pedido, c2_itempv,
-                                c2_tpop, c2_op, d_e_l_e_t_
-                            ) VALUES (
-                                '0101', ?, ?, ?, ?,
-                                '01', ?, 'UN', ?, ?,
-                                ?, DATE_FORMAT(CURRENT_DATE, '%Y%m%d'), '500', 0, 'P',
-                                0, '01', '', ?, ?,
-                                'F', ?, ''
-                            ) ON DUPLICATE KEY UPDATE
-                                c2_quant = VALUES(c2_quant),
-                                c2_status = VALUES(c2_status)
-                        `, [
-                            subOpParaItem.substring(0, 6),
-                            subOpParaItem.slice(6, -3),
-                            subSeqStr,
-                            item.componente,
-                            qtdNecessaria,
-                            data_inicio ? String(data_inicio).replace(/-/g, '') : '',
-                            data_fim ? String(data_fim).replace(/-/g, '') : '',
-                            `Sub-OP para ${item.componente}`,
-                            pedido_venda || '',
-                            item_pedido || '',
-                            subOpParaItem
-                        ]);
+                    // Inserir espelho Protheus em sc2010
+                    await client.query(`
+                        INSERT INTO sc2010 (
+                            c2_filial, c2_num, c2_item, c2_sequen, c2_produto,
+                            c2_local, c2_quant, c2_um, c2_datpri, c2_datprf,
+                            c2_obs, c2_emissao, c2_prior, c2_quje, c2_status,
+                            c2_perda, c2_roteiro, c2_recurso, c2_pedido, c2_itempv,
+                            c2_tpop, c2_op, d_e_l_e_t_, IdEmpresa
+                        ) VALUES (
+                            '0101', ?, ?, ?, ?,
+                            '01', ?, 'UN', ?, ?,
+                            ?, DATE_FORMAT(CURRENT_DATE, '%Y%m%d'), '500', 0, 'P',
+                            0, '01', '', ?, ?,
+                            'F', ?, '', 1
+                        ) ON DUPLICATE KEY UPDATE
+                            c2_quant = VALUES(c2_quant),
+                            c2_status = VALUES(c2_status)
+                    `, [
+                        cleanOp.substring(0, 6),
+                        cleanOp.slice(6),
+                        subSeqStr,
+                        item.componente,
+                        qtdNecessaria,
+                        data_inicio ? String(data_inicio).replace(/-/g, '') : '',
+                        data_fim ? String(data_fim).replace(/-/g, '') : '',
+                        `Sub-OP nível ${currentLevel} para ${item.componente}`,
+                        pedido_venda || '',
+                        item_pedido || '',
+                        subOpParaItem
+                    ]);
 
-                        generatedSubOps.push({
-                            numero_op: subOpParaItem,
-                            produto_codigo: item.componente,
-                            quantidade: qtdNecessaria,
-                            op_pai: parentOpNum,
-                            nivel: currentLevel
-                        });
+                    generatedSubOps.push({
+                        numero_op: subOpParaItem,
+                        produto_codigo: item.componente,
+                        quantidade: qtdNecessaria,
+                        op_pai: parentOpNum,
+                        nivel: currentLevel
+                    });
 
-                        // Instancia operações da Sub-OP
-                        await instanciarOperacoesDaOp(subOpParaItem, item.componente, qtdNecessaria, client);
+                    // Instancia todas as operações do roteiro da Sub-OP no MySQL e SH6010
+                    await instanciarOperacoesDaOp(subOpParaItem, item.componente, qtdNecessaria, client);
 
-                        // Continua a explosão recursiva para os componentes da Sub-OP
-                        await processarEstruturaRecursiva(item.componente, subOpParaItem, qtdNecessaria, currentLevel + 1);
-                    } catch (subErr) {
-                        console.warn(`[OP Explosion] Aviso ao criar Sub-OP ${subOpParaItem}:`, subErr.message);
-                    }
+                    // Continua a explosão recursiva para os componentes do próximo nível
+                    await processarEstruturaRecursiva(item.componente, subOpParaItem, qtdNecessaria, currentLevel + 1, currentVisited);
+                } catch (subErr) {
+                    console.warn(`[OP Explosion] Aviso ao criar Sub-OP ${subOpParaItem}:`, subErr.message);
                 }
             }
 
@@ -375,7 +392,7 @@ async function explodirOrdemProducao({
                 item.tipo,
                 item.qtd_base,
                 qtdNecessaria,
-                qtdNecessaria, // Inicialmente empenha 100% da necessidade
+                qtdNecessaria,
                 item.unidade,
                 currentLevel,
                 subOpParaItem
@@ -387,11 +404,11 @@ async function explodirOrdemProducao({
                     INSERT INTO sd4010 (
                         d4_filial, d4_cod, d4_local, d4_op, d4_data,
                         d4_qtdeori, d4_quant, d4_trt, d4_oporig, d4_produto,
-                        d4_roteiro, d4_operac, d4_qtneces, d_e_l_e_t_
+                        d4_roteiro, d4_operac, d4_qtneces, d_e_l_e_t_, IdEmpresa
                     ) VALUES (
                         '0101', ?, '01', ?, DATE_FORMAT(CURRENT_DATE, '%Y%m%d'),
                         ?, ?, '', '', ?,
-                        '01', '', ?, ''
+                        '01', '', ?, '', 1
                     )
                 `, [
                     item.componente,
@@ -426,8 +443,8 @@ async function explodirOrdemProducao({
 
                 if (upSb2.affectedRows === 0) {
                     await client.query(`
-                        INSERT INTO sb2010 (b2_filial, b2_cod, b2_local, b2_qatu, b2_qemp, b2_reserva, b2_qpedven, d_e_l_e_t_)
-                        VALUES ('0101', ?, '01', 0, ?, 0, 0, '')
+                        INSERT INTO sb2010 (b2_filial, b2_cod, b2_local, b2_qatu, b2_qemp, b2_reserva, b2_qpedven, d_e_l_e_t_, IdEmpresa)
+                        VALUES ('0101', ?, '01', 0, ?, 0, 0, '', 1)
                     `, [item.componente, qtdNecessaria]);
                 }
             } catch (sb2Err) {
@@ -436,7 +453,7 @@ async function explodirOrdemProducao({
         }
     }
 
-    // Função auxiliar para instanciar roteiro de operações
+    // Função auxiliar para instanciar roteiro de operações (em erp_ordens_producao_operacoes E sh6010)
     async function instanciarOperacoesDaOp(targetOpNum, targetProduct, targetQty, sqlClient) {
         const routing = await fetchProductRouting(targetProduct, sqlClient);
         if (!routing || routing.length === 0) return 0;
@@ -447,6 +464,7 @@ async function explodirOrdemProducao({
             const tempoUnit = op.tempo_operacao_minutos;
             const tempoTotal = setup + (targetQty * tempoUnit);
 
+            // 1. Tabela nativa ERP
             await sqlClient.query(`
                 INSERT INTO erp_ordens_producao_operacoes (
                     numero_op, produto_codigo, operacao_seq, codigo_recurso,
@@ -465,6 +483,31 @@ async function explodirOrdemProducao({
                 tempoTotal,
                 targetQty
             ]);
+
+            // 2. Espelho Protheus SH6010
+            try {
+                await sqlClient.query(`
+                    INSERT INTO sh6010 (
+                        h6_filial, h6_op, h6_produto, h6_operac, h6_recurso,
+                        h6_dataini, h6_datafin, h6_qtdprod, h6_qtdperd, h6_tempo,
+                        h6_status, d_e_l_e_t_, IdEmpresa
+                    ) VALUES (
+                        '0101', ?, ?, ?, ?,
+                        DATE_FORMAT(CURRENT_DATE, '%Y%m%d'), DATE_FORMAT(CURRENT_DATE, '%Y%m%d'),
+                        0, 0, ?,
+                        'P', '', 1
+                    )
+                `, [
+                    targetOpNum,
+                    targetProduct,
+                    op.operacao_seq,
+                    op.codigo_recurso,
+                    tempoTotal
+                ]);
+            } catch (sh6Err) {
+                console.warn(`[OP Explosion] Aviso ao gravar SH6010 para OP ${targetOpNum} Op ${op.operacao_seq}:`, sh6Err.message);
+            }
+
             opsInserted++;
         }
         return opsInserted;

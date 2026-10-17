@@ -543,8 +543,8 @@ const METRICAS = [
 ];
 
 const AMBIENTES = [
-    { label: 'Intranet (Rede Local)', url: 'http://192.168.1.77:3001', status: 'Operacional' },
-    { label: 'Módulo SINCO Web', url: 'https://sincometal.metalfisa.com.br', status: 'Operacional' },
+    { label: 'Intranet (Rede Local)', url: 'http://localhost:3001', status: 'Operacional' },
+    { label: 'Módulo SINCO Web', url: 'https://lynxems.com.br', status: 'Operacional' },
     { label: 'Painel TV (Chão de Fábrica)', url: '/painel-producao', status: 'Operacional' },
 ];
 
@@ -1210,7 +1210,7 @@ export default function RelatorioEntrega({ embedded = false }) {
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Relatorio_Tecnico_Entrega_MetalFisa_ERP_v2026.2</title>
+                <title>Relatorio_Tecnico_Entrega_Lynx_ERP_v2026.2</title>
                 <meta charset="utf-8" />
                 <script src="https://cdn.tailwindcss.com"></script>
                 <style>
@@ -1261,7 +1261,7 @@ export default function RelatorioEntrega({ embedded = false }) {
                             <td style="padding: 10px 0 0 0;">
                                 <div style="border-top: 1.5px solid #334155; padding-top: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 8.5px; color: #475569;">
                                     <div>
-                                        <span style="font-weight: 700; color: #0f172a;">MetalFisa ERP</span> · ${SYSTEM_VERSION} · Relatório Técnico Oficial
+                                        <span style="font-weight: 700; color: #0f172a;">Lynx ERP</span> · ${SYSTEM_VERSION} · Relatório Técnico Oficial
                                     </div>
                                     <div style="display: flex; align-items: center; gap: 20px;">
                                         <div style="display: flex; align-items: center; gap: 5px;">
@@ -1301,7 +1301,7 @@ export default function RelatorioEntrega({ embedded = false }) {
             {signModal && (
                 <ElectronicSignatureModal
                     role={signModal === 'fornecedor' ? 'Responsável Técnico' : 'Responsável pelo Recebimento'}
-                    party={signModal === 'fornecedor' ? 'LynxEMS Sistemas' : 'Metalfisa Indústria'}
+                    party={signModal === 'fornecedor' ? 'LynxEMS Sistemas' : 'Lynx Indústria'}
                     onConfirm={(data) => handleConfirmSign(signModal, data)}
                     onClose={() => setSignModal(null)}
                 />
@@ -1329,7 +1329,7 @@ export default function RelatorioEntrega({ embedded = false }) {
 
                 <div id="relatorio-entrega-printable-area" className="space-y-6">
 
-                    {/* ═══ CABEÇALHO PADRÃO OFICIAL METALFISA ════════════════════════ */}
+                    {/* ═══ CABEÇALHO PADRÃO OFICIAL LYNX ════════════════════════ */}
                     <div id="relatorio-header-oficial" className="border-2 border-slate-800 rounded-xl overflow-hidden bg-white shadow-sm break-inside-avoid">
                         <div className="grid grid-cols-12 divide-x-2 divide-slate-800 bg-slate-50">
                             {/* Logo */}
@@ -1337,11 +1337,11 @@ export default function RelatorioEntrega({ embedded = false }) {
                                 {logoBase64 ? (
                                     <img 
                                         src={logoBase64} 
-                                        alt="Logo MetalFisa" 
+                                        alt="Logo Lynx" 
                                         className="h-12 object-contain max-w-full"
                                     />
                                 ) : (
-                                    <div className="font-extrabold text-xl text-slate-900 tracking-tight">METALFISA</div>
+                                    <div className="font-extrabold text-xl text-slate-900 tracking-tight">LYNX</div>
                                 )}
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter mt-1">
                                     Estruturas Metálicas
@@ -1357,7 +1357,7 @@ export default function RelatorioEntrega({ embedded = false }) {
                                     Relatório de Entrega & Homologação
                                 </h1>
                                 <p className="text-[10px] text-slate-600 font-semibold mt-0.5">
-                                    MetalFisa ERP — Sistema Integrado de Gestão Industrial
+                                    Lynx ERP — Sistema Integrado de Gestão Industrial
                                 </p>
                             </div>
 
@@ -1365,7 +1365,7 @@ export default function RelatorioEntrega({ embedded = false }) {
                             <div className="col-span-3 p-2.5 text-[10px] flex flex-col justify-center space-y-1 bg-slate-50">
                                 <div className="flex justify-between">
                                     <span className="text-slate-500 font-semibold">Cliente:</span>
-                                    <span className="font-bold text-slate-900">Metalfisa Indústria</span>
+                                    <span className="font-bold text-slate-900">Lynx Indústria</span>
                                 </div>
                                 <div className="flex justify-between">
                                     <span className="text-slate-500 font-semibold">Fornecedor:</span>
@@ -1389,8 +1389,8 @@ export default function RelatorioEntrega({ embedded = false }) {
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 print:shadow-none">
                     <SectionHeader icon={Star} title="Sumário Executivo" />
                     <p className="text-sm text-slate-600 leading-relaxed">
-                        Este documento certifica a entrega do <strong>MetalFisa ERP</strong>, sistema integrado de gestão industrial
-                        desenvolvido sob medida para a Metalfisa. O sistema cobre todo o ciclo operacional da empresa — desde
+                        Este documento certifica a entrega do <strong>Lynx ERP</strong>, sistema integrado de gestão industrial
+                        desenvolvido sob medida para a Lynx. O sistema cobre todo o ciclo operacional da empresa — desde
                         a entrada de pedidos até a expedição — integrando PCP, Produção, Engenharia, Qualidade, Logística,
                         Financeiro e RH em uma única plataforma web.
                     </p>
@@ -1566,10 +1566,10 @@ export default function RelatorioEntrega({ embedded = false }) {
                         </div>
 
                         <div className="grid sm:grid-cols-2 gap-3.5">
-                            {PERFIS_USUARIOS.map(item => {
+                            {PERFIS_USUARIOS.map((item, idx) => {
                                 const c = getColor(item.color);
                                 return (
-                                    <div key={item.codigo} className={`flex flex-col justify-between p-4 rounded-xl ring-1 ${c.ring} ${c.bg} break-inside-avoid shadow-sm hover:shadow-md transition-all`}>
+                                    <div key={`${item.codigo}-${idx}`} className={`flex flex-col justify-between p-4 rounded-xl ring-1 ${c.ring} ${c.bg} break-inside-avoid shadow-sm hover:shadow-md transition-all`}>
                                         <div>
                                             <div className="flex items-start justify-between gap-2 mb-2">
                                                 <div>
@@ -1689,7 +1689,7 @@ export default function RelatorioEntrega({ embedded = false }) {
                         />
                         <SignatureBlock
                             label="Cliente"
-                            organization="Metalfisa Indústria"
+                            organization="Lynx Indústria"
                             role="Responsável pelo Recebimento"
                             signatureData={signCliente}
                             onClickSign={() => setSignModal('cliente')}
@@ -1699,7 +1699,7 @@ export default function RelatorioEntrega({ embedded = false }) {
                     {/* Rodapé */}
                     <div id="relatorio-footer-oficial" className="mt-5 p-3.5 rounded-xl bg-slate-50 border border-slate-300 break-inside-avoid flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
                         <p className="text-slate-600 font-medium text-center sm:text-left">
-                            <strong className="text-slate-900">MetalFisa ERP</strong> · {SYSTEM_VERSION} · Entrega: {DELIVERY_DATE} · Desenvolvido por <strong className="text-slate-900">LynxEMS Sistemas</strong>
+                            <strong className="text-slate-900">Lynx ERP</strong> · {SYSTEM_VERSION} · Entrega: {DELIVERY_DATE} · Desenvolvido por <strong className="text-slate-900">LynxEMS Sistemas</strong>
                         </p>
                         <div className="flex items-center gap-4 text-[10px] uppercase font-bold text-slate-500 shrink-0">
                             <div className="flex items-center gap-1.5">

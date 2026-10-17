@@ -1,5 +1,5 @@
 const db = require('../db');
-const nodemailer = require('nodemailer');
+const { sendMail } = require('../services/mailService');
 
 async function forceSendDetailed() {
     try {
@@ -81,24 +81,9 @@ async function forceSendDetailed() {
             </div>
         `;
 
-        let transporter;
-        try {
-            transporter = nodemailer.createTransport({
-                host: 'smtp.task.com.br',
-                port: 587,
-                secure: false,
-                auth: {
-                    user: 'sincometal@metalfisa.com.br',
-                    pass: 'Pro1042@sm'
-                },
-                tls: { rejectUnauthorized: false }
-            });
-        } catch(e) {
-            console.error('[CRON ACUMULADO] Erro ao configurar nodemailer', e);
-        }
 
-        await transporter.sendMail({
-            from: '"MetalFisa ERP" <sincometal@metalfisa.com.br>',
+
+        await sendMail({
             to: 'edsonmanoel2012@gmail.com',
             subject: `📊 Detalhamento para Verificação - Faturamento (${periodBr})`,
             html: htmlContent

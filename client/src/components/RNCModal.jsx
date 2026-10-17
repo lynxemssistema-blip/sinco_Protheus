@@ -503,8 +503,8 @@ export default function RNCModal({ op, onClose }) {
                                         className="w-full border border-slate-200 rounded p-2 text-xs focus:border-blue-500"
                                     >
                                         <option value="">-- Selecione --</option>
-                                        {recursos.map(r => (
-                                            <option key={r.codigo} value={r.codigo}>{r.codigo} {r.descricao ? `- ${r.descricao}` : ''}</option>
+                                        {recursos.map((r, idx) => (
+                                            <option key={`${r.codigo}-${idx}`} value={r.codigo}>{r.codigo} {r.descricao ? `- ${r.descricao}` : ''}</option>
                                         ))}
                                     </select>
                                 </div>
