@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors, ArrowUp, ArrowDown, Award, Droplets, Boxes } from 'lucide-react';
+import { Search, Filter, Calendar, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Package, Layers, FileText, StickyNote, List, AlignJustify, Image as ImageIcon, FileSpreadsheet, TrendingUp, Loader2, Bot, Settings, Printer, Factory, ClipboardList, MoreVertical, Scissors, ArrowUp, ArrowDown, Award, Boxes } from 'lucide-react';
 import CorteForecastModal from './CorteForecastModal';
 import { getPedidos, getItensPedido, getPedidoPdfData, getReportDownloadUrl, getPedidosFlat, getProdutos, getSalesPlanningReportData, updateOrderItemTag, getSalesNotes, api, getFileUrl } from '../services/api';
 import jsPDFLib from 'jspdf';
@@ -130,7 +130,6 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     const [reportSelectedItems, setReportSelectedItems] = useState(null);
     const [isGeneratingExcel, setIsGeneratingExcel] = useState(false);
     const [downloadingPDF, setDownloadingPDF] = useState(false);
-    const [downloadingBicromat, setDownloadingBicromat] = useState(false);
     const [printingOrderId, setPrintingOrderId] = useState(null);
     const [priorityTarget, setPriorityTarget] = useState(null);
     const [bomStructureTarget, setBomStructureTarget] = useState(null); // { op, itemPv }
@@ -1260,35 +1259,6 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         }
     };
 
-    const handleDownloadBicromatizacao = async () => {
-        setDownloadingBicromat(true);
-        try {
-            const token = localStorage.getItem('@Lynx:token') || '';
-            const url = `/api/reports/vmi-bicromatizacao/excel?token=${encodeURIComponent(token)}`;
-            const response = await fetch(url, {
-                headers: token ? { Authorization: `Bearer ${token}` } : {}
-            });
-            if (!response.ok) {
-                let errMsg = `Erro ${response.status}`;
-                try {
-                    const errBody = await response.json();
-                    errMsg = errBody.error || errBody.message || errMsg;
-                } catch (_) {}
-                throw new Error(errMsg);
-            }
-            const blob = await response.blob();
-            const now = new Date();
-            const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
-            downloadBlob(blob, `Relatorio_Bicromatizacao_VMI_${stamp}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            toast.success('Relatório de Bicromatização baixado com sucesso!');
-        } catch (err) {
-            console.error('[Bicromatização] Erro ao gerar:', err);
-            toast.error(`Erro ao gerar relatório: ${err.message}`);
-        } finally {
-            setDownloadingBicromat(false);
-        }
-    };
-
     const handleOpenDocs = (code, name) => {
         setSelectedProductForDocs({ code, name });
         setIsDocsModalOpen(true);
@@ -1525,21 +1495,6 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
                     {/* View Mode Toggle & Top Action Buttons */}
                     <div className="flex gap-2 items-center">
-                        <button
-                            type="button"
-                            onClick={handleDownloadBicromatizacao}
-                            disabled={downloadingBicromat}
-                            title="Baixar Estudo de Demanda de Bicromatização & Zincagens VMI (Excel)"
-                            className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-300 transition-all shadow-sm disabled:opacity-50"
-                        >
-                            {downloadingBicromat ? (
-                                <Loader2 className="w-4 h-4 animate-spin text-amber-700" />
-                            ) : (
-                                <Droplets className="w-4 h-4 text-amber-600" />
-                            )}
-                            <span className="hidden md:inline">Prev-Bicromatização</span>
-                        </button>
-
                         <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx,.xls" onChange={handleImportPCPFile} />
                         <button
                             onClick={() => fileInputRef.current?.click()}

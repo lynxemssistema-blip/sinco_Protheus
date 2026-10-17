@@ -321,12 +321,10 @@ router.post('/recuperar-senha', async (req, res) => {
 
 // Middleware for protected routes (exporting for use in other files if needed)
 const authenticateToken = (req, res, next) => {
-    // Bypass auth for document visualization, VMI model download, WabTec Excel export, and webhooks
+    // Bypass auth for document visualization and webhooks
     if (
         req.originalUrl.startsWith('/api/docs/view') || 
         req.path === '/docs/view' ||
-        req.originalUrl.startsWith('/api/vmi/modelo') ||
-        req.originalUrl.startsWith('/api/wabtec/exportar-excel') ||
         req.originalUrl.startsWith('/api/webhook')
     ) {
         return next();

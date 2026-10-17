@@ -3190,16 +3190,4 @@ router.get('/sales-planning/master-sheet', async (req, res) => {
     }
 });
 
-// GET /api/reports/vmi-bicromatizacao/excel
-router.get('/vmi-bicromatizacao/excel', async (req, res) => {
-    try {
-        const { generateVmiBicromatReport } = require('../scripts/gerar_relatorio_bicromatizacao_vmi');
-        const result = await generateVmiBicromatReport();
-        res.download(result.downloadsPath, path.basename(result.downloadsPath));
-    } catch (error) {
-        console.error('[VMI Bicromatizacao] Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
 module.exports = router;
