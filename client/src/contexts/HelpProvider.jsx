@@ -142,7 +142,6 @@ export function HelpProvider({ children }) {
             { regex: /^\/fornecedor\/romaneio\/.+$/, key: '/fornecedor/romaneios' },
             { regex: /^\/producao\/op\/.+$/, key: '/producao/op' },
             { regex: /^\/portal-cliente\/tablet.*$/, key: '/portal-cliente/tablet' },
-            { regex: /^\/vmi\/criticos.*$/, key: '/vmi/criticos' },
             { regex: /^\/suprimentos\/espelho-nf.*$/, key: '/suprimentos/espelho-nf' },
         ];
 

@@ -297,7 +297,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
             const checkDesenhoProtheus = async () => {
                 setConsultandoDesenho(true);
                 try {
-                    const res = await api.get('/wabtec/consultar-desenho', {
+                    const res = await api.get('/produto-protheus/consultar-desenho', {
                         params: { desenho: desenhoConsultar }
                     });
                     if (isMounted) {
@@ -491,7 +491,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                 cliente_nome: isCadastroSinco ? clienteNome.trim() : (item?.cliente_nome || 'WABTEC BRASIL'),
                 is_sinco: isCadastroSinco
             };
-            const res = await api.post('/wabtec/vincular-produto-existente', payload);
+            const res = await api.post('/produto-protheus/vincular-produto-existente', payload);
             if (res.data?.success) {
                 toast.success(
                     `🎉 Código ${resultadoDesenho.codigo_protheus} vinculado com sucesso na tabela Produto x Cliente (SZ1010)!`,
@@ -573,7 +573,7 @@ export default function CriarProdutoProtheusModal({ isOpen, onClose, item, onSuc
                 cliente_nome: isCadastroSinco ? clienteNome.trim() : (item.cliente_nome || 'WABTEC BRASIL')
             };
 
-            const res = await api.post('/wabtec/criar-produto-protheus', payload);
+            const res = await api.post('/produto-protheus/criar-produto-protheus', payload);
             if (res.data.success) {
                 // Se for Solid Edge, persiste as preferências selecionadas no localStorage
                 if (isCadastroSinco) {

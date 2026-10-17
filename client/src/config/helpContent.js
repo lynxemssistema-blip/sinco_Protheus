@@ -3053,8 +3053,6 @@ export const HELP_CONTENT = {
     ]
   },
 
-  // ── Módulo WabTec (Importação e Estrutura) ──────────────────────────────────
-
   // ── Gestão de RNCs (Relatório de Não Conformidade) ───────────────────────────
   '/sgq/gestao-rncs': {
     category: 'SGQ',

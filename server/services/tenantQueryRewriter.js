@@ -17,7 +17,6 @@ const tenantTablesSet = new Set([
     'app_op_priorities', 'app_pedidos_inativos', 'app_pedido_itens_classificacao',
     'app_engineering_releases', 'app_engineering_bom_items', 'app_engineering_timesheets',
     'app_sgq_rncs', 'app_sgq_processos', 'app_sgq_nao_conformidades', 'app_sgq_cargos_funcoes',
-    'app_demanda_vmi', 'app_demanda_vmi_datas', 'app_demanda_vmi_lotes',
     'app_solicitacoes_almoxarifado', 'app_lotes_corte', 'app_lotes_corte_itens',
     'app_produto_ata', 'app_produto_imagens', 'app_produto_estados',
     'app_faturamento_solicitacoes', 'app_faturamento_solicitacao_itens',

@@ -11,7 +11,7 @@ import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import api, { getSincoArvore, getSincoArvoreCompleta, getSincoRestricoes, getSincoRestricoesSz0, createSincoRestricaoSz0, getSincoOperacoes, getSincoProduto, updateSincoProduto, updateSincoProductStructure, updateSincoRoteiro, updateSincoProdutoCliente, searchSincoProdutos, getProcessList, getClientes, getProductDocuments } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
-import CriarProdutoProtheusModal from '../../components/wabtec/CriarProdutoProtheusModal';
+import CriarProdutoProtheusModal from '../../components/sinco/CriarProdutoProtheusModal';
 import DocsModal from '../../components/DocsModal';
 import SincoComponenteModal from '../../components/sinco/SincoComponenteModal';
 import SincoNodeManager from '../../components/sinco/SincoNodeManager';

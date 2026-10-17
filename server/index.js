@@ -286,9 +286,6 @@ console.log('✅ [DEBUG] Rota /api/producao e /api/ind_pcp montadas.');
 // Romaneios Route
 app.use('/api/romaneios', require('./routes/romaneios'));
 
-// Engetron Route
-app.use('/api/engetron', require('./routes/engetron'));
-
 // Stock Route
 app.use('/api/stock', require('./routes/stock'));
 
@@ -358,6 +355,8 @@ app.use('/api/ata-viva', require('./routes/ataViva'));
 
 // Sinco Route (Ordem de Serviço)
 app.use('/api/sinco', require('./routes/sinco'));
+// Cadastro/vínculo de produto no Protheus (formulário SolidEdge)
+app.use('/api/produto-protheus', require('./routes/produtoProtheus'));
 app.use('/api/faturamento/pre-etiquetas', require('./routes/etiquetasPreLista'));
 
 // Sinco - Apontamento de Produção (OS)
@@ -374,17 +373,6 @@ app.use('/api/ai', require('./routes/ai'));
 
 // Protheus AI Study Catalog
 app.use('/api/protheus-study', require('./routes/protheusStudy'));
-
-// VMI — Vendor Managed Inventory
-app.use('/api/vmi', require('./routes/vmi'));
-app.use('/api/vmi-pedidos', require('./routes/vmiPedidos'));
-app.use('/api/vmi-criticos', require('./routes/vmiCriticos'));
-
-// WabTec — Escopos e Engenharia
-app.use('/api/wabtec', require('./routes/wabtec'));
-
-// WabTec — Estrutura de Datas (Solicitações / Forecast)
-app.use('/api/wabtec-datas', require('./routes/wabtec_datas'));
 
 // Expedição e Faturamento
 app.use('/api/faturamento', require('./routes/faturamento'));

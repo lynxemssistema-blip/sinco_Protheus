@@ -16,8 +16,7 @@ async function tenantMiddleware(req, res, next) {
         if (!req.user) {
             // Same public routes exempted in authenticateToken (opened via <a>/window.open, no auth header)
             const url = req.originalUrl || '';
-            if (url.startsWith('/api/docs/view') || url.startsWith('/api/vmi/modelo') ||
-                url.startsWith('/api/wabtec/exportar-excel') || url.startsWith('/api/webhook')) {
+            if (url.startsWith('/api/docs/view') || url.startsWith('/api/webhook')) {
                 return next();
             }
             return res.status(401).json({ error: 'Usuário não autenticado.' });
