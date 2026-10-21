@@ -18,7 +18,6 @@ import ProductImageModal from '../components/ProductImageModal';
 import EngineeringControlModal from '../components/EngineeringControlModal';
 import EngineeringPlanModal from '../components/EngineeringPlanModal';
 import PCPForecastModal from '../components/PCPForecastModal';
-import PCPMetalDrawer from '../components/PCPMetalDrawer';
 import InvoiceDetailsModal from '../components/InvoiceDetailsModal';
 import QuickDateEditModal from '../components/QuickDateEditModal';
 import EngineeringOrdersPrint from '../components/EngineeringOrdersPrint';
@@ -402,8 +401,6 @@ const EngineeringOrdersPage = () => {
     const [isGlobalReport, setIsGlobalReport] = useState(false);
     const [pcpForecastTarget, setPcpForecastTarget] = useState(null);
     const [downloadingPDF, setDownloadingPDF] = useState(false);
-    const [pcpmetalOpen, setPcpmetalOpen] = useState(false);
-    const [pcpmetalContext, setPcpmetalContext] = useState({});
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [invoiceModalItem, setInvoiceModalItem] = useState(null);
     // PCP Planned date modal
@@ -1658,7 +1655,49 @@ const EngineeringOrdersPage = () => {
                     isOpen={Boolean(pcpForecastTarget)}
                     onClose={() => setPcpForecastTarget(null)}
                     item={pcpForecastTarget}
-                    onSaveSuccess={() => fetchData()}
+                    onSaveSuccess={(newProgs, extraInfo = {}) => {
+                        const target = pcpForecastTarget;
+                        if (!target) return;
+                        const opFromExtra = extraInfo?.opGerada ? String(extraInfo.opGerada).trim() : null;
+                        const progWithOp = (newProgs || []).find(p => p.op_protheus && String(p.op_protheus).trim() !== '' && String(p.op_protheus).trim() !== '-');
+                        const opFromProgs = progWithOp?.op_protheus ? String(progWithOp.op_protheus).trim() : null;
+                        const existingTargetOp = (target.op_num_completa || target.op_num || target.op_protheus) ? String(target.op_num_completa || target.op_num || target.op_protheus).trim() : null;
+                        const resolvedOp = opFromExtra || opFromProgs || (existingTargetOp && existingTargetOp !== '-' ? existingTargetOp : null);
+
+                        let pcpDate = null;
+                        let pcpQtd = 0;
+                        if (newProgs && newProgs.length > 0) {
+                            pcpQtd = newProgs.reduce((sum, p) => sum + parseFloat(p.quantidade_pcp || 0), 0);
+                            const validProgs = newProgs.filter(p => p.data_entrega_pcp);
+                            if (validProgs.length > 0) {
+                                const sorted = [...validProgs].sort((a, b) => new Date(a.data_entrega_pcp) - new Date(b.data_entrega_pcp));
+                                pcpDate = sorted[0].data_entrega_pcp.split('T')[0];
+                            }
+                        }
+
+                        const cleanOp = resolvedOp ? String(resolvedOp).trim() : null;
+                        const targetItemSeq = extraInfo?.targetItem || target.item;
+                        const opPatch = cleanOp ? {
+                            op_num: cleanOp.length >= 6 ? cleanOp.substring(0, 6) : cleanOp,
+                            op_num_completa: cleanOp,
+                            visual_op: cleanOp,
+                            op_protheus: cleanOp,
+                            op_tipo: 'F',
+                            tem_op: true
+                        } : {};
+
+                        const newData = {
+                            pcp_delivery_forecast_date: pcpDate,
+                            pcp_delivery_forecast_qtd: pcpQtd,
+                            data_entrega_pcp: pcpDate,
+                            ...opPatch
+                        };
+
+                        setOrders(prev => prev.map(o => {
+                            const isTarget = o.pedido === target.pedido && (o.item === target.item || o.item === targetItemSeq);
+                            return isTarget ? { ...o, ...newData } : o;
+                        }));
+                    }}
                 />
             )}
             {selectedInvoice && invoiceModalItem && (
@@ -1675,13 +1714,6 @@ const EngineeringOrdersPage = () => {
                     onClose={() => setShowReportModal(false)}
                     globalFilters={filters}
                     isGlobal={isGlobalReport}
-                />
-            )}
-            {pcpmetalOpen && (
-                <PCPMetalDrawer
-                    isOpen={pcpmetalOpen}
-                    onClose={() => setPcpmetalOpen(false)}
-                    context={pcpmetalContext}
                 />
             )}
             {planModalTarget && (

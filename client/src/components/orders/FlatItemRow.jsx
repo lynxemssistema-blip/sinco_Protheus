@@ -3,12 +3,23 @@ import { Link } from 'react-router-dom';
 import {
     Calendar, FileText, Settings, Layers, Package,
     StickyNote, MoreVertical, Loader2, Truck,
-    Factory, ClipboardList, ImageIcon, FileSpreadsheet, AlertTriangle, Award, Boxes, Trash2
+    Factory, ClipboardList, ImageIcon, FileSpreadsheet, AlertTriangle, Award, Boxes, Trash2,
+    Bot, Scissors, Lock, Printer, History
 } from 'lucide-react';
 import ItemStatusBadge from './ItemStatusBadge';
 import { getFileUrl } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { BillingForecastInput } from './BillingForecastInput';
+import { getColumnWidthStyle } from './ColumnSettingsPanel';
+
+// Colunas com balão flutuante (tooltip) não cortam o conteúdo ao aplicar a largura salva pelo usuário
+const TOOLTIP_COLUMNS = new Set(['tipo', 'status', 'qtd_entreg']);
+
+const withCellWidth = (col, td) => {
+    const style = getColumnWidthStyle(col, !TOOLTIP_COLUMNS.has(col.key));
+    if (!td || !style) return td;
+    return React.cloneElement(td, { style: { ...(td.props.style || {}), ...style } });
+};
 
 /**
  * Memoized flat-view table row. Receives all data and callbacks as props.
@@ -51,6 +62,17 @@ const FlatItemRow = ({
     onOpenBomStructure,
     onOpenStructureStock,
     onExcluirOp,
+    // frações e lotes LPF
+    onSplitOp,
+    onUnifyOp,
+    onSmartPlanOp,
+    onOpenManageLot,
+    onRemoveFromLot,
+    onReprintLot,
+    onDissolveLot,
+    onReleaseProduction,
+    onCorteForecast,
+    onOpenHistorico,
     canEdit,
 }) => {
     const { user } = useAuth();
@@ -73,8 +95,11 @@ const FlatItemRow = ({
     };
     const tipoCfg = tipoConfig[item.status_tipo_item] || { label: 'PCP', bg: 'bg-gray-100 text-gray-700 border-gray-200' };
 
-    const menuKey = `flat-${item.pedido}-${item.item}`;
+    // Frações do mesmo item compartilham pedido/item: a linha é identificada pela fração
+    const rowKey = item.fraction_id ?? `${item.pedido}-${item.item}`;
+    const menuKey = `flat-${rowKey}`;
     const isMenuOpen = openActionMenu === menuKey;
+    const isFraction = !!item.is_fraction;
 
     const romaneios = item.romaneios || [];
     const totalRomaneio = romaneios.reduce((acc, r) => acc + Number(r.quantidade), 0);
@@ -104,16 +129,18 @@ const FlatItemRow = ({
 
     return (
         <tr
-            onClick={() => onSetActiveRow && onSetActiveRow(isActive ? null : `${item.pedido}-${item.item}`)}
+            onClick={() => onSetActiveRow && onSetActiveRow(isActive ? null : rowKey)}
             className={`transition-colors cursor-pointer border-b border-gray-50 last:border-0 ${
                 pColors
                     ? `${pColors.bg} ${pColors.hover} border-l-4 ${pColors.border} ring-1 ring-inset ${pColors.ring} shadow-sm`
-                    : parseFloat(item.qtd_faturar) <= 0
-                        ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80'
-                        : 'bg-white hover:bg-slate-50'
+                    : isFraction
+                        ? 'bg-amber-50/40 hover:bg-amber-100/50'
+                        : parseFloat(item.qtd_faturar) <= 0
+                            ? 'bg-green-50/40 hover:bg-green-100/50 opacity-80'
+                            : 'bg-white hover:bg-slate-50'
             } ${isActive ? '!bg-indigo-50/80 shadow-sm ring-1 ring-indigo-200' : (isSelected ? '!bg-blue-50' : '')}`}
         >
-{visibleColumns.map(col => {
+{visibleColumns.map(col => withCellWidth(col, (() => {
                 switch(col.key) {
                     case 'checkbox': return (
                         <td key={col.key} className="px-2 py-2 text-center sticky left-0 z-10 bg-inherit min-w-[40px] max-w-[40px] w-[40px]" onClick={(e) => e.stopPropagation()}>
@@ -124,6 +151,11 @@ const FlatItemRow = ({
                         <td key={col.key} className="px-3 py-2 whitespace-nowrap sticky left-[40px] z-10 bg-inherit min-w-[90px] max-w-[90px] w-[90px]">
                             <div className="flex flex-col gap-0.5">
                                 <span className={`font-bold ${pColors ? pColors.textMain : 'text-gray-900'}`}>{item.pedido}</span>
+                                {isFraction && (
+                                    <span className="px-1 py-0.5 rounded text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 w-fit" title={`Fração ${item.fraction_letter} de ${item.total_fractions} — ${item.visual_qtd} un.`}>
+                                        Fração {item.fraction_letter}
+                                    </span>
+                                )}
                                 {pColors && (
                                     <div className={`flex items-center gap-1 text-[10px] font-bold ${pColors.badgeText} ${pColors.badgeBg} px-1 rounded shadow-sm border ${pColors.badgeBorder} w-fit`} title={item.priority_obs || `Prioridade ${pColors.label}`}>
                                         <AlertTriangle className={`h-3 w-3 ${pColors.icon}`} />
@@ -131,6 +163,21 @@ const FlatItemRow = ({
                                     </div>
                                 )}
                             </div>
+                        </td>
+                    );
+                    case 'lote_lpf': return (
+                        <td key={col.key} className="px-3 py-2 text-center whitespace-nowrap min-w-[110px]">
+                            {item.lpf_codigo ? (
+                                <span
+                                    className="inline-flex items-center gap-1 font-mono font-black text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-md"
+                                    title={`Item no Lote de Fabricação (LPF): ${item.lpf_codigo}`}
+                                >
+                                    <Lock className="w-3 h-3 text-emerald-700" />
+                                    {item.lpf_codigo}
+                                </span>
+                            ) : (
+                                <span className="text-gray-300 text-xs italic" title="Item disponível (sem lote)">—</span>
+                            )}
                         </td>
                     );
                     case 'emissao': return (
@@ -164,16 +211,26 @@ const FlatItemRow = ({
                         </td>
                     );
                     case 'op': return (
-                        <td key={col.key} className="px-3 py-2 text-center bg-inherit min-w-[80px] max-w-[80px] w-[80px]">
+                        <td key={col.key} className="px-3 py-2 text-center bg-inherit min-w-[175px] w-[175px] whitespace-nowrap">
                             <div className="flex items-center justify-center gap-1.5">
                                 <span
-                                    className={`px-1.5 py-0.5 rounded text-xs font-mono ${item.op_tipo === 'F' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'bg-blue-50 text-blue-700 font-medium'} ${hasOp && onOpenBomStructure ? 'cursor-pointer hover:underline' : ''}`}
+                                    className={`px-1.5 py-0.5 rounded text-xs font-mono ${isFraction ? 'bg-amber-100/90 text-amber-950 font-bold border border-amber-400' : item.op_tipo === 'F' ? 'bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200' : 'bg-blue-50 text-blue-700 font-medium'} ${hasOp && onOpenBomStructure ? 'cursor-pointer hover:underline' : ''}`}
                                     title={hasOp ? 'Ver estrutura da OP' : undefined}
                                     onClick={hasOp && onOpenBomStructure ? (e) => { e.stopPropagation(); onOpenBomStructure(item.op_num, item.item, item.pedido, item.codigo); } : undefined}
                                 >
-                                    {getDisplayOp(item.op_num, item.item) || '-'}
+                                    {(isFraction ? item.visual_op : getDisplayOp(item.op_num, item.item)) || '-'}
                                 </span>
                                 {hasOp && opTypeLabel}
+                                {hasOp && canEdit && onSplitOp && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); onSplitOp(item); }}
+                                        className="p-1 text-gray-400 hover:text-indigo-700 hover:bg-indigo-50 rounded transition-colors cursor-pointer"
+                                        title={isFraction ? 'Reajustar Frações da OP' : 'Partir / Fracionar OP'}
+                                    >
+                                        <Scissors className="h-3.5 w-3.5" />
+                                    </button>
+                                )}
                             </div>
                         </td>
                     );
@@ -225,7 +282,7 @@ const FlatItemRow = ({
                                         <MoreVertical className="h-4 w-4" />
                                     </button>
                                     {isMenuOpen && (
-                                        <div className="fixed z-[9999] bg-white rounded-lg border border-gray-200 shadow-xl py-1 min-w-[220px]" style={{ top: menuPosition?.top !== undefined ? `${menuPosition.top}px` : 'auto', bottom: menuPosition?.bottom !== undefined ? `${menuPosition.bottom}px` : 'auto', right: `${menuPosition?.right}px` }}>
+                                        <div data-action-menu className="fixed z-[9999] bg-white rounded-lg border border-gray-200 shadow-xl py-1 min-w-[220px] overflow-y-auto" style={{ top: menuPosition?.top !== undefined ? `${menuPosition.top}px` : 'auto', bottom: menuPosition?.bottom !== undefined ? `${menuPosition.bottom}px` : 'auto', right: `${menuPosition?.right}px`, maxHeight: `calc(100vh - ${(menuPosition?.top ?? menuPosition?.bottom ?? 0) + 8}px)` }}>
                                             <button 
                                                 onClick={(e) => { 
                                                     e.stopPropagation(); 
@@ -256,34 +313,103 @@ const FlatItemRow = ({
                                                 <span>Prioridade de OP</span>
                                             </button>
                                             <div className="border-t border-gray-100 my-1" />
-                                            <button onClick={(e) => { onPrintOPMirror(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-teal-50 hover:text-teal-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                            <div className="px-3 py-1 text-[10px] font-bold text-indigo-800 bg-indigo-50/70 uppercase tracking-wider flex items-center gap-1.5">
+                                                <Layers size={12} className="text-indigo-600" />
+                                                <span>Fração e Lote LPF</span>
+                                                {isFraction && <span className="ml-auto normal-case text-amber-800">Fração {item.fraction_letter} · {item.visual_qtd} un.</span>}
+                                            </div>
+                                            {onOpenHistorico && (
+                                                <button onClick={(e) => { e.stopPropagation(); onOpenActionMenu(null); onOpenHistorico(item); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 transition-colors">
+                                                    <History className="h-4 w-4 flex-shrink-0 text-slate-500" />
+                                                    <span>Histórico da OP</span>
+                                                </button>
+                                            )}
+                                            {hasOp && onSmartPlanOp && (
+                                                <button onClick={(e) => { e.stopPropagation(); onOpenActionMenu(null); onSmartPlanOp(item); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-indigo-900 hover:bg-indigo-50 transition-colors">
+                                                    <Bot className="h-4 w-4 flex-shrink-0 text-indigo-600" />
+                                                    <span>Agente: Planejamento Inteligente (esta OP)</span>
+                                                </button>
+                                            )}
+                                            {hasOp && canEdit && onSplitOp && (
+                                                <button onClick={(e) => { e.stopPropagation(); onOpenActionMenu(null); onSplitOp(item); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-slate-100 transition-colors">
+                                                    <Scissors className="h-4 w-4 flex-shrink-0 text-slate-500" />
+                                                    <span>Partir / Fracionar OP</span>
+                                                </button>
+                                            )}
+                                            {isFraction && canEdit && onUnifyOp && (
+                                                <button onClick={(e) => { e.stopPropagation(); onOpenActionMenu(null); onUnifyOp(item); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-colors">
+                                                    <Trash2 className="h-4 w-4 flex-shrink-0 text-rose-500" />
+                                                    <span>Unificar OP (Excluir Frações)</span>
+                                                </button>
+                                            )}
+                                            {item.lpf_codigo ? (
+                                                <>
+                                                    {onReprintLot && (
+                                                        <button onClick={(e) => { e.stopPropagation(); onOpenActionMenu(null); onReprintLot(item.lpf_codigo); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-emerald-800 hover:bg-emerald-50 transition-colors">
+                                                            <Printer className="h-4 w-4 flex-shrink-0 text-emerald-600" />
+                                                            <span>Reimprimir Pacote do Lote ({item.lpf_codigo})</span>
+                                                        </button>
+                                                    )}
+                                                    {canEdit && onRemoveFromLot && (
+                                                        <button onClick={(e) => { e.stopPropagation(); onOpenActionMenu(null); onRemoveFromLot(item); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors">
+                                                            <Trash2 className="h-4 w-4 flex-shrink-0 text-rose-500" />
+                                                            <span>Remover do Lote ({item.lpf_codigo})</span>
+                                                        </button>
+                                                    )}
+                                                    {canEdit && onDissolveLot && (
+                                                        <button onClick={(e) => { e.stopPropagation(); onOpenActionMenu(null); onDissolveLot(item.lpf_codigo); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-rose-700 hover:bg-rose-50 transition-colors">
+                                                            <Trash2 className="h-4 w-4 flex-shrink-0 text-rose-600" />
+                                                            <span>Desmanchar Lote ({item.lpf_codigo})</span>
+                                                        </button>
+                                                    )}
+                                                </>
+                                            ) : (canEdit && onOpenManageLot && (
+                                                <button onClick={(e) => { e.stopPropagation(); onOpenActionMenu(null); onOpenManageLot([item]); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50 transition-colors">
+                                                    <Layers className="h-4 w-4 flex-shrink-0 text-indigo-500" />
+                                                    <span>Inserir em um Lote...</span>
+                                                </button>
+                                            ))}
+                                            {canEdit && onReleaseProduction && (
+                                                <button onClick={(e) => { e.stopPropagation(); onOpenActionMenu(null); onReleaseProduction([item]); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors">
+                                                    <Factory className="h-4 w-4 flex-shrink-0 text-emerald-600" />
+                                                    <span>Liberar Produção / Aglutinar</span>
+                                                </button>
+                                            )}
+                                            {canEdit && onCorteForecast && (
+                                                <button onClick={(e) => { e.stopPropagation(); onOpenActionMenu(null); onCorteForecast([item]); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-amber-700 hover:bg-amber-50 transition-colors">
+                                                    <Scissors className="h-4 w-4 flex-shrink-0 text-amber-600" />
+                                                    <span>Gerar Plano de Corte</span>
+                                                </button>
+                                            )}
+                                            <div className="border-t border-gray-100 my-1" />
+                                            <button onClick={(e) => { onPrintOPMirror(item.pedido, e, item.item, item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-teal-50 hover:text-teal-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Factory className="h-4 w-4 flex-shrink-0 text-teal-500" />} <span>Espelho OP</span>
                                             </button>
-                                            <button onClick={(e) => { onPrintFichas(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `ficha-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-amber-50 hover:text-amber-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                            <button onClick={(e) => { onPrintFichas(item.pedido, e, item.item, item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `ficha-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-amber-50 hover:text-amber-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `ficha-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ClipboardList className="h-4 w-4 flex-shrink-0 text-amber-500" />} <span>Fichas de Operação</span>
                                             </button>
-                                            <button onClick={(e) => { onPrintOPByOperation(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-oper-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                            <button onClick={(e) => { onPrintOPByOperation(item.pedido, e, item.item, item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-oper-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-oper-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <Layers className="h-4 w-4 flex-shrink-0 text-blue-500" />} <span>Por Operações (PDF)</span>
                                             </button>
-                                            <button onClick={(e) => { onPrintOPByOperationWithDrawings(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                            <button onClick={(e) => { onPrintOPByOperationWithDrawings(item.pedido, e, item.item, false, item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-500" />} <span>OP + Desenhos (PDF)</span>
                                             </button>
-                                            <button onClick={(e) => { onPrintOPByResourceWithDrawings(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-resource-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-cyan-50 hover:text-cyan-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                            <button onClick={(e) => { onPrintOPByResourceWithDrawings(item.pedido, e, item.item, false, item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-resource-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-cyan-50 hover:text-cyan-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-resource-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-cyan-500" />} <span>OP + Desenhos (Por Recurso)</span>
                                             </button>
-                                            <button onClick={(e) => { onPrintOPWithOpsStampWithDrawings(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                            <button onClick={(e) => { onPrintOPWithOpsStampWithDrawings(item.pedido, e, item.item, false, item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-stamp-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-indigo-500" />} <span>OP + Desenhos (Roteiro no Carimbo)</span>
                                             </button>
-                                            <button onClick={(e) => { onPrintOPWithOpsStampDrawingsByResource(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-resource-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                            <button onClick={(e) => { onPrintOPWithOpsStampDrawingsByResource(item.pedido, e, item.item, false, item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-resource-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-stamp-resource-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-blue-500" />} <span>OP + Desenhos (Roteiro no Carimbo) - Por Recurso</span>
                                             </button>
-                                            <button onClick={(e) => { onPrintOPWithOpsStampWithDescDrawings(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                            <button onClick={(e) => { onPrintOPWithOpsStampWithDescDrawings(item.pedido, e, item.item, false, item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-stamp-desc-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-purple-500" />} <span>OP + Desenhos (Roteiro/Descrição no Carimbo)</span>
                                             </button>
-                                            <button onClick={(e) => { onPrintOPWithOpsStampWithDescDrawingsByResource(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-resource-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-fuchsia-50 hover:text-fuchsia-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                            <button onClick={(e) => { onPrintOPWithOpsStampWithDescDrawingsByResource(item.pedido, e, item.item, false, item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-resource-drawings-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-fuchsia-50 hover:text-fuchsia-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-stamp-desc-resource-drawings-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <ImageIcon className="h-4 w-4 flex-shrink-0 text-fuchsia-500" />} <span>OP + Desenhos (Roteiro/Descrição no Carimbo) - Por Recurso</span>
                                             </button>
-                                            <button onClick={(e) => { onExportOPByOperationExcel(item.pedido, e, item.item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-excel-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                                            <button onClick={(e) => { onExportOPByOperationExcel(item.pedido, e, item.item, item); onOpenActionMenu(null); }} disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-excel-${item.pedido}-${item.item}`} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                                                 {printingOrderId === `op-excel-${item.pedido}-${item.item}` ? <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" /> : <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-emerald-600" />} <span>Por Operações (Excel)</span>
                                             </button>
                                             <div className="border-t border-gray-100 my-1" />
@@ -292,7 +418,7 @@ const FlatItemRow = ({
                                                 <span>Com Estudo de Estoque</span>
                                             </div>
                                             <button 
-                                                onClick={(e) => { onPrintOPByOperationWithDrawings(item.pedido, e, item.item, true); onOpenActionMenu(null); }} 
+                                                onClick={(e) => { onPrintOPByOperationWithDrawings(item.pedido, e, item.item, true, item); onOpenActionMenu(null); }} 
                                                 disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-drawings-${item.pedido}-${item.item}-stock`} 
                                                 className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
                                             >
@@ -300,7 +426,7 @@ const FlatItemRow = ({
                                                 <span>OP + Desenhos + Estoque</span>
                                             </button>
                                             <button 
-                                                onClick={(e) => { onPrintOPWithOpsStampWithDescDrawings(item.pedido, e, item.item, true); onOpenActionMenu(null); }} 
+                                                onClick={(e) => { onPrintOPWithOpsStampWithDescDrawings(item.pedido, e, item.item, true, item); onOpenActionMenu(null); }} 
                                                 disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-drawings-${item.pedido}-${item.item}-stock`} 
                                                 className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
                                             >
@@ -308,7 +434,7 @@ const FlatItemRow = ({
                                                 <span>OP + Desenhos (Carimbo) + Estoque</span>
                                             </button>
                                             <button 
-                                                onClick={(e) => { onPrintOPWithOpsStampWithDescDrawingsByResource(item.pedido, e, item.item, true); onOpenActionMenu(null); }} 
+                                                onClick={(e) => { onPrintOPWithOpsStampWithDescDrawingsByResource(item.pedido, e, item.item, true, item); onOpenActionMenu(null); }} 
                                                 disabled={!item.op_num || item.op_num.trim() === '' || printingOrderId === `op-stamp-desc-resource-drawings-${item.pedido}-${item.item}-stock`} 
                                                 className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed font-medium"
                                             >
@@ -416,11 +542,15 @@ const FlatItemRow = ({
                             </div>
                         </td>
                     );
-                    case 'saldo_fat': return (
-                        <td key={col.key} className={`px-4 py-2 text-right font-medium min-w-[80px] ${parseFloat(item.qtd_faturar) <= 0 ? 'text-green-600' : 'text-orange-600 font-bold'}`}>
-                            {parseFloat(item.qtd_faturar || 0).toLocaleString('pt-BR')}
-                        </td>
-                    );
+                    case 'saldo_fat': {
+                        // Na fração, o saldo exibido é a quantidade da própria fração
+                        const saldo = parseFloat((isFraction ? item.visual_qtd : item.qtd_faturar) || 0);
+                        return (
+                            <td key={col.key} className={`px-4 py-2 text-right font-medium min-w-[80px] ${saldo <= 0 ? 'text-green-600' : 'text-orange-600 font-bold'}`} title={isFraction ? `Saldo da fração (item: ${parseFloat(item.qtd_faturar || 0).toLocaleString('pt-BR')})` : undefined}>
+                                {saldo.toLocaleString('pt-BR')}
+                            </td>
+                        );
+                    }
                     case 'qtd': return (
                         <td key={col.key} className="px-4 py-2 text-right font-medium min-w-[80px]">
                             {parseFloat(item.quantidade).toLocaleString('pt-BR')} <span className="text-[10px] text-gray-400">{item.unidade}</span>
@@ -523,7 +653,7 @@ const FlatItemRow = ({
                     );
                     default: return null;
                 }
-            })}
+            })()))}
         </tr>
     );
 };
@@ -546,6 +676,11 @@ const areEqual = (prev, next) => {
         prev.item.op_prioridade === next.item.op_prioridade &&
         prev.item.classificacao === next.item.classificacao &&
         prev.item.ppap_numero === next.item.ppap_numero &&
+        prev.item.fraction_id === next.item.fraction_id &&
+        prev.item.lpf_codigo === next.item.lpf_codigo &&
+        prev.item.visual_qtd === next.item.visual_qtd &&
+        prev.item.visual_op === next.item.visual_op &&
+        prev.visibleColumns === next.visibleColumns &&
         prev.isSelected === next.isSelected &&
         prev.isActive === next.isActive &&
         prev.openActionMenu === next.openActionMenu &&

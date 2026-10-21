@@ -244,13 +244,13 @@ export default function SalasReuniaoCentral() {
             ? r.participantes.map(p => p.nome || p.NomeCompleto).join(', ')
             : 'Participantes convocados';
 
-        const texto = `🔔 *CONVITE DE REUNIÃO - METALFISA*\n` +
+        const texto = `🔔 *CONVITE DE REUNIÃO - LYNX EMS*\n` +
                       `--------------------------------------------------\n` +
                       `📌 *Assunto:* ${r.titulo}\n` +
-                      `🏢 *Sala:* ${r.sala_nome} (${r.sala_localizacao || 'Metalfisa'})\n` +
+                      `🏢 *Sala:* ${r.sala_nome} (${r.sala_localizacao || 'Lynx EMS'})\n` +
                       `📅 *Data:* ${dataFmt}\n` +
                       `⏰ *Horário:* ${r.hora_inicio} às ${r.hora_fim}\n` +
-                      `👤 *Organizador:* ${r.organizador_nome || 'Metalfisa'}\n` +
+                      `👤 *Organizador:* ${r.organizador_nome || 'Lynx EMS'}\n` +
                       (r.pauta ? `📝 *Pauta:* ${r.pauta}\n` : '') +
                       `👥 *Participantes:* ${nomesPart}\n` +
                       `--------------------------------------------------\n` +
@@ -337,7 +337,7 @@ export default function SalasReuniaoCentral() {
 
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-            {/* BARRA SUPERIOR PRINCIPAL / HEADER CORPORATIVO METALFISA */}
+            {/* BARRA SUPERIOR PRINCIPAL / HEADER CORPORATIVO LYNX EMS */}
             <div className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30">
                 <div className="w-full px-6 py-4 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
                     {/* Identificação e Título */}
@@ -351,7 +351,7 @@ export default function SalasReuniaoCentral() {
                                     Controle & Reserva de Salas
                                 </h1>
                                 <span className="text-xs bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full border border-amber-300">
-                                    Metalfisa
+                                    Lynx EMS
                                 </span>
                             </div>
                             <p className="text-xs lg:text-sm text-slate-500">
@@ -423,7 +423,7 @@ export default function SalasReuniaoCentral() {
                         <button
                             onClick={() => abrirModalImprimir(null)}
                             className="px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-2 shadow-sm transition-all hover:border-[#1E3A5F]"
-                            title="Imprimir Folha de Porta / Agenda Diária em formato A4 Paisagem MetalFisa"
+                            title="Imprimir Folha de Porta / Agenda Diária em formato A4 Paisagem Lynx EMS"
                         >
                             <Printer className="w-4 h-4 text-[#1E3A5F]" />
                             <span className="hidden sm:inline">Folha de Porta (PDF)</span>

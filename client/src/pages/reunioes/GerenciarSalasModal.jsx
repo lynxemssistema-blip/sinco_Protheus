@@ -141,7 +141,7 @@ export default function GerenciarSalasModal({
                                 {modoForm ? (salaEditandoId ? 'Editar Sala de Reunião' : 'Cadastrar Nova Sala') : 'Gestão de Salas de Reunião'}
                             </h2>
                             <p className="text-xs text-slate-500">
-                                {modoForm ? 'Informe os detalhes físicos e equipamentos disponíveis.' : 'Configure as salas físicas, capacidade e equipamentos da Metalfisa.'}
+                                {modoForm ? 'Informe os detalhes físicos e equipamentos disponíveis.' : 'Configure as salas físicas, capacidade e equipamentos da Lynx EMS.'}
                             </p>
                         </div>
                     </div>

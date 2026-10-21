@@ -456,7 +456,7 @@ router.get('/', async (req, res) => {
         res.json({
             data: produtos,
             meta: {
-                total: parseInt(countResult.rows[0].total),
+                total: parseInt(countResult.rows?.[0]?.total || produtos.length || 0),
                 page: parseInt(page),
                 limit: parseInt(limit)
             }

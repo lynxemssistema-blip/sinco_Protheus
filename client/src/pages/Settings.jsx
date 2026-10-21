@@ -4,28 +4,17 @@ import { useAuth } from '../contexts/AuthContext';
 
 import { UserPlus, ShieldAlert, UserX, Save, Building2, Menu, Edit, X, Camera, Upload, Printer, FileText, Download, Bot, Shield, Check, ChevronDown, ChevronRight, ChevronUp, Mail, Send, Loader2, EyeOff, Users, Plus, Trash2, MessageSquare, Activity, Package, Bug, Database, Calendar, Info, Play, Factory, Wrench, Truck, ShoppingCart, Award, Clock, Layers, Cpu, Tag, CheckSquare, TrendingUp, Box, ClipboardList, Landmark, Monitor, ShieldCheck, Flame, Search, CheckCircle2, XCircle, SlidersHorizontal } from 'lucide-react';
 
-import { createUser, getUsers, deleteUser, updateUser, bulkUpdateUserProfile, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus, getProtheusFornecedores, getProtheusClientes, getSincoProcessosList } from '../services/api';
+import { createUser, getUsers, deleteUser, updateUser, bulkUpdateUserProfile, getCompanySettings, updateCompanySettings, updateMenuSettings, updateGeneralSettings, getUserPermissions, saveUserPermissions, setRomaneioInitialNumber, getRomaneioInitialNumber, setPedidoInitialNumber, getPedidoInitialNumber, sendUserCredentials, getPedidosStatusSettings, togglePedidosStatusGlobal, getPedidosStatusList, togglePedidoStatus, getProtheusFornecedores, getProtheusClientes, getSincoProcessosList } from '../services/api';
 
 import api from '../services/api';
 
 import { MENU_GROUPS } from '../config/menuItems';
-
-import PCPMetalConfig from './PCPMetalConfig';
-
 
 import MonitoringDashboard from '../components/MonitoringDashboard';
 
 import DBAMonitoringTab from '../components/DBAMonitoringTab';
 
 import ErrorListTab from '../components/ErrorListTab';
-
-import WinSCPTab from '../components/WinSCPTab';
-
-import LynxConfigTab from '../components/LynxConfigTab';
-
-import LabelPrinterTab from '../components/settings/LabelPrinterTab';
-
-import AjusteApontamentoTab from '../components/settings/AjusteApontamentoTab';
 
 import CompanyProfileForm from '../components/settings/CompanyProfileForm';
 
@@ -80,17 +69,6 @@ const SYSTEM_MODULES = [
         defaultActive: true,
         menuGroupId: 'op_fracionada',
         badge: 'Industrial'
-    },
-    {
-        id: 'ronaldo',
-        key: 'module_gestao_vista_active',
-        name: 'Gestão à Vista & Analytics',
-        category: 'Produção & Fábrica',
-        description: 'Acompanhamento em tempo real da evolução dos apontamentos e gráficos dinâmicos de produtividade.',
-        icon: TrendingUp,
-        defaultActive: true,
-        menuGroupId: 'ronaldo',
-        badge: 'Dashboards'
     },
 
     // 2. Engenharia & Modelagem
@@ -179,23 +157,12 @@ const SYSTEM_MODULES = [
         badge: 'Tabelas Mestras'
     },
 
-    // 6. Suprimentos & Logística
-    {
-        id: 'suprimentos',
-        key: 'module_suprimentos_active',
-        name: 'Suprimentos & Compras',
-        category: 'Suprimentos & Logística',
-        description: 'Solicitações de compra, pedidos x PV de clientes, requisições internas, rastreamento SC -> NF e auditoria PC x XML.',
-        icon: ClipboardList,
-        defaultActive: true,
-        menuGroupId: 'suprimentos',
-        badge: 'Compras'
-    },
+    // 6. Logística
     {
         id: 'logistica',
         key: 'module_logistica_active',
         name: 'Logística & Expedição',
-        category: 'Suprimentos & Logística',
+        category: 'Logística',
         description: 'Expedição com romaneios de entrega, portal de fornecedores terceirizados, recebimento de retornos e saldos de estoque.',
         icon: Truck,
         defaultActive: true,
@@ -203,20 +170,7 @@ const SYSTEM_MODULES = [
         badge: 'Expedição'
     },
 
-    // 7. Financeiro
-    {
-        id: 'financeiro',
-        key: 'module_financeiro_active',
-        name: 'Financeiro & Controladoria',
-        category: 'Financeiro',
-        description: 'Acompanhamento do fluxo de caixa previsto e realizado, dashboards financeiros gerenciais e balancete dinâmico.',
-        icon: Landmark,
-        defaultActive: true,
-        menuGroupId: 'financeiro',
-        badge: 'Controladoria'
-    },
-
-    // 8. Gente & Segurança
+    // 7. Gente & Segurança
     {
         id: 'rh',
         key: 'module_rh_active',
@@ -263,17 +217,6 @@ const SYSTEM_MODULES = [
         defaultActive: true,
         menuGroupId: 'corporativo',
         badge: 'Facilities & TI'
-    },
-    {
-        id: 'cliente',
-        key: 'module_cliente_active',
-        name: 'Portal do Cliente',
-        category: 'Acessos & Corporativo',
-        description: 'Acesso externo para clientes acompanharem o status de seus projetos e interface rápida via tablet para solicitações.',
-        icon: Monitor,
-        defaultActive: true,
-        menuGroupId: 'cliente',
-        badge: 'Acesso Externo'
     }
 ];
 
@@ -281,21 +224,13 @@ export default function Settings() {
 
     const { user, isAdmin, hasPermission } = useAuth();
 
-    const canViewEtiquetas = isAdmin || hasPermission('config_etiquetas', 'view');
-
-    const [activeTab, setActiveTab] = useState(isAdmin ? 'general' : 'etiquetas');
+    const [activeTab, setActiveTab] = useState('general');
 
     const tabs = isAdmin ? [
 
         { id: 'general', label: 'Geral', icon: Building2 },
 
-        { id: 'ajuste_apontamento', label: 'Ajustando o Apontamento', icon: Play },
-
         { id: 'orders_visibility', label: 'Visibilidade de Pedidos', icon: EyeOff },
-
-        ...(user?.tipo === 'SA' ? [{ id: 'menu', label: 'Menu & Navegação', icon: Menu }] : []),
-
-        { id: 'modules', label: 'Módulos', icon: Package },
 
         { id: 'profiles', label: 'Perfis de Acesso', icon: Users },
 
@@ -305,27 +240,13 @@ export default function Settings() {
 
         { id: 'permissions', label: 'Permissões', icon: Shield },
 
-
         { id: 'automations', label: 'Automações & Avisos', icon: Send },
 
-        { id: 'ai', label: 'Inteligência Artificial', icon: Bot },
-
         { id: 'errors', label: 'Lista de Erros', icon: Bug },
-
 
         { id: 'notifications', label: 'Histórico de Notificações', icon: MessageSquare },
 
         { id: 'monitoring', label: 'Monitoramento do Sistema', icon: Activity },
-
-        ...(user?.tipo === 'SA' ? [{ id: 'winscp', label: 'Processo WinSCP', icon: Send }] : []),
-
-        ...(user?.tipo === 'SA' ? [{ id: 'lynx', label: 'Agente lynx', icon: Bot }] : []),
-
-        { id: 'etiquetas', label: 'Etiquetas', icon: Printer },
-
-    ] : canViewEtiquetas ? [
-
-        { id: 'etiquetas', label: 'Etiquetas', icon: Printer },
 
     ] : [];
 
@@ -853,13 +774,25 @@ export default function Settings() {
 
 
             // Fetch Romaneio Number
+            try {
+                const romNumData = await getRomaneioInitialNumber();
+                if (romNumData) {
+                    setRomaneioInfo(romNumData);
+                    setRomaneioNumberForm('');
+                }
+            } catch (romErr) {
+                console.warn('Erro ao carregar numeração de romaneio:', romErr.message);
+            }
 
-            const romNumData = await getRomaneioInitialNumber();
-
-            if (romNumData && romNumData.current_number) {
-
-                setRomaneioNumberForm(romNumData.current_number);
-
+            // Fetch Pedido Interno Number
+            try {
+                const pedNumData = await getPedidoInitialNumber();
+                if (pedNumData) {
+                    setPedidoInfo(pedNumData);
+                    setPedidoNumberForm(pedNumData.numero_inicial ? String(pedNumData.numero_inicial).padStart(6, '0') : '');
+                }
+            } catch (pedErr) {
+                console.warn('Erro ao carregar numeração de pedido:', pedErr.message);
             }
 
 
@@ -1004,7 +937,7 @@ export default function Settings() {
 
     // ADMIN GUARD
 
-    if (!isAdmin && !canViewEtiquetas) {
+    if (!isAdmin) {
 
         return (
 
@@ -1098,6 +1031,10 @@ export default function Settings() {
 
 
     const [romaneioNumberForm, setRomaneioNumberForm] = useState('');
+    const [romaneioInfo, setRomaneioInfo] = useState(null);
+
+    const [pedidoNumberForm, setPedidoNumberForm] = useState('');
+    const [pedidoInfo, setPedidoInfo] = useState(null);
 
 
 
@@ -1157,88 +1094,62 @@ export default function Settings() {
 
     };
 
-    // Modules Management States & Handlers
-    const [moduleSearch, setModuleSearch] = useState('');
-    const [moduleCategoryFilter, setModuleCategoryFilter] = useState('ALL');
-    const [expandedModuleSettings, setExpandedModuleSettings] = useState({ qualidade: false });
-
-    const isModuleActive = (mod) => {
-        const val = companyForm.general_config?.[mod.key];
-        if (val !== undefined && val !== null) return !!val;
-        return mod.defaultActive;
-    };
-
-    const handleToggleModule = async (modKey, modName, currentActive) => {
-        const newValue = !currentActive;
-        const newGeneralConfig = { ...companyForm.general_config, [modKey]: newValue };
-        try {
-            setLoadingCompany(true);
-            await updateGeneralSettings({ general_config: newGeneralConfig });
-            setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
-            if (window.confirm(`Módulo "${modName}" ${newValue ? 'ativado' : 'desativado'} com sucesso!\n\nA página será recarregada para atualizar o menu de navegação e as rotas. Deseja recarregar agora?`)) {
-                window.location.reload();
-            }
-        } catch (err) {
-            alert('Erro ao alterar status do módulo: ' + (err.response?.data?.error || err.message));
-        } finally {
-            setLoadingCompany(false);
-        }
-    };
-
-    const handleToggleSubmodule = async (subKey, subName, currentActive) => {
-        const newValue = !currentActive;
-        const newGeneralConfig = { ...companyForm.general_config, [subKey]: newValue };
-        try {
-            setLoadingCompany(true);
-            await updateGeneralSettings({ general_config: newGeneralConfig });
-            setCompanyForm(prev => ({ ...prev, general_config: newGeneralConfig }));
-        } catch (err) {
-            alert('Erro ao alterar status do submódulo: ' + (err.response?.data?.error || err.message));
-        } finally {
-            setLoadingCompany(false);
-        }
-    };
-
 
 
     const handleRomaneioNumberSubmit = async () => {
-
-        if (!romaneioNumberForm || isNaN(romaneioNumberForm)) {
-
-            return alert('Digite um número válido!');
-
+        const limpo = String(romaneioNumberForm).toUpperCase().replace(/^RO-?/i, '').replace(/\D/g, '');
+        const num = parseInt(limpo, 10);
+        if (!limpo || isNaN(num) || num < 1) {
+            return alert('Digite um número inicial válido para o Romaneio (mínimo 1)!');
         }
 
-        
-
-        if (!confirm(`Atenção: O próximo Romaneio gerado automaticamente assumirá o número ${romaneioNumberForm}. Deseja confirmar?`)) {
-
+        const formatado = `RO-${String(num).padStart(6, '0')}`;
+        if (!confirm(`Atenção: O próximo Romaneio gerado automaticamente assumirá a numeração ${formatado}. Deseja confirmar?`)) {
             return;
-
         }
-
-
 
         setLoadingCompany(true);
-
         try {
-
-            const res = await setRomaneioInitialNumber(romaneioNumberForm);
-
+            const res = await setRomaneioInitialNumber(num);
             alert(res.message);
-
-            setRomaneioNumberForm('');
-
+            const romNumData = await getRomaneioInitialNumber();
+            if (romNumData) {
+                setRomaneioInfo(romNumData);
+                setRomaneioNumberForm('');
+            }
         } catch (err) {
-
             alert('Erro: ' + (err.response?.data?.error || err.message));
-
         } finally {
-
             setLoadingCompany(false);
+        }
+    };
 
+    const handlePedidoNumberSubmit = async () => {
+        const limpo = String(pedidoNumberForm).replace(/\D/g, '');
+        const num = parseInt(limpo, 10);
+        if (!limpo || isNaN(num) || num < 1) {
+            return alert('Digite um número inicial válido para o Pedido Interno (mínimo 1)!');
         }
 
+        const formatado = String(num).padStart(6, '0');
+        if (!confirm(`Atenção: O número inicial do Pedido Interno será definido como ${formatado}. Deseja confirmar?`)) {
+            return;
+        }
+
+        setLoadingCompany(true);
+        try {
+            const res = await setPedidoInitialNumber(num);
+            alert(res.message);
+            const pedNumData = await getPedidoInitialNumber();
+            if (pedNumData) {
+                setPedidoInfo(pedNumData);
+                setPedidoNumberForm('');
+            }
+        } catch (err) {
+            alert('Erro: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setLoadingCompany(false);
+        }
     };
 
 
@@ -1826,19 +1737,11 @@ export default function Settings() {
 
 
 
-                {/* LABEL PRINTER TAB */}
-
-                {activeTab === 'etiquetas' && (
-                    <LabelPrinterTab />
-                )}
 
 
 
-                {/* AJUSTANDO O APONTAMENTO TAB */}
 
-                {activeTab === 'ajuste_apontamento' && (
-                    <AjusteApontamentoTab />
-                )}
+
 
 
 
@@ -1874,36 +1777,6 @@ export default function Settings() {
                             <h3 className="text-lg font-bold text-slate-800 mb-4">Configurações do Sistema</h3>
 
                             <div className="space-y-4">
-
-                                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
-
-                                    <div>
-
-                                        <h4 className="font-medium text-slate-800">Fluxo de Compras - Detalhes da NF</h4>
-
-                                        <p className="text-sm text-slate-500">Mostrar colunas de valor unitário e total no tooltip da Nota Fiscal.</p>
-
-                                    </div>
-
-                                    <button
-
-                                        type="button"
-
-                                        onClick={() => toggleGeneralConfig('show_purchase_values')}
-
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${companyForm.general_config?.show_purchase_values ? 'bg-blue-600' : 'bg-slate-200'}`}
-
-                                    >
-
-                                        <span
-
-                                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${companyForm.general_config?.show_purchase_values ? 'translate-x-6' : 'translate-x-1'}`}
-
-                                        />
-
-                                    </button>
-
-                                </div>
 
 
 
@@ -2045,39 +1918,154 @@ export default function Settings() {
 
                                 {/* Romaneio Config */}
 
-                                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                                {/* ── NUMERAÇÃO OFICIAL DE DOCUMENTOS (PEDIDOS E ROMANEIOS) ── */}
+                                <div className="p-5 bg-slate-50 rounded-xl border border-slate-200 space-y-5">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <SlidersHorizontal className="w-5 h-5 text-blue-600" />
+                                            <h4 className="font-bold text-slate-800 text-base">Numeração Oficial de Documentos da Empresa</h4>
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-1">
+                                            Configure o número inicial para a emissão sequencial de pedidos internos e romaneios. A formatação oficial de 6 dígitos com zeros à esquerda é mantida rigorosamente pelo sistema.
+                                        </p>
+                                    </div>
 
-                                    <h4 className="font-medium text-slate-800 mb-2">Numeração Automática do Romaneio</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* Card 1: Pedido Interno (Protheus SC5) */}
+                                        <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col justify-between space-y-4">
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+                                                            <ShoppingCart className="w-4 h-4" />
+                                                        </div>
+                                                        <h5 className="font-bold text-slate-900 text-sm">Pedido Interno (Vendas)</h5>
+                                                    </div>
+                                                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200 rounded-md">
+                                                        6 DÍGITOS
+                                                    </span>
+                                                </div>
 
-                                    <p className="text-sm text-slate-500 mb-4">Caso prefira começar a numeração automática a partir de um valor específico, você pode alterar abaixo. O sistema começará a contar a partir de agora do número configurado.</p>
+                                                <p className="text-xs text-slate-500 leading-relaxed">
+                                                    Define o número inicial da numeração sequencial de pedidos. Se houver pedidos existentes, o número inicial não poderá ser menor para evitar duplicidade.
+                                                </p>
 
-                                    <div className="flex gap-2 items-center max-w-sm">
+                                                {/* Status Atual */}
+                                                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
+                                                    <div className="bg-slate-50 p-2 rounded-lg">
+                                                        <span className="text-[10px] font-semibold text-slate-400 block uppercase">Próximo Pedido</span>
+                                                        <span className="font-mono font-bold text-slate-800 text-sm">
+                                                            {pedidoInfo?.proximo_formatado || '000001'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="bg-slate-50 p-2 rounded-lg">
+                                                        <span className="text-[10px] font-semibold text-slate-400 block uppercase">Maior Já Emitido</span>
+                                                        <span className="font-mono font-bold text-slate-600 text-sm">
+                                                            {pedidoInfo?.maior_formatado || 'Nenhum'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
 
-                                        <input 
+                                            <div className="space-y-2 pt-2 border-t border-slate-100">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                                        Novo Número Inicial
+                                                    </label>
+                                                    {pedidoNumberForm ? (
+                                                        <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 font-bold">
+                                                            Prévia: {String(pedidoNumberForm).replace(/\D/g, '').padStart(6, '0')}
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                                <div className="flex gap-2 items-center">
+                                                    <input 
+                                                        type="text"
+                                                        maxLength={6}
+                                                        className="w-full p-2 border border-slate-300 rounded-lg text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        placeholder="Ex: 1000 ou 001000"
+                                                        value={pedidoNumberForm}
+                                                        onChange={e => setPedidoNumberForm(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                                    />
+                                                    <button 
+                                                        type="button"
+                                                        disabled={loadingCompany || !pedidoNumberForm}
+                                                        onClick={handlePedidoNumberSubmit}
+                                                        className="bg-blue-600 text-white font-medium p-2 px-3 rounded-lg hover:bg-blue-700 whitespace-nowrap text-xs disabled:opacity-40 cursor-pointer shadow-2xs transition"
+                                                    >
+                                                        Definir Inicial
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
 
-                                            type="number"
+                                        {/* Card 2: Romaneio de Carga e Expedição (RO-000000) */}
+                                        <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs flex flex-col justify-between space-y-4">
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
+                                                            <Truck className="w-4 h-4" />
+                                                        </div>
+                                                        <h5 className="font-bold text-slate-900 text-sm">Romaneio de Carga (Expedição)</h5>
+                                                    </div>
+                                                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md">
+                                                        PREFIXO RO- (6 DÍG.)
+                                                    </span>
+                                                </div>
 
-                                            className="w-full p-2 border rounded-lg text-sm"
+                                                <p className="text-xs text-slate-500 leading-relaxed">
+                                                    Define o número inicial da contagem sequencial de romaneios da empresa com prefixo oficial e formatação de 6 dígitos.
+                                                </p>
 
-                                            placeholder="Ex: 7500"
+                                                {/* Status Atual */}
+                                                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
+                                                    <div className="bg-slate-50 p-2 rounded-lg">
+                                                        <span className="text-[10px] font-semibold text-slate-400 block uppercase">Próximo Romaneio</span>
+                                                        <span className="font-mono font-bold text-slate-800 text-sm">
+                                                            {romaneioInfo?.proximo_formatado || 'RO-000001'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="bg-slate-50 p-2 rounded-lg">
+                                                        <span className="text-[10px] font-semibold text-slate-400 block uppercase">Maior Já Emitido</span>
+                                                        <span className="font-mono font-bold text-slate-600 text-sm">
+                                                            {romaneioInfo?.maior_formatado || 'Nenhum'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
 
-                                            value={romaneioNumberForm}
-
-                                            onChange={e => setRomaneioNumberForm(e.target.value)}
-
-                                        />
-
-                                        <button 
-
-                                            type="button"
-
-                                            disabled={loadingCompany}
-
-                                            onClick={handleRomaneioNumberSubmit}
-                                            className="bg-blue-600 text-white font-medium p-2 px-4 rounded-lg hover:bg-blue-700 whitespace-nowrap text-sm disabled:opacity-50"
-                                        >
-                                            Definir Número Inicial
-                                        </button>
+                                            <div className="space-y-2 pt-2 border-t border-slate-100">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                                                        Novo Número Inicial
+                                                    </label>
+                                                    {romaneioNumberForm ? (
+                                                        <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 font-bold">
+                                                            Prévia: RO-{String(romaneioNumberForm).toUpperCase().replace(/^RO-?/i, '').replace(/\D/g, '').padStart(6, '0')}
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                                <div className="flex gap-2 items-center">
+                                                    <input 
+                                                        type="text"
+                                                        maxLength={10}
+                                                        className="w-full p-2 border border-slate-300 rounded-lg text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        placeholder="Ex: 1500 ou RO-001500"
+                                                        value={romaneioNumberForm}
+                                                        onChange={e => setRomaneioNumberForm(e.target.value)}
+                                                    />
+                                                    <button 
+                                                        type="button"
+                                                        disabled={loadingCompany || !romaneioNumberForm}
+                                                        onClick={handleRomaneioNumberSubmit}
+                                                        className="bg-emerald-600 text-white font-medium p-2 px-3 rounded-lg hover:bg-emerald-700 whitespace-nowrap text-xs disabled:opacity-40 cursor-pointer shadow-2xs transition"
+                                                    >
+                                                        Definir Inicial
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -2857,627 +2845,6 @@ export default function Settings() {
                         </div>
                     </div>
                 )}
-
-                {/* MÓDULOS TAB */}
-                {activeTab === 'modules' && (() => {
-                    const activeModulesCount = SYSTEM_MODULES.filter(m => isModuleActive(m)).length;
-                    const totalModulesCount = SYSTEM_MODULES.length;
-                    const inactiveModulesCount = totalModulesCount - activeModulesCount;
-
-                    const filteredModules = SYSTEM_MODULES.filter(mod => {
-                        const matchesCategory = moduleCategoryFilter === 'ALL' || mod.category === moduleCategoryFilter;
-                        const term = moduleSearch.toLowerCase().trim();
-                        const matchesSearch = !term ||
-                            mod.name.toLowerCase().includes(term) ||
-                            mod.description.toLowerCase().includes(term) ||
-                            mod.badge.toLowerCase().includes(term);
-                        return matchesCategory && matchesSearch;
-                    });
-
-                    const categoriesWithModules = MODULE_CATEGORIES.filter(c => c.id !== 'ALL').map(cat => ({
-                        ...cat,
-                        modules: filteredModules.filter(m => m.category === cat.id)
-                    })).filter(cat => cat.modules.length > 0);
-
-                    return (
-                        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-5xl">
-                            {/* Header Section */}
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-200 pb-5">
-                                <div className="flex items-start gap-3">
-                                    <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
-                                        <Package className="w-6 h-6" />
-                                    </div>
-                                    <div>
-                                        <h2 className="text-xl font-bold text-slate-800">Gestão de Módulos</h2>
-                                        <p className="text-sm text-slate-500 mt-0.5">
-                                            Ative ou desative módulos inteiros do sistema. Módulos inativos ocultam seus menus, atalhos e rotas para todos os usuários.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* Overview Metrics */}
-                                <div className="flex items-center gap-2 self-start md:self-auto">
-                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700">
-                                        <Package className="w-3.5 h-3.5 text-slate-400" />
-                                        <span>Total: <strong>{totalModulesCount}</strong></span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-semibold text-emerald-700">
-                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                                        <span>Ativos: <strong>{activeModulesCount}</strong></span>
-                                    </div>
-                                    {inactiveModulesCount > 0 && (
-                                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs font-semibold text-amber-700">
-                                            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                                            <span>Ocultos: <strong>{inactiveModulesCount}</strong></span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Search and Category Filters */}
-                            <div className="space-y-3 mb-6">
-                                <div className="flex flex-col sm:flex-row gap-3">
-                                    <div className="relative flex-1">
-                                        <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-                                        <input
-                                            type="text"
-                                            value={moduleSearch}
-                                            onChange={e => setModuleSearch(e.target.value)}
-                                            placeholder="Buscar módulo por nome, palavra-chave ou funcionalidade..."
-                                            className="w-full pl-9 pr-8 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
-                                        />
-                                        {moduleSearch && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setModuleSearch('')}
-                                                className="absolute right-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-600 bg-slate-200 hover:bg-slate-300 rounded-full w-5 h-5 flex items-center justify-center transition-colors"
-                                                title="Limpar busca"
-                                            >
-                                                ✕
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Category Chips */}
-                                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
-                                    {MODULE_CATEGORIES.map(cat => {
-                                        const isSelected = moduleCategoryFilter === cat.id;
-                                        return (
-                                            <button
-                                                key={cat.id}
-                                                type="button"
-                                                onClick={() => setModuleCategoryFilter(cat.id)}
-                                                className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all font-medium ${
-                                                    isSelected
-                                                        ? 'bg-slate-900 text-white shadow-xs'
-                                                        : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200'
-                                                }`}
-                                            >
-                                                {cat.label}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            {/* Modules List Grouped by Category */}
-                            {categoriesWithModules.length === 0 ? (
-                                <div className="p-12 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                                    <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                                    <p className="text-slate-600 font-medium text-sm">Nenhum módulo encontrado</p>
-                                    <p className="text-slate-400 text-xs mt-1">Tente ajustar a busca ou o filtro de categoria selecionado.</p>
-                                    <button
-                                        type="button"
-                                        onClick={() => { setModuleSearch(''); setModuleCategoryFilter('ALL'); }}
-                                        className="mt-3 text-xs text-blue-600 hover:underline font-semibold"
-                                    >
-                                        Limpar todos os filtros
-                                    </button>
-                                </div>
-                            ) : (
-                                <div className="space-y-8">
-                                    {categoriesWithModules.map(category => (
-                                        <div key={category.id} className="space-y-3">
-                                            {/* Category Heading */}
-                                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="w-1.5 h-4 rounded-full bg-blue-600 inline-block"></span>
-                                                    <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wide">
-                                                        {category.label}
-                                                    </h3>
-                                                    <span className="text-xs text-slate-400 font-medium">
-                                                        ({category.modules.filter(m => isModuleActive(m)).length}/{category.modules.length} ativos)
-                                                    </span>
-                                                </div>
-                                            </div>
-
-                                            {/* Cards Grid */}
-                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                                {category.modules.map(mod => {
-                                                    const isActive = isModuleActive(mod);
-                                                    const ModIcon = mod.icon || Package;
-                                                    const menuGroup = MENU_GROUPS.find(g => g.id === mod.menuGroupId);
-                                                    const menuItemsCount = menuGroup?.items?.length || 0;
-                                                    const isExpanded = !!expandedModuleSettings[mod.id];
-
-                                                    return (
-                                                        <div
-                                                            key={mod.id}
-                                                            className={`p-4 rounded-xl border transition-all ${
-                                                                isActive
-                                                                    ? 'bg-white border-slate-200 shadow-xs hover:border-slate-300'
-                                                                    : 'bg-slate-50/80 border-slate-200/80'
-                                                            }`}
-                                                        >
-                                                            {/* Top Row: Icon, Title, Status & Toggle */}
-                                                            <div className="flex items-start justify-between gap-3">
-                                                                <div className="flex items-start gap-3 flex-1 min-w-0">
-                                                                    <div className={`p-2.5 rounded-xl border flex-shrink-0 transition-colors ${
-                                                                        isActive
-                                                                            ? 'bg-blue-50 text-blue-700 border-blue-100'
-                                                                            : 'bg-slate-100 text-slate-400 border-slate-200'
-                                                                    }`}>
-                                                                        <ModIcon className="w-5 h-5" />
-                                                                    </div>
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                                            <h4 className="font-bold text-slate-800 text-sm leading-tight">
-                                                                                {mod.name}
-                                                                            </h4>
-                                                                            {mod.badge && (
-                                                                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
-                                                                                    {mod.badge}
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
-                                                                        <div className="mt-1 flex items-center gap-2">
-                                                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded-full ${
-                                                                                isActive
-                                                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                                                                    : 'bg-slate-100 text-slate-500 border border-slate-200'
-                                                                            }`}>
-                                                                                <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-                                                                                {isActive ? 'ATIVO NO SISTEMA' : 'DESATIVADO'}
-                                                                            </span>
-                                                                            {menuItemsCount > 0 && (
-                                                                                <span className="text-[11px] text-slate-400">
-                                                                                    • {menuItemsCount} {menuItemsCount === 1 ? 'tela' : 'telas'}
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* iOS Toggle Switch */}
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={loadingCompany}
-                                                                    onClick={() => handleToggleModule(mod.key, mod.name, isActive)}
-                                                                    className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${
-                                                                        isActive ? 'bg-emerald-600' : 'bg-slate-300'
-                                                                    } ${loadingCompany ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                                                                    title={isActive ? `Clique para desativar ${mod.name}` : `Clique para ativar ${mod.name}`}
-                                                                >
-                                                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
-                                                                        isActive ? 'translate-x-6' : 'translate-x-1'
-                                                                    }`} />
-                                                                </button>
-                                                            </div>
-
-                                                            {/* Description */}
-                                                            <p className="text-xs text-slate-500 mt-2.5 leading-relaxed">
-                                                                {mod.description}
-                                                            </p>
-
-                                                            {/* Submodules: SST (CIPA & Brigada) */}
-                                                            {mod.hasSstSubmodules && (
-                                                                <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
-                                                                    <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                                                                        Sub-módulos e Normas de SST
-                                                                    </div>
-                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                                                        {/* CIPA NR-05 */}
-                                                                        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
-                                                                            <span className="text-slate-700 font-medium flex items-center gap-1.5">
-                                                                                <Award className="w-3.5 h-3.5 text-amber-600" />
-                                                                                CIPA (NR-05)
-                                                                            </span>
-                                                                            <button
-                                                                                type="button"
-                                                                                disabled={loadingCompany}
-                                                                                onClick={() => handleToggleSubmodule('module_cipa_active', 'CIPA (NR-05)', companyForm.general_config?.module_cipa_active !== false)}
-                                                                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                                                                                    companyForm.general_config?.module_cipa_active !== false ? 'bg-emerald-600' : 'bg-slate-300'
-                                                                                }`}
-                                                                                title="Ativar/Desativar CIPA"
-                                                                            >
-                                                                                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                                                                                    companyForm.general_config?.module_cipa_active !== false ? 'translate-x-4.5' : 'translate-x-0.5'
-                                                                                }`} />
-                                                                            </button>
-                                                                        </div>
-
-                                                                        {/* Brigada de Incêndio NR-23 */}
-                                                                        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
-                                                                            <span className="text-slate-700 font-medium flex items-center gap-1.5">
-                                                                                <Flame className="w-3.5 h-3.5 text-rose-600" />
-                                                                                Brigada (NR-23)
-                                                                            </span>
-                                                                            <button
-                                                                                type="button"
-                                                                                disabled={loadingCompany}
-                                                                                onClick={() => handleToggleSubmodule('module_brigada_active', 'Brigada de Incêndio (NR-23)', companyForm.general_config?.module_brigada_active !== false)}
-                                                                                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                                                                                    companyForm.general_config?.module_brigada_active !== false ? 'bg-emerald-600' : 'bg-slate-300'
-                                                                                }`}
-                                                                                title="Ativar/Desativar Brigada"
-                                                                            >
-                                                                                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                                                                                    companyForm.general_config?.module_brigada_active !== false ? 'translate-x-4.5' : 'translate-x-0.5'
-                                                                                }`} />
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            )}
-
-                                                            {/* SGQ Advanced Settings (Consolidated - Zero Duplication) */}
-                                                            {mod.hasAdvancedSettings && (
-                                                                <div className="mt-3 pt-3 border-t border-slate-100">
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => setExpandedModuleSettings(prev => ({ ...prev, [mod.id]: !prev[mod.id] }))}
-                                                                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
-                                                                    >
-                                                                        <span className="flex items-center gap-2">
-                                                                            <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" />
-                                                                            Configurações Avançadas do SGQ (RNC & Notificações)
-                                                                        </span>
-                                                                        {isExpanded ? (
-                                                                            <ChevronUp className="w-4 h-4 text-slate-500" />
-                                                                        ) : (
-                                                                            <ChevronDown className="w-4 h-4 text-slate-500" />
-                                                                        )}
-                                                                    </button>
-
-                                                                    {isExpanded && (
-                                                                        <div className="mt-3 p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-5 text-xs">
-                                                                            {/* Submódulo Controle Dimensional */}
-                                                                            <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200">
-                                                                                <div>
-                                                                                    <h5 className="font-bold text-slate-800">Controle Dimensional de Peças</h5>
-                                                                                    <p className="text-slate-500 mt-0.5">Exibe planos de inspeção e histórico dimensional no SGQ.</p>
-                                                                                </div>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    disabled={loadingCompany}
-                                                                                    onClick={() => handleToggleSubmodule('module_sgq_controle_dimensional', 'Controle Dimensional', companyForm.general_config?.module_sgq_controle_dimensional !== false)}
-                                                                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                                                                                        companyForm.general_config?.module_sgq_controle_dimensional !== false ? 'bg-emerald-600' : 'bg-slate-300'
-                                                                                    }`}
-                                                                                >
-                                                                                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                                                                                        companyForm.general_config?.module_sgq_controle_dimensional !== false ? 'translate-x-4.5' : 'translate-x-0.5'
-                                                                                    }`} />
-                                                                                </button>
-                                                                            </div>
-
-                                                                            {/* RNC Numbering Config (Consolidated & Clean) */}
-                                                                            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-3">
-                                                                                <div>
-                                                                                    <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
-                                                                                        <span className="w-2 h-2 rounded-full bg-teal-500 inline-block"></span>
-                                                                                        Numeração Automática de RNC
-                                                                                    </h5>
-                                                                                    <p className="text-slate-500 mt-0.5">
-                                                                                        Padrão gerado para novos relatórios de não conformidade. Marcadores: <code className="bg-slate-100 px-1 py-0.5 rounded">{'{YEAR}'}</code>, <code className="bg-slate-100 px-1 py-0.5 rounded">{'{MONTH}'}</code>, <code className="bg-slate-100 px-1 py-0.5 rounded">{'{SEQ:4}'}</code>.
-                                                                                    </p>
-                                                                                </div>
-
-                                                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                                                    <div>
-                                                                                        <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Formato do Número</label>
-                                                                                        <input
-                                                                                            type="text"
-                                                                                            value={rncFormatForm}
-                                                                                            onChange={e => setRncFormatForm(e.target.value)}
-                                                                                            placeholder="Ex: RNC-{YEAR}-{SEQ:4}"
-                                                                                            className="w-full p-2 border border-slate-200 rounded-lg text-xs font-mono focus:ring-2 focus:ring-teal-500 outline-none"
-                                                                                        />
-                                                                                        <div className="mt-1 text-slate-500">
-                                                                                            Prévia: <span className="font-mono font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
-                                                                                                {rncFormatForm
-                                                                                                    .replace('{YEAR}', new Date().getFullYear())
-                                                                                                    .replace('{MONTH}', String(new Date().getMonth() + 1).padStart(2, '0'))
-                                                                                                    .replace(/\{SEQ:(\d+)\}/, (_, n) => String(parseInt(rncNumberForm, 10) || 1).padStart(parseInt(n, 10), '0'))
-                                                                                                    .replace('{SEQ}', String(parseInt(rncNumberForm, 10) || 1).padStart(4, '0'))
-                                                                                                }
-                                                                                            </span>
-                                                                                        </div>
-                                                                                    </div>
-
-                                                                                    <div>
-                                                                                        <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Próximo Número Sequencial</label>
-                                                                                        <input
-                                                                                            type="number"
-                                                                                            min="1"
-                                                                                            value={rncNumberForm}
-                                                                                            onChange={e => setRncNumberForm(e.target.value)}
-                                                                                            className="w-full p-2 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-teal-500 outline-none"
-                                                                                        />
-                                                                                        <p className="mt-1 text-slate-400">A próxima RNC criada usará este sequencial.</p>
-                                                                                    </div>
-                                                                                </div>
-
-                                                                                <div className="flex justify-end pt-1">
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        disabled={loadingCompany}
-                                                                                        onClick={handleRncConfigSubmit}
-                                                                                        className="bg-teal-600 hover:bg-teal-700 text-white font-medium px-4 py-1.5 rounded-lg text-xs disabled:opacity-50 transition-colors shadow-xs"
-                                                                                    >
-                                                                                        {loadingCompany ? 'Salvando...' : 'Salvar Numeração de RNC'}
-                                                                                    </button>
-                                                                                </div>
-                                                                            </div>
-
-                                                                            {/* SGQ Notifications & Alerts */}
-                                                                            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-3">
-                                                                                <div>
-                                                                                    <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
-                                                                                        <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
-                                                                                        Notificações e Alertas do SGQ
-                                                                                    </h5>
-                                                                                    <p className="text-slate-500 mt-0.5">
-                                                                                        Usuários que receberão avisos de calibração vencendo e romaneios via E-mail / WhatsApp.
-                                                                                    </p>
-                                                                                </div>
-
-                                                                                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-2 space-y-1">
-                                                                                    {usersList.filter(u => u.aprovado === 1).map(u => {
-                                                                                        const sgqAlerts = companyForm.general_config?.sgq_alerts_users || [];
-                                                                                        const userPref = sgqAlerts.find(x => x.id === u.idUsuario);
-                                                                                        const isInGroup = !!userPref;
-
-                                                                                        return (
-                                                                                            <div key={u.idUsuario} className="flex items-center justify-between p-1.5 hover:bg-slate-50 rounded border-b border-slate-100 last:border-0">
-                                                                                                <label className="flex items-center gap-2 cursor-pointer min-w-0">
-                                                                                                    <input
-                                                                                                        type="checkbox"
-                                                                                                        checked={isInGroup}
-                                                                                                        onChange={(e) => {
-                                                                                                            let newUsers = [...sgqAlerts];
-                                                                                                            if (e.target.checked) {
-                                                                                                                newUsers.push({ id: u.idUsuario, email: true, whatsapp: true });
-                                                                                                            } else {
-                                                                                                                newUsers = newUsers.filter(x => x.id !== u.idUsuario);
-                                                                                                            }
-                                                                                                            setCompanyForm(prev => ({
-                                                                                                                ...prev,
-                                                                                                                general_config: { ...prev.general_config, sgq_alerts_users: newUsers }
-                                                                                                            }));
-                                                                                                        }}
-                                                                                                        className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                                                                                                    />
-                                                                                                    <span className="font-medium text-slate-700 truncate">{u.NomeCompleto}</span>
-                                                                                                </label>
-
-                                                                                                {isInGroup && (
-                                                                                                    <div className="flex items-center gap-3 bg-slate-100 px-2 py-1 rounded border border-slate-200 text-[11px]">
-                                                                                                        <label className="flex items-center gap-1 cursor-pointer">
-                                                                                                            <input
-                                                                                                                type="checkbox"
-                                                                                                                checked={userPref.email}
-                                                                                                                disabled={!u.email}
-                                                                                                                onChange={(e) => {
-                                                                                                                    const newUsers = sgqAlerts.map(x => x.id === u.idUsuario ? { ...x, email: e.target.checked } : x);
-                                                                                                                    setCompanyForm(prev => ({
-                                                                                                                        ...prev,
-                                                                                                                        general_config: { ...prev.general_config, sgq_alerts_users: newUsers }
-                                                                                                                    }));
-                                                                                                                }}
-                                                                                                                className="w-3 h-3 text-blue-600 rounded border-slate-300"
-                                                                                                            /> E-mail
-                                                                                                        </label>
-                                                                                                        <label className="flex items-center gap-1 cursor-pointer">
-                                                                                                            <input
-                                                                                                                type="checkbox"
-                                                                                                                checked={userPref.whatsapp}
-                                                                                                                disabled={!u.telefone}
-                                                                                                                onChange={(e) => {
-                                                                                                                    const newUsers = sgqAlerts.map(x => x.id === u.idUsuario ? { ...x, whatsapp: e.target.checked } : x);
-                                                                                                                    setCompanyForm(prev => ({
-                                                                                                                        ...prev,
-                                                                                                                        general_config: { ...prev.general_config, sgq_alerts_users: newUsers }
-                                                                                                                    }));
-                                                                                                                }}
-                                                                                                                className="w-3 h-3 text-blue-600 rounded border-slate-300"
-                                                                                                            /> WhatsApp
-                                                                                                        </label>
-                                                                                                    </div>
-                                                                                                )}
-                                                                                            </div>
-                                                                                        );
-                                                                                    })}
-                                                                                </div>
-
-                                                                                {/* Message Templates */}
-                                                                                <div className="space-y-2 pt-2">
-                                                                                    <div>
-                                                                                        <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Template WhatsApp</label>
-                                                                                        <textarea
-                                                                                            value={companyForm.general_config?.sgq_alerts_template_whatsapp || '⚠️ *Alerta SGQ - Calibração* ⚠️\nO instrumento {name} (Patrimônio: {patrimonio}) vencerá em {validade} ({dias} dias).'}
-                                                                                            onChange={(e) => setCompanyForm(prev => ({
-                                                                                                ...prev,
-                                                                                                general_config: { ...prev.general_config, sgq_alerts_template_whatsapp: e.target.value }
-                                                                                            }))}
-                                                                                            rows={2}
-                                                                                            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-                                                                                        />
-                                                                                    </div>
-                                                                                    <div>
-                                                                                        <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Template E-mail</label>
-                                                                                        <textarea
-                                                                                            value={companyForm.general_config?.sgq_alerts_template_email || 'Prezado(a),\n\nInformamos que o instrumento {name} (Patrimônio: {patrimonio}) possui calibração válida apenas até {validade} ({dias} dias restantes).\n\nPor favor, providencie a calibração.'}
-                                                                                            onChange={(e) => setCompanyForm(prev => ({
-                                                                                                ...prev,
-                                                                                                general_config: { ...prev.general_config, sgq_alerts_template_email: e.target.value }
-                                                                                            }))}
-                                                                                            rows={2}
-                                                                                            className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-                                                                                        />
-                                                                                    </div>
-                                                                                </div>
-
-                                                                                <div className="flex justify-end pt-1">
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        disabled={loadingCompany}
-                                                                                        onClick={async () => {
-                                                                                            try {
-                                                                                                setLoadingCompany(true);
-                                                                                                await updateGeneralSettings({ general_config: companyForm.general_config });
-                                                                                                alert('Configurações de notificação do SGQ salvas com sucesso!');
-                                                                                            } catch (err) {
-                                                                                                alert('Erro ao salvar notificações do SGQ: ' + err.message);
-                                                                                            } finally {
-                                                                                                setLoadingCompany(false);
-                                                                                            }
-                                                                                        }}
-                                                                                        className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-1.5 rounded-lg text-xs disabled:opacity-50 transition-colors shadow-xs"
-                                                                                    >
-                                                                                        {loadingCompany ? 'Salvando...' : 'Salvar Notificações do SGQ'}
-                                                                                    </button>
-                                                                                </div>
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    );
-                })()}
-
-                {/* MENU TAB */}
-
-
-
-                {/* MENU TAB */}
-
-                {activeTab === 'menu' && (
-
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-4xl">
-
-                        <div className="flex items-center justify-between gap-3 mb-6 border-b pb-4">
-
-                            <div className="flex items-center gap-3">
-
-                                <Menu className="w-6 h-6 text-indigo-600" />
-
-                                <div>
-
-                                    <h2 className="text-lg font-bold text-slate-800">Personalização do Menu</h2>
-
-                                    <p className="text-sm text-slate-500">Escolha quais módulos aparecem na barra lateral.</p>
-
-                                </div>
-
-                            </div>
-
-                            <button
-
-                                onClick={handleMenuSubmit}
-
-                                disabled={loadingCompany}
-
-                                className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 font-medium transition-colors text-sm"
-
-                            >
-
-                                <Save className="w-4 h-4" />
-
-                                {loadingCompany ? 'Salvando...' : 'Aplicar Mudanças'}
-
-                            </button>
-
-                        </div>
-
-
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-
-                            {MENU_GROUPS.map(group => (
-
-                                <div key={group.id} className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-
-                                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 border-b border-slate-200 pb-2">{group.label}</h3>
-
-                                    <div className="space-y-3">
-
-                                        {group.items.map(item => {
-
-                                            const isVisible = companyForm.menu_config?.[item.id] !== false;
-
-                                            return (
-
-                                                <div key={item.id} className="flex items-center justify-between">
-
-                                                    <div className="flex items-center gap-2">
-
-                                                        <item.icon className="w-4 h-4 text-slate-400" />
-
-                                                        <span className="text-sm text-slate-700 font-medium">{item.label}</span>
-
-                                                    </div>
-
-                                                    <label className="relative inline-flex items-center cursor-pointer">
-
-                                                        <input
-
-                                                            type="checkbox"
-
-                                                            className="sr-only peer"
-
-                                                            checked={isVisible}
-
-                                                            onChange={() => toggleMenuItem(item.id)}
-
-                                                            disabled={item.id === 'config'}
-
-                                                        />
-
-                                                        <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-
-                                                    </label>
-
-                                                </div>
-
-                                            );
-
-                                        })}
-
-                                    </div>
-
-                                </div>
-
-                            ))}
-
-                        </div>
-
-                    </div>
-
-                )}
-
-
 
                 {/* NOTIFICATIONS HISTORY TAB */}
 
@@ -5049,17 +4416,6 @@ export default function Settings() {
 
 
 
-                {/* AI TAB */}
-
-                {activeTab === 'ai' && (
-
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-
-                        <PCPMetalConfig />
-
-                    </div>
-
-                )}
 
 
 
@@ -5435,36 +4791,6 @@ export default function Settings() {
 
                 )}
 
-
-
-                {/* WINSCP TAB */}
-
-                {activeTab === 'winscp' && (
-
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-
-                        <WinSCPTab />
-
-                    </div>
-
-                )}
-
-
-
-                {/* lynx TAB */}
-
-                {activeTab === 'lynx' && (
-
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-
-                        <LynxConfigTab />
-
-                    </div>
-
-                )}
-
-
-
             </div>
 
         </div>
@@ -5706,4 +5032,3 @@ function NotificationsHistoryTab() {
     );
 
 }
-

@@ -221,7 +221,7 @@ export default function TotemPortaModal({ isOpen, onClose, salas = NO_SALAS, onR
                             MF
                         </div>
                         <div>
-                            <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Metalfisa • Display de Porta</div>
+                            <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Lynx EMS • Display de Porta</div>
                             <div className="font-bold text-slate-200 text-sm">Totem de Reuniões</div>
                         </div>
                     </div>
@@ -293,7 +293,7 @@ export default function TotemPortaModal({ isOpen, onClose, salas = NO_SALAS, onR
                             </h1>
                         </div>
                         <div className="flex items-center gap-4 mt-2 text-slate-400 text-sm">
-                            <span>📍 {salaAtual?.localizacao || 'Metalfisa'}</span>
+                            <span>📍 {salaAtual?.localizacao || 'Lynx EMS'}</span>
                             <span>•</span>
                             <span className="flex items-center gap-1.5">
                                 <Users className="w-4 h-4 text-slate-400" />
@@ -421,7 +421,7 @@ export default function TotemPortaModal({ isOpen, onClose, salas = NO_SALAS, onR
                     {/* Rodapé Informativo */}
                     <div className="text-xs text-slate-500 flex items-center justify-between pt-4 border-t border-slate-800/80">
                         <span>Atualização automática a cada 30 segundos</span>
-                        <span>Sistema Metalfisa Corporativo</span>
+                        <span>Sistema Lynx EMS Corporativo</span>
                     </div>
                 </div>
 

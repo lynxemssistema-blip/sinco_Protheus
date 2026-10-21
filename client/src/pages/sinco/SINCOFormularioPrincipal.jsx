@@ -38,8 +38,8 @@ export default function SINCOFormularioPrincipal() {
     const { user } = useAuth();
 
     const [dados, setDados] = useState({
-        arquivo: searchParams.get('arquivo') || estadoVazio.arquivo,
-        caminho: searchParams.get('caminho') || searchParams.get('arquivo') || estadoVazio.caminho,
+        arquivo: searchParams.get('arquivo') || searchParams.get('codigo') || estadoVazio.arquivo,
+        caminho: searchParams.get('caminho') || searchParams.get('arquivo') || (searchParams.get('codigo') ? `ERP: ${searchParams.get('codigo')}` : estadoVazio.caminho),
         titulo: searchParams.get('titulo') || '',
         grupo: searchParams.get('grupo') || '',
         unidade: searchParams.get('unidade') || '',
@@ -53,7 +53,7 @@ export default function SINCOFormularioPrincipal() {
         acabamento: searchParams.get('acabamento') || '',
         densidade: searchParams.get('densidade') || '7.85',
     });
-    const [busca, setBusca] = useState('');
+    const [busca, setBusca] = useState(searchParams.get('codigo') || searchParams.get('arquivo') || '');
     const [arvore, setArvore] = useState([]);
     const [restricoes, setRestricoes] = useState([]);
     const [operacoes, setOperacoes] = useState([]);
@@ -480,13 +480,16 @@ export default function SINCOFormularioPrincipal() {
         }
     }, []);
 
-    // Carrega na primeira abertura (via URL)
+    // Carrega na primeira abertura (via URL com ?arquivo=)
     useEffect(() => {
         const cod = searchParams.get('arquivo');
-        if (cod) carregarProtheus(cod);
+        // Se já tiver ?codigo=, o hook de busca manual cuidará do carregamento completo com getSincoProduto
+        if (cod && !searchParams.get('codigo')) {
+            carregarProtheus(cod);
+        }
     }, [searchParams, carregarProtheus]);
 
-    // Se o app VB enviou ?codigo= (código gerado pelo Protheus), preenche o campo de busca e consulta automaticamente
+    // Se a URL enviou ?codigo= (código do produto vindo do ERP ou Protheus), preenche o campo de busca e consulta automaticamente
     useEffect(() => {
         const codigoProtheus = searchParams.get('codigo');
         if (codigoProtheus && codigoProtheus.trim()) {
@@ -494,9 +497,8 @@ export default function SINCOFormularioPrincipal() {
             setBusca(codigoLimpo);
             buscarProdutoManual(codigoLimpo);
         }
-    // Só executa uma vez ao montar (quando a URL chega do VB)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [searchParams]);
 
     // Socket.io — recebe atualização em tempo real do Solid Edge Desktop
     useEffect(() => {
@@ -522,11 +524,11 @@ export default function SINCOFormularioPrincipal() {
 
         setErroProtheus(null);
         setProdutoNaoNoMirror(false);
-        setDados({
-            ...estadoVazio,
+        setDados(prev => ({
+            ...prev,
             arquivo: codigoSemExtensao,
-            caminho: 'Busca via ERP',
-        });
+            caminho: prev.caminho && prev.caminho !== estadoVazio.caminho ? prev.caminho : `ERP: ${codigoSemExtensao}`,
+        }));
 
         try {
             const p = await getSincoProduto(codigoSemExtensao);
@@ -534,17 +536,17 @@ export default function SINCOFormularioPrincipal() {
                 setProdutoNaoNoMirror(false);
                 setDados(prev => ({
                     ...prev,
-                    titulo: p.titulo || '',
-                    tipo: p.tipo || '',
-                    unidade: p.unidade || '',
-                    grupo: p.grupo || '',
-                    peso: p.peso || prev.peso,
+                    titulo: p.titulo || prev.titulo || '',
+                    tipo: p.tipo || prev.tipo || '',
+                    unidade: p.unidade || prev.unidade || '',
+                    grupo: p.grupo || prev.grupo || '',
+                    peso: p.peso !== undefined && p.peso !== null && p.peso !== '' ? String(p.peso) : (prev.peso || ''),
                     // p.xrevm = B1_XREVM (Rev. Lynx); p.rev = B1_REVATU (revisão técnica geral)
-                    rev: p.xrevm || prev.rev,
-                    espessura: p.espessura || prev.espessura,
-                    largura: p.largura || prev.largura,
-                    comprimento: p.comprimento || prev.comprimento,
-                    area: p.area || prev.area
+                    rev: p.xrevm || prev.rev || '00',
+                    espessura: p.espessura !== undefined && p.espessura !== null && p.espessura !== '' ? String(p.espessura) : (prev.espessura || ''),
+                    largura: p.largura !== undefined && p.largura !== null && p.largura !== '' ? String(p.largura) : (prev.largura || ''),
+                    comprimento: p.comprimento !== undefined && p.comprimento !== null && p.comprimento !== '' ? String(p.comprimento) : (prev.comprimento || ''),
+                    area: p.area !== undefined && p.area !== null && p.area !== '' ? String(p.area) : (prev.area || '')
                 }));
             }
         } catch (e) {

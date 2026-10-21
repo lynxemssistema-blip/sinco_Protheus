@@ -9,7 +9,6 @@ import ProductionHistoryModal from '../components/ProductionHistoryModal';
 import RNCModal from '../components/RNCModal';
 import ErrorStateOverlay from '../components/ErrorStateOverlay';
 import useStickyState from '../hooks/useStickyState';
-import PCPMetalDrawer from '../components/PCPMetalDrawer';
 import { generateVerticalPendingPdf } from '../services/verticalPendingPdfGenerator';
 import { generateVerticalGeralPdf, generateVerticalGeralExcel } from '../services/verticalGeralReportGenerator';
 import { useAuth } from '../contexts/AuthContext';
@@ -341,17 +340,6 @@ export default function VerticalAppointmentPage() {
     const [historyTarget, setHistoryTarget] = useState(null);
     const [recordingField, setRecordingField] = useState(null);
     const [activeRowKey, setActiveRowKey] = useState(null);
-    const [pcpmetalOpen, setPcpmetalOpen] = useState(false);
-    const [pcpmetalContext, setPcpmetalContext] = useState({});
-
-    const handleOpenAIHelp = () => {
-        setPcpmetalContext({
-            page: 'apontamento-vertical',
-            recurso: selectedOp || null,
-            totalOps: data.length
-        });
-        setPcpmetalOpen(true);
-    };
 
     useEffect(() => {
         if (!filters.plan_inicio_ate) {
@@ -426,10 +414,16 @@ export default function VerticalAppointmentPage() {
     const loadOperations = async () => {
         try {
             const list = await getProcessList();
-            setOperations(Array.isArray(list) ? list : (list?.data || []));
+            const ops = Array.isArray(list) ? list : (list?.data || []);
+            setOperations(ops);
         } catch (err) {
             console.error('Erro ao carregar operações', err);
         }
+    };
+
+    const handleRetry = () => {
+        loadOperations();
+        loadData(true, 1, false, batchSize);
     };
 
     const loadData = async (showLoader = true, targetPage = page, append = false, customBatchSize = batchSize) => {
@@ -777,19 +771,6 @@ export default function VerticalAppointmentPage() {
 
     return (
         <div className="p-6 space-y-4 h-[calc(100vh-4rem)] flex flex-col">
-            {pcpmetalOpen && (
-                <PCPMetalDrawer
-                    isOpen={pcpmetalOpen}
-                    onClose={() => setPcpmetalOpen(false)}
-                    context={pcpmetalContext}
-                    pageData={{
-                        ops: data,
-                        selectedOps: [],
-                        filters: { ...filters, recurso: selectedOp },
-                        total: data.length
-                    }}
-                />
-            )}
             <div className="flex items-center justify-between shrink-0">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -799,13 +780,6 @@ export default function VerticalAppointmentPage() {
                     <p className="text-sm text-slate-600 mt-1">Selecione uma operação para planejar e apontar a fila de trabalho.</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button
-                        onClick={handleOpenAIHelp}
-                        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-xl shadow-md transition-all font-semibold"
-                    >
-                        <Bot className="w-5 h-5 animate-pulse" />
-                        PCPMetal AI
-                    </button>
                     {appointmentMode && (
                         <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${
                             appointmentMode === 'sequence' ? 'bg-blue-50 text-blue-700 border-blue-200' :
@@ -832,6 +806,8 @@ export default function VerticalAppointmentPage() {
                                 className="w-full border-2 border-slate-100 rounded-lg p-2.5 text-sm bg-slate-50 font-bold text-slate-800 focus:border-blue-500 focus:ring-0 transition-all cursor-pointer shadow-sm"
                                 value={selectedOp}
                                 onChange={(e) => setSelectedOp(e.target.value)}
+                                onFocus={() => { if (operations.length === 0) loadOperations(); }}
+                                onClick={() => { if (operations.length === 0) loadOperations(); }}
                             >
                                 <option value="">-- Selecione o Recurso --</option>
                                 <option value="TODOS">🌐 Todos os Recursos (Filtro por OP / Pedido)</option>
@@ -1060,7 +1036,7 @@ export default function VerticalAppointmentPage() {
             </div>
 
             {/* Error Message */}
-            <ErrorStateOverlay error={apiError} onRetry={loadData} />
+            <ErrorStateOverlay error={apiError} onRetry={handleRetry} />
 
             {/* Grid */}
             {!apiError && (loading ? (

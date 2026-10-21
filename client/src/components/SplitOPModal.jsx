@@ -12,6 +12,8 @@ const SplitOPModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
     const [dataInicioCascade, setDataInicioCascade] = useState(() => new Date().toISOString().split('T')[0]);
     const [incluiSabado, setIncluiSabado] = useState(false);
     const [expandedFractionOps, setExpandedFractionOps] = useState({});
+    // Travas do item (lote, liberação, corte, apontamento): com trava nada muda, só a Data PCP
+    const [bloqueio, setBloqueio] = useState(null);
 
     const pedido = item ? String(item.pedido || '').trim() : '';
     const itemNum = item ? String(item.item || '').trim() : '';
@@ -143,6 +145,11 @@ const SplitOPModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                 ]);
             }
 
+            setBloqueio(null);
+            api.get('/pedidos/op-locks', { params: { pedido, item: itemNum } })
+                .then(res => setBloqueio(res.data?.travado ? res.data : null))
+                .catch(() => setBloqueio(null)); // o servidor bloqueia de qualquer forma ao salvar
+
             // Tenta buscar operações já salvas em app_production_planning
             api.get(`/pedidos/split-operations/${pedido}/${itemNum}`)
                 .then(res => {
@@ -174,6 +181,7 @@ const SplitOPModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
     const somaDistribuida = fractions.reduce((acc, f) => acc + (parseFloat(f.quantidade_pcp) || 0), 0);
     const diferenca = parseFloat((totalQtd - somaDistribuida).toFixed(2));
     const isTotalExato = Math.abs(diferenca) < 0.001;
+    const travado = !!bloqueio?.travado;
 
     const handleAddFraction = () => {
         const baseOp = getBaseOp();
@@ -414,6 +422,18 @@ const SplitOPModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                     </div>
                 </div>
 
+                {travado && (
+                    <div className="px-6 py-3 bg-rose-50 border-b border-rose-200 text-xs text-rose-800 shrink-0 flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 flex-shrink-0 text-rose-600 mt-0.5" />
+                        <div>
+                            <p className="font-bold">OP travada: não é possível fracionar, reajustar ou unificar. Somente a Data PCP pode ser alterada.</p>
+                            <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                                {bloqueio.motivos.map((m, i) => <li key={i}>{m.descricao}</li>)}
+                            </ul>
+                        </div>
+                    </div>
+                )}
+
                 {/* Controls Bar: Agente de Planejamento Inteligente (Cascata Tempo Finito) */}
                 <div className="px-6 py-3 bg-gradient-to-r from-amber-50/90 via-indigo-50/50 to-blue-50/90 border-b border-indigo-100 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
                     <div className="flex items-center gap-3">
@@ -445,7 +465,7 @@ const SplitOPModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                     <button
                         type="button"
                         onClick={handleGenerateCascade}
-                        disabled={calculatingCascade || saving || !isTotalExato}
+                        disabled={calculatingCascade || saving || !isTotalExato || travado}
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-900 font-bold rounded-lg shadow-sm hover:shadow transition-all disabled:opacity-50 cursor-pointer text-xs"
                     >
                         {calculatingCascade ? (
@@ -474,7 +494,7 @@ const SplitOPModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                             <button
                                 type="button"
                                 onClick={handleAddFraction}
-                                disabled={saving}
+                                disabled={saving || travado}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
                             >
                                 <Plus className="h-3.5 w-3.5" /> Adicionar Outra Fração
@@ -529,7 +549,8 @@ const SplitOPModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                                                 <button
                                                     type="button"
                                                     onClick={() => handleRemoveFraction(idx)}
-                                                    className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors"
+                                                    disabled={travado}
+                                                    className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                                     title="Remover esta fração"
                                                 >
                                                     <Trash2 className="h-4 w-4" />
@@ -696,7 +717,7 @@ const SplitOPModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                             <button
                                 type="button"
                                 onClick={handleUnmerge}
-                                disabled={saving}
+                                disabled={saving || travado}
                                 className="px-3 py-2 border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 mr-auto md:mr-0 cursor-pointer"
                                 title="Excluir frações e unificar OP em lote único"
                             >
@@ -715,7 +736,7 @@ const SplitOPModal = ({ isOpen, onClose, item, onSaveSuccess }) => {
                         <button
                             type="button"
                             onClick={handleSubmit}
-                            disabled={saving || !isTotalExato}
+                            disabled={saving || !isTotalExato || travado}
                             className="px-5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-lg text-xs font-bold shadow-md shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2 cursor-pointer"
                         >
                             {saving ? (

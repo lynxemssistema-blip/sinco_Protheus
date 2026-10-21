@@ -37,7 +37,7 @@ const formatarDataBR = (val) => {
 };
 
 /**
- * Paleta corporativa oficial MetalFisa
+ * Paleta corporativa oficial Lynx EMS
  */
 const COLORS = {
     NAVY: 'FF1E3A5F',
@@ -77,7 +77,7 @@ const BORDERS = {
 };
 
 /**
- * Gera e dispara o download do Relatório Comercial de Custos do Produto em Excel (Padrão MetalFisa).
+ * Gera e dispara o download do Relatório Comercial de Custos do Produto em Excel (Padrão Lynx EMS).
  * 
  * @param {Object} params
  * @param {string} params.codigo - Código do produto pai
@@ -157,7 +157,7 @@ export const exportEstruturaComercialExcel = async ({
         return false;
     };
 
-    // Definição Oficial dos Grupos de Materiais MetalFisa para o Comercial
+    // Definição Oficial dos Grupos de Materiais Lynx EMS para o Comercial
     const GROUP_DEFS = [
         {
             id: 'MTC',

@@ -2,17 +2,42 @@ import React, { useState } from 'react';
 import { Search, Settings, GripVertical, X, Eye, EyeOff, HelpCircle } from 'lucide-react';
 import { saveUserPreference, getUserPreference } from '../../services/api';
 
+// Colunas criadas depois que o usuário salvou a configuração entram na posição padrão
+// (logo após a coluna que as antecede no padrão), e não no fim da tabela
+function mergeNewColumns(saved, allColumns) {
+    const result = [...saved];
+    const knownKeys = new Set(saved.map(c => c.key));
+    allColumns.forEach((col, idx) => {
+        if (knownKeys.has(col.key)) return;
+        let insertAt = 0;
+        for (let i = idx - 1; i >= 0; i--) {
+            const pos = result.findIndex(c => c.key === allColumns[i].key);
+            if (pos !== -1) { insertAt = pos + 1; break; }
+        }
+        result.splice(insertAt, 0, { ...col, visible: true });
+        knownKeys.add(col.key);
+    });
+    return result;
+}
+
 export function loadColConfigLocal(prefKey, allColumns) {
     try {
         const saved = localStorage.getItem(prefKey);
         if (saved) {
-            const parsed = JSON.parse(saved);
-            const knownKeys = new Set(parsed.map(c => c.key));
-            const extra = allColumns.filter(c => !knownKeys.has(c.key)).map(c => ({ ...c, visible: true }));
-            return [...parsed, ...extra];
+            return mergeNewColumns(JSON.parse(saved), allColumns);
         }
     } catch (_) { /* ignore */ }
     return allColumns.map(c => ({ ...c, visible: true }));
+}
+
+export const MIN_COLUMN_WIDTH = 40;
+
+// Largura definida pelo usuário arrastando a borda do cabeçalho (customWidth, salva junto da configuração das colunas).
+// clip=false para células com balão flutuante (tooltip), que seria cortado pelo overflow.
+export function getColumnWidthStyle(col, clip = true) {
+    if (!col?.customWidth) return undefined;
+    const w = `${col.customWidth}px`;
+    return { width: w, minWidth: w, maxWidth: w, ...(clip ? { overflow: 'hidden', textOverflow: 'ellipsis' } : {}) };
 }
 
 export function saveColConfig(prefKey, cols) {
@@ -24,9 +49,7 @@ export async function loadColConfigFromServer(prefKey, allColumns) {
     try {
         const saved = await getUserPreference(prefKey);
         if (saved && Array.isArray(saved)) {
-            const knownKeys = new Set(saved.map(c => c.key));
-            const extra = allColumns.filter(c => !knownKeys.has(c.key)).map(c => ({ ...c, visible: true }));
-            return [...saved, ...extra];
+            return mergeNewColumns(saved, allColumns);
         }
     } catch (_) { /* fallback to local */ }
     return null;
@@ -109,7 +132,8 @@ export default function ColumnSettingsPanel({ columns, allColumns, prefKey, onCh
                             <li><strong>Ocultar/Mostrar:</strong> Clique no ícone de olho (<Eye className="inline h-3 w-3 text-indigo-500"/>) para esconder colunas que você não utiliza, deixando a tela mais limpa. Colunas com selo <span className="bg-indigo-100 text-indigo-600 px-1 rounded text-[9px] uppercase font-bold">Fixo</span> não podem ser ocultadas.</li>
                             <li><strong>Mostrar Todas / Ocultar Todas:</strong> Use os botões abaixo para ligar ou desligar várias colunas de uma vez.</li>
                             <li><strong>Pesquisa:</strong> Use a barra de busca para encontrar rapidamente uma coluna numa lista grande.</li>
-                            <li><strong>Resetar:</strong> Volta as colunas para o padrão de fábrica.</li>
+                            <li><strong>Largura:</strong> Na tabela, arraste a borda direita do título da coluna. A largura fica salva automaticamente; duplo clique na borda volta ao tamanho padrão.</li>
+                            <li><strong>Resetar:</strong> Volta as colunas (ordem, visibilidade e largura) para o padrão de fábrica.</li>
                         </ul>
                         <p className="mt-2 text-xs italic text-indigo-700">Ao clicar em "Salvar", sua configuração ficará armazenada no seu navegador para seus próximos acessos!</p>
                     </div>

@@ -236,7 +236,7 @@ async function processarLembretesPendentes() {
                 if ((lembrete.canal === 'whatsapp' || lembrete.canal === 'ambos') && telefones.length > 0) {
                     try {
                         const waText = 
-                            `🔔 *LEMBRETE DE REUNIÃO - METALFISA*\n` +
+                            `🔔 *LEMBRETE DE REUNIÃO - LYNX EMS*\n` +
                             `⏰ *A sua reunião começará ${textoAntecedencia}!*\n` +
                             `--------------------------------------------------\n` +
                             `📌 *Assunto:* ${lembrete.titulo}\n` +

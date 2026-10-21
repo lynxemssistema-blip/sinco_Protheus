@@ -53,13 +53,13 @@ const desenharFolhaSala = (doc, sala, reservasSala, dataStr, currentUser, isFirs
     const usableW = pageWidth - ML - MR; // 273mm
 
     // ==========================================
-    // 1. CABEÇALHO CORPORATIVO METALFISA
+    // 1. CABEÇALHO CORPORATIVO LYNX EMS
     // ==========================================
     const hY = 8;
     const hH = 20;
 
     // Moldura principal do cabeçalho
-    doc.setDrawColor(30, 58, 95); // Navy MetalFisa #1E3A5F
+    doc.setDrawColor(30, 58, 95); // Navy Lynx EMS #1E3A5F
     doc.setLineWidth(0.4);
     doc.rect(ML, hY, usableW, hH);
 
@@ -70,7 +70,7 @@ const desenharFolhaSala = (doc, sala, reservasSala, dataStr, currentUser, isFirs
     doc.line(col1, hY, col1, hY + hH);
     doc.line(col2, hY, col2, hY + hH);
 
-    // 1.1 Logotipo MetalFisa
+    // 1.1 Logotipo Lynx EMS
     try {
         if (logoBase64) {
             doc.addImage(logoBase64, 'PNG', ML + 5, hY + 2.5, 42, 15);
@@ -155,7 +155,7 @@ const desenharFolhaSala = (doc, sala, reservasSala, dataStr, currentUser, isFirs
     doc.setFontSize(7);
     doc.setFont('helvetica', 'italic');
     doc.setTextColor(100, 116, 139);
-    doc.text('Horários reservados previamente via Portal MetalFisa. Marque a presença física na porta.', ML + 80, currentY);
+    doc.text('Horários reservados previamente via Portal Lynx EMS. Marque a presença física na porta.', ML + 80, currentY);
 
     currentY += 2;
 
@@ -370,7 +370,7 @@ const desenharFolhaSala = (doc, sala, reservasSala, dataStr, currentUser, isFirs
     doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(30, 58, 95);
-    doc.text('DIRETRIZES DE USO CONSCIENTE & CONSERVAÇÃO (5S METALFISA):', ML + 3, footerY + 4);
+    doc.text('DIRETRIZES DE USO CONSCIENTE & CONSERVAÇÃO (5S LYNX EMS):', ML + 3, footerY + 4);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.2);
@@ -398,7 +398,7 @@ const desenharFolhaSala = (doc, sala, reservasSala, dataStr, currentUser, isFirs
     // Número da página
     doc.setFontSize(6);
     doc.setTextColor(148, 163, 184);
-    doc.text(`MetalFisa Sistema Integrado  •  Folha de Porta A4 Landscape  •  Página ${doc.internal.getCurrentPageInfo().pageNumber}`, pageWidth / 2, pageHeight - 3, { align: 'center' });
+    doc.text(`Lynx EMS Sistema Integrado  •  Folha de Porta A4 Landscape  •  Página ${doc.internal.getCurrentPageInfo().pageNumber}`, pageWidth / 2, pageHeight - 3, { align: 'center' });
 };
 
 /**

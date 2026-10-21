@@ -20,7 +20,9 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, nfs, typeDescription 
                         Romaneio de {typeDescription || 'Saída'}
                     </div>
                     <div className="w-1/4 p-2 flex flex-col justify-center items-center">
-                        <div className="font-bold text-lg">Nº {romaneio.id}</div>
+                        <div className="font-bold text-lg font-mono">
+                            {String(romaneio.id).startsWith('RO-') ? romaneio.id : `RO-${String(romaneio.id).padStart(6, '0')}`}
+                        </div>
                         <div className="text-sm">Rev: {romaneio.current_revision || 1}</div>
                         <div className="text-xs">{new Date(romaneio.created_at).toLocaleString('pt-BR')}</div>
                     </div>

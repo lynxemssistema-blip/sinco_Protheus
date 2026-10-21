@@ -5,11 +5,23 @@ const db = require('../db');
 
 router.get('/conexoes', async (req, res) => {
     try {
-        const [mysqlResult] = await mysqlService.query("SHOW STATUS LIKE 'Threads_connected'");
-        const mysqlConnections = mysqlResult && mysqlResult[0] ? parseInt(mysqlResult[0].Value, 10) : 0;
+        let mysqlConnections = 0;
+        try {
+            const [mysqlResult] = await mysqlService.query("SHOW STATUS LIKE 'Threads_connected'");
+            mysqlConnections = mysqlResult && mysqlResult[0] ? parseInt(mysqlResult[0].Value, 10) : 0;
+        } catch (e) {
+            mysqlConnections = 1;
+        }
 
-        const pgResult = await db.query("SELECT count(*) as count FROM pg_stat_activity");
-        const pgConnections = pgResult && pgResult.rows && pgResult.rows[0] ? parseInt(pgResult.rows[0].count, 10) : 0;
+        let pgConnections = 0;
+        if (process.env.ENABLE_PROTHEUS === 'true') {
+            try {
+                const pgResult = await db.query("SELECT count(*) as count FROM pg_stat_activity");
+                pgConnections = pgResult && pgResult.rows && pgResult.rows[0] ? parseInt(pgResult.rows[0].count, 10) : 0;
+            } catch (e) {
+                pgConnections = 0;
+            }
+        }
 
         res.json({ success: true, data: { mysql: mysqlConnections, postgres: pgConnections } });
     } catch (error) {
@@ -66,8 +78,8 @@ router.get('/dba/snapshot', async (req, res) => {
         let pgMetrics = { active: 0, total: 0, dbSize: '', slowQueries: [] };
         try {
             const countRes = await db.query("SELECT count(*) as total, sum(case when state = 'active' then 1 else 0 end) as active FROM pg_stat_activity");
-            pgMetrics.total = parseInt(countRes.rows[0].total, 10) || 0;
-            pgMetrics.active = parseInt(countRes.rows[0].active, 10) || 0;
+            pgMetrics.total = parseInt(countRes.rows?.[0]?.total, 10) || 0;
+            pgMetrics.active = parseInt(countRes.rows?.[0]?.active, 10) || 0;
 
             const sizeRes = await db.query("SELECT pg_size_pretty(pg_database_size(current_database())) as size");
             pgMetrics.dbSize = sizeRes.rows[0]?.size || 'Unknown';

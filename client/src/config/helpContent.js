@@ -537,26 +537,6 @@ export const HELP_CONTENT = {
     ],
   },
 
-  '/pcp-refinado/capacidade': {
-    category: 'PCP',
-    categoryColor: '#f59e0b',
-    title: 'Cadastro de Capacidade e Tempos (PCP Refinado)',
-    icon: 'Layers',
-    description: 'Definição do tempo padrão de operação e a capacidade diária por recurso (máquina ou centro de trabalho). Estes valores são a base matemática para o cálculo de carga do CRP.',
-    steps: [
-      '1. Visão Geral: A tabela lista todos os recursos disponíveis carregados do ERP Protheus.',
-      '2. Tempo Padrão: Define quantos minutos (ou fração) a máquina gasta para processar 1 peça/batida.',
-      '3. Capacidade Diária: Quantos minutos por dia a máquina está disponível (Ex: 8 horas = 480 minutos).',
-    ],
-    tips: [
-      'Lembre-se de salvar suas alterações: a linha ficará com borda amarela enquanto não for salva.',
-      'Recursos com Capacidade = 0 ou Tempo = 0 não vão constar adequadamente nos cálculos de ocupação!',
-    ],
-    links: [
-      { path: '/pcp-refinado/ocupacao', label: 'Ver Taxa de Ocupação' }
-    ],
-  },
-
   '/pcp-refinado/ocupacao': {
     category: 'PCP',
     categoryColor: '#f59e0b',
@@ -574,7 +554,7 @@ export const HELP_CONTENT = {
       'Qualquer alteração de data dentro do Detalhamento da OP afeta o planejamento global de imediato.',
     ],
     links: [
-      { path: '/pcp-refinado/capacidade', label: 'Ajustar Capacidade (Recursos)' }
+      { path: '/pcp/setores', label: 'Setores e Recursos da Fábrica' }
     ],
   },
 
@@ -2379,7 +2359,7 @@ export const HELP_CONTENT = {
           'Enviado: registra a saída física do material. Também solicita a data do evento e oferece e-mail de notificação.',
           'Cancelado: anula o romaneio. O material retorna ao controle de saldo na OP.',
           'Imprimir Romaneio: gera um PDF em pacote (bundle) com o romaneio + desenhos técnicos dos produtos + lista de status atualizada. O arquivo abre em nova aba.',
-          'Criar Pasta na Rede: cria a pasta do romaneio no servidor de arquivos (ex.: \\\\servidor\\Romaneios\\RO-123). Execute logo após criar o romaneio para já ter o local disponível.',
+          'Criar Pasta na Rede: cria a pasta do romaneio no servidor de arquivos (ex.: \\\\servidor\\Romaneios\\RO-001500). Execute logo após criar o romaneio para já ter o local disponível.',
           'Acessar Pasta da Rede: copia o caminho UNC da pasta para a área de transferência e tenta abrir no Windows Explorer. Use para anexar documentos adicionais ao romaneio.'
         ],
         tips: [
@@ -3138,31 +3118,6 @@ export const HELP_CONTENT = {
     ]
   },
 
-  // ── PCP Refinado - Capacidade de Recursos ──────────────────────────────────
-  '/pcp-refinado/capacidade': {
-    category: 'PCP Refinado',
-    categoryColor: '#8b5cf6',
-    title: 'Cadastro de Capacidade de Recursos',
-    icon: 'Layers',
-    image: '/help-images/pcp_capacidade.png',
-    description: 'Cadastro dos limites de capacidade diária (em minutos) e tempos padrão dos recursos produtivos para o motor PCF.',
-    imageCaption: 'Painel para configuração das capacidades diárias e tempos de setup/fallback em minutos para cada recurso do chão de fábrica.',
-    steps: [
-      'Visualizar Recursos: A tabela lista todos os recursos ativos integrados a partir do Protheus.',
-      'Configurar Capacidade: Defina a capacidade diária em minutos (ex: 480 min para 8h diárias). Recursos com capacidade 0 são considerados inativos.',
-      'Definir Tempo Padrão (Fallback): Configure o tempo padrão em minutos de processamento por peça para as operações deste recurso.',
-      'Salvar Alterações: Clique no botão Salvar para atualizar as capacidades no banco MySQL.'
-    ],
-    tips: [
-      'Se um recurso não possuir capacidade definida nesta tabela, o motor de Planejamento Inteligente utilizará de forma automática o fallback padrão de 480 minutos/dia.',
-      'Configure com precisão os gargalos conhecidos para obter simulações realistas e prazos confiáveis.'
-    ],
-    links: [
-      { path: '/pcp-refinado/ocupacao', label: 'Taxa de Ocupação' },
-      { path: '/controle-producao', label: 'Controle de Produção' }
-    ]
-  },
-
   // ── PCP Refinado - Taxa de Ocupação & Planejamento Inteligente ──────────────────
   '/pcp-refinado/ocupacao': {
     category: 'PCP Refinado',
@@ -3185,7 +3140,7 @@ export const HELP_CONTENT = {
       'Executado do Dia: Toda produção apontada no dia atualiza em tempo real a linha do Executado (Apontamento), permitindo comparar diretamente o planejado com a realidade.'
     ],
     links: [
-      { path: '/pcp-refinado/capacidade', label: 'Cadastro de Capacidades' },
+      { path: '/pcp/setores', label: 'Setores e Recursos da Fábrica' },
       { path: '/controle-producao', label: 'Controle de Produção' }
     ]
   },
@@ -3772,62 +3727,6 @@ export const HELP_CONTENT = {
       ]
   },
 
-  '/engenharia/sinco/estrutura-completa': {
-      "category": "Engenharia / Produto",
-      "categoryColor": "#6366f1",
-      "title": "SolidEdge Estrutura Completa de Produto",
-      "icon": "Layers",
-      "description": "Visualização da árvore hierárquica multinível completa da estrutura de produtos (BOM) gerada pelo SolidEdge e integrada ao SINCO / Protheus (SG1/SB1). Permite navegar por conjuntos pais, subconjuntos, peças usinadas/estampadas, matéria-prima e roteiros de centros de trabalho.",
-      "tabs": [
-          {
-              "id": "arvore_engenharia",
-              "label": "Árvore Multinível de Engenharia",
-              "description": "Explosão estrutural nó a nó de montagens e submontagens.",
-              "steps": [
-                  "Navegação Expansível: Clique nos nós da árvore para expandir conjuntos, peças e insumos.",
-                  "Quantidades Acumuladas: Mostra a quantidade unitária por conjunto e a quantidade total acumulada para a estrutura mestre.",
-                  "Detalhamento de Peça: Visualize descrição completa, tipo de material (chapa, tubo, barra), espessura e acabamento."
-              ]
-          },
-          {
-              "id": "roteiro_fabricacao",
-              "label": "Roteiros de Produção & Centros de Trabalho",
-              "description": "Operações fabris e tempos padrão cadastrados.",
-              "steps": [
-                  "Centros de Trabalho: Visualização sequencial das operações (Corte Laser, Guilhotina, Puncionadeira, Dobradeira, Usinagem CNC, Solda, Pintura).",
-                  "Tempos Padrão: Tempos de preparação (setup) e tempo unitário por peça cadastrados no Protheus.",
-                  "Cálculo de Carga: Base oficial de tempos utilizada pelo módulo de Planejamento de Carga Máquina da Planilha Mestra."
-              ]
-          },
-          {
-              "id": "desenhos_cad",
-              "label": "Desenhos Técnicos & Modelos CAD",
-              "description": "Acesso direto a arquivos de engenharia.",
-              "steps": [
-                  "Desenho 2D: Acesso rápido aos arquivos de desenho técnico (.dft, .dwg, .pdf) da peça.",
-                  "Visualização 3D: Link direto para o módulo de Análise 3D para inspeção geométrica do componente."
-              ]
-          }
-      ],
-      "tips": [
-          "Utilize esta tela para auditar se a estrutura cadastrada no Protheus reflete 100% o modelo de montagem do SolidEdge.",
-          "Erros em tempos de roteiro nesta tela afetam diretamente a precisão do agendamento de capacidade no PCP."
-      ],
-      "links": [
-          {
-              "path": "/produtos",
-              "label": "Catálogo de Produtos"
-          },
-          {
-              "path": "/bom-generator",
-              "label": "Gerador de BOM"
-          },
-          {
-              "path": "/analise-3d",
-              "label": "Visualizador 3D"
-          }
-      ]
-  },
 
   '/analise-3d': {
       "category": "Engenharia / CAD",
@@ -3876,8 +3775,8 @@ export const HELP_CONTENT = {
               "label": "Catálogo de Produtos"
           },
           {
-              "path": "/engenharia/sinco/estrutura-completa",
-              "label": "SolidEdge Estrutura Completa"
+              "path": "/engenharia/sinco/formulario",
+              "label": "SINCO Formulário de Engenharia"
           }
       ]
   },
@@ -4182,5 +4081,925 @@ export const HELP_CONTENT = {
     links: [
       { path: '/comercial/gestao-ops', label: 'Gestão de OPs por Lote' }
     ]
+  },
+
+  '/erp/produtos': {
+    category: 'ERP Nativo',
+    categoryColor: '#059669',
+    title: 'Cadastro de Produtos ERP Nativo',
+    icon: 'Package',
+    description: 'Gestão cadastral completa de produtos (B1_COD), tipos (PA, MP, PI, MC), unidades de medida, armazéns padrão, tabela de cores de aço, geração automática de código sequencial por família/prefixo e visualização de desenhos técnicos.',
+    tabs: [
+      {
+        id: 'catalogo',
+        label: 'Catálogo & Busca',
+        description: 'Pesquisa avançada e filtros de produtos industriais.',
+        steps: [
+          'Busca Rápida: Digite código (B1_COD), descrição, código do cliente ou NCM no campo de pesquisa.',
+          'Filtros por Tipo & Cor: Utilize os menus suspensos para filtrar por tipos Protheus (PA, MP, PI, MC) ou cores de liga de aço.',
+          'Visualização Técnica: Clique no ícone de olho para abrir a ficha completa do produto com desenhos e associações.',
+          'Ações Rápidas: Acesse botões de edição, visualização 3D, estrutura BOM e estoque direto na linha do produto.'
+        ]
+      },
+      {
+        id: 'cadastro',
+        label: 'Novo Produto & Prefixo',
+        description: 'Como cadastrar produtos com geração automática de código.',
+        steps: [
+          'Clique em "+ Novo Produto" no topo direito.',
+          'Selecione o Prefixo / Família (ex: PR1 para Matéria-Prima, PR2 para Produto Acabado). O sistema sugere o próximo número sequencial automaticamente.',
+          'Preencha a descrição oficial, tipo de material, unidade de medida (UN, KG, PC) e armazém padrão (01, 02).',
+          'Vincule a cor de identificação de aço caso seja material metálico para facilitar o controle visual na fábrica.',
+          'Clique em "Salvar Produto" para gravar com integridade no banco de dados.'
+        ]
+      }
+    ],
+    tips: [
+      'A geração automática de código garante que nenhum código duplicado seja criado.',
+      'Você pode exportar a lista filtrada de produtos para Excel ou PDF a qualquer momento usando os botões no topo.'
+    ],
+    links: [
+      { path: '/cadastros/prefixos', label: 'Cadastro de Prefixos' },
+      { path: '/cadastros/cores-aco', label: 'Cores de Aço' },
+      { path: '/erp/pedidos', label: 'Pedidos de Venda' }
+    ]
+  },
+
+  '/erp/pedidos': {
+    category: 'ERP Nativo',
+    categoryColor: '#2563eb',
+    title: 'Pedidos de Venda ERP Nativo',
+    icon: 'ShoppingCart',
+    description: 'Gestão completa da carteira de pedidos comerciais (C5_NUM), itens do pedido (C6), clientes compradores, condições de entrega, status de liberação fabril e faturamento.',
+    tabs: [
+      {
+        id: 'carteira',
+        label: 'Carteira de Pedidos',
+        description: 'Acompanhamento do status dos pedidos em aberto.',
+        steps: [
+          'Visualização Geral: A tabela lista todos os pedidos com número, cliente, data de emissão, valor total e status.',
+          'Filtros Dinâmicos: Filtre por cliente, número do pedido ou período de emissão/entrega.',
+          'Expansão de Itens: Clique em qualquer pedido para expandir e visualizar seus itens (produtos, quantidade, preço e saldo a faturar).',
+          'Exportação: Gere relatórios consolidados em Excel para reuniões de alinhamento com PCP e expedição.'
+        ]
+      }
+    ],
+    tips: [
+      'Pedidos com saldo pendente de produção são sincronizados automaticamente com o módulo de OPs e planejamento de corte.',
+      'Acompanhe as observações do cliente diretamente na coluna de notas do pedido.'
+    ],
+    links: [
+      { path: '/erp/produtos', label: 'Cadastro de Produtos' },
+      { path: '/erp/producao', label: 'Ordens de Produção' },
+      { path: '/visao-geral', label: 'Planilha Mestra de Produção' }
+    ]
+  },
+
+  '/erp/clientes': {
+    category: 'ERP Nativo',
+    categoryColor: '#3b82f6',
+    title: 'Cadastro de Clientes ERP Nativo',
+    icon: 'Users',
+    description: 'Base corporativa de clientes (A1_COD), razão social, CNPJ, inscrição estadual, contatos comerciais, limites de crédito e histórico de compras.',
+    tabs: [
+      {
+        id: 'gestao_clientes',
+        label: 'Gestão de Clientes',
+        description: 'Consulta e manutenção da carteira de clientes.',
+        steps: [
+          'Localização: Digite parte da razão social, CNPJ ou código para localizar o cliente.',
+          'Novo Cliente: Clique em "+ Novo Cliente" para registrar novas contas com preenchimento automático de código.',
+          'Histórico de Pedidos: Clique em um cliente para visualizar todos os pedidos de venda emitidos para ele.',
+          'Contatos e E-mails: Mantenha os e-mails de faturamento e notas fiscais sempre atualizados.'
+        ]
+      }
+    ],
+    tips: [
+      'Clientes com pedidos ativos aparecem com destaque na visualização de pedidos de venda.',
+      'O código do cliente (A1_COD) é utilizado em todas as integrações com romaneios e notas fiscais.'
+    ],
+    links: [
+      { path: '/erp/pedidos', label: 'Pedidos de Venda' },
+      { path: '/comercial/faturamento', label: 'Controle de Faturamento' }
+    ]
+  },
+
+  '/erp/producao': {
+    category: 'ERP Nativo',
+    categoryColor: '#8b5cf6',
+    title: 'Ordens de Produção ERP Nativo',
+    icon: 'Factory',
+    description: 'Acompanhamento e controle das Ordens de Produção (SC2), vínculo com pedidos de venda, apontamentos por máquina, saldo a produzir e status do chão de fábrica.',
+    tabs: [
+      {
+        id: 'ordens',
+        label: 'Acompanhamento de OPs',
+        description: 'Visão detalhada das ordens fabris em andamento.',
+        steps: [
+          'Painel de OPs: Consulte o número da OP, produto, quantidade planejada, quantidade apontada e saldo restante.',
+          'Apontamentos: Registre avanços por setor operacional (Corte, Usinagem, Montagem).',
+          'Vínculo Comercial: Veja o número do pedido de venda e cliente que originou a ordem de produção.',
+          'Priorização: Ordens com entregas urgentes são destacadas visualmente para o time de fábrica.'
+        ]
+      }
+    ],
+    tips: [
+      'Utilize o painel de TV ou Apontamento por Operador para realizar registros rápidos direto no posto de trabalho.',
+      'Sempre confira a disponibilidade de matéria-prima antes de liberar uma nova OP para corte.'
+    ],
+    links: [
+      { path: '/erp/produtos', label: 'Cadastro de Produtos' },
+      { path: '/pcp/fila-dependencias', label: 'Fila de Dependências PCP' }
+    ]
+  },
+
+  '/cadastros/prefixos': {
+    category: 'Cadastros Básicos',
+    categoryColor: '#059669',
+    title: 'Prefixos & Famílias de Produtos',
+    icon: 'Hash',
+    description: 'Parametrização das famílias de produtos para geração automática e padronizada do código Protheus (B1_COD), com suporte a máscara sequencial e cadastro rápido.',
+    tabs: [
+      {
+        id: 'prefixos',
+        label: 'Famílias Cadastradas',
+        description: 'Gerenciamento de siglas e sequenciais por família.',
+        steps: [
+          'Sigla da Família: Defina o prefixo de 2 ou 3 letras (ex: PR1 para Matérias-Primas, PR2 para Produtos Acabados, US1 para Usinados).',
+          'Descrição: Informe o nome amigável da família de produtos.',
+          'Padrão Sequencial: Configure o número inicial ou máscara do contador.',
+          'Cadastro Rápido: Marque a opção "Rápido" para que a família apareça no topo do formulário de novo produto.'
+        ]
+      }
+    ],
+    tips: [
+      'A parametrização de prefixos evita códigos fora do padrão e duplicações no banco de dados.',
+      'Alterar um prefixo não afeta os produtos já cadastrados com o código anterior.'
+    ],
+    links: [
+      { path: '/erp/produtos', label: 'Cadastro de Produtos' },
+      { path: '/cadastros/tipos-produto', label: 'Tipos de Produto' }
+    ]
+  },
+
+  '/cadastros/tipos-produto': {
+    category: 'Cadastros Básicos',
+    categoryColor: '#059669',
+    title: 'Tipos de Produto (B1_TIPO)',
+    icon: 'Tags',
+    description: 'Tabela oficial de tipos de produto conforme a norma Protheus e legislação fiscal (PA, PI, MP, MC, ME, BN, etc.).',
+    tabs: [
+      {
+        id: 'tipos',
+        label: 'Tipos Fiscais Protheus',
+        description: 'Classificação para custeio, inventário e tributação.',
+        steps: [
+          'PA: Produto Acabado pronto para venda e faturamento.',
+          'PI: Produto Intermediário (subconjuntos montados internamente).',
+          'MP: Matéria-Prima adquirida de fornecedores para transformação.',
+          'MC: Material de Consumo utilizado na produção e manutenção.'
+        ]
+      }
+    ],
+    tips: [
+      'A classificação correta do tipo é obrigatória para a geração do Bloco K e fechamento de inventário.'
+    ],
+    links: [
+      { path: '/erp/produtos', label: 'Cadastro de Produtos' },
+      { path: '/cadastros/unidades-medida', label: 'Unidades de Medida' }
+    ]
+  },
+
+  '/cadastros/unidades-medida': {
+    category: 'Cadastros Básicos',
+    categoryColor: '#059669',
+    title: 'Unidades de Medida (B1_UM)',
+    icon: 'Scale',
+    description: 'Catálogo de unidades de comercialização e controle de estoque (UN, KG, PC, MT, M2, CX, RL).',
+    tabs: [
+      {
+        id: 'unidades',
+        label: 'Unidades de Medida',
+        description: 'Padronização de unidades utilizadas nas fichas técnicas.',
+        steps: [
+          'Código da Unidade: Sigla padrão de 2 caracteres (UN, KG, PC, MT).',
+          'Descrição: Nome por extenso da unidade (Unidade, Quilograma, Peça, Metro).',
+          'Ativação: Ative ou desative unidades conforme as necessidades da fábrica.'
+        ]
+      }
+    ],
+    tips: [
+      'Unidades de medida são vinculadas à estrutura BOM e alimentam o cálculo automático de peso de engenharia.'
+    ],
+    links: [
+      { path: '/erp/produtos', label: 'Cadastro de Produtos' },
+      { path: '/cadastros/armazens', label: 'Armazéns' }
+    ]
+  },
+
+  '/cadastros/armazens': {
+    category: 'Cadastros Básicos',
+    categoryColor: '#059669',
+    title: 'Armazéns & Locais de Estoque (B1_LOCPAD)',
+    icon: 'Warehouse',
+    description: 'Gerenciamento dos armazéns físicos e lógicos da empresa para estocagem e movimentações de saldo.',
+    tabs: [
+      {
+        id: 'armazens',
+        label: 'Locais de Estoque',
+        description: 'Controle de armazéns padrão e intermediários.',
+        steps: [
+          '01: Almoxarifado Central e Matérias-Primas.',
+          '02: Fábrica e Chão de Fábrica.',
+          '03: Expedição e Produtos Acabados.',
+          'Cadastro: Crie novos locais caso utilize filiais ou almoxarifados externos.'
+        ]
+      }
+    ],
+    tips: [
+      'Ao cadastrar um produto, o armazém padrão (B1_LOCPAD) direciona a entrada inicial de inventário.'
+    ],
+    links: [
+      { path: '/erp/produtos', label: 'Cadastro de Produtos' },
+      { path: '/estoque/saldos', label: 'Saldos de Estoque' }
+    ]
+  },
+
+  '/cadastros/cores-aco': {
+    category: 'Cadastros Básicos',
+    categoryColor: '#059669',
+    title: 'Codificação de Cores de Aço',
+    icon: 'Palette',
+    description: 'Padrão visual de pintura das pontas de barras e perfis metálicos para identificação imediata da liga de aço no chão de fábrica e almoxarifado.',
+    tabs: [
+      {
+        id: 'tabela_cores',
+        label: 'Tabela de Ligas & Cores',
+        description: 'Associação de cores a tipos e ligas de aço.',
+        steps: [
+          'Visualização: Consulte a lista de ligas cadastradas com suas cores de extremidade e significado técnico.',
+          'Nova Cor: Clique em "+ Nova Cor" para cadastrar uma nova liga metálica com cor sólida ou bicolor.',
+          'Restauração de Padrões: Utilize o botão de restauração caso deseje carregar a tabela industrial padrão (SAE 1020, SAE 1045, 4140, etc.).'
+        ]
+      }
+    ],
+    tips: [
+      'A identificação visual por cores reduz drasticamente o risco de usinagem ou corte com liga de aço incorreta.'
+    ],
+    links: [
+      { path: '/erp/produtos', label: 'Cadastro de Produtos' },
+      { path: '/materiais', label: 'Gestão de Materiais' }
+    ]
+  },
+
+  '/cadastros/setores': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Cadastro de Setores Operacionais (PCP)',
+    icon: 'Network',
+    description: 'Definição dos centros de custo e setores produtivos da fábrica para roteiros de fabricação, balanceamento de linhas e apontamento de mão de obra.',
+    tabs: [
+      {
+        id: 'setores',
+        label: 'Setores Produtivos',
+        description: 'Cadastro e manutenção dos setores fabris.',
+        steps: [
+          'Cadastro: Crie setores como Corte Laser, Dobra, Usinagem CNC, Caldeiraria, Solda, Pintura e Embalagem.',
+          'Capacidade Diária: Estabeleça o limite de horas-máquina disponíveis por turno em cada setor.',
+          'Responsável: Vincule o encarregado ou supervisor da área.'
+        ]
+      }
+    ],
+    tips: [
+      'Setores bem configurados permitem que o cálculo de taxa de ocupação reflita a real capacidade fabril.'
+    ],
+    links: [
+      { path: '/cadastros/recursos', label: 'Cadastro de Recursos' },
+      { path: '/cadastros/setores/recursos', label: 'Vínculo Setores × Recursos' }
+    ]
+  },
+
+  '/cadastros/recursos': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Cadastro de Recursos & Máquinas',
+    icon: 'Cpu',
+    description: 'Inventário de máquinas, bancadas e equipamentos produtivos com taxas horárias e capacidades nominais.',
+    tabs: [
+      {
+        id: 'recursos',
+        label: 'Máquinas & Postos',
+        description: 'Configuração individual dos postos de trabalho.',
+        steps: [
+          'Identificação: Registre código e nome da máquina (ex: LASER-01, TORNO-CNC-02).',
+          'Potência & Parâmetros: Cadastre limites de espessura e velocidade nominal.',
+          'Manutenção: Acompanhe o status operacional da máquina (Ativa, Em Manutenção, Inativa).'
+        ]
+      }
+    ],
+    tips: [
+      'Máquinas inativas são automaticamente excluídas dos planos de cálculo de carga de corte.'
+    ],
+    links: [
+      { path: '/cadastros/setores', label: 'Cadastro de Setores' },
+      { path: '/cadastros/setores/recursos', label: 'Vínculo Setores × Recursos' }
+    ]
+  },
+
+  '/cadastros/setores/recursos': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Vínculo Setores × Recursos',
+    icon: 'GitFork',
+    description: 'Matriz de distribuição de máquinas e postos de trabalho em cada setor operacional para execução dos roteiros de produção.',
+    tabs: [
+      {
+        id: 'vinculo',
+        label: 'Alocação de Máquinas',
+        description: 'Distribuição dos equipamentos nos setores.',
+        steps: [
+          'Selecione o setor operacional desejado.',
+          'Vincule as máquinas pertencentes a esse centro de trabalho.',
+          'Defina o recurso principal e recursos alternativos para balanceamento.'
+        ]
+      }
+    ],
+    tips: [
+      'Recursos alternativos garantem flexibilidade caso a máquina principal entre em manutenção não programada.'
+    ],
+    links: [
+      { path: '/cadastros/setores', label: 'Cadastro de Setores' },
+      { path: '/cadastros/recursos', label: 'Cadastro de Recursos' }
+    ]
+  },
+
+  '/admin/super-empresas': {
+    category: 'SuperAdmin',
+    categoryColor: '#dc2626',
+    title: 'Gestão de Empresas & Assinaturas',
+    icon: 'ShieldCheck',
+    description: 'Cockpit exclusivo do Superadministrador para controle de clientes do sistema multi-tenant, ativação/desativação de acessos e renovação de assinaturas mensais.',
+    tabs: [
+      {
+        id: 'empresas',
+        label: 'Painel de Empresas',
+        description: 'Controle de instâncias clientes e status de pagamento.',
+        steps: [
+          'Visão Consolidada: Acompanhe empresas ativas, desativadas, com vencimento em até 7 dias e vencidas.',
+          'Ativar/Desativar: Utilize o botão switch na linha da empresa para bloquear ou liberar o acesso imediatamente.',
+          'Extensão Rápida (+30 dias): Clique no botão rápido para estender a data de vencimento da assinatura em 1 mês.',
+          'Edição Completa: Altere razão social, CNPJ, valor da mensalidade e dados do responsável financeiro.'
+        ]
+      }
+    ],
+    tips: [
+      'Empresas desativadas ou com assinatura vencida são bloqueadas na tela de login com aviso orientativo.',
+      'O superadministrador possui imunidade de acesso e pode entrar em qualquer empresa para suporte.'
+    ],
+    links: [
+      { path: '/configuracoes', label: 'Configurações do Sistema' },
+      { path: '/admin/proposta-comercial', label: 'Propostas Comerciais' }
+    ]
+  },
+
+  '/admin/proposta-comercial': {
+    category: 'SuperAdmin',
+    categoryColor: '#dc2626',
+    title: 'Gerador de Propostas Comerciais',
+    icon: 'FileSpreadsheet',
+    description: 'Elaboração e emissão de propostas comerciais de licenciamento e implantação do SINCO Suite para novos clientes industriais.',
+    tabs: [
+      {
+        id: 'proposta',
+        label: 'Emissão de Propostas',
+        description: 'Formulação de planos e exportação de proposta em PDF.',
+        steps: [
+          'Preencha os dados do cliente e segmento industrial.',
+          'Selecione os módulos contratados (PCP, Chão de Fábrica, Suprimentos, SGQ, SST, Portaria).',
+          'Defina o valor de implantação e mensalidade conforme o número de usuários.',
+          'Gere o documento oficial em PDF para envio ao decisor.'
+        ]
+      }
+    ],
+    tips: [
+      'Utilize os templates pré-formatados para acelerar o ciclo de negociação comercial.'
+    ],
+    links: [
+      { path: '/admin/super-empresas', label: 'Gestão de Empresas' }
+    ]
+  },
+
+  '/empresa/colaboradores': {
+    category: 'Administração',
+    categoryColor: '#475569',
+    title: 'Gestão de Colaboradores da Empresa',
+    icon: 'UserCheck',
+    description: 'Gerenciamento de contas de usuário da empresa ativa, definição de papéis de permissão, liberação de módulos e emissão de códigos de convite.',
+    tabs: [
+      {
+        id: 'usuarios',
+        label: 'Colaboradores Ativos',
+        description: 'Manutenção de acessos e perfis da equipe.',
+        steps: [
+          'Lista de Usuários: Visualize todos os colaboradores com login, e-mail, cargo e status.',
+          'Editar Permissões: Alterne quais módulos o usuário tem autorização para visualizar ou editar.',
+          'Gerar Convite: Emita um código ou link de convite para que novos funcionários façam o auto-cadastro com segurança.',
+          'Bloqueio Temporário: Desative o acesso de colaboradores desligados mantendo o histórico de auditoria intacto.'
+        ]
+      }
+    ],
+    tips: [
+      'Evite compartilhar senhas entre operadores: crie contas individuais para garantir rastreabilidade nos apontamentos.'
+    ],
+    links: [
+      { path: '/configuracoes', label: 'Configurações Gerais' }
+    ]
+  },
+
+  '/rh/pasta-colaborador': {
+    category: 'RH',
+    categoryColor: '#e11d48',
+    title: 'Pasta Digital do Colaborador (RH)',
+    icon: 'FolderUser',
+    description: 'Prontuário digital do trabalhador contendo documentos admissionais, termos de ciência, ASOs ocupacionais, holerites e histórico funcional.',
+    tabs: [
+      {
+        id: 'documentos',
+        label: 'Prontuário Eletrônico',
+        description: 'Armazenamento e consulta segura de documentos funcionais.',
+        steps: [
+          'Selecione o colaborador na lista à esquerda.',
+          'Visualize as abas de Documentos Pessoais, Atestados de Saúde (ASO) e Termos Assinados.',
+          'Upload: Arraste novos arquivos PDF para salvar diretamente na pasta segura do colaborador.',
+          'Validade: O sistema monitora vencimentos de exames periódicos e cursos obrigatórios.'
+        ]
+      }
+    ],
+    tips: [
+      'Documentos anexados são criptografados e acessíveis apenas por usuários com perfil de RH ou Gestão de Pessoas.'
+    ],
+    links: [
+      { path: '/rh/portal-colaborador', label: 'Portal do Colaborador' },
+      { path: '/sst', label: 'Segurança do Trabalho' }
+    ]
+  },
+
+  '/rh/portal-colaborador': {
+    category: 'RH',
+    categoryColor: '#e11d48',
+    title: 'Portal de Autoatendimento do Colaborador',
+    icon: 'Smile',
+    description: 'Canal de autosserviço para que os funcionários consultem informações funcionais, enviem atestados médicos e acompanhem benefícios.',
+    tabs: [
+      {
+        id: 'portal',
+        label: 'Meu Autoatendimento',
+        description: 'Serviços disponíveis para o colaborador.',
+        steps: [
+          'Atestados Médicos: Tire foto do atestado e envie diretamente para validação do RH.',
+          'Espelho de Ponto: Consulte marcações de ponto e saldo de banco de horas.',
+          'Cesta Básica: Verifique sua situação de elegibilidade e datas de retirada.'
+        ]
+      }
+    ],
+    tips: [
+      'O portal é 100% responsivo e pode ser acessado direto do smartphone pelo colaborador.'
+    ],
+    links: [
+      { path: '/rh/pasta-colaborador', label: 'Pasta do Colaborador' }
+    ]
+  },
+
+  '/salas': {
+    category: 'Comunicação',
+    categoryColor: '#0ea5e9',
+    title: 'Salas de Reunião & Totem Digital',
+    icon: 'DoorClosed',
+    description: 'Reserva e gestão de salas de conferência com envio automático de convites via WhatsApp/E-mail e modo Totem de Porta com contagem regressiva.',
+    tabs: [
+      {
+        id: 'reservas',
+        label: 'Agendamento de Salas',
+        description: 'Como criar e gerenciar reuniões.',
+        steps: [
+          'Grade de Horários: Visualize as salas disponíveis e horários livres.',
+          'Nova Reserva: Clique no horário desejado, informe o título, participantes e pauta.',
+          'Notificação Automática: Os participantes recebem a confirmação instantaneamente no WhatsApp.',
+          'Modo Totem: Abra a tela de Totem em um tablet na porta da sala para indicar "Ocupada" ou "Livre".'
+        ]
+      }
+    ],
+    tips: [
+      'Reuniões que encerram antes do horário podem ser liberadas pelo Totem para uso imediato por outras equipes.'
+    ],
+    links: [
+      { path: '/calendario-atividades', label: 'Calendário de Atividades' }
+    ]
+  },
+
+  '/salas-reuniao': {
+    category: 'Comunicação',
+    categoryColor: '#0ea5e9',
+    title: 'Salas de Reunião & Totem Digital',
+    icon: 'DoorClosed',
+    description: 'Reserva e gestão de salas de conferência com envio automático de convites via WhatsApp/E-mail e modo Totem de Porta com contagem regressiva.',
+    tabs: [
+      {
+        id: 'reservas',
+        label: 'Agendamento de Salas',
+        description: 'Como criar e gerenciar reuniões.',
+        steps: [
+          'Grade de Horários: Visualize as salas disponíveis e horários livres.',
+          'Nova Reserva: Clique no horário desejado, informe o título, participantes e pauta.',
+          'Notificação Automática: Os participantes recebem a confirmação instantaneamente no WhatsApp.',
+          'Modo Totem: Abra a tela de Totem em um tablet na porta da sala para indicar "Ocupada" ou "Livre".'
+        ]
+      }
+    ],
+    tips: [
+      'Reuniões que encerram antes do horário podem ser liberadas pelo Totem para uso imediato por outras equipes.'
+    ],
+    links: [
+      { path: '/calendario-atividades', label: 'Calendário de Atividades' }
+    ]
+  },
+
+  '/sst': {
+    category: 'Segurança e Saúde',
+    categoryColor: '#16a34a',
+    title: 'Central de Segurança do Trabalho (SST)',
+    icon: 'ShieldAlert',
+    description: 'Gestão integrada de Fichas de EPI com assinatura digital, controle de estoque de segurança, alertas de validade de CA e rastreabilidade total.',
+    tabs: [
+      {
+        id: 'epis',
+        label: 'Fichas de EPI',
+        description: 'Controle de entrega e termo de responsabilidade.',
+        steps: [
+          'Nova Entrega: Selecione o colaborador e lance os itens de proteção individual entregues.',
+          'Assinatura Digital: O colaborador assina na tela do tablet ou smartphone comprovando o recebimento.',
+          'Controle de CA: O sistema valida se o Certificado de Aprovação (CA) está ativo no Ministério do Trabalho.',
+          'Histórico Legal: Exporte a ficha consolidada em PDF assinada para fiscalizações trabalhistas.'
+        ]
+      }
+    ],
+    tips: [
+      'A assinatura digital na entrega do EPI tem validade jurídica conforme a NR-06.'
+    ],
+    links: [
+      { path: '/sst/brigada', label: 'Brigada de Emergência' },
+      { path: '/sst/cesta-basica', label: 'Cestas Básicas' }
+    ]
+  },
+
+  '/sst/brigada': {
+    category: 'Segurança e Saúde',
+    categoryColor: '#ea580c',
+    title: 'Brigada de Emergência & Incêndio',
+    icon: 'Flame',
+    description: 'Controle dos membros da brigada, escala de plantão fabril, cronograma de treinamentos, simulados de evacuação e relatórios de prontidão.',
+    tabs: [
+      {
+        id: 'brigada',
+        label: 'Equipe de Brigadistas',
+        description: 'Gestão dos voluntários e treinamentos obrigatórios.',
+        steps: [
+          'Quadro de Membros: Cadastre os brigadistas por turno e setor da fábrica.',
+          'Treinamentos: Acompanhe a validade dos certificados de primeiros socorros e combate a incêndio.',
+          'Simulados: Registre datas e tempos de resposta das simulações de evacuação de área.'
+        ]
+      }
+    ],
+    tips: [
+      'Mantenha ao menos 2 brigadistas ativos por turno para conformidade com o Corpo de Bombeiros.'
+    ],
+    links: [
+      { path: '/sst/brigada/inspecao-rapida', label: 'Inspeção Rápida de Extintores' },
+      { path: '/sst', label: 'Central SST' }
+    ]
+  },
+
+  '/sst/brigada/inspecao-rapida': {
+    category: 'Segurança e Saúde',
+    categoryColor: '#ea580c',
+    title: 'Inspeção Rápida de Extintores & Hidrantes',
+    icon: 'QrCode',
+    description: 'Aplicativo mobile-first para inspeção visual periódica de extintores, mangueiras e hidrantes no chão de fábrica via leitura de QR Code.',
+    tabs: [
+      {
+        id: 'inspecao',
+        label: 'Ronda de Inspeção',
+        description: 'Passo a passo da vistoria mensal.',
+        steps: [
+          'Leitura do Ponto: Aponte a câmera para o QR Code fixado no suporte do extintor.',
+          'Checklist Visual: Verifique manômetro (pressão), lacre, mangueira e desobstrução do acesso.',
+          'Registro Fotográfico: Tire foto em caso de avaria ou necessidade de recarga.',
+          'Conclusão: Envie a inspeção para atualizar o mapa de equipamentos da planta.'
+        ]
+      }
+    ],
+    tips: [
+      'A ronda mensal identifica extintores despressurizados antes que ocorra uma emergência real.'
+    ],
+    links: [
+      { path: '/sst/brigada', label: 'Brigada de Emergência' }
+    ]
+  },
+
+  '/sst/cesta-basica': {
+    category: 'Segurança e Saúde',
+    categoryColor: '#16a34a',
+    title: 'Controle de Cestas Básicas',
+    icon: 'ShoppingBag',
+    description: 'Gestão mensal dos períodos de entrega do benefício alimentar, apuração de critérios de assiduidade e baixa com assinatura digital do recebedor.',
+    tabs: [
+      {
+        id: 'entrega',
+        label: 'Período de Distribuição',
+        description: 'Como registrar as retiradas de cestas.',
+        steps: [
+          'Abertura de Período: Inicie o período do mês (ex: Outubro/2026).',
+          'Validação de Critérios: O sistema lista colaboradores elegíveis e destaca faltas não justificadas.',
+          'Baixa da Cesta: Ao entregar, colete a assinatura do funcionário na tela.',
+          'Relatório de Sobras: Identifique colaboradores que ainda não retiraram antes do fechamento.'
+        ]
+      }
+    ],
+    tips: [
+      'O comprovante com assinatura digital elimina a necessidade de fichas de papel e previne contestações.'
+    ],
+    links: [
+      { path: '/rh/pasta-colaborador', label: 'Pasta do Colaborador' }
+    ]
+  },
+
+  '/sst/cipa': {
+    category: 'Segurança e Saúde',
+    categoryColor: '#16a34a',
+    title: 'CIPA & Urna Eletrônica Auditável',
+    icon: 'Vote',
+    description: 'Condução transparente do processo eleitoral da CIPA, registro de candidatos, edital de convocação e votação digital sigilosa.',
+    tabs: [
+      {
+        id: 'eleicao',
+        label: 'Processo Eleitoral',
+        description: 'Etapas da eleição da CIPA.',
+        steps: [
+          'Comissão Eleitoral: Defina os membros organizadores e cronograma legal.',
+          'Inscrição de Candidatos: Registre os funcionários concorrentes com foto e número.',
+          'Votação na Urna: Abra o totem de votação em um tablet para que os funcionários votem secretamente.',
+          'Apuração: Gere a ata de apuração com resultado imediato e gráficos de votação.'
+        ]
+      }
+    ],
+    tips: [
+      'A urna eletrônica registra apenas um voto por CPF de forma anônima e auditável.'
+    ],
+    links: [
+      { path: '/sst', label: 'Central SST' }
+    ]
+  },
+
+  '/suporte': {
+    category: 'Suporte Técnico',
+    categoryColor: '#64748b',
+    title: 'Central de Suporte & Chamados',
+    icon: 'LifeBuoy',
+    description: 'Canal oficial para relato de dúvidas, sugestões, bugs e solicitação de ajustes técnicos aos mantenedores do SINCO ERP.',
+    tabs: [
+      {
+        id: 'chamados',
+        label: 'Abertura de Chamado',
+        description: 'Como registrar um ticket técnico.',
+        steps: [
+          'Clique em "+ Novo Chamado".',
+          'Selecione a categoria do problema (ERP, PCP, Financeiro, Infraestrutura, IA).',
+          'Descreva a situação com clareza e anexe prints da tela com erro se possível.',
+          'Acompanhe as respostas e o prazo estimado de resolução da equipe de desenvolvimento.'
+        ]
+      }
+    ],
+    tips: [
+      'Antes de abrir um chamado, consulte esta Central de Ajuda: muitas dúvidas operacionais já estão respondidas aqui!'
+    ],
+    links: [
+      { path: '/ajuda', label: 'Central de Ajuda SGQ' }
+    ]
+  },
+
+  '/portaria/guarita': {
+    category: 'Controle de Acesso',
+    categoryColor: '#0f766e',
+    title: 'Portaria & Guarita Operacional',
+    icon: 'ShieldCheck',
+    description: 'Registro ágil de entradas e saídas de visitantes, prestadores de serviço, veículos e caminhões de carga e descarga.',
+    tabs: [
+      {
+        id: 'guarita',
+        label: 'Acesso Rápido',
+        description: 'Operação diária da guarita.',
+        steps: [
+          'Entrada de Visitante: Registre nome, documento (RG/CPF), empresa e quem autorizou o acesso.',
+          'Entrada de Carga: Informe placa do caminhão, transportadora e nota fiscal associada.',
+          'Crachá: Associe o número do crachá temporário fornecido ao visitante.',
+          'Registro de Saída: Ao devolver o crachá, localize o visitante e registre a saída com 1 clique.'
+        ]
+      }
+    ],
+    tips: [
+      'O painel destaca em vermelho visitantes que permanecem na fábrica além do horário previsto.'
+    ],
+    links: [
+      { path: '/portaria/gerencial', label: 'Gestão Gerencial' },
+      { path: '/portaria/turnos', label: 'Passagem de Turno' }
+    ]
+  },
+
+  '/portaria/gerencial': {
+    category: 'Controle de Acesso',
+    categoryColor: '#0f766e',
+    title: 'Gestão Gerencial de Acessos',
+    icon: 'BarChart',
+    description: 'Dashboard analítico de circulação na portaria, fluxo de fornecedores, tempo médio de permanência e histórico para auditorias de segurança.',
+    tabs: [
+      {
+        id: 'relatorios',
+        label: 'Métricas & Auditoria',
+        description: 'Análise de acessos e permanência.',
+        steps: [
+          'Filtre por data, tipo de visitante ou empresa terceirizada.',
+          'Identifique horários de pico na guarita para melhor dimensionamento da equipe.',
+          'Exporte relatórios consolidados em Excel para atendimento a auditorias patrimoniais.'
+        ]
+      }
+    ],
+    tips: [
+      'Utilize a pesquisa de placas para localizar carretas e conferir horários de entrega de matéria-prima.'
+    ],
+    links: [
+      { path: '/portaria/guarita', label: 'Guarita Operacional' }
+    ]
+  },
+
+  '/portaria/turnos': {
+    category: 'Controle de Acesso',
+    categoryColor: '#0f766e',
+    title: 'Passagem de Turno da Portaria',
+    icon: 'Clock',
+    description: 'Livro digital de ocorrências, controle do claviculário de chaves da fábrica, frota de veículos internos e materiais retidos.',
+    tabs: [
+      {
+        id: 'livro_turno',
+        label: 'Passagem de Posto',
+        description: 'Registro de troca de guarda.',
+        steps: [
+          'Conferência de Chaves: Verifique se todas as chaves de setores críticos foram devolvidas ao claviculário.',
+          'Frota de Veículos: Registre quilometragem e nível de combustível dos carros da empresa.',
+          'Ocorrências: Descreva qualquer incidente noturno ou anormalidade observada no perímetro.',
+          'Assinatura dos Porteiros: Porteiro que sai e que entra assinam o livro digital.'
+        ]
+      }
+    ],
+    tips: [
+      'O livro digital elimina o caderno de ocorrências em papel e não permite rasuras ou edições retroativas.'
+    ],
+    links: [
+      { path: '/portaria/guarita', label: 'Guarita Operacional' }
+    ]
+  },
+
+  '/pcp-refinado/capacidade': {
+    category: 'PCP',
+    categoryColor: '#f59e0b',
+    title: 'Cálculo de Carga & Capacidade Máquina',
+    icon: 'BarChart2',
+    description: 'Análise gráfica da ocupação dos postos de trabalho, confronto de horas necessárias vs horas disponíveis e identificação de gargalos fabris.',
+    tabs: [
+      {
+        id: 'capacidade',
+        label: 'Ocupação de Recursos',
+        description: 'Equilíbrio e balanceamento fabril.',
+        steps: [
+          'Selecione o horizonte de planejamento (semana, quinzena ou mês).',
+          'Analise o gráfico de barras: máquinas acima de 100% estão em sobrecarga (gargalo).',
+          'Redistribua ordens de corte ou estenda turnos para equalizar a carga entre os equipamentos.'
+        ]
+      }
+    ],
+    tips: [
+      'Monitore antecipadamente os gargalos para evitar atrasos na expedição de pedidos críticos.'
+    ],
+    links: [
+      { path: '/pcp/fila-dependencias', label: 'Fila de Dependências PCP' },
+      { path: '/visao-geral', label: 'Planilha Mestra' }
+    ]
+  },
+
+  '/engenharia/msmetal/produtos': {
+    category: 'Engenharia',
+    categoryColor: '#0d9488',
+    title: 'Catálogo de Produtos MS Metal',
+    icon: 'Compass',
+    description: 'Catálogo e árvores de produtos de engenharia customizados da linha MS Metal com visualização de subconjuntos e peças fabricadas.',
+    tabs: [
+      {
+        id: 'catalogo_msmetal',
+        label: 'Estruturas de Engenharia',
+        description: 'Navegação nos projetos da MS Metal.',
+        steps: [
+          'Pesquise pelo código ou nome do equipamento.',
+          'Navegue pelos níveis da árvore estrutural (conjunto, subconjunto e peças elementares).',
+          'Visualize espessura de chapas, pesos teóricos e desenhos de corte associados.'
+        ]
+      }
+    ],
+    tips: [
+      'As estruturas são integradas diretamente ao módulo de geração de BOM e liberação de OPs.'
+    ],
+    links: [
+      { path: '/estrutura-produtos', label: 'Estrutura de Produtos' },
+      { path: '/bom-generator', label: 'Gerador de BOM' }
+    ]
+  },
+
+  '/engenharia/sinco/estrutura-completa': {
+    category: 'SINCO / Engenharia',
+    categoryColor: '#0891b2',
+    title: 'Estrutura Completa de Engenharia SINCO',
+    icon: 'Layers',
+    description: 'Visualização macroscópica e organograma em árvore de estruturas mecânicas multicamadas integradas ao Solid Edge e desenhos CAD.',
+    tabs: [
+      {
+        id: 'arvore_sinco',
+        label: 'Árvore de Engenharia',
+        description: 'Desdobramento completo de componentes.',
+        steps: [
+          'Digite o código do produto pai ou conjunto soldado.',
+          'Expanda os nós para visualizar todas as matérias-primas e peças consumidas.',
+          'Exporte o PDF com desenho técnico e organograma para produção.'
+        ]
+      }
+    ],
+    tips: [
+      'Desenhos com modelo 3D ativo no Solid Edge sincronizam metadados em tempo real com esta tela.'
+    ],
+    links: [
+      { path: '/estrutura-produtos', label: 'Estrutura de Produtos' }
+    ]
+  },
+
+  '/sgq/rncs': {
+    category: 'SGQ',
+    categoryColor: '#10b981',
+    title: 'Gestão de Não Conformidades (RNC)',
+    icon: 'AlertOctagon',
+    description: 'Registro de ocorrências de qualidade em matéria-prima, processo produtivo ou reclamações de clientes com plano de ação (5W2H) e causa raiz.',
+    tabs: [
+      {
+        id: 'rncs',
+        label: 'Tratativa de RNCs',
+        description: 'Ciclo de investigação e fechamento de falhas.',
+        steps: [
+          'Registro: Descreva a não conformidade identificando produto, fornecedor, cliente ou OP.',
+          'Disposição Imediata: Decida se o lote será retrabalhado, descartado ou aceito sob concessão.',
+          'Análise de Causa: Aplique os 5 Porquês ou Diagrama de Ishikawa com a equipe envolvida.',
+          'Ação Corretiva: Registre o plano de ação e valide a eficácia para encerramento do relatório.'
+        ]
+      }
+    ],
+    tips: [
+      'A rastreabilidade de RNCs é indispensável para auditorias de certificação ISO 9001.'
+    ],
+    links: [
+      { path: '/sgq/dashboard', label: 'Dashboard SGQ' },
+      { path: '/sgq/documentos', label: 'Controle de Documentos' }
+    ]
+  },
+
+  '/teste-ocr': {
+    category: 'Tecnologia & IA',
+    categoryColor: '#6366f1',
+    title: 'Laboratório de Teste de OCR e IA',
+    icon: 'Cpu',
+    description: 'Ambiente de teste e homologação do motor de leitura inteligente de desenhos de engenharia e notas fiscais com Gemini AI e Tesseract OCR.',
+    tabs: [
+      {
+        id: 'ocr_lab',
+        label: 'Teste de Extração',
+        description: 'Homologação de modelos e prompts.',
+        steps: [
+          'Arraste um PDF ou imagem de desenho técnico para a área de teste.',
+          'Selecione o motor de processamento (Google Gemini AI ou OCR Nativo).',
+          'Analise os campos extraídos: Código, Título, Material, Espessura, Peso e Revisão.'
+        ]
+      }
+    ],
+    tips: [
+      'Esta tela serve para validar novos formatos de desenhos de clientes antes do cadastro em lote.'
+    ],
+    links: [
+      { path: '/erp/produtos', label: 'Cadastro de Produtos' }
+    ]
   }
+
 };

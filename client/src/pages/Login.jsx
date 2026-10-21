@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus, HelpCircle, Smartphone, ExternalLink, Key, Building2, CheckCircle2, Clock } from 'lucide-react';
+import { Lock, User, LogIn, Mail, ArrowLeft, Send, UserPlus, HelpCircle, Smartphone, ExternalLink, Key, Building2, CheckCircle2, Clock, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { api } from '../services/api';
 import { useHelp } from '../contexts/HelpContext';
 import HelpDrawer from '../components/HelpDrawer';
@@ -44,6 +44,7 @@ const Login = () => {
     const [regCodigoConvite, setRegCodigoConvite] = useState('');
 
     const [error, setError] = useState('');
+    const [deactivatedInfo, setDeactivatedInfo] = useState(null);
     const [successMsg, setSuccessMsg] = useState('');
     const [loading, setLoading] = useState(false);
     const [showRecoveryHint, setShowRecoveryHint] = useState(false);
@@ -87,9 +88,18 @@ const Login = () => {
         if (result.success) {
             navigate('/ajuda');
         } else {
-            setError(result.message);
-            if (result.message && result.message.toLowerCase().includes('credenciais')) {
-                setShowRecoveryHint(true);
+            if (result.code === 'EMPRESA_DESATIVADA') {
+                setDeactivatedInfo({
+                    message: result.message,
+                    empresa: result.empresa
+                });
+                setError('');
+            } else {
+                setDeactivatedInfo(null);
+                setError(result.message);
+                if (result.message && result.message.toLowerCase().includes('credenciais')) {
+                    setShowRecoveryHint(true);
+                }
             }
         }
     };
@@ -132,13 +142,11 @@ const Login = () => {
                 localStorage.setItem('@Lynx:token', res.data.token);
                 localStorage.setItem('@Lynx:user', JSON.stringify(res.data.user));
                 api.defaults.headers.Authorization = `Bearer ${res.data.token}`;
-                alert('Empresa e conta Master criadas com sucesso! Bem-vindo ao SINCO SaaS (14 dias de teste ativados).');
-                window.location.href = '/visao-geral';
+                window.location.href = '/cadastro-concluido';
                 return;
             }
 
-            setSuccessMsg(res.data.message || 'Cadastro realizado com sucesso!');
-            setView('login');
+            window.location.href = '/cadastro-concluido';
         } catch (err) {
             setError(err.response?.data?.message || err.response?.data?.error || err.message);
         } finally {
@@ -225,6 +233,42 @@ const Login = () => {
                             {successMsg}
                         </div>
                     )}
+                    {deactivatedInfo && (
+                        <div className="bg-amber-50/90 border-2 border-amber-400 rounded-2xl p-5 mb-6 text-left shadow-md animate-fadeIn">
+                            <div className="flex items-start gap-3.5">
+                                <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-xs shrink-0">
+                                    <ShieldAlert className="w-6 h-6" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <h4 className="font-bold text-amber-950 text-sm">
+                                            Acesso Suspenso / Empresa Desativada
+                                        </h4>
+                                        {deactivatedInfo.empresa?.nome && (
+                                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 font-bold border border-amber-300">
+                                                {deactivatedInfo.empresa.nome}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-amber-900/90 mt-2 leading-relaxed font-medium">
+                                        {deactivatedInfo.message}
+                                    </p>
+                                    <div className="mt-3 pt-2.5 border-t border-amber-200 text-[11px] text-amber-800 flex items-center justify-between">
+                                        <span className="font-semibold">Vencimento da Mensalidade:</span>
+                                        <span className="font-bold text-amber-950">
+                                            {deactivatedInfo.empresa?.vencimento 
+                                                ? new Date(deactivatedInfo.empresa.vencimento).toLocaleDateString('pt-BR') 
+                                                : 'Aguardando regularização'}
+                                        </span>
+                                    </div>
+                                    <div className="mt-2 text-[11px] text-amber-700/80 font-medium">
+                                        ℹ️ Solicite a revalidação ou reativação junto ao administrador ou financeiro da plataforma.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {error && (
                         <div className="bg-red-50 text-red-600 p-4 rounded-lg text-sm border border-red-100 text-center mb-6">
                             {error}

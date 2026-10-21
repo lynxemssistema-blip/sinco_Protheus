@@ -49,6 +49,16 @@ async function ensureTables() {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
 
+    // Migração de campos para integração com Etiquetas Térmicas (Zebra / Argox)
+    try {
+        const [rCols] = await mysql.query(`SHOW COLUMNS FROM pcp_recursos LIKE 'label_template_id'`);
+        if (rCols.length === 0) {
+            await mysql.query('ALTER TABLE pcp_recursos ADD COLUMN label_template_id INT NULL');
+            await mysql.query('ALTER TABLE pcp_recursos ADD COLUMN printer_host VARCHAR(100) NULL');
+            await mysql.query('ALTER TABLE pcp_recursos ADD COLUMN printer_port INT NULL');
+        }
+    } catch (e) {}
+
     // Recursos vinculados aos setores (permite 1 recurso em N setores)
     await mysql.query(`
         CREATE TABLE IF NOT EXISTS pcp_setor_recursos (
@@ -404,6 +414,9 @@ router.post('/catalogo-recursos', async (req, res) => {
     const cleanTipo = tipo || 'MA';
     const cleanAtivo = ativo !== undefined ? (ativo ? 1 : 0) : 1;
     const cleanCapacidade = parseFloat(capacidade_padrao) || 0;
+    const cleanTemplateId = req.body.label_template_id ? parseInt(req.body.label_template_id, 10) : null;
+    const cleanPrinterHost = req.body.printer_host ? String(req.body.printer_host).trim() : null;
+    const cleanPrinterPort = req.body.printer_port ? parseInt(req.body.printer_port, 10) : null;
 
     try {
         const [existing] = await mysql.query(
@@ -415,9 +428,9 @@ router.post('/catalogo-recursos', async (req, res) => {
         }
 
         const [result] = await mysql.query(
-            `INSERT INTO pcp_recursos (IdEmpresa, codigo, nome, tipo, descricao, capacidade_padrao, ativo)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [targetEmpresa, cleanCodigo, cleanNome, cleanTipo, descricao || null, cleanCapacidade, cleanAtivo]
+            `INSERT INTO pcp_recursos (IdEmpresa, codigo, nome, tipo, descricao, capacidade_padrao, ativo, label_template_id, printer_host, printer_port)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [targetEmpresa, cleanCodigo, cleanNome, cleanTipo, descricao || null, cleanCapacidade, cleanAtivo, cleanTemplateId, cleanPrinterHost, cleanPrinterPort]
         );
 
         const [created] = await mysql.query(
@@ -438,7 +451,7 @@ router.post('/catalogo-recursos', async (req, res) => {
 router.put('/catalogo-recursos/:id', async (req, res) => {
     const tenantId = getTenantContext(req);
     const id = req.params.id;
-    const { nome, tipo, descricao, capacidade_padrao, ativo, IdEmpresa } = req.body;
+    const { nome, tipo, descricao, capacidade_padrao, ativo, IdEmpresa, label_template_id, printer_host, printer_port } = req.body;
     const isSA = isSuperAdminUser(req.user) || req.isSuperAdmin;
 
     try {
@@ -461,12 +474,16 @@ router.put('/catalogo-recursos/:id', async (req, res) => {
         const updatedCap = capacidade_padrao !== undefined ? (parseFloat(capacidade_padrao) || 0) : current.capacidade_padrao;
         const updatedAtivo = ativo !== undefined ? (ativo ? 1 : 0) : current.ativo;
         const updatedEmpresa = (isSA && IdEmpresa) ? IdEmpresa : current.IdEmpresa;
+        const updatedTemplateId = label_template_id !== undefined ? (label_template_id ? parseInt(label_template_id, 10) : null) : current.label_template_id;
+        const updatedPrinterHost = printer_host !== undefined ? (printer_host ? String(printer_host).trim() : null) : current.printer_host;
+        const updatedPrinterPort = printer_port !== undefined ? (printer_port ? parseInt(printer_port, 10) : null) : current.printer_port;
 
         await mysql.query(
             `UPDATE pcp_recursos 
-             SET nome = ?, tipo = ?, descricao = ?, capacidade_padrao = ?, ativo = ?, IdEmpresa = ?
+             SET nome = ?, tipo = ?, descricao = ?, capacidade_padrao = ?, ativo = ?, IdEmpresa = ?,
+                 label_template_id = ?, printer_host = ?, printer_port = ?
              WHERE id = ?`,
-            [updatedNome, updatedTipo, updatedDesc, updatedCap, updatedAtivo, updatedEmpresa, id]
+            [updatedNome, updatedTipo, updatedDesc, updatedCap, updatedAtivo, updatedEmpresa, updatedTemplateId, updatedPrinterHost, updatedPrinterPort, id]
         );
 
         if (nome !== undefined) {
@@ -1186,12 +1203,13 @@ router.post('/visao/notify', async (req, res) => {
         const { filters, tipo, canal } = req.body; // tipo: 'responsibles', 'all', 'me', canal: 'whatsapp' or 'email'
         
         // 1. Fetch visao data (using local request)
-        const port = process.env.PORT || 3002;
+        const port = process.env.PORT || 3000;
         const url = `http://127.0.0.1:${port}/api/pcp-setores/visao`;
         
         const visaoRes = await axios.get(url, { 
             params: { ...filters, no_paginate: 'true' },
-            headers: { Authorization: req.headers.authorization }
+            headers: { Authorization: req.headers.authorization },
+            timeout: 5000
         });
         const visaoData = visaoRes.data;
 

@@ -13,8 +13,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 
 const IMAP_CONFIG = {
     imap: {
-        user: process.env.IMAP_USER || 'suporte@lynxems.com.br',
-        password: process.env.IMAP_PASSWORD || '10207597Rdv*',
+        user: process.env.IMAP_USER || process.env.SMTP_USER || 'suporte@lynxems.com.br',
+        password: process.env.IMAP_PASSWORD || process.env.SMTP_PASS || '',
         host: process.env.IMAP_HOST || 'imap.hostinger.com',
         port: parseInt(process.env.IMAP_PORT, 10) || 993,
         tls: true,
@@ -28,7 +28,7 @@ const SMTP_CONFIG = {
     secure: true,
     auth: {
         user: process.env.SMTP_USER || 'suporte@lynxems.com.br',
-        pass: process.env.SMTP_PASS || '10207597Rdv*'
+        pass: process.env.SMTP_PASS || ''
     },
     tls: {
         rejectUnauthorized: false

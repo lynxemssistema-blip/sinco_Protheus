@@ -5,6 +5,7 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const multer = require('multer');
+const { createSafeFileFilter, DEFAULT_UPLOAD_LIMITS } = require('../util/uploadSecurity');
 const PDFExtractionService = require('../services/pdfExtraction');
 
 const {
@@ -32,7 +33,11 @@ const storage = multer.diskStorage({
         cb(null, `${unique}-${cleanName}`);
     }
 });
-const uploadDoc = multer({ storage });
+const uploadDoc = multer({
+    storage,
+    limits: DEFAULT_UPLOAD_LIMITS,
+    fileFilter: createSafeFileFilter()
+});
 
 // Inicialização: Criar Tabela se não existir
 const initTable = async () => {
@@ -91,8 +96,29 @@ const initTable = async () => {
 // Executar init na carga do módulo (ou chamar via endpoint de setup, mas aqui é prático)
 initTable();
 
-// GET /api/docs/view?path=... - Proxy para abrir arquivos locais
+// Whitelist de extensões seguras para visualização/download de documentos
+const ALLOWED_DOC_EXTS = new Set([
+    '.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif',
+    '.xlsx', '.xls', '.csv', '.doc', '.docx', '.txt', '.zip', '.xml'
+]);
+
+// GET /api/docs/view?path=... - Proxy para abrir arquivos locais com controle de segurança
 router.get('/view', (req, res) => {
+    // 1. Verificação de Autenticação (JWT via Header, Query param ?token= ou req.user injetado)
+    if (!req.user) {
+        const token = (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]) || req.query.token;
+        if (!token) {
+            return res.status(401).send('Acesso negado: Autenticação obrigatória para visualizar documentos.');
+        }
+        try {
+            const jwt = require('jsonwebtoken');
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
+            req.user = decoded;
+        } catch (authErr) {
+            return res.status(401).send('Acesso negado: Token de sessão inválido ou expirado.');
+        }
+    }
+
     let filePath = req.query.path;
     if (!filePath) {
         return res.status(400).send('Caminho do arquivo não informado.');
@@ -113,11 +139,28 @@ router.get('/view', (req, res) => {
     const normalizedPath = normalizeFilePath(filePath);
     const absolutePath = path.resolve(normalizedPath);
 
+    // 2. Validação estrita de extensão (whitelist)
+    const ext = path.extname(absolutePath).toLowerCase();
+    if (!ALLOWED_DOC_EXTS.has(ext)) {
+        return res.status(403).send('Acesso negado: Tipo de arquivo não permitido para visualização.');
+    }
+
+    // 3. Prevenção de Path Traversal para pastas internas do servidor / código fonte / credenciais
+    const serverDir = path.resolve(__dirname, '..');
+    const uploadsDir = path.resolve(__dirname, '../uploads');
+    const isInsideServer = absolutePath.startsWith(serverDir);
+    const isInsideUploads = absolutePath.startsWith(uploadsDir);
+
+    if (isInsideServer && !isInsideUploads) {
+        return res.status(403).send('Acesso negado: Arquivo de sistema interno não pode ser visualizado.');
+    }
+
+    if (/(\.env|\.git|\.agent|\.vscode|node_modules|package\.json|package-lock\.json|\.pem|\.key|\.crt)/i.test(absolutePath)) {
+        return res.status(403).send('Acesso negado: Arquivo confidencial restrito.');
+    }
+
     // Resolver case-insensitivity e variações de maiúsculas/minúsculas no Linux/Windows
     const resolvedPath = resolveCaseInsensitivePath(absolutePath);
-    console.log(`📄 [DOC VIEW] Original: ${filePath}`);
-    console.log(`📄 [DOC VIEW] Normalizado: ${absolutePath}`);
-    console.log(`📄 [DOC VIEW] Resolvido no disco: ${resolvedPath}`);
 
     const fsSync = require('fs');
     if (!fsSync.existsSync(resolvedPath)) {
@@ -127,8 +170,8 @@ router.get('/view', (req, res) => {
     }
 
     // Configurar headers para exibição inline correta do PDF no navegador
-    const ext = path.extname(resolvedPath).toLowerCase();
-    if (ext === '.pdf') {
+    const finalExt = path.extname(resolvedPath).toLowerCase();
+    if (finalExt === '.pdf') {
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'inline; filename="' + encodeURIComponent(path.basename(resolvedPath)) + '"');
     }

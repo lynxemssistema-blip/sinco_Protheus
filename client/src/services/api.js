@@ -506,6 +506,8 @@ export const updateMenuSettings = (data) => api.put('/company/menu', data).then(
 export const updateGeneralSettings = (data) => api.put('/company/general', data).then(res => res.data);
 export const getRomaneioInitialNumber = () => api.get('/company/romaneio-number').then(res => res.data);
 export const setRomaneioInitialNumber = (numero) => api.post('/company/set-romaneio-number', { numero_inicial: numero }).then(res => res.data);
+export const getPedidoInitialNumber = () => api.get('/erp/pedidos/config-numeracao').then(res => res.data);
+export const setPedidoInitialNumber = (numero) => api.post('/erp/pedidos/config-numeracao', { numero_inicial: numero }).then(res => res.data);
 export const getPedidosStatusSettings = () => api.get('/pedidos-status/settings').then(res => res.data);
 export const togglePedidosStatusGlobal = (hide) => api.post('/pedidos-status/settings', { hideInactive: hide }).then(res => res.data);
 export const getPedidosStatusList = (q) => api.get('/pedidos-status/list', { params: { q } }).then(res => res.data);
@@ -535,6 +537,8 @@ export const getPendenciasSnapshotById = (id) => api.get(`/pcp-refinado/pendenci
 export const getPlanningAudit = (params) => api.get('/production/planning-audit', { params }).then(res => res.data);
 export const saveAppointment = (data) => api.post('/production/appoint', data).then(res => res.data);
 export const getAppointmentHistory = (op, item, sequencia, operacao) => api.get(`/production/appointments/${op}`, { params: { item, sequencia, operacao } }).then(res => res.data);
+// Frações PCP (AA, AB...) da OP, com saldo por fração na operação — usado para o operador escolher a fração ao apontar.
+export const getOpFractions = (op_numero, op_item, op_sequencia, operacao_codigo) => api.get('/production/op-fractions', { params: { op_numero, op_item, op_sequencia, operacao_codigo } }).then(res => res.data);
 export const submitConferencia = ({ id, status, observacao, conferido_por, fotos = [] }) => {
     const form = new FormData();
     form.append('id', id);
@@ -656,6 +660,11 @@ export const getFileUrl = (path) => {
     if (path.startsWith('http')) return path;
     const base = getBaseUrl();
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    const token = localStorage.getItem('@Lynx:token');
+    if (token && (cleanPath.startsWith('/api/docs/view') || cleanPath.startsWith('/uploads')) && !cleanPath.includes('token=')) {
+        const separator = cleanPath.includes('?') ? '&' : '?';
+        return `${base}${cleanPath}${separator}token=${encodeURIComponent(token)}`;
+    }
     return `${base}${cleanPath}`;
 };
 

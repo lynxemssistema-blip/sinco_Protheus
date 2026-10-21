@@ -1,6 +1,0 @@
-Vamos fazer uma agente orquestrador para o sistema da qualidade
-
-Preciso desenhar uma estrutura deestrutura organizacional de agente e o orquestrador de doc.
-
-
-Vamos precisar de um editor

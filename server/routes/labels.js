@@ -66,19 +66,154 @@ async function ensureTable() {
             console.error('[Labels] Failed to set default label:', e);
         }
     }
+    // Novas colunas de dimensões físicas (mm), resolução DPI e categoria
+    const [colsWidth] = await db.query(`SHOW COLUMNS FROM label_config LIKE 'width_mm'`);
+    if (colsWidth.length === 0) {
+        await db.query(`ALTER TABLE label_config ADD COLUMN width_mm INTEGER DEFAULT 100`);
+        await db.query(`ALTER TABLE label_config ADD COLUMN height_mm INTEGER DEFAULT 50`);
+        await db.query(`ALTER TABLE label_config ADD COLUMN dpi INTEGER DEFAULT 203`);
+        await db.query(`ALTER TABLE label_config ADD COLUMN category VARCHAR(50) DEFAULT 'geral'`);
+    }
     // Garante que existe pelo menos 1 registro
     const [rows] = await db.query('SELECT id FROM label_config LIMIT 1');
     if (rows.length === 0) {
-        await db.query(`INSERT INTO label_config (label_fields) VALUES (?)`, [JSON.stringify([
-            { label: 'Pedido: ',    dataKey: 'pedido' },
-            { label: 'Produto: ',   dataKey: 'produto' },
-            { label: 'Desc: ',      dataKey: 'descricao' },
-            { label: 'Qtd: ',       dataKey: 'quantidade' },
-            { label: 'Entrega: ',   dataKey: 'data_entrega' },
-        ])]);
+        await db.query(`INSERT INTO label_config (name, is_default, width_mm, height_mm, dpi, category, label_fields) VALUES (?, 1, 100, 50, 203, 'apontamento_etapa', ?)`, [
+            '100x50 mm - Roteiro & Identificação Chão de Fábrica',
+            JSON.stringify([
+                { label: 'CLIENTE: ',  dataKey: 'cliente',   fontFamily: 'Arial', fontSize: 20, fontWeight: 'bold', x: 20, y: 135 },
+                { label: 'OP: ',       dataKey: 'op',        fontFamily: 'Arial', fontSize: 22, fontWeight: 'bold', x: 20, y: 165 },
+                { label: 'ITEM: ',     dataKey: 'item',      fontFamily: 'Arial', fontSize: 20, fontWeight: 'normal', x: 260, y: 165 },
+                { label: 'PROD: ',     dataKey: 'produto',   fontFamily: 'Arial', fontSize: 18, fontWeight: 'bold', x: 20, y: 195 },
+                { label: 'DESENHO: ',  dataKey: 'ref_cliente', fontFamily: 'Arial', fontSize: 18, fontWeight: 'bold', x: 260, y: 195 },
+                { label: 'REV: ',      dataKey: 'revisao',   fontFamily: 'Arial', fontSize: 18, fontWeight: 'bold', x: 480, y: 195 },
+                { label: 'DESC: ',     dataKey: 'descricao', fontFamily: 'Arial', fontSize: 16, fontWeight: 'normal', x: 20, y: 225 },
+                { label: 'ETAPA: ',    dataKey: 'operacao',  fontFamily: 'Arial', fontSize: 20, fontWeight: 'bold', x: 20, y: 260 },
+                { label: 'RECURSO: ',  dataKey: 'recurso',   fontFamily: 'Arial', fontSize: 18, fontWeight: 'normal', x: 380, y: 260 },
+                { label: 'QTD APROV: ',dataKey: 'qtd_apontada', fontFamily: 'Arial', fontSize: 22, fontWeight: 'bold', x: 20, y: 295 },
+                { label: 'OPERADOR: ', dataKey: 'operador',  fontFamily: 'Arial', fontSize: 18, fontWeight: 'normal', x: 260, y: 295 },
+                { label: 'DATA/HORA: ',dataKey: 'data_hora', fontFamily: 'Arial', fontSize: 16, fontWeight: 'normal', x: 20, y: 330 },
+                { label: 'PRÓXIMO: ',  dataKey: 'proxima_operacao', fontFamily: 'Arial', fontSize: 18, fontWeight: 'bold', x: 260, y: 330 },
+                { label: '',           dataKey: 'qrcode',    fontFamily: 'Arial', fontSize: 12, fontWeight: 'normal', x: 440, y: 260, qrCode: true }
+            ])
+        ]);
     }
 }
 ensureTable().catch(e => console.error('[Labels] Erro ao criar tabela label_config no MySQL:', e));
+
+// ── Modelos de Presets Padronizados de Mercado ────────────────────────────────
+const PRESET_TEMPLATES = [
+    {
+        id: 'preset-100x50',
+        name: '100x50 mm - Roteiro & Identificação Chão de Fábrica (MES)',
+        width_mm: 100,
+        height_mm: 50,
+        dpi: 203,
+        category: 'apontamento_etapa',
+        description: 'Padrão industrial mais usado no Brasil para rastreamento de peças e subconjuntos.',
+        label_fields: [
+            { label: 'CLIENTE: ',  dataKey: 'cliente',   fontFamily: 'Arial', fontSize: 20, fontWeight: 'bold', x: 20, y: 135 },
+            { label: 'OP: ',       dataKey: 'op',        fontFamily: 'Arial', fontSize: 22, fontWeight: 'bold', x: 20, y: 165 },
+            { label: 'ITEM: ',     dataKey: 'item',      fontFamily: 'Arial', fontSize: 20, fontWeight: 'normal', x: 260, y: 165 },
+            { label: 'PROD: ',     dataKey: 'produto',   fontFamily: 'Arial', fontSize: 18, fontWeight: 'bold', x: 20, y: 195 },
+            { label: 'DESENHO: ',  dataKey: 'ref_cliente', fontFamily: 'Arial', fontSize: 18, fontWeight: 'bold', x: 260, y: 195 },
+            { label: 'REV: ',      dataKey: 'revisao',   fontFamily: 'Arial', fontSize: 18, fontWeight: 'bold', x: 480, y: 195 },
+            { label: 'DESC: ',     dataKey: 'descricao', fontFamily: 'Arial', fontSize: 16, fontWeight: 'normal', x: 20, y: 225 },
+            { label: 'ETAPA: ',    dataKey: 'operacao',  fontFamily: 'Arial', fontSize: 20, fontWeight: 'bold', x: 20, y: 260 },
+            { label: 'RECURSO: ',  dataKey: 'recurso',   fontFamily: 'Arial', fontSize: 18, fontWeight: 'normal', x: 380, y: 260 },
+            { label: 'QTD APROV: ',dataKey: 'qtd_apontada', fontFamily: 'Arial', fontSize: 22, fontWeight: 'bold', x: 20, y: 295 },
+            { label: 'OPERADOR: ', dataKey: 'operador',  fontFamily: 'Arial', fontSize: 18, fontWeight: 'normal', x: 260, y: 295 },
+            { label: 'DATA/HORA: ',dataKey: 'data_hora', fontFamily: 'Arial', fontSize: 16, fontWeight: 'normal', x: 20, y: 330 },
+            { label: 'PRÓXIMO: ',  dataKey: 'proxima_operacao', fontFamily: 'Arial', fontSize: 18, fontWeight: 'bold', x: 260, y: 330 },
+            { label: '',           dataKey: 'qrcode',    fontFamily: 'Arial', fontSize: 12, fontWeight: 'normal', x: 440, y: 260, qrCode: true }
+        ]
+    },
+    {
+        id: 'preset-100x20',
+        name: '100x20 mm - Perfis, Tubos, Cantoneiras & Barras Longas',
+        width_mm: 100,
+        height_mm: 20,
+        dpi: 203,
+        category: 'apontamento_etapa',
+        description: 'Formato régua alongada estreita. Perfeito para colar na face de tubos e vigas.',
+        label_fields: [
+            { label: 'CLI: ',      dataKey: 'cliente',   fontFamily: 'Arial', fontSize: 16, fontWeight: 'bold', x: 15, y: 15 },
+            { label: 'OP: ',       dataKey: 'op',        fontFamily: 'Arial', fontSize: 18, fontWeight: 'bold', x: 220, y: 15 },
+            { label: 'QTD: ',      dataKey: 'qtd_apontada', fontFamily: 'Arial', fontSize: 18, fontWeight: 'bold', x: 380, y: 15 },
+            { label: 'PEÇA: ',     dataKey: 'ref_cliente', fontFamily: 'Arial', fontSize: 16, fontWeight: 'bold', x: 15, y: 45 },
+            { label: 'ETAPA: ',    dataKey: 'operacao',  fontFamily: 'Arial', fontSize: 16, fontWeight: 'normal', x: 220, y: 45 },
+            { label: 'PRÓX: ',     dataKey: 'proxima_operacao', fontFamily: 'Arial', fontSize: 16, fontWeight: 'bold', x: 360, y: 45 },
+            { label: '',           dataKey: 'qrcode',    fontFamily: 'Arial', fontSize: 10, fontWeight: 'normal', x: 480, y: 10, qrCode: true }
+        ]
+    },
+    {
+        id: 'preset-100x15',
+        name: '100x15 mm - Fita Estreita para Feixes & Barras',
+        width_mm: 100,
+        height_mm: 15,
+        dpi: 203,
+        category: 'apontamento_etapa',
+        description: 'Formato ultra-estreito para marcação rápida de feixes ou perfis finos.',
+        label_fields: [
+            { label: 'OP: ',       dataKey: 'op',        fontFamily: 'Arial', fontSize: 16, fontWeight: 'bold', x: 15, y: 15 },
+            { label: 'DES: ',      dataKey: 'ref_cliente', fontFamily: 'Arial', fontSize: 16, fontWeight: 'bold', x: 160, y: 15 },
+            { label: 'QTD: ',      dataKey: 'qtd_apontada', fontFamily: 'Arial', fontSize: 16, fontWeight: 'bold', x: 340, y: 15 },
+            { label: '',           dataKey: 'qrcode',    fontFamily: 'Arial', fontSize: 10, fontWeight: 'normal', x: 460, y: 5, qrCode: true }
+        ]
+    },
+    {
+        id: 'preset-30x20',
+        name: '30x20 mm - Usinagem, Mini-Peça & Gaveteiro',
+        width_mm: 30,
+        height_mm: 20,
+        dpi: 203,
+        category: 'almoxarifado',
+        description: 'Para buchas, flanges pequenas, pinos usinados ou etiquetas de gaveteiro.',
+        label_fields: [
+            { label: '',           dataKey: 'produto',   fontFamily: 'Arial', fontSize: 16, fontWeight: 'bold', x: 10, y: 15 },
+            { label: 'OP: ',       dataKey: 'op',        fontFamily: 'Arial', fontSize: 14, fontWeight: 'normal', x: 10, y: 40 },
+            { label: 'QTD: ',      dataKey: 'qtd_apontada', fontFamily: 'Arial', fontSize: 14, fontWeight: 'bold', x: 10, y: 65 },
+            { label: '',           dataKey: 'qrcode',    fontFamily: 'Arial', fontSize: 10, fontWeight: 'normal', x: 130, y: 15, qrCode: true }
+        ]
+    },
+    {
+        id: 'preset-30x15',
+        name: '30x15 mm - Micro-Peças & Parafusos / Fixadores',
+        width_mm: 30,
+        height_mm: 15,
+        dpi: 203,
+        category: 'almoxarifado',
+        description: 'Formato compacto para identificação de parafusos, porcas ou componentes elétricos.',
+        label_fields: [
+            { label: '',           dataKey: 'produto',   fontFamily: 'Arial', fontSize: 14, fontWeight: 'bold', x: 10, y: 12 },
+            { label: 'OP: ',       dataKey: 'op',        fontFamily: 'Arial', fontSize: 12, fontWeight: 'normal', x: 10, y: 32 },
+            { label: '',           dataKey: 'qrcode',    fontFamily: 'Arial', fontSize: 8, fontWeight: 'normal', x: 120, y: 8, qrCode: true }
+        ]
+    },
+    {
+        id: 'preset-100x100',
+        name: '100x100 mm - Palete & Romaneio de Carga (Expedição)',
+        width_mm: 100,
+        height_mm: 100,
+        dpi: 203,
+        category: 'romaneio',
+        description: 'Etiqueta grande para paletes fechados, caixas ou identificação de romaneio.',
+        label_fields: [
+            { label: 'CLIENTE: ',  dataKey: 'cliente',   fontFamily: 'Arial', fontSize: 24, fontWeight: 'bold', x: 20, y: 140 },
+            { label: 'PEDIDO: ',   dataKey: 'pedido',    fontFamily: 'Arial', fontSize: 24, fontWeight: 'bold', x: 20, y: 180 },
+            { label: 'OP: ',       dataKey: 'op',        fontFamily: 'Arial', fontSize: 24, fontWeight: 'bold', x: 300, y: 180 },
+            { label: 'PRODUTO: ',  dataKey: 'produto',   fontFamily: 'Arial', fontSize: 20, fontWeight: 'normal', x: 20, y: 220 },
+            { label: 'DESCRIÇÃO: ',dataKey: 'descricao', fontFamily: 'Arial', fontSize: 18, fontWeight: 'normal', x: 20, y: 260 },
+            { label: 'QTD TOTAL: ',dataKey: 'quantidade',fontFamily: 'Arial', fontSize: 26, fontWeight: 'bold', x: 20, y: 305 },
+            { label: 'ENTREGA: ',  dataKey: 'data_entrega', fontFamily: 'Arial', fontSize: 20, fontWeight: 'normal', x: 20, y: 350 },
+            { label: '',           dataKey: 'qrcode',    fontFamily: 'Arial', fontSize: 12, fontWeight: 'normal', x: 420, y: 280, qrCode: true }
+        ]
+    }
+];
+
+// ── GET /api/labels/presets ───────────────────────────────────────────────────
+router.get('/presets', (req, res) => {
+    res.json({ ok: true, presets: PRESET_TEMPLATES });
+});
 
 // ── GET /api/labels/config ────────────────────────────────────────────────────
 router.get('/config', async (req, res) => {
@@ -97,7 +232,7 @@ router.get('/config', async (req, res) => {
         const companyShortName = (company.nome_fantasia || company.razao_social || 'EMPRESA').toUpperCase().split(/\s+/)[0].slice(0, 12);
 
         const [rows] = await db.query(
-            'SELECT id, name, is_default, printer_mode, printer_host, printer_port, print_offset_x, print_offset_y, logo_base64, logo_width, logo_height, label_fields FROM label_config ORDER BY is_default DESC, id ASC'
+            'SELECT id, name, is_default, printer_mode, printer_host, printer_port, print_offset_x, print_offset_y, width_mm, height_mm, dpi, category, logo_base64, logo_width, logo_height, label_fields FROM label_config ORDER BY is_default DESC, id ASC'
         );
         if (rows.length === 0) {
             return res.json({
@@ -120,7 +255,7 @@ router.get('/config', async (req, res) => {
             } else {
                 fields = r.label_fields || [];
             }
-            // Substitui "Metalfisa" dinamicamente pelo nome curto da empresa ativa
+            // Substitui o marcador legado "Metalfisa" dinamicamente pelo nome curto da empresa ativa
             fields = fields.map(f => {
                 if (f && f.label && /metalfisa/i.test(f.label)) {
                     return { ...f, label: f.label.replace(/metalfisa/gi, companyShortName) };
@@ -134,7 +269,15 @@ router.get('/config', async (req, res) => {
                 logoBase64 = company.logo_base64.replace(/^data:image\/\w+;base64,/, '');
             }
 
-            return { ...r, logo_base64: logoBase64, label_fields: fields };
+            return { 
+                ...r, 
+                width_mm: r.width_mm || 100,
+                height_mm: r.height_mm || 50,
+                dpi: r.dpi || 203,
+                category: r.category || 'geral',
+                logo_base64: logoBase64, 
+                label_fields: fields 
+            };
         });
 
         res.json({
@@ -157,7 +300,10 @@ router.get('/config', async (req, res) => {
 // ── PUT /api/labels/config ────────────────────────────────────────────────────
 router.put('/config', async (req, res) => {
     try {
-        let { id, name, is_default, printer_mode, printer_host, printer_port, print_offset_x, print_offset_y, label_fields } = req.body;
+        let { 
+            id, name, is_default, printer_mode, printer_host, printer_port, 
+            print_offset_x, print_offset_y, width_mm, height_mm, dpi, category, label_fields 
+        } = req.body;
 
         if (!id) {
             // Fallback: se não enviou ID, tenta atualizar o modelo padrão
@@ -182,6 +328,10 @@ router.put('/config', async (req, res) => {
                 printer_port   = ?,
                 print_offset_x = ?,
                 print_offset_y = ?,
+                width_mm       = ?,
+                height_mm      = ?,
+                dpi            = ?,
+                category       = ?,
                 label_fields   = ?,
                 updated_at     = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -193,6 +343,10 @@ router.put('/config', async (req, res) => {
             parseInt(printer_port) || DEFAULT_PORT,
             parseInt(print_offset_x) || 0,
             parseInt(print_offset_y) || 0,
+            parseInt(width_mm) || 100,
+            parseInt(height_mm) || 50,
+            parseInt(dpi) || 203,
+            category || 'geral',
             JSON.stringify(label_fields || []),
             id
         ]);
@@ -207,12 +361,15 @@ router.put('/config', async (req, res) => {
 // ── POST /api/labels/config/new ────────────────────────────────────────────────
 router.post('/config/new', async (req, res) => {
     try {
-        const { name, printer_mode, printer_host, printer_port, print_offset_x, print_offset_y, label_fields } = req.body;
+        const { 
+            name, printer_mode, printer_host, printer_port, 
+            print_offset_x, print_offset_y, width_mm, height_mm, dpi, category, label_fields 
+        } = req.body;
 
         const [result] = await db.query(`
             INSERT INTO label_config 
-                (name, is_default, printer_mode, printer_host, printer_port, print_offset_x, print_offset_y, label_fields) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (name, is_default, printer_mode, printer_host, printer_port, print_offset_x, print_offset_y, width_mm, height_mm, dpi, category, label_fields) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             name || 'Novo Modelo',
             0,
@@ -221,6 +378,10 @@ router.post('/config/new', async (req, res) => {
             parseInt(printer_port) || DEFAULT_PORT,
             parseInt(print_offset_x) || 0,
             parseInt(print_offset_y) || 0,
+            parseInt(width_mm) || 100,
+            parseInt(height_mm) || 50,
+            parseInt(dpi) || 203,
+            category || 'geral',
             JSON.stringify(label_fields || [])
         ]);
 
@@ -230,6 +391,172 @@ router.post('/config/new', async (req, res) => {
         res.status(500).json({ error: 'Erro ao criar modelo de etiqueta' });
     }
 });
+
+// ── Funções Auxiliares de Tradução e Geração ZPL ──────────────────────────────
+function cleanZplText(text) {
+    if (!text) return '';
+    return String(text)
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[\^~]/g, '');
+}
+
+function resolveFieldValue(key, data = {}) {
+    switch (key) {
+        case 'op': return data.op || '';
+        case 'item': return data.item_op || data.item || '';
+        case 'pedido': return data.pedido || '';
+        case 'ped_cliente': return data.ped_cliente || data.pedido_cliente || '';
+        case 'cliente': return data.cliente || '';
+        case 'produto': return data.produto || data.codigo_produto || '';
+        case 'ref_cliente': return data.ref_cliente || data.desenho || '';
+        case 'revisao': return data.revisao || data.rev || '00';
+        case 'descricao': return data.descricao || '';
+        case 'operacao': return data.operacao_nome || data.operacao || '';
+        case 'recurso': return data.recurso || data.recurso_nome || '';
+        case 'operador': return data.operador || data.usuario || '';
+        case 'qtd_apontada': return data.qtd_apontada !== undefined ? String(data.qtd_apontada) : (data.quantidade !== undefined ? String(data.quantidade) : '1');
+        case 'quantidade': return data.quantidade !== undefined ? String(data.quantidade) : '';
+        case 'status_etapa': return data.status_etapa || 'APROVADO';
+        case 'proxima_operacao': return data.proxima_operacao || 'EXPEDICAO';
+        case 'data_hora': return data.data_hora || new Date().toLocaleString('pt-BR');
+        case 'data_entrega': return data.data_entrega || '';
+        case 'emissao': return data.emissao || '';
+        case 'nf': return data.nf || '';
+        case 'qrcode': return data.qrcode || `OP:${data.op || ''}|IT:${data.item_op || ''}|ET:${data.operacao || ''}`;
+        default: return data[key] || '';
+    }
+}
+
+function generateZplFromTemplate(template, data = {}, copies = 1) {
+    const widthMm = template.width_mm || 100;
+    const heightMm = template.height_mm || 50;
+    const dpi = template.dpi || 203;
+    const dpmm = dpi === 300 ? 12 : 8;
+    const widthDots = Math.round(widthMm * dpmm);
+    const heightDots = Math.round(heightMm * dpmm);
+
+    let zpl = `^XA\n`;
+    zpl += `^PW${widthDots}\n`;
+    zpl += `^LL${heightDots}\n`;
+    zpl += `^LH0,0\n`;
+
+    let fields = [];
+    if (typeof template.label_fields === 'string') {
+        try { fields = JSON.parse(template.label_fields); } catch(e){}
+    } else {
+        fields = template.label_fields || [];
+    }
+
+    fields.forEach(field => {
+        if (field.disabled) return;
+        const scaleX = widthDots / 600;
+        const scaleY = heightDots / 440;
+        const x = Math.max(10, Math.round((field.x || 20) * scaleX));
+        const y = Math.max(10, Math.round((field.y || 20) * scaleY));
+        const fontSize = Math.max(14, Math.round((field.fontSize || 22) * scaleY * 0.85));
+
+        const val = resolveFieldValue(field.dataKey, data);
+        const text = `${field.label || ''}${val}`;
+
+        if (field.barcode) {
+            zpl += `^FO${x},${y}^BCN,${Math.round((field.barcodeHeight || 45) * scaleY)},Y,N,N^FD${cleanZplText(val || '123456')}^FS\n`;
+        } else if (field.qrCode || field.dataKey === 'qrcode') {
+            zpl += `^FO${x},${y}^BQN,2,4^FDQA,${val || data.op || 'LYNX'}^FS\n`;
+        } else {
+            zpl += `^FO${x},${y}^A0N,${fontSize},${fontSize}^FD${cleanZplText(text)}^FS\n`;
+        }
+    });
+
+    zpl += `^PQ${copies},0,1,Y\n`;
+    zpl += `^XZ\n`;
+    return zpl;
+}
+
+// ── POST /api/labels/print-apontamento ───────────────────────────────────────
+router.post('/print-apontamento', async (req, res) => {
+    try {
+        const { 
+            templateId, 
+            resourceCode,
+            printerHost: overrideHost,
+            printerPort: overridePort,
+            copies = 1,
+            opData = {},
+            canvasBase64
+        } = req.body;
+
+        let template = null;
+        if (templateId) {
+            const [tRows] = await db.query('SELECT * FROM label_config WHERE id = ?', [templateId]);
+            if (tRows.length > 0) template = tRows[0];
+        }
+
+        if (!template && resourceCode) {
+            const [rRows] = await db.query(
+                'SELECT label_template_id, printer_host, printer_port FROM pcp_recursos WHERE codigo = ? LIMIT 1',
+                [resourceCode]
+            );
+            if (rRows.length > 0 && rRows[0].label_template_id) {
+                const [tRows] = await db.query('SELECT * FROM label_config WHERE id = ?', [rRows[0].label_template_id]);
+                if (tRows.length > 0) template = tRows[0];
+            }
+        }
+
+        if (!template) {
+            const [defRows] = await db.query('SELECT * FROM label_config ORDER BY is_default DESC, id ASC LIMIT 1');
+            template = defRows[0] || null;
+        }
+
+        if (!template) {
+            return res.status(400).json({ error: 'Nenhum modelo de etiqueta cadastrado no sistema.' });
+        }
+
+        const host = overrideHost || template.printer_host || '127.0.0.1';
+        const port = parseInt(overridePort || template.printer_port || DEFAULT_PORT, 10);
+
+        // Se enviou canvasBase64 pré-renderizado, envia via Sharp / RAW Graphics
+        if (canvasBase64) {
+            const rawPng = Buffer.from(canvasBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+            const pngBuffer = await sharp(rawPng)
+                .greyscale()
+                .threshold(128)
+                .png()
+                .toBuffer();
+
+            const header = Buffer.alloc(8);
+            header[0] = 0x4D; header[1] = 0x46;
+            header.writeInt16BE(template.print_offset_x || 0, 2);
+            header.writeInt16BE(template.print_offset_y || 0, 4);
+            header[6] = 1;
+
+            const packet = Buffer.concat([header, pngBuffer]);
+            for (let c = 0; c < copies; c++) {
+                await sendRaw(host, port, packet);
+            }
+            return res.json({ ok: true, printed: true, mode: 'canvas', host, port, copies });
+        }
+
+        // Caso contrário, gera ZPL puro
+        const zpl = generateZplFromTemplate(template, opData, copies);
+        try {
+            await sendRaw(host, port, Buffer.from(zpl, 'utf8'));
+            return res.json({ ok: true, printed: true, mode: 'zpl', host, port, copies, zplPreview: zpl });
+        } catch (sendErr) {
+            // Em caso de offline no ambiente de dev ou impressora física desligada, retorna ZPL para preview
+            return res.json({ 
+                ok: true, 
+                printed: false, 
+                warning: `Impressora em ${host}:${port} não respondeu (${sendErr.message}). O comando ZPL foi gerado com sucesso.`,
+                zplPreview: zpl,
+                template: template.name
+            });
+        }
+    } catch (err) {
+        console.error('[Labels] POST /print-apontamento:', err);
+        res.status(500).json({ error: 'Erro ao imprimir etiqueta de apontamento: ' + err.message });
+    }
+});
+
 
 // ── DELETE /api/labels/config/:id ──────────────────────────────────────────────
 router.delete('/config/:id', async (req, res) => {

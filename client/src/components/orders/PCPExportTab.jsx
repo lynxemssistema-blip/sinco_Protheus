@@ -82,8 +82,12 @@ const PCPExportTab = () => {
                 estrutura: filters.estrutura
             };
 
-            const { data } = await api.get('/pcp/orders', { params });
-            setItems(data.data || []);
+            const rawItems = data.data || [];
+            const mappedItems = rawItems.map((it, idx) => ({
+                ...it,
+                _uniqueKey: it.id ? String(it.id) : `${it.pedido || ''}|${it.item || ''}|${it.produto || ''}|${it.data_entrega || ''}|${idx}`
+            }));
+            setItems(mappedItems);
             setSearched(true);
         } catch (err) {
             setError(err.response?.data?.error || 'Erro ao buscar pedidos.');
@@ -97,7 +101,7 @@ const PCPExportTab = () => {
     };
 
     // ── Seleção ──────────────────────────────────────────────────────────────
-    const itemKey = (it) => `${it.pedido}|${it.item}`;
+    const itemKey = (it) => it._uniqueKey || `${it.pedido}|${it.item}`;
 
     const toggleItem = (it) => {
         setSelected(prev => {

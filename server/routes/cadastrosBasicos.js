@@ -180,20 +180,59 @@ async function seedTenantDefaultsIfEmpty(tenantId) {
                 );
             }
         }
+
+        // 5. Cores de Aço Padrão (SAE 1020, 1045, 4140, 8620, INOX, etc.)
+        try {
+            const { seedSteelColors } = require('../services/tenantSeedService');
+            await seedSteelColors(tenantId, false);
+        } catch (colorErr) {
+            console.warn('⚠️ [CADASTROS BÁSICOS] Aviso no seed de cores de aço:', colorErr.message);
+        }
     } catch (seedErr) {
         console.warn('⚠️ [CADASTROS BÁSICOS] Aviso no seed:', seedErr.message);
     }
 }
 
 
+// ── IN-MEMORY CACHE PARA CADASTROS BÁSICOS (TTL: 5 MINUTOS) ─────────
+const cadastrosCache = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function invalidateCadastrosCache(tenantId) {
+    if (tenantId) {
+        cadastrosCache.delete(`todos_${tenantId}_true`);
+        cadastrosCache.delete(`todos_${tenantId}_false`);
+    } else {
+        cadastrosCache.clear();
+    }
+}
+
+// Invalida cache automaticamente em qualquer escrita (POST, PUT, DELETE, PATCH)
+router.use((req, res, next) => {
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+        res.on('finish', () => {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+                invalidateCadastrosCache(getTenantId(req));
+            }
+        });
+    }
+    next();
+});
+
 // ── ENDPOINT UNIFICADO: BUSCA TODOS OS CADASTROS BÁSICOS (PARA SELECTS) ──
 
 router.get('/todos', async (req, res) => {
     try {
         const tenantId = getTenantId(req);
-        await ensureTablesAndSeed(tenantId);
-
         const apenasAtivos = req.query.apenas_ativos === '1' || req.query.ativos === 'true';
+        const cacheKey = `todos_${tenantId}_${apenasAtivos}`;
+        const cached = cadastrosCache.get(cacheKey);
+
+        if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+            return res.json(cached.data);
+        }
+
+        await ensureTablesAndSeed(tenantId);
         const whereClause = apenasAtivos ? 'AND ativo = 1' : '';
 
         const [prefixos] = await db.query(
@@ -213,12 +252,15 @@ router.get('/todos', async (req, res) => {
             [tenantId]
         );
 
-        res.json({
+        const responseData = {
             prefixos,
             tipos,
             unidades,
             armazens
-        });
+        };
+
+        cadastrosCache.set(cacheKey, { timestamp: Date.now(), data: responseData });
+        res.json(responseData);
     } catch (err) {
         console.error('Erro ao buscar cadastros básicos unificados:', err);
         res.status(500).json({ error: 'Erro ao carregar cadastros básicos.' });
@@ -582,11 +624,262 @@ router.post('/restaurar-padroes', async (req, res) => {
         const tenantId = getTenantId(req);
         tablesInitialized = false;
         await seedTenantDefaultsIfEmpty(tenantId);
-        res.json({ message: 'Cadastros básicos padrão restaurados com sucesso!' });
+        const { seedSteelColors } = require('../services/tenantSeedService');
+        await seedSteelColors(tenantId, true);
+        res.json({ message: 'Cadastros básicos e padrão de cores de aço restaurados com sucesso!' });
     } catch (err) {
         console.error('Erro ao restaurar padrões:', err);
         res.status(500).json({ error: 'Erro ao restaurar padrões.' });
     }
 });
 
+// ── MATRIZ DE TEMPLATES DINÂMICOS DE PRODUTOS POR EMPRESA ────────
+
+// Listar todos os templates da empresa com seus respectivos campos
+router.get('/templates', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const [templates] = await db.query(
+            `SELECT * FROM app_cad_produto_templates WHERE IdEmpresa = ? ORDER BY nome ASC`,
+            [tenantId]
+        );
+
+        if (templates.length === 0) {
+            return res.json({ templates: [] });
+        }
+
+        const templateIds = templates.map(t => t.id);
+        const [campos] = await db.query(
+            `SELECT * FROM app_cad_produto_template_campos 
+             WHERE template_id IN (?) 
+             ORDER BY template_id, ordem ASC, id ASC`,
+            [templateIds]
+        );
+
+        const camposPorTemplate = {};
+        for (const c of campos) {
+            if (!camposPorTemplate[c.template_id]) {
+                camposPorTemplate[c.template_id] = [];
+            }
+            camposPorTemplate[c.template_id].push(c);
+        }
+
+        const resultado = templates.map(t => ({
+            ...t,
+            campos: camposPorTemplate[t.id] || []
+        }));
+
+        res.json({ templates: resultado });
+    } catch (err) {
+        console.error('Erro ao listar templates de produtos:', err);
+        res.status(500).json({ error: 'Erro ao listar modelos de formulários.' });
+    }
+});
+
+// Buscar template específico ou o mais compatível por tipo/prefixo
+router.get('/templates/match', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const { tipo, prefixo, template_id } = req.query;
+
+        let query = `SELECT * FROM app_cad_produto_templates WHERE IdEmpresa = ? AND ativo = 1`;
+        const params = [tenantId];
+
+        if (template_id) {
+            query += ` AND id = ? LIMIT 1`;
+            params.push(parseInt(template_id, 10));
+        } else if (tipo) {
+            query += ` AND tipo_produto = ? ORDER BY id ASC LIMIT 1`;
+            params.push(tipo);
+        } else {
+            query += ` ORDER BY id ASC LIMIT 1`;
+        }
+
+        const [rows] = await db.query(query, params);
+        if (rows.length === 0) {
+            return res.json({ template: null, campos: [] });
+        }
+
+        const template = rows[0];
+        const [campos] = await db.query(
+            `SELECT * FROM app_cad_produto_template_campos WHERE template_id = ? ORDER BY ordem ASC, id ASC`,
+            [template.id]
+        );
+
+        res.json({ template, campos });
+    } catch (err) {
+        console.error('Erro ao buscar template de produto:', err);
+        res.status(500).json({ error: 'Erro ao buscar modelo compatível.' });
+    }
+});
+
+// Criar novo template com seus campos
+router.post('/templates', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const { nome, tipo_produto, descricao_mascara, ativo = 1, campos = [] } = req.body;
+
+        if (!nome || !tipo_produto) {
+            return res.status(400).json({ error: 'Nome do modelo e tipo de produto são obrigatórios.' });
+        }
+
+        const [resTemplate] = await db.execute(
+            `INSERT INTO app_cad_produto_templates (IdEmpresa, nome, tipo_produto, descricao_mascara, ativo)
+             VALUES (?, ?, ?, ?, ?)`,
+            [tenantId, nome.trim(), tipo_produto.trim().toUpperCase(), descricao_mascara?.trim() || null, ativo ? 1 : 0]
+        );
+        const newTemplateId = resTemplate.insertId;
+
+        if (Array.isArray(campos) && campos.length > 0) {
+            for (let i = 0; i < campos.length; i++) {
+                const c = campos[i];
+                await db.execute(
+                    `INSERT INTO app_cad_produto_template_campos 
+                     (template_id, campo_chave, campo_destino, label, tipo_input, opcoes_select, unidade, obrigatorio, ordem)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        newTemplateId,
+                        c.campo_chave?.trim() || `campo_${i + 1}`,
+                        c.campo_destino?.trim() || 'atributos_json',
+                        c.label?.trim() || 'Campo',
+                        c.tipo_input || 'text',
+                        c.opcoes_select || null,
+                        c.unidade || null,
+                        c.obrigatorio ? 1 : 0,
+                        c.ordem !== undefined ? parseInt(c.ordem, 10) : i + 1
+                    ]
+                );
+            }
+        }
+
+        res.status(201).json({ success: true, id: newTemplateId, message: 'Modelo criado com sucesso!' });
+    } catch (err) {
+        console.error('Erro ao criar template de produto:', err);
+        res.status(500).json({ error: 'Erro ao salvar novo modelo de produto.' });
+    }
+});
+
+// Atualizar template existente e seus campos
+router.put('/templates/:id', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const { id } = req.params;
+        const { nome, tipo_produto, descricao_mascara, ativo = 1, campos = [] } = req.body;
+
+        await db.execute(
+            `UPDATE app_cad_produto_templates SET
+                nome = ?, tipo_produto = ?, descricao_mascara = ?, ativo = ?
+             WHERE id = ? AND IdEmpresa = ?`,
+            [nome.trim(), tipo_produto.trim().toUpperCase(), descricao_mascara?.trim() || null, ativo ? 1 : 0, id, tenantId]
+        );
+
+        // Substituir campos
+        await db.execute(`DELETE FROM app_cad_produto_template_campos WHERE template_id = ?`, [id]);
+
+        if (Array.isArray(campos) && campos.length > 0) {
+            for (let i = 0; i < campos.length; i++) {
+                const c = campos[i];
+                await db.execute(
+                    `INSERT INTO app_cad_produto_template_campos 
+                     (template_id, campo_chave, campo_destino, label, tipo_input, opcoes_select, unidade, obrigatorio, ordem)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        id,
+                        c.campo_chave?.trim() || `campo_${i + 1}`,
+                        c.campo_destino?.trim() || 'atributos_json',
+                        c.label?.trim() || 'Campo',
+                        c.tipo_input || 'text',
+                        c.opcoes_select || null,
+                        c.unidade || null,
+                        c.obrigatorio ? 1 : 0,
+                        c.ordem !== undefined ? parseInt(c.ordem, 10) : i + 1
+                    ]
+                );
+            }
+        }
+
+        res.json({ success: true, message: 'Modelo atualizado com sucesso!' });
+    } catch (err) {
+        console.error('Erro ao atualizar template de produto:', err);
+        res.status(500).json({ error: 'Erro ao atualizar modelo de produto.' });
+    }
+});
+
+// Excluir template
+router.delete('/templates/:id', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const { id } = req.params;
+
+        await db.execute(`DELETE FROM app_cad_produto_template_campos WHERE template_id = ?`, [id]);
+        await db.execute(`DELETE FROM app_cad_produto_templates WHERE id = ? AND IdEmpresa = ?`, [id, tenantId]);
+
+        res.json({ success: true, message: 'Modelo removido com sucesso!' });
+    } catch (err) {
+        console.error('Erro ao excluir template:', err);
+        res.status(500).json({ error: 'Erro ao remover modelo.' });
+    }
+});
+
+// Obter atributos preenchidos de um produto específico
+router.get('/produtos/:codigo/atributos', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const { codigo } = req.params;
+
+        const [rows] = await db.query(
+            `SELECT * FROM app_cad_produto_atributos WHERE produto_codigo = ? AND IdEmpresa = ? LIMIT 1`,
+            [codigo.trim(), tenantId]
+        );
+
+        if (rows.length === 0) {
+            return res.json({ atributos: {}, template_id: null });
+        }
+
+        let atributosObj = {};
+        try {
+            atributosObj = typeof rows[0].atributos_json === 'string' 
+                ? JSON.parse(rows[0].atributos_json || '{}') 
+                : (rows[0].atributos_json || {});
+        } catch (e) {
+            atributosObj = {};
+        }
+
+        res.json({
+            atributos: atributosObj,
+            template_id: rows[0].template_id
+        });
+    } catch (err) {
+        console.error('Erro ao buscar atributos do produto:', err);
+        res.status(500).json({ error: 'Erro ao obter atributos do produto.' });
+    }
+});
+
+// Salvar atributos preenchidos de um produto
+router.post('/produtos/:codigo/atributos', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const { codigo } = req.params;
+        const { template_id, atributos } = req.body;
+
+        const atributosJsonStr = JSON.stringify(atributos || {});
+
+        await db.execute(
+            `INSERT INTO app_cad_produto_atributos (IdEmpresa, produto_codigo, template_id, atributos_json)
+             VALUES (?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE 
+                template_id = VALUES(template_id),
+                atributos_json = VALUES(atributos_json),
+                updated_at = CURRENT_TIMESTAMP`,
+            [tenantId, codigo.trim(), template_id || null, atributosJsonStr]
+        );
+
+        res.json({ success: true, message: 'Atributos específicos salvos com sucesso!' });
+    } catch (err) {
+        console.error('Erro ao salvar atributos do produto:', err);
+        res.status(500).json({ error: 'Erro ao salvar atributos específicos.' });
+    }
+});
+
 module.exports = router;
+

@@ -145,7 +145,7 @@ export default function AlertaEmergenciaModal({ isOpen, onClose, defaultLocal = 
                                 ALERTA DE EMERGÊNCIA
                             </h2>
                             <p className="text-xs text-slate-500 font-medium">
-                                Brigada de Incêndio & Gestão de Crise MetalFisa
+                                Brigada de Incêndio & Gestão de Crise Lynx EMS
                             </p>
                         </div>
                     </div>

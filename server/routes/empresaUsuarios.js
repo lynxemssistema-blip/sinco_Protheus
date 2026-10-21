@@ -33,10 +33,17 @@ router.get('/meu-plano', async (req, res) => {
         const planoKey = tenant.plano || 'pro';
         const planoInfo = PLANOS[planoKey] || PLANOS.pro;
 
+        // Determina a data efetiva de vigência (data_vencimento tem prioridade, senão trial_expira_em)
+        const dataEfetiva = tenant.dataVencimento || tenant.trialExpiraEm;
+        let diasRestantes = null;
         let diasRestantesTrial = null;
-        if (tenant.statusPlano === 'trial' && tenant.trialExpiraEm) {
-            const diffMs = new Date(tenant.trialExpiraEm) - new Date();
-            diasRestantesTrial = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+
+        if (dataEfetiva) {
+            const diffMs = new Date(dataEfetiva) - new Date();
+            diasRestantes = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+            if (tenant.statusPlano === 'trial') {
+                diasRestantesTrial = diasRestantes;
+            }
         }
 
         res.json({
@@ -48,7 +55,9 @@ router.get('/meu-plano', async (req, res) => {
                 planoNome: planoInfo.nome,
                 planoDescricao: planoInfo.descricao,
                 status: tenant.statusPlano,
+                dataVencimento: tenant.dataVencimento,
                 trialExpiraEm: tenant.trialExpiraEm,
+                diasRestantes,
                 diasRestantesTrial,
                 trialExpirado: tenant.trialExpirado || false
             },

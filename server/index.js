@@ -5,6 +5,7 @@ const compression = require('compression');
 const cors = require('cors');
 const helmet = require('helmet');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const pedidosRouter = require('./routes/pedidos');
 const corteRouter = require('./routes/corte');
 const { authenticateToken } = require('./routes/auth');
@@ -52,11 +53,51 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
     console.log('⚠️ [SECURITY] Certificados SSL não encontrados. Iniciando em HTTP puro.');
 }
 
+const isOriginAllowed = (origin) => {
+    if (!origin) return true;
+    const allowedOrigins = [
+        process.env.CORS_ORIGIN,
+        'https://lynxems.com.br',
+        'https://www.lynxems.com.br',
+        'http://lynxems.com.br',
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:3002'
+    ].filter(Boolean);
+
+    const isLocalOrLan = /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin);
+
+    return allowedOrigins.includes(origin) || origin.endsWith('.lynxems.com.br') || isLocalOrLan;
+};
+
 const io = new Server(server, {
     cors: {
-        origin: '*',
-        methods: ['GET', 'POST']
+        origin: (origin, callback) => {
+            if (isOriginAllowed(origin)) {
+                callback(null, true);
+            } else {
+                console.warn(`[Socket.io CORS] Origem rejeitada: ${origin}`);
+                callback(new Error('Origem não permitida pelo CORS do Socket.io'));
+            }
+        },
+        methods: ['GET', 'POST'],
+        credentials: true
     }
+});
+
+// Middleware opcional para identificar usuário autenticado na conexão do socket
+io.use((socket, next) => {
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    if (token && process.env.JWT_SECRET) {
+        try {
+            socket.user = jwt.verify(token, process.env.JWT_SECRET);
+        } catch {
+            // Token inválido no handshake; continua anônimo
+        }
+    }
+    next();
 });
 
 // Tornar o "io" acessível dentro das rotas
@@ -67,10 +108,22 @@ io.on('connection', (socket) => {
 
     // O usuário entra em uma "sala" com seu próprio ID
     socket.on('join_user', (userId) => {
-        if (userId) {
-            socket.join(`usuario_${userId}`);
-            console.log(`🟢 Usuário ${userId} entrou na sala do socket.`);
+        if (!userId) return;
+        const cleanId = parseInt(userId, 10);
+        if (isNaN(cleanId) || cleanId <= 0) return;
+
+        // Se o socket estiver autenticado via token, garantir que só entra na sala de seu próprio ID ou se for admin
+        if (socket.user) {
+            const authUserId = socket.user.id || socket.user.idUsuario;
+            const isAdmin = socket.user.role === 'admin' || socket.user.nivel === 'master' || socket.user.tipo === 'SUPERADMIN';
+            if (!isAdmin && authUserId && String(authUserId) !== String(cleanId)) {
+                console.warn(`⚠️ [Socket.io] Tentativa de join_user não autorizada: socket.user=${authUserId} tentando entrar em usuario_${cleanId}`);
+                return;
+            }
         }
+
+        socket.join(`usuario_${cleanId}`);
+        console.log(`🟢 Usuário ${cleanId} entrou na sala do socket.`);
     });
 
     // Sala da empresa (multi-tenant). O IdEmpresa vem do JWT validado, nunca do cliente.
@@ -117,21 +170,7 @@ app.use(helmet({
 
 app.use(cors({
     origin: function (origin, callback) {
-        const allowedOrigins = [
-            process.env.CORS_ORIGIN,
-            'https://lynxems.com.br',
-            'https://www.lynxems.com.br',
-            'http://lynxems.com.br',
-            'http://localhost:5173',
-            'http://localhost:5174',
-            'http://localhost:3000',
-            'http://localhost:3001',
-            'http://localhost:3002'
-        ].filter(Boolean);
-
-        const isLocalOrLan = origin && /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin);
-
-        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.lynxems.com.br') || isLocalOrLan) {
+        if (isOriginAllowed(origin)) {
             callback(null, true);
         } else {
             console.warn(`[CORS] Origem não permitida: ${origin}`);
@@ -158,6 +197,27 @@ app.use(compression());
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Rate limiting global para a API: protege contra DoS, scans e requisições abusivas
+const globalApiLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minuto
+    max: 600, // 600 requisições por IP a cada minuto
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => req.path === '/api/health' || req.path === '/health',
+    message: { error: 'Muitas requisições originadas deste IP. Aguarde um minuto e tente novamente.' }
+});
+app.use('/api', globalApiLimiter);
+
+// Rate limiting restrito para rotas computacionalmente pesadas (IA, OCR e relatórios densos)
+const heavyOpsLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minuto
+    max: 60, // 60 requisições por IP a cada minuto
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Limite de processamento intensivo atingido para este IP. Aguarde 60 segundos.' }
+});
+app.use(['/api/ai', '/api/propostas', '/api/rh/analisar-curriculo', '/api/relatorios/exportar'], heavyOpsLimiter);
 
 // Health Check para o Watchdog e Monitoramento de Disponibilidade
 app.get('/api/health', (req, res) => {
@@ -305,6 +365,7 @@ app.use('/api/propostas', require('./routes/propostasComerciais'));
 
 // Suíte de Módulos Corporativos (100% MySQL & Multi-Tenant)
 app.use('/api/cadastros-basicos', require('./routes/cadastrosBasicos'));
+app.use('/api/cadastros/basicos', require('./routes/cadastrosBasicos'));
 app.use('/api/salas-reuniao', require('./routes/salasReuniao'));
 app.use('/api/salas', require('./routes/salasReuniao'));
 app.use('/api/reunioes', require('./routes/salasReuniao'));
@@ -394,9 +455,6 @@ app.use('/api/pcp/programas', require('./routes/pcpProgramas'));
 // System Settings
 app.use('/api/settings', require('./routes/system_settings'));
 
-// PPAPs
-app.use('/api/ppaps', require('./routes/ppaps'));
-
 // Manutenção de Equipamentos
 app.use('/api/manutencao', require('./routes/manutencao'));
 
@@ -455,8 +513,13 @@ const uploadAuthMiddleware = (req, res, next) => {
         return res.status(401).json({ error: 'Acesso negado. Autenticação obrigatória para acessar uploads.' });
     }
 
+    if (!process.env.JWT_SECRET) {
+        console.error('FATAL: JWT_SECRET não configurado nas variáveis de ambiente.');
+        return res.status(500).json({ error: 'Configuração de segurança do servidor incompleta.' });
+    }
+
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'sinco_secret_key_prod_2026');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
         next();
     } catch (err) {
@@ -507,13 +570,16 @@ console.log(`📂 [Frontend Static] Servindo arquivos do cliente a partir de: ${
 
 // Serve static files from React app with cache control
 app.use(express.static(clientDistPath, {
-    maxAge: '1d', // Assets com hash no nome podem ser cacheados por 1 dia
+    maxAge: '1d',
     setHeaders: (res, filePath) => {
         // HTML nunca deve ser cacheado para garantir última versão
         if (filePath.endsWith('.html')) {
             res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
             res.setHeader('Pragma', 'no-cache');
             res.setHeader('Expires', '0');
+        } else if (/[\\/]assets[\\/]/.test(filePath)) {
+            // Bundles do Vite possuem hash no nome: cache imutável de 1 ano
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         }
     }
 }));

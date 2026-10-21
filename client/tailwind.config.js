@@ -45,7 +45,7 @@ export default {
                     200: '#ffe1af',
                     300: '#ffcf83',
                     400: '#ffab2b',
-                    500: '#ffb536', // Metalfisa Exact Orange
+                    500: '#ffb536', // Lynx EMS Exact Orange
                     600: '#e69a22',
                     700: '#bf7b15',
                     800: '#99600f',

@@ -32,27 +32,89 @@ const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 
 const { getForecastMapCached, invalidateForecastCache } = require('../services/forecastCache');
 
-// GET /api/pcp-refinado/recursos - Fetch all resources from Protheus and their capacities from MySQL
+// GET /api/pcp-refinado/recursos - Fetch all resources from Protheus/SINCO and their capacities from MySQL
 router.get('/recursos', async (req, res) => {
-    let pgClient;
     try {
-        // 1. Fetch from PostgreSQL (Protheus)
-        pgClient = await db.connect();
-        const pgQuery = `
-            SELECT DISTINCT 
-                TRIM(h1.h1_codigo) AS cod_recurso,
-                TRIM(h1.h1_descri) AS desc_recurso
-            FROM public.sh1010 h1
-            WHERE COALESCE(h1.d_e_l_e_t_, '') IN ('', ' ')
-            AND TRIM(h1.h1_codigo) <> ''
-            ORDER BY TRIM(h1.h1_codigo)
-        `;
-        const pgResult = await pgClient.query(pgQuery);
-        const protheusRecursos = pgResult.rows;
+        // 1. Catálogo unificado de recursos (pcp_recursos + sh1010 + sg2010)
+        const resourceMap = new Map();
 
-        // 2. Fetch from MySQL (Local Capacities) — ordered by ordem_exibicao so the
-        //    frontend always receives resources in the sequence defined by the user in
-        //    pcp-refinado/capacidade, without relying on insertion order.
+        // 1.1 Catálogo central nativo de recursos (pcp_recursos)
+        try {
+            const [pcpRecRows] = await mysqlPool.query(
+                `SELECT TRIM(codigo) AS cod_recurso, 
+                        TRIM(COALESCE(NULLIF(nome, ''), descricao, codigo)) AS desc_recurso,
+                        capacidade_padrao
+                 FROM pcp_recursos
+                 WHERE TRIM(codigo) <> '' AND COALESCE(ativo, 1) = 1
+                 ORDER BY codigo`
+            );
+            pcpRecRows.forEach(r => {
+                const cod = (r.cod_recurso || '').trim().toUpperCase();
+                if (cod && !resourceMap.has(cod)) {
+                    resourceMap.set(cod, {
+                        cod_recurso: cod,
+                        desc_recurso: r.desc_recurso || cod,
+                        capacidade_padrao: Number(r.capacidade_padrao) || 8
+                    });
+                }
+            });
+        } catch (e) {
+            console.warn('[PCP REFINADO] Aviso ao ler pcp_recursos:', e.message);
+        }
+
+        // 1.2 SH1010 (Catálogo Protheus)
+        try {
+            const shRes = await db.query(`
+                SELECT DISTINCT 
+                    TRIM(h1_codigo) AS cod_recurso,
+                    TRIM(h1_descri) AS desc_recurso
+                FROM sh1010
+                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                  AND TRIM(h1_codigo) <> ''
+            `);
+            (shRes.rows || []).forEach(r => {
+                const cod = (r.cod_recurso || '').trim().toUpperCase();
+                if (cod) {
+                    if (!resourceMap.has(cod)) {
+                        resourceMap.set(cod, {
+                            cod_recurso: cod,
+                            desc_recurso: r.desc_recurso || cod,
+                            capacidade_padrao: 8
+                        });
+                    } else if (r.desc_recurso && !resourceMap.get(cod).desc_recurso) {
+                        resourceMap.get(cod).desc_recurso = r.desc_recurso;
+                    }
+                }
+            });
+        } catch (e) {
+            console.warn('[PCP REFINADO] Aviso ao ler sh1010:', e.message);
+        }
+
+        // 1.3 SG2010 (Roteiros com recursos em uso)
+        try {
+            const sgRes = await db.query(`
+                SELECT DISTINCT 
+                    TRIM(g2_recurso) AS cod_recurso,
+                    TRIM(COALESCE(NULLIF(g2_descri, ''), g2_recurso)) AS desc_recurso
+                FROM sg2010
+                WHERE COALESCE(d_e_l_e_t_, '') IN ('', ' ')
+                  AND TRIM(g2_recurso) <> ''
+            `);
+            (sgRes.rows || []).forEach(r => {
+                const cod = (r.cod_recurso || '').trim().toUpperCase();
+                if (cod && !resourceMap.has(cod)) {
+                    resourceMap.set(cod, {
+                        cod_recurso: cod,
+                        desc_recurso: r.desc_recurso || cod,
+                        capacidade_padrao: 8
+                    });
+                }
+            });
+        } catch (e) {
+            console.warn('[PCP REFINADO] Aviso ao ler sg2010:', e.message);
+        }
+
+        // 2. Fetch from MySQL (Local Capacities) — ordered by ordem_exibicao
         const [mysqlResult] = await mysqlPool.query(
             'SELECT recurso_codigo, tempo_padrao_minutos, capacidade_diaria_minutos, ordem_exibicao, grupo_paralelo, taxa_setup_min, taxa_padrao_min '
             + 'FROM app_recursos_capacidade '
@@ -62,31 +124,35 @@ router.get('/recursos', async (req, res) => {
         // Build a Map keyed by UPPER-TRIMMED code for reliable lookup
         const configMap = {};
         mysqlResult.forEach(row => {
-            configMap[(row.recurso_codigo || '').trim().toUpperCase()] = row;
+            const key = (row.recurso_codigo || '').trim().toUpperCase();
+            configMap[key] = row;
+            // Se houver algum recurso cadastrado em capacidade que não veio das tabelas acima, adiciona ao mapa
+            if (key && !resourceMap.has(key)) {
+                resourceMap.set(key, {
+                    cod_recurso: key,
+                    desc_recurso: key,
+                    capacidade_padrao: 8
+                });
+            }
         });
 
-        // 3. Merge Protheus resources with local capacities
-        const merged = protheusRecursos.map(r => {
+        // 3. Merge resources with local capacities
+        const merged = Array.from(resourceMap.values()).map(r => {
             const key = (r.cod_recurso || '').trim().toUpperCase();
             const conf = configMap[key] || {};
             return {
                 cod_recurso: r.cod_recurso,
                 desc_recurso: r.desc_recurso,
                 tempo_padrao_minutos: conf.tempo_padrao_minutos || 0,
-                capacidade_diaria_minutos: conf.capacidade_diaria_minutos || 0,
-                // COALESCE: resources never configured in app_recursos_capacidade get 9999
-                // so they always sort AFTER configured ones
+                capacidade_diaria_minutos: conf.capacidade_diaria_minutos || Math.round((r.capacidade_padrao || 8) * 60),
                 ordem_exibicao: conf.ordem_exibicao != null ? conf.ordem_exibicao : 9999,
                 grupo_paralelo: conf.grupo_paralelo || null,
-                // Padrão R$ 1,00/min para recursos ainda não configurados
                 taxa_setup_min: conf.taxa_setup_min != null ? conf.taxa_setup_min : 1,
                 taxa_padrao_min: conf.taxa_padrao_min != null ? conf.taxa_padrao_min : 1
             };
         });
 
         // 4. Sort merged list by ordem_exibicao ASC (primary) then by code (tie-break)
-        //    This guarantees the API response is always in the user-defined order,
-        //    regardless of how Protheus returns h1_codigo.
         merged.sort((a, b) => {
             const aOrd = a.ordem_exibicao ?? 9999;
             const bOrd = b.ordem_exibicao ?? 9999;
@@ -98,8 +164,6 @@ router.get('/recursos', async (req, res) => {
     } catch (error) {
         console.error('❌ [PCP REFINADO] Error fetching recursos:', error);
         res.status(500).json({ error: 'Erro ao buscar recursos: ' + error.message });
-    } finally {
-        if (pgClient) pgClient.release();
     }
 });
 

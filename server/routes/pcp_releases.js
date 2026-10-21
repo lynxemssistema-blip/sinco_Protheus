@@ -5,6 +5,50 @@ const mysqlPool = require('../services/mysqlService');
 const fs = require('fs');
 const path = require('path');
 const { validate, rules } = require('../middlewares/validate');
+const { ACOES, getItemLocks, registrarHistorico } = require('../services/opGuardService');
+
+// Itens (pedido/item, com a fração quando houver) vinculados a um código de lote
+const itensDoLote = async (conn, codigos) => {
+    const lista = [...new Set(codigos.filter(Boolean).map(c => String(c).trim()))];
+    if (lista.length === 0) return [];
+    const [fRows] = await conn.query('SELECT TRIM(pedido) AS pedido, TRIM(item) AS item, numero_lote AS fracao, lpf_codigo FROM app_pcp_delivery_forecasts WHERE lpf_codigo IN (?)', [lista]);
+    const [nRows] = await conn.query('SELECT TRIM(pedido) AS pedido, TRIM(item) AS item, NULL AS fracao, lpf_codigo FROM app_sales_order_item_notes WHERE lpf_codigo IN (?)', [lista]);
+    const vistos = new Set();
+    return [...fRows, ...nRows].filter(r => {
+        const k = `${r.pedido}|${r.item}|${r.fracao || ''}`;
+        if (vistos.has(k)) return false;
+        vistos.add(k);
+        return true;
+    });
+};
+
+// Primeiro item do lote com plano de corte (lote com corte não pode ser desfeito)
+const corteNoLote = async (conn, itens) => {
+    const vistos = new Set();
+    for (const it of itens) {
+        const k = `${it.pedido}|${it.item}`;
+        if (vistos.has(k)) continue;
+        vistos.add(k);
+        const locks = await getItemLocks(conn, it.pedido, it.item);
+        const corte = locks.motivos.find(m => m.tipo === 'PLANO_CORTE');
+        if (corte) return `Pedido ${it.pedido} / Item ${it.item} tem ${corte.descricao}`;
+    }
+    return null;
+};
+
+// Lote atual de um item/fração (null se estiver livre)
+const loteAtualDoItem = async (conn, it) => {
+    const pedClean = String(it.pedido || '').trim();
+    const itemClean = String(it.item || '').trim();
+    if (it.is_fraction && it.fraction_id && /^\d+$/.test(String(it.fraction_id))) {
+        const [rows] = await conn.query('SELECT lpf_codigo FROM app_pcp_delivery_forecasts WHERE id = ?', [it.fraction_id]);
+        return rows[0]?.lpf_codigo || null;
+    }
+    const [nRows] = await conn.query('SELECT lpf_codigo FROM app_sales_order_item_notes WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND lpf_codigo IS NOT NULL LIMIT 1', [pedClean, itemClean]);
+    if (nRows[0]?.lpf_codigo) return nRows[0].lpf_codigo;
+    const [fRows] = await conn.query('SELECT lpf_codigo FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND lpf_codigo IS NOT NULL LIMIT 1', [pedClean, itemClean]);
+    return fRows[0]?.lpf_codigo || null;
+};
 
 // Base path for saving PDFs on the network share
 const OS_BASE_PATH = process.platform === 'win32'
@@ -112,6 +156,19 @@ router.post('/log', validate(rules.pcpReleaseLog), async (req, res) => {
 
         await connection.beginTransaction();
 
+        // Itens que já estão em outro lote não podem ser aglutinados em um LPF novo (antes eram movidos sem aviso)
+        let opsLiberacao = [];
+        try { opsLiberacao = ops_json ? JSON.parse(ops_json) : []; } catch (_) { opsLiberacao = []; }
+        for (const op of opsLiberacao) {
+            const loteAtual = await loteAtualDoItem(connection, op);
+            if (loteAtual) {
+                await connection.rollback();
+                const desc = `Pedido ${op.pedido} / Item ${op.item}${op.is_fraction ? ` (fração ${op.visual_op || ''})` : ''} já está no lote ${loteAtual}`;
+                await registrarHistorico(null, req, { acao: ACOES.ACAO_BLOQUEADA, pedido: op.pedido, item: op.item, lote: loteAtual, descricao: `Liberação/Aglutinar bloqueada: ${desc}` });
+                return res.status(409).json({ error: `${desc}. Libere pelo próprio lote ou remova o item do lote antes.` });
+            }
+        }
+
         // Atomic code generation inside the same connection (prevents race condition)
         const codigo_liberacao = await generateCodigoLiberacao(connection);
 
@@ -140,6 +197,18 @@ router.post('/log', validate(rules.pcpReleaseLog), async (req, res) => {
             } catch (err) {
                 console.error('Error updating OPs with LPF code:', err);
             }
+        }
+
+        for (const op of opsLiberacao) {
+            await registrarHistorico(connection, req, {
+                acao: ACOES.LIBERACAO_REGISTRADA,
+                pedido: op.pedido,
+                item: op.item,
+                op: op.visual_op || null,
+                lote: codigo_liberacao,
+                descricao: `Liberação para produção registrada no lote ${codigo_liberacao} (${op.qtd ?? '-'} un.)`,
+                depois: op
+            });
         }
 
         await connection.commit();
@@ -453,15 +522,15 @@ router.post('/save-pdf', async (req, res) => {
 
 // POST /api/pcp-releases/create-or-assign-lot — Create or assign items to a manufacturing lot
 router.post('/create-or-assign-lot', async (req, res) => {
+    const { codigo_lote, data_pcp, items, usuario, observacao } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'Nenhum item selecionado para incluir no lote.' });
+    }
+
     const connection = await mysqlPool.getConnection();
     await connection.beginTransaction();
 
     try {
-        const { codigo_lote, data_pcp, items, usuario, observacao } = req.body;
-
-        if (!Array.isArray(items) || items.length === 0) {
-            return res.status(400).json({ error: 'Nenhum item selecionado para incluir no lote.' });
-        }
 
         let finalCodigo = codigo_lote ? String(codigo_lote).trim().toUpperCase() : null;
         if (!finalCodigo) {
@@ -611,6 +680,19 @@ router.post('/create-or-assign-lot', async (req, res) => {
             );
         }
 
+        for (const it of opsToSave) {
+            await registrarHistorico(connection, req, {
+                acao: ACOES.LOTE_ITEM_INCLUIDO,
+                pedido: it.pedido,
+                item: it.item,
+                op: it.visual_op,
+                fracao: it.is_fraction ? it.fraction_letter : null,
+                lote: finalCodigo,
+                descricao: `Incluído no lote ${finalCodigo} (${it.qtd} un.)${data_pcp ? ` | Data PCP do lote: ${data_pcp}` : ''}`,
+                depois: it
+            });
+        }
+
         await connection.commit();
         console.log(`✅ Lote de Fabricação atualizado em app_pcp_releases: ${finalCodigo} (${items.length} itens vinculados)`);
         res.json({ success: true, codigo_lote: finalCodigo, count: items.length });
@@ -633,32 +715,38 @@ router.post('/remove-item-from-lot', async (req, res) => {
         const pedClean = String(pedido || '').trim();
         const itemClean = String(item || '').trim();
         let targetLpf = codigo_lote ? String(codigo_lote).trim().toUpperCase() : null;
+        if (!targetLpf) {
+            targetLpf = await loteAtualDoItem(connection, { pedido: pedClean, item: itemClean, fraction_id, is_fraction });
+        }
+
+        // Lote liberado para fabricação ou com plano de corte não perde itens
+        if (targetLpf) {
+            const [relStatus] = await connection.query('SELECT status FROM app_pcp_releases WHERE codigo_liberacao = ? OR lote_info = ? LIMIT 1', [targetLpf, targetLpf]);
+            const locks = await getItemLocks(connection, pedClean, itemClean);
+            const corte = locks.motivos.filter(m => m.tipo === 'PLANO_CORTE');
+            const motivo = relStatus[0]?.status === 'LIBERADO'
+                ? `o lote ${targetLpf} já está LIBERADO para fabricação`
+                : corte.length > 0 ? `o item tem ${corte.map(c => c.descricao).join(', ')}` : null;
+            if (motivo) {
+                await connection.rollback();
+                await registrarHistorico(null, req, { acao: ACOES.ACAO_BLOQUEADA, pedido: pedClean, item: itemClean, lote: targetLpf, descricao: `Remoção do lote bloqueada: ${motivo}` });
+                return res.status(409).json({ error: `Não é possível remover do lote: ${motivo}.` });
+            }
+        }
 
         if (is_fraction && fraction_id) {
             if (typeof fraction_id === 'number' || /^\d+$/.test(String(fraction_id))) {
-                if (!targetLpf) {
-                    const [fRows] = await connection.query('SELECT lpf_codigo FROM app_pcp_delivery_forecasts WHERE id = ?', [fraction_id]);
-                    targetLpf = fRows[0]?.lpf_codigo;
-                }
                 await connection.query(
                     'UPDATE app_pcp_delivery_forecasts SET lpf_codigo = NULL WHERE id = ?',
                     [fraction_id]
                 );
             } else {
-                if (!targetLpf) {
-                    const [fRows] = await connection.query('SELECT lpf_codigo FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND (numero_lote = ? OR op_protheus LIKE ?)', [pedClean, itemClean, fraction_letter || '', `%${fraction_letter || ''}`]);
-                    targetLpf = fRows[0]?.lpf_codigo;
-                }
                 await connection.query(
                     'UPDATE app_pcp_delivery_forecasts SET lpf_codigo = NULL WHERE TRIM(pedido) = ? AND TRIM(item) = ? AND (numero_lote = ? OR op_protheus LIKE ?)',
                     [pedClean, itemClean, fraction_letter || '', `%${fraction_letter || ''}`]
                 );
             }
         } else if (pedClean && itemClean) {
-            if (!targetLpf) {
-                const [nRows] = await connection.query('SELECT lpf_codigo FROM app_sales_order_item_notes WHERE TRIM(pedido) = ? AND TRIM(item) = ?', [pedClean, itemClean]);
-                targetLpf = nRows[0]?.lpf_codigo;
-            }
             await connection.query(
                 'UPDATE app_sales_order_item_notes SET lpf_codigo = NULL WHERE TRIM(pedido) = ? AND TRIM(item) = ?',
                 [pedClean, itemClean]
@@ -683,8 +771,11 @@ router.post('/remove-item-from-lot', async (req, res) => {
                         const isMatch = String(op.pedido || '').trim() === pedClean && String(op.item || '').trim() === itemClean;
                         if (!isMatch) return true;
                         if (is_fraction && fraction_id) {
-                            if (op.fraction_id && String(op.fraction_id) === String(fraction_id)) return false;
-                            if (op.fraction_letter && String(op.fraction_letter) === String(fraction_letter)) return false;
+                            // Só sai a fração removida; as outras frações do mesmo item continuam no lote
+                            const mesmaFracao = op.fraction_id
+                                ? String(op.fraction_id) === String(fraction_id)
+                                : Boolean(op.fraction_letter) && String(op.fraction_letter) === String(fraction_letter);
+                            return !mesmaFracao;
                         }
                         return false;
                     });
@@ -702,6 +793,16 @@ router.post('/remove-item-from-lot', async (req, res) => {
                 }
             }
         }
+
+        await registrarHistorico(connection, req, {
+            acao: ACOES.LOTE_ITEM_REMOVIDO,
+            pedido: pedClean,
+            item: itemClean,
+            fracao: is_fraction ? (fraction_letter || null) : null,
+            lote: targetLpf,
+            descricao: `Removido do lote ${targetLpf || '-'}${is_fraction ? ` (fração ${fraction_letter || fraction_id})` : ''}`,
+            antes: { lote: targetLpf, fraction_id: fraction_id || null }
+        });
 
         await connection.commit();
         res.json({ success: true, message: 'Item removido do lote com sucesso.' });
@@ -726,16 +827,18 @@ router.post('/liberar', async (req, res) => {
         const userName = String(usuario || 'Usuário').trim();
 
         if (!targetId && !targetCode) {
+            await connection.rollback();
             return res.status(400).json({ error: 'Identificador do lote não informado.' });
         }
 
         // Check if lot exists
         const [rows] = await connection.query(
-            'SELECT id, codigo_liberacao, status FROM app_pcp_releases WHERE id = ? OR codigo_liberacao = ? OR lote_info = ? LIMIT 1',
+            'SELECT id, codigo_liberacao, status, ops_json FROM app_pcp_releases WHERE id = ? OR codigo_liberacao = ? OR lote_info = ? LIMIT 1',
             [targetId || 0, targetCode, targetCode]
         );
 
         if (rows.length === 0) {
+            await connection.rollback();
             return res.status(404).json({ error: 'Lote não encontrado.' });
         }
 
@@ -743,11 +846,31 @@ router.post('/liberar', async (req, res) => {
 
         // Update status to LIBERADO
         await connection.query(
-            `UPDATE app_pcp_releases 
-             SET status = 'LIBERADO', data_liberacao = NOW(), usuario_liberacao = ? 
+            `UPDATE app_pcp_releases
+             SET status = 'LIBERADO', data_liberacao = NOW(), usuario_liberacao = ?
              WHERE id = ?`,
             [userName, release.id]
         );
+
+        let opsLote = [];
+        try { opsLote = JSON.parse(release.ops_json || '[]'); } catch (_) { opsLote = []; }
+        const codigoLote = release.codigo_liberacao || String(release.id);
+        if (opsLote.length === 0) {
+            await registrarHistorico(connection, req, { acao: ACOES.LOTE_LIBERADO, lote: codigoLote, descricao: `Lote ${codigoLote} LIBERADO para fabricação (status anterior: ${release.status || '-'})` });
+        }
+        for (const op of opsLote) {
+            await registrarHistorico(connection, req, {
+                acao: ACOES.LOTE_LIBERADO,
+                pedido: op.pedido,
+                item: op.item,
+                op: op.visual_op || null,
+                fracao: op.is_fraction ? op.fraction_letter : null,
+                lote: codigoLote,
+                descricao: `Lote ${codigoLote} LIBERADO para fabricação (irreversível)`,
+                antes: { status: release.status || null },
+                depois: { status: 'LIBERADO' }
+            });
+        }
 
         await connection.commit();
         console.log(`🔒 [PCP RELEASE] Lote ${release.codigo_liberacao || release.id} LIBERADO por ${userName} (Irreversível)`);
@@ -772,7 +895,10 @@ router.post('/dissolve-lot', async (req, res) => {
 
     try {
         const { codigo_lote } = req.body;
-        if (!codigo_lote) return res.status(400).json({ error: 'Código do lote não informado.' });
+        if (!codigo_lote) {
+            await connection.rollback();
+            return res.status(400).json({ error: 'Código do lote não informado.' });
+        }
 
         const cleanCode = String(codigo_lote).trim();
 
@@ -783,7 +909,26 @@ router.post('/dissolve-lot', async (req, res) => {
         );
         if (checkRows.length > 0 && checkRows[0].status === 'LIBERADO') {
             await connection.rollback();
+            await registrarHistorico(null, req, { acao: ACOES.ACAO_BLOQUEADA, lote: cleanCode, descricao: `Desmanche do lote ${cleanCode} bloqueado: lote LIBERADO` });
             return res.status(403).json({ error: `O lote ${cleanCode} já está LIBERADO para fabricação e não pode ser desmanchado.` });
+        }
+
+        const itensLote = await itensDoLote(connection, [cleanCode]);
+        const corte = await corteNoLote(connection, itensLote);
+        if (corte) {
+            await connection.rollback();
+            await registrarHistorico(null, req, { acao: ACOES.ACAO_BLOQUEADA, lote: cleanCode, descricao: `Desmanche do lote ${cleanCode} bloqueado: ${corte}` });
+            return res.status(409).json({ error: `O lote ${cleanCode} não pode ser desmanchado: ${corte}.` });
+        }
+
+        for (const it of itensLote) {
+            await registrarHistorico(connection, req, {
+                acao: ACOES.LOTE_DESMANCHADO, pedido: it.pedido, item: it.item, fracao: it.fracao || null, lote: cleanCode,
+                descricao: `Lote ${cleanCode} desmanchado: item desvinculado`, antes: { lote: cleanCode }
+            });
+        }
+        if (itensLote.length === 0) {
+            await registrarHistorico(connection, req, { acao: ACOES.LOTE_DESMANCHADO, lote: cleanCode, descricao: `Lote ${cleanCode} desmanchado (sem itens vinculados)` });
         }
 
         await connection.query(
@@ -817,7 +962,10 @@ router.delete('/:id', async (req, res) => {
 
     try {
         const rawParam = String(req.params.id || '').trim();
-        if (!rawParam) return res.status(400).json({ error: 'Identificador não fornecido.' });
+        if (!rawParam) {
+            await connection.rollback();
+            return res.status(400).json({ error: 'Identificador não fornecido.' });
+        }
 
         const isNumeric = /^\d+$/.test(rawParam);
         
@@ -835,6 +983,25 @@ router.delete('/:id', async (req, res) => {
         
         const codesToUnbind = new Set();
         codesToUnbind.add(rawParam);
+        rows.forEach(r => {
+            if (r.codigo_liberacao) codesToUnbind.add(r.codigo_liberacao);
+            if (r.lote_info) codesToUnbind.add(r.lote_info);
+        });
+
+        // Lote com plano de corte não pode ser excluído
+        const itensLote = await itensDoLote(connection, [...codesToUnbind]);
+        const corte = await corteNoLote(connection, itensLote);
+        if (corte) {
+            await connection.rollback();
+            await registrarHistorico(null, req, { acao: ACOES.ACAO_BLOQUEADA, lote: rawParam, descricao: `Exclusão do lote ${rawParam} bloqueada: ${corte}` });
+            return res.status(409).json({ error: `Este lote não pode ser excluído: ${corte}.` });
+        }
+        for (const it of itensLote) {
+            await registrarHistorico(connection, req, {
+                acao: ACOES.LOTE_DESMANCHADO, pedido: it.pedido, item: it.item, fracao: it.fracao || null, lote: it.lpf_codigo,
+                descricao: `Lote/liberação ${it.lpf_codigo} excluído: item desvinculado`, antes: { lote: it.lpf_codigo }
+            });
+        }
 
         if (rows.length > 0) {
             for (const r of rows) {

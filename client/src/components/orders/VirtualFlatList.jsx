@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import FlatItemRow from './FlatItemRow';
 
@@ -54,6 +54,16 @@ const VirtualFlatList = ({
     onOpenBomStructure,
     onOpenStructureStock,
     onExcluirOp,
+    onSplitOp,
+    onUnifyOp,
+    onSmartPlanOp,
+    onOpenManageLot,
+    onRemoveFromLot,
+    onReprintLot,
+    onDissolveLot,
+    onReleaseProduction,
+    onCorteForecast,
+    onOpenHistorico,
     canEdit,
 }) => {
     const sentinelRef = useRef(null);
@@ -104,7 +114,8 @@ const VirtualFlatList = ({
         return () => observer.disconnect();
     }, [hasNextPage, loadingMore, scrollContainerRef]);
 
-    const visibleColumns = colConfig.filter(c => c.visible);
+    // Memorizado: as linhas só redesenham quando a configuração das colunas (ordem/visibilidade/largura) muda
+    const visibleColumns = useMemo(() => colConfig.filter(c => c.visible), [colConfig]);
 
     // Padding rows to maintain scrollbar position (virtualizer technique)
     const paddingTop = virtualItems.length > 0 ? (virtualItems[0].start ?? 0) : 0;
@@ -124,15 +135,17 @@ const VirtualFlatList = ({
             {virtualItems.map(vRow => {
                 const item = orders[vRow.index];
                 if (!item) return null;
+                // Frações do mesmo item compartilham pedido/item: a linha é identificada pela fração
+                const rowKey = item.fraction_id ?? `${item.pedido}-${item.item}`;
                 return (
                     <FlatItemRow
-                        key={`${item.pedido}-${item.item}-${vRow.index}`}
+                        key={`${rowKey}-${vRow.index}`}
                         item={item}
                         index={vRow.index}
                         visibleColumns={visibleColumns}
                         locationPathname={locationPathname}
-                        isSelected={selectedItems.some(i => i.pedido === item.pedido && i.item === item.item)}
-                        isActive={activeRowKey === `${item.pedido}-${item.item}`}
+                        isSelected={selectedItems.some(i => i.fraction_id === item.fraction_id)}
+                        isActive={activeRowKey === rowKey}
                         onSetActiveRow={setActiveRowKey}
                         printingOrderId={printingOrderId}
                         openActionMenu={openActionMenu}
@@ -162,6 +175,16 @@ const VirtualFlatList = ({
                         onOpenBomStructure={onOpenBomStructure}
                         onOpenStructureStock={onOpenStructureStock}
                         onExcluirOp={onExcluirOp}
+                        onSplitOp={onSplitOp}
+                        onUnifyOp={onUnifyOp}
+                        onSmartPlanOp={onSmartPlanOp}
+                        onOpenManageLot={onOpenManageLot}
+                        onRemoveFromLot={onRemoveFromLot}
+                        onReprintLot={onReprintLot}
+                        onDissolveLot={onDissolveLot}
+                        onReleaseProduction={onReleaseProduction}
+                        onCorteForecast={onCorteForecast}
+                        onOpenHistorico={onOpenHistorico}
                         canEdit={canEdit}
                     />
                 );

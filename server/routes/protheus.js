@@ -3,6 +3,7 @@ const router = express.Router();
 const protheusDB = require('../services/protheusDB');
 const mysqlService = require('../services/mysqlService');
 const opExplosionService = require('../services/opExplosionService');
+const { ACOES, assertItemLivre, OpBloqueadaError, registrarHistorico, responderBloqueio } = require('../services/opGuardService');
 const axios = require('axios');
 const https = require('https');
 const { hasFinancialAccess } = require('../util/permissionHelper');
@@ -557,6 +558,9 @@ router.post('/ordem-producao/incluir', async (req, res) => {
             if (totalJaEmOp > 0 || quantFinal < totalQtdOriginal) {
                 isFracionado = true;
 
+                // Gerar OP fracionada (01A, 01B...) muda o item base: não pode com lote, liberação, corte ou apontamento
+                await assertItemLivre(conn, pedidoStr, itemPvStr, `gerar OP fracionada para o item ${itemPvStr}`);
+
                 // Consulta letras de frações já usadas no pedido (01A, 01B...)
                 const [existingItems] = await conn.query(`
                     SELECT item_seq FROM erp_pedidos_itens 
@@ -777,6 +781,17 @@ router.post('/ordem-producao/incluir', async (req, res) => {
             return res.status(400).json({ error: 'Nenhum item com quantidade válida para gerar O.P.' });
         }
 
+        for (const op of ordensProducao) {
+            await registrarHistorico(conn, req, {
+                acao: ACOES.OP_CRIADA,
+                pedido: op.pedido,
+                item: op.item,
+                op: op.op_completa || op.op_num,
+                descricao: `OP ${op.op_completa || op.op_num} criada para o pedido ${op.pedido} item ${op.item}${op.is_fracionado ? ` (fração do item ${op.item_original})` : ''}: ${op.quantidade} un. de ${op.produto}`,
+                depois: { op_num: op.op_num, op_completa: op.op_completa, quantidade: op.quantidade, produto: op.produto, item_original: op.item_original, is_fracionado: op.is_fracionado }
+            });
+        }
+
         await conn.commit();
 
         res.json({
@@ -789,6 +804,10 @@ router.post('/ordem-producao/incluir', async (req, res) => {
 
     } catch (error) {
         await conn.rollback();
+        if (error instanceof OpBloqueadaError) {
+            const primeiro = Array.isArray(req.body?.items) ? req.body.items[0] : null;
+            return responderBloqueio(res, req, error, { pedido: primeiro?.pedido, item: primeiro?.itempv, acaoTentada: 'Geração de OP fracionada' });
+        }
         console.error('[OP BANCO NOVO] Erro ao gerar OP:', error.message);
         if (error.httpStatus === 400) {
             return res.status(400).json({ error: error.message, details: error.message });

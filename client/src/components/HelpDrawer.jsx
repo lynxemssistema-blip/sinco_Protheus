@@ -59,6 +59,7 @@ export default function HelpDrawer() {
     const location = useLocation();
     const navigate = useNavigate();
     const drawerRef = React.useRef(null);
+    const bodyRef = React.useRef(null);
 
     const [activeTabId, setActiveTabId] = React.useState(null);
 
@@ -74,16 +75,17 @@ export default function HelpDrawer() {
         }
     }, [currentPath, getHelpByPath]);
 
-    // Initial tab selection and reset logic
+    // Sempre que o caminho ou dados de ajuda mudarem, reseta a aba ativa para a primeira e rola o drawer ao topo
     React.useEffect(() => {
         if (helpData?.tabs && Array.isArray(helpData.tabs) && helpData.tabs.length > 0) {
-            if (!activeTabId || !helpData.tabs.some(t => t?.id === activeTabId)) {
-                setActiveTabId(helpData.tabs[0].id);
-            }
+            setActiveTabId(helpData.tabs[0].id);
         } else {
             setActiveTabId(null);
         }
-    }, [helpData, activeTabId]);
+        if (bodyRef.current) {
+            bodyRef.current.scrollTop = 0;
+        }
+    }, [currentPath, helpData]);
 
     const activeTab = React.useMemo(() => {
         return helpData?.tabs?.find(t => t?.id === activeTabId);
@@ -251,7 +253,7 @@ export default function HelpDrawer() {
                 )}
 
                 {/* ── Body ── */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div ref={bodyRef} className="flex-1 overflow-y-auto custom-scrollbar">
                     {helpData ? (
                         <div className="p-5 space-y-6">
                             {/* Category badge + description */}

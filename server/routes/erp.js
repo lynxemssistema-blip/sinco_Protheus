@@ -58,6 +58,29 @@ const PEDIDO_ANEXOS_DIR = path.join(__dirname, '../uploads/pedidos_anexos');
     }
 })();
 
+// Ensure pasta_servidor on erp_produtos and create erp_config_produtos table (Multi-Tenant)
+(async () => {
+    try {
+        const [cols] = await mysql.query("SHOW COLUMNS FROM erp_produtos LIKE 'pasta_servidor'");
+        if (!cols.length) {
+            await mysql.query('ALTER TABLE erp_produtos ADD COLUMN pasta_servidor VARCHAR(255) NULL');
+            console.log('✅ [ERP] Coluna erp_produtos.pasta_servidor adicionada.');
+        }
+        await mysql.query(`
+            CREATE TABLE IF NOT EXISTS erp_config_produtos (
+                IdEmpresa INT NOT NULL PRIMARY KEY,
+                diretorio_raiz_produtos VARCHAR(255) NULL,
+                padrao_subpasta VARCHAR(100) DEFAULT '{CODIGO_PRODUTO}',
+                criar_pasta_automatica TINYINT(1) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        `);
+    } catch (err) {
+        console.warn('⚠️ [ERP] Falha ao preparar pasta_servidor/erp_config_produtos:', err.message);
+    }
+})();
+
 const multer = require('multer');
 const uploadPedidoAnexos = multer({
     storage: multer.diskStorage({
@@ -97,6 +120,18 @@ async function syncDesenhoDoc(codigo, desenho_url, desenho_nome, desenho_tipo) {
         [codigo, nomeOriginal, filePath, 'Desenho']
     );
     return { desenho_url: docViewUrl(filePath), desenho_nome: nomeOriginal, desenho_tipo: tipo };
+}
+
+/**
+ * Converte automaticamente o caminho ou URL de um arquivo de desenho para extensão .pdf
+ * Preserva o caminho original no servidor e substitui qualquer extensão (.dwg, .dxf, .step, etc.) por .pdf
+ */
+function convertToPdfPath(filePathOrUrl) {
+    if (!filePathOrUrl) return null;
+    const str = String(filePathOrUrl).trim();
+    if (!str || str.startsWith('data:')) return null;
+    if (/\.pdf([?#].*)?$/i.test(str)) return str;
+    return str.replace(/\.[a-zA-Z0-9]+([?#].*)?$/, '.pdf');
 }
 
 /** Overlays the latest drawing from produtos_docs onto product rows. */
@@ -220,8 +255,8 @@ router.get('/produtos/proximo-codigo', async (req, res) => {
 
         let proximoNumero = (rows[0]?.max_num || 0) + 1;
 
-        // 2. Mínimo de 4 dígitos (ex: 0001, 0045, 1372, 10001)
-        let seqStr = String(proximoNumero).padStart(Math.max(4, String(proximoNumero).length), '0');
+        // 2. Mínimo de 6 dígitos sequenciais (ex: 000001, 000002, 000045)
+        let seqStr = String(proximoNumero).padStart(Math.max(6, String(proximoNumero).length), '0');
         let proximoCodigo = `${prefixoComHifen}${seqStr}`;
 
         // 3. Garantia de unicidade / colisão ExistChav (Protheus) na empresa
@@ -235,11 +270,17 @@ router.get('/produtos/proximo-codigo', async (req, res) => {
             const [[exists]] = await mysql.query(existsQuery, existsParams);
             if (!exists) break;
             proximoNumero++;
-            seqStr = String(proximoNumero).padStart(Math.max(4, String(proximoNumero).length), '0');
+            seqStr = String(proximoNumero).padStart(Math.max(6, String(proximoNumero).length), '0');
             proximoCodigo = `${prefixoComHifen}${seqStr}`;
         }
 
-        res.json({ proximoCodigo, prefixo, proximoNumero });
+        res.json({ 
+            proximoCodigo, 
+            proximo_codigo: proximoCodigo, 
+            prefixo, 
+            proximoNumero, 
+            proximo_numero: proximoNumero 
+        });
     } catch (err) {
         console.error('Erro ao gerar próximo código no padrão Protheus:', err);
         res.status(500).json({ error: 'Erro ao gerar código automático de produto' });
@@ -418,14 +459,38 @@ router.get('/produtos/grupos', async (req, res) => {
 router.get('/produtos/cores', async (req, res) => {
     try {
         const tenantId = getTenantId(req) || 1;
+        let [rows] = await mysql.query(
+            'SELECT * FROM erp_produtos_cores WHERE IdEmpresa = ? AND ativo = 1 ORDER BY codigo ASC',
+            [tenantId]
+        );
+        if (!rows || rows.length === 0) {
+            const { seedSteelColors } = require('../services/tenantSeedService');
+            await seedSteelColors(tenantId, false);
+            [rows] = await mysql.query(
+                'SELECT * FROM erp_produtos_cores WHERE IdEmpresa = ? AND ativo = 1 ORDER BY codigo ASC',
+                [tenantId]
+            );
+        }
+        res.json(rows || []);
+    } catch (err) {
+        console.error('Erro em GET /api/erp/produtos/cores:', err);
+        res.status(500).json({ error: 'Erro ao buscar cores de produtos', detail: err.message });
+    }
+});
+
+router.post('/produtos/cores/restaurar-padroes', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        const { seedSteelColors } = require('../services/tenantSeedService');
+        await seedSteelColors(tenantId, true);
         const [rows] = await mysql.query(
             'SELECT * FROM erp_produtos_cores WHERE IdEmpresa = ? AND ativo = 1 ORDER BY codigo ASC',
             [tenantId]
         );
-        res.json(rows);
+        res.json({ message: 'Padrão industrial de cores de aço restaurado com sucesso!', cores: rows });
     } catch (err) {
-        console.error('Erro em GET /api/erp/produtos/cores:', err);
-        res.status(500).json({ error: 'Erro ao buscar cores de produtos', detail: err.message });
+        console.error('Erro em POST /api/erp/produtos/cores/restaurar-padroes:', err);
+        res.status(500).json({ error: 'Erro ao restaurar cores padrão', detail: err.message });
     }
 });
 
@@ -587,7 +652,9 @@ router.post('/produtos', async (req, res) => {
             armazem_padrao = '01', peso_liquido = 0, peso_bruto = 0,
             custo_standard = 0, preco_venda = 0, lead_time_dias = 0,
             foto_url = null, desenho_url = null, desenho_nome = null, desenho_tipo = null,
-            b1_xrevm = '0', b1_xproc1 = '', b1_xrevc = '0', cor_id = null
+            b1_xrevm = '0', b1_xproc1 = '', b1_xrevc = '0', cor_id = null,
+            cliente_codigo = null, cliente_loja = '01', cliente_nome = null,
+            pasta_servidor = null
         } = req.body;
 
         const codLimpo = codigo.trim().toUpperCase();
@@ -595,6 +662,31 @@ router.post('/produtos', async (req, res) => {
         const desCli = String(b1_xproc1 || '').trim();
         const revCli = String(b1_xrevc || '0').trim();
         const corId = (cor_id !== undefined && cor_id !== '' && cor_id !== null) ? parseInt(cor_id, 10) : null;
+        const cliCod = cliente_codigo ? String(cliente_codigo).trim() : null;
+        const cliLoj = cliente_loja ? String(cliente_loja).trim() : '01';
+        const cliNom = cliente_nome ? String(cliente_nome).trim() : null;
+
+        // Auto-resolução da pasta do produto no servidor (se não informada)
+        let pastaServidorFinal = String(pasta_servidor || '').trim();
+        if (!pastaServidorFinal) {
+            try {
+                const [[cfg]] = await mysql.query(
+                    'SELECT diretorio_raiz_produtos, padrao_subpasta, criar_pasta_automatica FROM erp_config_produtos WHERE IdEmpresa = ?',
+                    [tenantId]
+                );
+                if (cfg?.diretorio_raiz_produtos) {
+                    const sep = cfg.diretorio_raiz_produtos.includes('/') ? '/' : '\\';
+                    const base = cfg.diretorio_raiz_produtos.replace(/[/\\]+$/, '');
+                    const sub = (cfg.padrao_subpasta || '{CODIGO_PRODUTO}').replace(/\{CODIGO_PRODUTO\}/g, codLimpo);
+                    pastaServidorFinal = `${base}${sep}${sub}`;
+                    if (cfg.criar_pasta_automatica && process.platform === 'win32' && !fs.existsSync(pastaServidorFinal)) {
+                        fs.mkdirSync(pastaServidorFinal, { recursive: true });
+                    }
+                }
+            } catch (cfgErr) {
+                console.warn('[ERP] Erro ao auto-gerar pasta do produto:', cfgErr.message);
+            }
+        }
 
         // Verificar duplicidade no escopo da empresa
         const [existente] = await mysql.query('SELECT id FROM erp_produtos WHERE IdEmpresa = ? AND codigo = ?', [tenantId, codLimpo]);
@@ -608,14 +700,18 @@ router.post('/produtos', async (req, res) => {
             INSERT INTO erp_produtos (
                 codigo, descricao, tipo, unidade_medida, ncm, armazem_padrao,
                 peso_liquido, peso_bruto, custo_standard, preco_venda, lead_time_dias,
-                foto_url, desenho_url, desenho_nome, desenho_tipo, b1_xrevm, b1_xproc1, b1_xrevc, IdEmpresa, cor_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                foto_url, desenho_url, desenho_nome, desenho_tipo, b1_xrevm, b1_xproc1, b1_xrevc, 
+                cliente_codigo, cliente_loja, cliente_nome,
+                IdEmpresa, cor_id, pasta_servidor
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             codLimpo, descricao.trim(), tipo, unidade_medida, ncm,
             armazem_padrao, parseNum(peso_liquido), parseNum(peso_bruto), parseNum(custo_standard),
             parseNum(preco_venda), parseInt(lead_time_dias, 10) || 0,
             foto_url || null, desenho.desenho_url, desenho.desenho_nome, desenho.desenho_tipo,
-            revProd, desCli, revCli, tenantId, corId
+            revProd, desCli, revCli,
+            cliCod, cliLoj, cliNom,
+            tenantId, corId, pastaServidorFinal || null
         ]);
 
         // Sincroniza também no espelho Protheus sb1010
@@ -651,14 +747,22 @@ router.post('/produtos', async (req, res) => {
             console.warn('[ERP] Erro ao sincronizar SB1010:', sb1Err.message);
         }
 
-        // Sincroniza sz1010 se informado código/desenho do cliente
-        if (desCli) {
+        // Sincroniza sz1010 oficial se informado cliente ou desenho do cliente
+        if (desCli || cliCod) {
             try {
+                const zCli = cliCod || '000001';
+                const zLoj = cliLoj || '01';
+                const zNom = cliNom || '';
                 await mysql.query(`
                     INSERT INTO sz1010 (z1_filial, z1_cliente, z1_loja, z1_nomecli, z1_produto, z1_codcli, z1_desccli, z1_revisao, z1_tes, d_e_l_e_t_, IdEmpresa)
-                    VALUES ('0101', '000001', '01', '', ?, ?, '', ?, '', '', ?)
-                    ON DUPLICATE KEY UPDATE z1_codcli = VALUES(z1_codcli), z1_revisao = VALUES(z1_revisao)
-                `, [codLimpo, desCli, revCli, tenantId]);
+                    VALUES ('0101', ?, ?, ?, ?, ?, '', ?, '', '', ?)
+                    ON DUPLICATE KEY UPDATE 
+                        z1_cliente = VALUES(z1_cliente),
+                        z1_loja = VALUES(z1_loja),
+                        z1_nomecli = VALUES(z1_nomecli),
+                        z1_codcli = VALUES(z1_codcli),
+                        z1_revisao = VALUES(z1_revisao)
+                `, [zCli, zLoj, zNom, codLimpo, desCli, revCli, tenantId]);
             } catch (sz1Err) {
                 console.warn('[ERP] Erro ao sincronizar SZ1010:', sz1Err.message);
             }
@@ -681,7 +785,8 @@ router.put('/produtos/:codigo', async (req, res) => {
             descricao, tipo, unidade_medida, ncm, armazem_padrao,
             peso_liquido, peso_bruto, custo_standard, preco_venda, lead_time_dias,
             foto_url, desenho_url, desenho_nome, desenho_tipo, status,
-            b1_xrevm, b1_xproc1, b1_xrevc, cor_id
+            b1_xrevm, b1_xproc1, b1_xrevc, cor_id,
+            cliente_codigo, cliente_loja, cliente_nome, pasta_servidor
         } = req.body;
 
         const parseNum = (v) => {
@@ -696,6 +801,14 @@ router.put('/produtos/:codigo', async (req, res) => {
         const revCli = b1_xrevc !== undefined ? String(b1_xrevc || '0').trim() : null;
         const corIdProvided = cor_id !== undefined;
         const corIdVal = corIdProvided ? (cor_id ? parseInt(cor_id, 10) : null) : null;
+        const cliCodProvided = cliente_codigo !== undefined;
+        const cliCodVal = cliCodProvided ? (cliente_codigo ? String(cliente_codigo).trim() : null) : null;
+        const cliLojProvided = cliente_loja !== undefined;
+        const cliLojVal = cliLojProvided ? (cliente_loja ? String(cliente_loja).trim() : '01') : '01';
+        const cliNomProvided = cliente_nome !== undefined;
+        const cliNomVal = cliNomProvided ? (cliente_nome ? String(cliente_nome).trim() : null) : null;
+        const pastaServidorProvided = pasta_servidor !== undefined;
+        const pastaServidorVal = pastaServidorProvided ? (pasta_servidor ? String(pasta_servidor).trim() : null) : null;
 
         const desenho = await syncDesenhoDoc(codLimpo, desenho_url, desenho_nome, desenho_tipo);
         if (!desenho.desenho_url) {
@@ -728,7 +841,11 @@ router.put('/produtos/:codigo', async (req, res) => {
                 b1_xrevm = COALESCE(?, b1_xrevm),
                 b1_xproc1 = COALESCE(?, b1_xproc1),
                 b1_xrevc = COALESCE(?, b1_xrevc),
-                cor_id = CASE WHEN ? = 1 THEN ? ELSE cor_id END
+                cor_id = CASE WHEN ? = 1 THEN ? ELSE cor_id END,
+                cliente_codigo = CASE WHEN ? = 1 THEN ? ELSE cliente_codigo END,
+                cliente_loja = CASE WHEN ? = 1 THEN ? ELSE cliente_loja END,
+                cliente_nome = CASE WHEN ? = 1 THEN ? ELSE cliente_nome END,
+                pasta_servidor = CASE WHEN ? = 1 THEN ? ELSE pasta_servidor END
             WHERE (codigo = ? OR id = ?) AND IdEmpresa = ?
         `, [
             descricao ? descricao.trim() : null,
@@ -751,6 +868,14 @@ router.put('/produtos/:codigo', async (req, res) => {
             revCli,
             corIdProvided ? 1 : 0,
             corIdVal,
+            cliCodProvided ? 1 : 0,
+            cliCodVal,
+            cliLojProvided ? 1 : 0,
+            cliLojVal,
+            cliNomProvided ? 1 : 0,
+            cliNomVal,
+            pastaServidorProvided ? 1 : 0,
+            pastaServidorVal,
             codLimpo,
             isNaN(parseInt(codLimpo, 10)) ? -1 : parseInt(codLimpo, 10),
             tenantId
@@ -864,17 +989,31 @@ router.put('/produtos/:codigo', async (req, res) => {
             console.warn('[ERP] Erro ao sincronizar pedidos após alteração do produto:', ordersErr.message);
         }
 
-        // Sincronizar sz1010
-        if (desCli) {
+        // Sincronizar sz1010 oficial se informado cliente ou desenho
+        if (desCli !== null || cliCodProvided) {
             try {
-                const [[sz1Exist]] = await mysql.query('SELECT r_e_c_n_o_ FROM sz1010 WHERE z1_produto = ? LIMIT 1', [codLimpo]);
+                const [[sz1Exist]] = await mysql.query('SELECT r_e_c_n_o_, z1_cliente, z1_loja, z1_nomecli, z1_codcli, z1_revisao FROM sz1010 WHERE z1_produto = ? AND IdEmpresa = ? LIMIT 1', [codLimpo, tenantId]);
+                const zCli = cliCodProvided ? (cliCodVal || '000001') : (sz1Exist?.z1_cliente || '000001');
+                const zLoj = cliLojProvided ? (cliLojVal || '01') : (sz1Exist?.z1_loja || '01');
+                const zNom = cliNomProvided ? (cliNomVal || '') : (sz1Exist?.z1_nomecli || '');
+                const effectiveDesCli = desCli !== null ? desCli : (sz1Exist?.z1_codcli || '');
+                const effectiveRevCli = revCli !== null ? revCli : (sz1Exist?.z1_revisao || '0');
+
                 if (sz1Exist) {
-                    await mysql.query('UPDATE sz1010 SET z1_codcli = ?, z1_revisao = ? WHERE r_e_c_n_o_ = ?', [desCli, revCli || '0', sz1Exist.r_e_c_n_o_]);
-                } else {
+                    await mysql.query(`
+                        UPDATE sz1010 SET 
+                            z1_cliente = ?, 
+                            z1_loja = ?, 
+                            z1_nomecli = ?, 
+                            z1_codcli = ?, 
+                            z1_revisao = ? 
+                        WHERE r_e_c_n_o_ = ?
+                    `, [zCli, zLoj, zNom, effectiveDesCli, effectiveRevCli, sz1Exist.r_e_c_n_o_]);
+                } else if (effectiveDesCli || zCli) {
                     await mysql.query(`
                         INSERT INTO sz1010 (z1_filial, z1_cliente, z1_loja, z1_nomecli, z1_produto, z1_codcli, z1_desccli, z1_revisao, z1_tes, d_e_l_e_t_, IdEmpresa)
-                        VALUES ('0101', '000001', '01', '', ?, ?, '', ?, '', '', ?)
-                    `, [codLimpo, desCli, revCli || '0', tenantId]);
+                        VALUES ('0101', ?, ?, ?, ?, ?, '', ?, '', '', ?)
+                    `, [zCli, zLoj, zNom, codLimpo, effectiveDesCli, effectiveRevCli, tenantId]);
                 }
             } catch (sz1Err) {
                 console.warn('[ERP] Erro ao atualizar SZ1010:', sz1Err.message);
@@ -1146,7 +1285,7 @@ async function getProximoNumeroPedido(conn, tenantId) {
     const clientConn = conn || mysql;
     let protheusMax = 0;
 
-    // Apenas consulta Postgres se for a empresa 1 (Metalfisa Matriz histórica)
+    // Apenas consulta Postgres se for a empresa 1 (Lynx EMS Matriz histórica)
     if (tenantId === 1) {
         try {
             const pg = require('../db');
@@ -1173,13 +1312,34 @@ async function getProximoNumeroPedido(conn, tenantId) {
     `, params);
     const mysqlMaxNum = mysqlMax?.max_num || 0;
 
-    let candidate = Math.max(protheusMax, mysqlMaxNum) + 1;
+    // Busca o número inicial configurado para a empresa em erp_config_pedidos
+    let numeroInicialConfig = 1;
+    let tamanhoDigitos = 6;
+    if (tenantId) {
+        try {
+            const [[cfg]] = await clientConn.query(
+                'SELECT numero_inicial_pedido, tamanho_digitos FROM erp_config_pedidos WHERE IdEmpresa = ?',
+                [tenantId]
+            );
+            if (cfg?.numero_inicial_pedido) {
+                numeroInicialConfig = parseInt(cfg.numero_inicial_pedido, 10) || 1;
+            }
+            if (cfg?.tamanho_digitos) {
+                tamanhoDigitos = parseInt(cfg.tamanho_digitos, 10) || 6;
+            }
+        } catch (cfgErr) {
+            // Se falhar leitura ou tabela, mantém padrão
+        }
+    }
+
+    let baseMax = Math.max(protheusMax, mysqlMaxNum);
+    let candidate = baseMax > 0 ? Math.max(numeroInicialConfig, baseMax + 1) : Math.max(numeroInicialConfig, 1);
 
     // Protheus ExistChav check: garante que o código não existe previamente no tenant
     let exists = true;
     let formatted = '';
     while (exists) {
-        formatted = String(candidate).padStart(6, '0');
+        formatted = String(candidate).padStart(tamanhoDigitos, '0');
         let checkSql = 'SELECT 1 FROM erp_pedidos_venda WHERE numero_pedido = ? LIMIT 1';
         let checkParams = [formatted];
         if (tenantId) {
@@ -1211,6 +1371,97 @@ router.get('/pedidos/proximo-numero', async (req, res) => {
     } catch (err) {
         console.error('Erro em GET /api/erp/pedidos/proximo-numero:', err);
         res.status(500).json({ error: 'Erro ao obter próximo número de pedido' });
+    }
+});
+
+// 6.6 PEDIDOS DE VENDA: Consultar configuração de numeração inicial (Multi-Tenant)
+router.get('/pedidos/config-numeracao', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        const proximoNumero = await getProximoNumeroPedido(mysql, tenantId);
+
+        const [[cfg]] = await mysql.query(
+            'SELECT numero_inicial_pedido, tamanho_digitos FROM erp_config_pedidos WHERE IdEmpresa = ?',
+            [tenantId]
+        );
+        const numInicial = cfg?.numero_inicial_pedido ? parseInt(cfg.numero_inicial_pedido, 10) : 1;
+        const tamanho = cfg?.tamanho_digitos ? parseInt(cfg.tamanho_digitos, 10) : 6;
+
+        const [[maxRow]] = await mysql.query(
+            'SELECT MAX(CAST(numero_pedido AS UNSIGNED)) as max_num FROM erp_pedidos_venda WHERE IdEmpresa = ? AND numero_pedido REGEXP "^[0-9]+$"',
+            [tenantId]
+        );
+        const maiorExistente = maxRow?.max_num || 0;
+
+        res.json({
+            numero_inicial: numInicial,
+            numero_inicial_formatado: String(numInicial).padStart(tamanho, '0'),
+            tamanho_digitos: tamanho,
+            maior_existente: maiorExistente,
+            maior_formatado: maiorExistente > 0 ? String(maiorExistente).padStart(tamanho, '0') : 'Nenhum',
+            proximo_numero: proximoNumero,
+            proximo_formatado: proximoNumero
+        });
+    } catch (err) {
+        console.error('Erro em GET /api/erp/pedidos/config-numeracao:', err);
+        res.status(500).json({ error: 'Erro ao consultar configuração de numeração de pedidos', detail: err.message });
+    }
+});
+
+// 6.7 PEDIDOS DE VENDA: Definir número inicial do Pedido Interno (Apenas Admin/Empresa)
+router.post('/pedidos/config-numeracao', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        let { numero_inicial } = req.body;
+
+        if (numero_inicial === undefined || numero_inicial === null || String(numero_inicial).trim() === '') {
+            return res.status(400).json({ error: 'Informe o número inicial do pedido.' });
+        }
+
+        const numLimpo = String(numero_inicial).replace(/\D/g, '');
+        const numSafe = parseInt(numLimpo, 10);
+
+        if (isNaN(numSafe) || numSafe < 1 || numSafe > 999999) {
+            return res.status(400).json({ error: 'Número inicial inválido. Informe um valor entre 1 e 999999.' });
+        }
+
+        // Validação contra regressão: não permitir número inicial menor ou igual ao maior pedido já emitido
+        const [[maxRow]] = await mysql.query(
+            'SELECT MAX(CAST(numero_pedido AS UNSIGNED)) as max_num FROM erp_pedidos_venda WHERE IdEmpresa = ? AND numero_pedido REGEXP "^[0-9]+$"',
+            [tenantId]
+        );
+        const maiorExistente = maxRow?.max_num || 0;
+
+        if (maiorExistente > 0 && numSafe <= maiorExistente) {
+            const formatadoMaior = String(maiorExistente).padStart(6, '0');
+            return res.status(400).json({
+                error: `O número inicial não pode ser menor ou igual ao maior pedido já emitido (${formatadoMaior}) para evitar duplicidade de código.`
+            });
+        }
+
+        await mysql.query(`
+            INSERT INTO erp_config_pedidos (IdEmpresa, numero_inicial_pedido, tamanho_digitos)
+            VALUES (?, ?, 6)
+            ON DUPLICATE KEY UPDATE
+                numero_inicial_pedido = VALUES(numero_inicial_pedido),
+                tamanho_digitos = 6,
+                updated_at = NOW()
+        `, [tenantId, numSafe]);
+
+        const novoProximo = await getProximoNumeroPedido(mysql, tenantId);
+        const formatado = String(numSafe).padStart(6, '0');
+
+        res.json({
+            success: true,
+            message: `Número inicial do Pedido Interno configurado com sucesso para ${formatado}.`,
+            numero_inicial: numSafe,
+            numero_inicial_formatado: formatado,
+            proximo_numero: novoProximo,
+            proximo_formatado: novoProximo
+        });
+    } catch (err) {
+        console.error('Erro em POST /api/erp/pedidos/config-numeracao:', err);
+        res.status(500).json({ error: 'Erro ao configurar numeração inicial do pedido', detail: err.message });
     }
 });
 
@@ -1276,6 +1527,15 @@ router.post('/pedidos/abrir-pasta', async (req, res) => {
             return res.status(400).json({ error: 'Caminho da pasta não informado.' });
         }
         const cleanPath = String(caminho).trim();
+        const normalized = path.normalize(cleanPath);
+        const forbiddenPatterns = [
+            /^[a-zA-Z]:\\(windows|system32|recovery|boot)/i,
+            /[\\\/](\.git|\.env|node_modules|server[\\\/]routes|server[\\\/]config)/i
+        ];
+        if (forbiddenPatterns.some(rx => rx.test(normalized))) {
+            return res.status(403).json({ error: 'Acesso a este diretório é restrito por motivos de segurança.' });
+        }
+
         let openedLocally = false;
         let created = false;
 

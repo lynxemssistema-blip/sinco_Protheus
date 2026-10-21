@@ -28,6 +28,37 @@ import useStickyState from '../../hooks/useStickyState';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 import { exportFinancialExcel } from '../../services/financialExcelGenerator';
 
+const parseDateToISO = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+        return raw.substring(0, 10);
+    }
+    if (/^\d{8}$/.test(raw)) {
+        return `${raw.substring(0, 4)}-${raw.substring(4, 6)}-${raw.substring(6, 8)}`;
+    }
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(raw)) {
+        const parts = raw.split('/');
+        return `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+    if (/^\d{2}-\d{2}-\d{4}/.test(raw)) {
+        const parts = raw.split('-');
+        return `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+    return null;
+};
+
+const formatProtheusDate = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '-';
+    const iso = parseDateToISO(raw);
+    if (iso) {
+        const [y, m, d] = iso.split('-');
+        return `${d}/${m}/${y}`;
+    }
+    return raw;
+};
+
 const SortableHeader = ({ label, columnKey, sortConfig, requestSort, filterValue, onFilterChange, className = "", align = "left" }) => {
     return (
         <th className={`px-2 py-1.5 font-semibold ${className} align-top`}>
@@ -167,9 +198,11 @@ const FinancialView = ({ rows, loading, error, onRefresh }) => {
             }
             // Date filter
             if (filters.dataInicial || filters.dataFinal) {
-                const dateFieldFull = filters.dateType === 'prev_fat' ? row.data_prevista_faturamento : row.data_entrega_pcp;
-                if (!dateFieldFull) return false;
-                const prevDate = dateFieldFull.split('T')[0]; // YYYY-MM-DD
+                const dateFieldFull = filters.dateType === 'prev_fat' 
+                    ? row.data_prevista_faturamento 
+                    : (row.data_entrega_pcp || row.data_pcp || row.entrega_pcp || row.c6_entrega);
+                const prevDate = parseDateToISO(dateFieldFull);
+                if (!prevDate) return false;
                 if (filters.dataInicial && prevDate < filters.dataInicial) return false;
                 if (filters.dataFinal && prevDate > filters.dataFinal) return false;
             }
@@ -206,16 +239,12 @@ const FinancialView = ({ rows, loading, error, onRefresh }) => {
             if (valPendente <= 0) return;
 
             const formatMonth = (dateStr) => {
-                if (!dateStr) return null;
-                let formatted = String(dateStr).trim();
-                if (/^\d{8}$/.test(formatted)) {
-                    return `${formatted.substring(0,4)}-${formatted.substring(4,6)}`;
-                }
-                return formatted.substring(0, 7); // YYYY-MM
+                const iso = parseDateToISO(dateStr);
+                return iso ? iso.substring(0, 7) : null;
             };
 
-            const mEntrega = formatMonth(row.entrega);
-            const mPcp = formatMonth(row.data_entrega_pcp);
+            const mEntrega = formatMonth(row.entrega || row.c6_entrega);
+            const mPcp = formatMonth(row.data_entrega_pcp || row.data_pcp || row.entrega_pcp);
             const mPrev = formatMonth(row.data_prevista_faturamento);
 
             if (mEntrega) { ensureMonth(mEntrega); monthMap[mEntrega].entrega += valPendente; }
@@ -241,23 +270,21 @@ const FinancialView = ({ rows, loading, error, onRefresh }) => {
             let weekDay = '';
             
             if (grouping === 'prev_fat' || grouping === 'data_pcp') {
-                const dateField = grouping === 'prev_fat' ? row.data_prevista_faturamento : row.data_entrega_pcp;
-                if (dateField) {
-                    const datePart = dateField.split('T')[0];
-                    const parts = datePart.split('-');
-                    groupKey = datePart;
-                    
-                    if (parts.length === 3) {
-                        const y = parseInt(parts[0], 10);
-                        const m = parseInt(parts[1], 10);
-                        const d = parseInt(parts[2], 10);
-                        const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-                        const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-                        weekDay = days[dateObj.getUTCDay()] || '';
-                    }
+                const dateField = grouping === 'prev_fat' 
+                    ? row.data_prevista_faturamento 
+                    : (row.data_entrega_pcp || row.data_pcp || row.entrega_pcp || row.c6_entrega);
+                const isoDate = parseDateToISO(dateField);
+                if (isoDate) {
+                    const [y, m, d] = isoDate.split('-').map(Number);
+                    const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+                    const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+                    weekDay = days[dateObj.getUTCDay()] || '';
 
+                    groupKey = isoDate;
                     const prefix = grouping === 'prev_fat' ? 'Prev. Fat' : 'Data PCP';
-                    groupLabel = `${prefix}: ${parts[2]}/${parts[1]}/${parts[0]}`;
+                    const padD = String(d).padStart(2, '0');
+                    const padM = String(m).padStart(2, '0');
+                    groupLabel = `${prefix}: ${padD}/${padM}/${y}`;
                 } else {
                     groupKey = 'sem_previsao';
                     groupLabel = grouping === 'prev_fat' ? 'Sem Previsão' : 'Sem Data PCP';
@@ -1046,21 +1073,6 @@ const FlatDetailsTable = ({ items, formatCurrency }) => {
         }));
     };
 
-    const formatProtheusDate = (value) => {
-        const raw = String(value ?? '').trim();
-        if (!raw) return '-';
-        if (raw.includes('T')) {
-            const datePart = raw.split('T')[0];
-            const d = datePart.split('-');
-            if (d.length === 3) return `${d[2]}/${d[1]}/${d[0]}`;
-        }
-        if (/^\d{8}$/.test(raw)) return raw.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1');
-        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw.replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
-        if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.substring(0, 10).replace(/(\d{4})-(\d{2})-(\d{2})/, '$3/$2/$1');
-        if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
-        if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) return raw.replace(/-/g, '/');
-        return raw;
-    };
 
     const sortedAndFilteredItems = useMemo(() => {
         let result = items;
@@ -1069,7 +1081,10 @@ const FlatDetailsTable = ({ items, formatCurrency }) => {
             const filterValue = (columnFilters[key] || '').toLowerCase();
             if (filterValue) {
                 result = result.filter(r => {
-                    if (key === 'data_prevista_faturamento') return String(formatProtheusDate(r[key]) || '').toLowerCase().includes(filterValue);
+                    if (key === 'data_prevista_faturamento' || key === 'data_entrega_pcp') {
+                        const val = r[key] || (key === 'data_entrega_pcp' ? (r.data_pcp || r.entrega_pcp || r.c6_entrega) : '');
+                        return String(formatProtheusDate(val) || '').toLowerCase().includes(filterValue);
+                    }
                     return String(r[key] || '').toLowerCase().includes(filterValue);
                 });
             }
@@ -1172,7 +1187,7 @@ const FlatDetailsTable = ({ items, formatCurrency }) => {
                             <td className="px-2 py-1 text-right font-mono font-bold text-emerald-700 bg-emerald-50/30">{qtyEntreg.toLocaleString('pt-BR')}</td>
                             
                             <td className="px-2 py-1 text-center text-[10px] font-bold text-cyan-700">
-                                {row.data_entrega_pcp ? formatProtheusDate(row.data_entrega_pcp) : <span className="text-slate-300">—</span>}
+                                {(row.data_entrega_pcp || row.data_pcp || row.entrega_pcp) ? formatProtheusDate(row.data_entrega_pcp || row.data_pcp || row.entrega_pcp) : <span className="text-slate-300">—</span>}
                             </td>
                             <td className="px-2 py-1 text-center text-[10px] font-bold text-teal-700">
                                 {row.data_prevista_faturamento ? formatProtheusDate(row.data_prevista_faturamento) : <span className="text-slate-300">—</span>}

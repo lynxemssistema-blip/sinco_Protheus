@@ -12,7 +12,6 @@ import ProductionPlanningModal from '../components/ProductionPlanningModal';
 import ProductionAppointmentModal from '../components/ProductionAppointmentModal';
 import ProductionMacroModal from '../components/ProductionMacroModal';
 import ProcessLegendModal from '../components/ProcessLegendModal';
-import PCPMetalDrawer from '../components/PCPMetalDrawer';
 import PlanejamentoInteligenteModal from '../components/PlanejamentoInteligenteModal';
 import ErrorStateOverlay from '../components/ErrorStateOverlay';
 import CurvaSPedido from './pcp/CurvaSPedido';
@@ -48,10 +47,6 @@ export default function ProductionControl() {
     const [isEvolutionFullscreen, setIsEvolutionFullscreen] = useState(false);
     const [isTabelaFullscreen, setIsTabelaFullscreen] = useState(false);
 
-    // PCPMetal AI Drawer State
-    const [pcpmetalOpen, setPcpmetalOpen] = useState(false);
-    const [pcpmetalContext, setPcpmetalContext] = useState({});
-    
     // Planejamento Inteligente State
     const [smartPlannerOpen, setSmartPlannerOpen] = useState(false);
     const [smartPlannerOps, setSmartPlannerOps] = useState([]);
@@ -584,17 +579,6 @@ export default function ProductionControl() {
                         <p className="text-slate-500">Planejamento e Apontamento de OPs</p>
                     </div>
                     <div className="flex items-center gap-4">
-                        <button
-                            onClick={() => {
-                                setPcpmetalContext({ page: 'controle-producao', modulo: 'Controle de Produção', action: 'Geral' });
-                                setPcpmetalOpen(true);
-                            }}
-                            className="flex items-center gap-2 bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg font-bold hover:bg-indigo-200 transition-colors"
-                            title="Conversar com Agente PCPMetal"
-                        >
-                            <Zap className="w-5 h-5" />
-                            PCPMetal AI
-                        </button>
                         {/* Botão Planejamento Inteligente com dropdown */}
                         <div className="relative" ref={smartPlanMenuRef}>
                             <button
@@ -1201,20 +1185,6 @@ export default function ProductionControl() {
                 )}
 
             </div>
-
-            {pcpmetalOpen && (
-                <PCPMetalDrawer
-                    isOpen={pcpmetalOpen}
-                    onClose={() => setPcpmetalOpen(false)}
-                    context={pcpmetalContext}
-                    pageData={{
-                        ops,
-                        selectedOps,
-                        filters,
-                        total
-                    }}
-                />
-            )}
 
             {/* PRINT COMPONENT - Visible only when printing */}
             <div className="hidden print:block print:absolute print:top-0 print:left-0 print:w-full print:bg-white print:z-[9999]">

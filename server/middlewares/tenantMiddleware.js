@@ -38,12 +38,12 @@ async function tenantMiddleware(req, res, next) {
                 req.tenantId = null; // Acesso global explícito para auditoria multi-empresa
                 req.isImpersonating = false;
             } else {
-                req.tenantId = req.user?.IdEmpresa || null;
+                req.tenantId = req.user?.IdEmpresa || 1;
                 req.isImpersonating = false;
             }
         } else {
             // Caso 2: Usuário regular ou Master da Empresa - Vinculado estritamente à sua própria empresa
-            req.tenantId = req.user?.IdEmpresa || null;
+            req.tenantId = req.user?.IdEmpresa || 1;
             req.isImpersonating = false;
         }
 
@@ -51,7 +51,7 @@ async function tenantMiddleware(req, res, next) {
         if (req.tenantId) {
             try {
                 const [empRows] = await db.query(
-                    'SELECT IdEmpresa, RazaoSocial, NomeFantasia, plano, status_plano, trial_expira_em, limite_usuarios, modulos_liberados FROM empresa WHERE IdEmpresa = ?',
+                    'SELECT IdEmpresa, RazaoSocial, NomeFantasia, plano, status_plano, COALESCE(ativa, 1) as ativa, data_vencimento, motivo_bloqueio, trial_expira_em, limite_usuarios, modulos_liberados FROM empresa WHERE IdEmpresa = ?',
                     [req.tenantId]
                 );
 
@@ -65,11 +65,17 @@ async function tenantMiddleware(req, res, next) {
                         trialExpirado = new Date(emp.trial_expira_em) < new Date();
                     }
 
-                    // Se empresa estiver bloqueada (exceto para superadmin em auditoria)
-                    if (emp.status_plano === 'bloqueado' && !isSuperAdmin) {
+                    // Se empresa estiver desativada, bloqueada ou assinatura vencida (exceto para superadmin em auditoria)
+                    const isDesativada = emp.ativa === 0 || emp.status_plano === 'bloqueado' || emp.status_plano === 'inativo';
+                    const isAssinaturaVencida = emp.data_vencimento && new Date(emp.data_vencimento) < new Date(new Date().setHours(0,0,0,0));
+
+                    if ((isDesativada || isAssinaturaVencida) && !isSuperAdmin) {
                         return res.status(403).json({
-                            error: 'Acesso suspenso',
-                            message: 'A conta da sua empresa está temporariamente bloqueada. Entre em contato com o suporte comercial.'
+                            error: isAssinaturaVencida && emp.ativa !== 0 ? 'Assinatura Vencida' : 'Empresa Desativada',
+                            code: 'EMPRESA_DESATIVADA',
+                            message: emp.motivo_bloqueio || (isAssinaturaVencida 
+                                ? `A assinatura da empresa "${emp.NomeFantasia || emp.RazaoSocial}" expirou em ${new Date(emp.data_vencimento).toLocaleDateString('pt-BR')}. Entre em contato com a administração da plataforma para renovação da mensalidade.` 
+                                : 'A conta da sua empresa está desativada no sistema. Entre em contato com a administração para revalidação do acesso.')
                         });
                     }
 
@@ -82,6 +88,7 @@ async function tenantMiddleware(req, res, next) {
                         statusPlano: emp.status_plano || 'ativo',
                         trialExpirado,
                         trialExpiraEm: emp.trial_expira_em,
+                        dataVencimento: emp.data_vencimento,
                         limiteUsuarios: emp.limite_usuarios || planoConfig.limite_usuarios,
                         modulos: planoConfig.modulos
                     };

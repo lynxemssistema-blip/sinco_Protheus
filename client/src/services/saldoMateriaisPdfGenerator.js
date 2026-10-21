@@ -4,7 +4,7 @@ import autoTable from 'jspdf-autotable';
 import { logoBase64 } from './metalfisaLogoBase64';
 import { getCompanyLegalName, getCompanyShortName } from './companyBranding';
 
-const NAVY = [30, 58, 95];        // #1E3A5F - Azul Corporativo MetalFisa
+const NAVY = [30, 58, 95];        // #1E3A5F - Azul Corporativo Lynx EMS
 const ML = 8;
 const MR = 8;
 
@@ -15,7 +15,7 @@ const formatNumber = (value) => {
 };
 
 /**
- * Desenha o cabeçalho padrão corporativo MetalFisa
+ * Desenha o cabeçalho padrão corporativo Lynx EMS
  */
 const drawHeader = (doc, pageWidth, filters = {}, user = null, totalRecords = 0) => {
     const hY = 6;
@@ -120,7 +120,7 @@ const drawFooters = (doc, pageWidth) => {
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(6.5);
         doc.setTextColor(120, 120, 120);
-        doc.text('MetalFisa Antigravity ERP  •  Documento gerado eletronicamente para fins de controle interno', ML, fY + 2);
+        doc.text('Lynx EMS ERP  •  Documento gerado eletronicamente para fins de controle interno', ML, fY + 2);
         doc.text(`Página ${p} de ${totalPages}`, pageWidth - MR, fY + 2, { align: 'right' });
     }
 };

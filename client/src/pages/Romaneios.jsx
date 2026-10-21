@@ -96,7 +96,7 @@ export default function Romaneios() {
         try {
             const { baseDir } = await getRomaneioBaseDirConfig();
             
-            const uncPath = `${baseDir}\\RO-${selectedId}`;
+            const uncPath = `${baseDir}\\RO-${String(selectedId).padStart(6, '0')}`;
             const fileUrl = `file:///${uncPath.replace(/\\/g, '/')}`;
             
             navigator.clipboard.writeText(uncPath).then(() => {
@@ -285,7 +285,9 @@ export default function Romaneios() {
                             ) : (
                                 romaneios.map(r => (
                                     <tr key={r.id} className="hover:bg-slate-50">
-                                        <td className="p-4 font-mono text-slate-600">#{r.id}</td>
+                                        <td className="p-4 font-mono font-bold text-slate-800">
+                                            {`RO-${String(r.id).padStart(6, '0')}`}
+                                        </td>
                                         <td className="p-4 font-mono text-slate-500 text-xs">v{r.current_revision || 1}</td>
                                         <td className="p-4 font-medium text-slate-900">
                                             {r.cliente_nome}

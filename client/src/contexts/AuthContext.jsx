@@ -71,11 +71,22 @@ export const AuthProvider = ({ children }) => {
     useEffect(() => {
         const storedToken = localStorage.getItem('@Lynx:token');
         const storedUser = localStorage.getItem('@Lynx:user');
+        let storedOverride = localStorage.getItem('@Lynx:tenant_override');
 
         if (storedToken && storedUser && storedToken !== 'undefined' && storedUser !== 'undefined') {
             try {
                 const parsed = JSON.parse(storedUser);
                 api.defaults.headers.Authorization = `Bearer ${storedToken}`;
+
+                // Se não houver override gravado, define por padrão a empresa do usuário ou Delta (IdEmpresa = 1)
+                if (!storedOverride) {
+                    storedOverride = String(parsed.IdEmpresa || 1);
+                    localStorage.setItem('@Lynx:tenant_override', storedOverride);
+                }
+                if (storedOverride && storedOverride !== 'all') {
+                    api.defaults.headers['x-tenant-override'] = storedOverride;
+                }
+
                 setUser(parsed);
                 loadPermissions();
                 loadCompanyConfig();
@@ -91,12 +102,6 @@ export const AuthProvider = ({ children }) => {
 
     const login = async (login, senha) => {
         try {
-            // Limpa qualquer override de tenant de sessões anteriores para garantir que caia na sua empresa
-            localStorage.removeItem('@Lynx:tenant_override');
-            if (api.defaults.headers['x-tenant-override']) {
-                delete api.defaults.headers['x-tenant-override'];
-            }
-
             const response = await api.post('/auth/login', { login, senha });
             const data = response?.data;
 
@@ -113,6 +118,11 @@ export const AuthProvider = ({ children }) => {
             localStorage.setItem('@Lynx:token', token);
             localStorage.setItem('@Lynx:user', JSON.stringify(user));
 
+            // Define por padrão a empresa do usuário ou 1 (Delta Parafusos)
+            const defaultTenant = user.IdEmpresa || 1;
+            localStorage.setItem('@Lynx:tenant_override', String(defaultTenant));
+            api.defaults.headers['x-tenant-override'] = String(defaultTenant);
+
             api.defaults.headers.Authorization = `Bearer ${token}`;
             setUser(user);
 
@@ -124,7 +134,9 @@ export const AuthProvider = ({ children }) => {
             console.error(error);
             return {
                 success: false,
-                message: error.response?.data?.error || (error.code === 'ERR_NETWORK' ? 'Servidor indisponível ou fora do ar.' : 'Falha no login.'),
+                message: error.response?.data?.message || error.response?.data?.error || (error.code === 'ERR_NETWORK' ? 'Servidor indisponível ou fora do ar.' : 'Falha no login.'),
+                code: error.response?.data?.code,
+                empresa: error.response?.data?.empresa,
                 status: error.response?.status,
                 isNetworkError: !error.response || error.code === 'ERR_NETWORK' || error.message?.includes('Network Error') || error.code === 'ECONNABORTED'
             };

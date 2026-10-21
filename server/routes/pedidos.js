@@ -141,6 +141,10 @@ async function checkOrderAccess(req, res, next) {
 
 const { getForecastMapCached, invalidateForecastCache } = require('../services/forecastCache');
 const { rebuildDailyOccupancyCache } = require('../services/occupancyCacheService');
+const {
+    ACOES, normPedido, normItem, getFractionLetter, resolveItemOp, getItemLocks,
+    assertItemLivre, OpBloqueadaError, registrarHistorico, responderBloqueio, nomeUsuario
+} = require('../services/opGuardService');
 
 // GET /api/pedidos
 router.get('/', async (req, res) => {
@@ -3072,6 +3076,15 @@ router.get('/:id/itens', checkOrderAccess, async (req, res) => {
                     item.pcp_delivery_forecast_date = fc.data_entrega_pcp;
                     item.pcp_delivery_forecast_qtd = fc.quantidade_pcp;
                     item.data_entrega_pcp = fc.data_entrega_pcp;
+                    if ((!item.op_num || item.op_num === '-' || item.op_num.trim() === '') && fc.op_protheus) {
+                        const cleanOp = String(fc.op_protheus).trim();
+                        item.op_num = cleanOp.length >= 6 ? cleanOp.substring(0, 6) : cleanOp;
+                        item.op_num_completa = cleanOp;
+                        item.op_protheus = cleanOp;
+                        item.visual_op = cleanOp;
+                        item.op_tipo = 'F';
+                        item.tem_op = true;
+                    }
                 } else {
                     item.pcp_delivery_forecast_date = null;
                     item.pcp_delivery_forecast_qtd = null;
@@ -3631,6 +3644,7 @@ router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req
 
         try {
             const savedItems = [];
+            const avisos = [];
 
             for (const it of items) {
                 let { pedido, item, quantidade_pcp, qtd_total_item } = it;
@@ -3667,10 +3681,34 @@ router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req
                 if (dupCheck.length > 0) {
                     if (req.body.sobrescrever_existente) {
                         const existingId = dupCheck[0].id;
-                        await connection.query(
-                            'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, serie_lynx=?, lote=?, numero_lote=?, op_protheus=? WHERE id=?',
-                            [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, it.op_protheus || null, existingId]
+                        const [progsItem] = await connection.query(
+                            'SELECT id, quantidade_pcp, data_entrega_pcp, numero_lote FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? ORDER BY id',
+                            [String(pedido).trim(), String(item).trim()]
                         );
+                        // Item fracionado: a quantidade cheia sobrescreveria uma das frações
+                        if (progsItem.length > 1) {
+                            avisos.push({ pedido, item, motivo: 'Item fracionado: ajuste as frações individualmente (nada alterado).' });
+                            continue;
+                        }
+                        const locks = await getItemLocks(connection, pedido, item);
+                        if (locks.motivos.length > 0) {
+                            // Travado: só a Data PCP muda
+                            await connection.query('UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = ? WHERE id = ?', [data_entrega_pcp, existingId]);
+                            avisos.push({ pedido, item, motivo: `Travado (${locks.motivos.map(m => m.descricao).join('; ')}): só a Data PCP foi alterada.` });
+                        } else {
+                            await connection.query(
+                                'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, serie_lynx=?, lote=?, numero_lote=?, op_protheus=? WHERE id=?',
+                                [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, it.op_protheus || null, existingId]
+                            );
+                        }
+                        await registrarHistorico(connection, req, {
+                            acao: ACOES.PLANEJAMENTO_PCP_LOTE, pedido, item, op: it.op_protheus || null,
+                            descricao: locks.motivos.length > 0
+                                ? `Planejamento em lote (item travado): Data PCP → ${String(data_entrega_pcp).split('T')[0]}`
+                                : `Planejamento em lote: Qtd ${progsItem[0]?.quantidade_pcp ?? '-'} → ${quantidade_pcp} | Data PCP → ${String(data_entrega_pcp).split('T')[0]}`,
+                            antes: progsItem[0] || null,
+                            depois: { id: existingId, data_entrega_pcp, quantidade_pcp: locks.motivos.length > 0 ? progsItem[0]?.quantidade_pcp : quantidade_pcp }
+                        });
                         savedItems.push({ id: existingId, pedido: String(pedido).trim(), item: String(item).trim(), quantidade_pcp });
                     }
                     continue; // Skip the INSERT below, either because we updated it, or we are skipping it entirely
@@ -3697,11 +3735,17 @@ router.post('/pcp-forecasts/batch', validate(rules.pcpForecastBatch), async (req
                     [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, it.op_protheus || null]
                 );
 
+                await registrarHistorico(connection, req, {
+                    acao: ACOES.PROGRAMACAO_CRIADA, pedido, item, op: it.op_protheus || null, fracao: numero_lote || null,
+                    descricao: `Programação PCP incluída (lote): ${quantidade_pcp} un. em ${String(data_entrega_pcp).split('T')[0]}`,
+                    depois: { id: result.insertId, quantidade_pcp, data_entrega_pcp, op_protheus: it.op_protheus || null }
+                });
+
                 savedItems.push({ id: result.insertId, pedido: String(pedido).trim(), item: String(item).trim(), quantidade_pcp });
             }
             await connection.commit();
             invalidateForecastCache();
-            res.json({ success: true, message: 'Lote programado com sucesso', savedItems });
+            res.json({ success: true, message: 'Lote programado com sucesso', savedItems, avisos });
         } catch (txnErr) {
             await connection.rollback();
             throw txnErr;
@@ -3747,12 +3791,39 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
             }
         }
 
+        // Item travado (lote, liberação, corte, apontamento): quantidade não muda e não entra nova fração
+        const verificarTrava = async (acaoDescricao) => {
+            try {
+                await assertItemLivre(mysqlPool, pedido, item, acaoDescricao);
+                return true;
+            } catch (lockErr) {
+                if (lockErr instanceof OpBloqueadaError) {
+                    await responderBloqueio(res, req, lockErr, { pedido, item, acaoTentada: 'Programação PCP' });
+                    return false;
+                }
+                throw lockErr;
+            }
+        };
+        const programacaoAtual = async (sql, params) => {
+            const [rows] = await mysqlPool.query(sql, params);
+            return rows[0] || null;
+        };
+
         // Se veio ID específico para edição, atualiza a programação existente
         if (req.body.id) {
+            const antes = await programacaoAtual('SELECT id, quantidade_pcp, data_entrega_pcp, numero_lote, op_protheus FROM app_pcp_delivery_forecasts WHERE id = ?', [req.body.id]);
+            if (antes && Math.abs((parseFloat(antes.quantidade_pcp) || 0) - (parseFloat(quantidade_pcp) || 0)) > 0.0001) {
+                if (!(await verificarTrava('alterar a quantidade da programação'))) return;
+            }
             await mysqlPool.query(
                 'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, serie_lynx=?, lote=?, numero_lote=?, op_protheus=?, data_prevista_faturamento=? WHERE id=?',
                 [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, req.body.op_protheus || null, data_prevista_faturamento || null, req.body.id]
             );
+            await registrarHistorico(null, req, {
+                acao: ACOES.PROGRAMACAO_EDITADA, pedido, item, op: req.body.op_protheus || antes?.op_protheus, fracao: numero_lote || antes?.numero_lote,
+                descricao: `Programação PCP editada | Qtd: ${antes?.quantidade_pcp ?? '-'} → ${quantidade_pcp} | Data PCP → ${String(data_entrega_pcp).split('T')[0]}`,
+                antes, depois: { id: req.body.id, quantidade_pcp, data_entrega_pcp, numero_lote: numero_lote || null }
+            });
             invalidateForecastCache();
             return res.json({ success: true, id: req.body.id, updated: true });
         }
@@ -3765,10 +3836,19 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
             );
             if (existingByOp.length > 0) {
                 const existingId = existingByOp[0].id;
+                const antes = await programacaoAtual('SELECT id, quantidade_pcp, data_entrega_pcp, numero_lote, op_protheus FROM app_pcp_delivery_forecasts WHERE id = ?', [existingId]);
+                if (antes && Math.abs((parseFloat(antes.quantidade_pcp) || 0) - (parseFloat(quantidade_pcp) || 0)) > 0.0001) {
+                    if (!(await verificarTrava('alterar a quantidade da programação'))) return;
+                }
                 await mysqlPool.query(
                     'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp=?, quantidade_pcp=?, usuario=?, observacao=?, numero_serie=?, serie_cliente=?, serie_metalfisa=?, serie_lynx=?, lote=?, numero_lote=?, data_prevista_faturamento=? WHERE id=?',
                     [data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, data_prevista_faturamento || null, existingId]
                 );
+                await registrarHistorico(null, req, {
+                    acao: ACOES.PROGRAMACAO_EDITADA, pedido, item, op: req.body.op_protheus, fracao: numero_lote || antes?.numero_lote,
+                    descricao: `Programação PCP sobrescrita | Qtd: ${antes?.quantidade_pcp ?? '-'} → ${quantidade_pcp} | Data PCP → ${String(data_entrega_pcp).split('T')[0]}`,
+                    antes, depois: { id: existingId, quantidade_pcp, data_entrega_pcp }
+                });
                 invalidateForecastCache();
                 return res.json({ success: true, id: existingId, updated: true });
             }
@@ -3789,10 +3869,25 @@ router.post('/pcp-forecasts', validate(rules.pcpForecast), async (req, res) => {
             }
         }
 
+        // Primeira programação do item (definir a Data PCP) é livre; uma programação a mais vira nova fração
+        const [existentes] = await mysqlPool.query(
+            'SELECT COUNT(*) AS total FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ?',
+            [String(pedido).trim(), String(item).trim()]
+        );
+        if ((existentes[0]?.total || 0) > 0) {
+            if (!(await verificarTrava('incluir nova programação (fração) no item'))) return;
+        }
+
         const [result] = await mysqlPool.query(
             'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, serie_lynx, lote, numero_lote, op_protheus, data_prevista_faturamento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, req.body.op_protheus || null, data_prevista_faturamento || null]
         );
+
+        await registrarHistorico(null, req, {
+            acao: ACOES.PROGRAMACAO_CRIADA, pedido, item, op: req.body.op_protheus || null, fracao: numero_lote || null,
+            descricao: `Programação PCP incluída: ${quantidade_pcp} un. em ${String(data_entrega_pcp).split('T')[0]}`,
+            depois: { id: result.insertId, quantidade_pcp, data_entrega_pcp, numero_lote: numero_lote || null, op_protheus: req.body.op_protheus || null }
+        });
 
         invalidateForecastCache();
         res.json({ success: true, id: result.insertId });
@@ -4048,6 +4143,50 @@ router.post('/split-cascade-preview', async (req, res) => {
     }
 });
 
+// Travas que impedem alterar a OP do item (lote, liberação, corte, apontamento) — usado pela tela antes de agir
+router.get('/op-locks', async (req, res) => {
+    try {
+        const { pedido, item } = req.query;
+        if (!pedido || !item) return res.status(400).json({ error: 'Informe pedido e item.' });
+        const locks = await getItemLocks(mysqlPool, pedido, item);
+        res.json({ travado: locks.motivos.length > 0, motivos: locks.motivos, apontado: locks.apontado, op_base: locks.opBase });
+    } catch (err) {
+        console.error('[OP LOCKS ERROR]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Histórico das ações na OP do item (fracionamento, programações, lotes, liberação, exclusão)
+router.get('/op-historico', async (req, res) => {
+    try {
+        const { pedido, item, lote } = req.query;
+        if (!lote && (!pedido || !item)) return res.status(400).json({ error: 'Informe pedido e item (ou lote).' });
+
+        // Fração criada junto com a OP (01A) também mostra o histórico do item base (01)
+        const params = [];
+        let where;
+        if (lote) {
+            where = 'lote_codigo = ?';
+            params.push(String(lote).trim());
+        } else {
+            const itemNorm = normItem(item);
+            const itemBase = itemNorm.replace(/[A-Z]+$/i, '');
+            where = 'pedido = ? AND item IN (?)';
+            params.push(normPedido(pedido), [...new Set([itemNorm, itemBase])]);
+        }
+        const [rows] = await mysqlPool.query(
+            `SELECT id, pedido, item, op_numero, fracao, lote_codigo, acao, descricao, dados_antes, dados_depois,
+                    usuario_id, usuario_nome, usuario_login, origem, created_at
+             FROM app_op_historico WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT 500`,
+            params
+        );
+        res.json(rows);
+    } catch (err) {
+        console.error('[OP HISTORICO ERROR]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Endpoint para buscar operações já salvas das frações de uma OP
 router.get('/split-operations/:pedido/:item', async (req, res) => {
     try {
@@ -4075,22 +4214,21 @@ router.get('/split-operations/:pedido/:item', async (req, res) => {
 
 // Endpoint exclusivo para partir/fracionar OP em duas ou mais (Gestão de OPs)
 router.post('/split-op', async (req, res) => {
+    const { pedido, item, fractions, qtd_total_item } = req.body;
+
+    if (!pedido || !item || !Array.isArray(fractions) || fractions.length < 2) {
+        return res.status(400).json({ error: 'Para partir a OP, informe no mínimo 2 frações válidas.' });
+    }
+
     const connection = await mysqlPool.getConnection();
     await connection.beginTransaction();
 
     try {
-        const { pedido, item, original_op, fractions, usuario, qtd_total_item } = req.body;
-
-        if (!pedido || !item || !Array.isArray(fractions) || fractions.length < 2) {
-            return res.status(400).json({ error: 'Para partir a OP, informe no mínimo 2 frações válidas.' });
-        }
-
         const pedidoClean = String(pedido).trim();
         const itemClean = String(item).trim();
+        const usuarioNome = nomeUsuario(req, 'Gestão de OPs');
 
         let somaQtd = 0;
-        const usedOps = new Set();
-
         for (let i = 0; i < fractions.length; i++) {
             const frac = fractions[i];
             const qtd = parseFloat(frac.quantidade_pcp);
@@ -4100,24 +4238,27 @@ router.post('/split-op', async (req, res) => {
             if (!frac.data_entrega_pcp) {
                 throw new Error(`A Fração #${i + 1} precisa de uma Data PCP válida.`);
             }
-
-            const cleanOp = frac.op_protheus ? String(frac.op_protheus).trim() : '';
-            if (cleanOp && cleanOp !== '-' && usedOps.has(cleanOp)) {
-                throw new Error(`A OP ${cleanOp} foi repetida. Cada fração deve possuir seu próprio número de OP.`);
-            }
-            if (cleanOp && cleanOp !== '-') {
-                usedOps.add(cleanOp);
-            }
-
             somaQtd += qtd;
         }
 
+        // A soma das frações deve ser exatamente o saldo do item (nem mais, nem menos)
         if (qtd_total_item !== undefined) {
             const limite = parseFloat(qtd_total_item);
-            if (somaQtd > limite + 0.01) {
-                throw new Error(`A soma das frações (${somaQtd}) excede o saldo do item (${limite}).`);
+            if (Math.abs(somaQtd - limite) > 0.01) {
+                throw new Error(`A soma das frações (${somaQtd}) deve ser igual ao saldo do item (${limite}).`);
             }
         }
+
+        // Lote, liberação, corte ou apontamento iniciado impedem o fracionamento
+        await assertItemLivre(connection, pedidoClean, itemClean, 'fracionar a OP');
+
+        // Número das frações sempre derivado da OP original do pedido/item (OP 11 dígitos + letra)
+        const { opBase } = await resolveItemOp(connection, pedidoClean, itemClean);
+
+        const [programacoesAntes] = await connection.query(
+            'SELECT id, quantidade_pcp, data_entrega_pcp, op_protheus, numero_lote, lpf_codigo FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? ORDER BY id',
+            [pedidoClean, itemClean]
+        );
 
         // 1. Remove os registros existentes de previsão deste pedido + item
         await connection.query(
@@ -4137,16 +4278,18 @@ router.post('/split-op', async (req, res) => {
             const frac = fractions[i];
             const fracQtd = parseFloat(frac.quantidade_pcp);
             const fracDate = frac.data_entrega_pcp;
-            const letter = String.fromCharCode(65 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26));
-            const fracOp = frac.op_protheus ? String(frac.op_protheus).trim() : `${baseOp}${letter}`;
-            const fracObs = frac.observacao || `Fração ${letter} (Lote ${letter})`;
+            // Letra pela posição (AA, AB...) e OP = OP original + letra: a fração nunca perde o vínculo com o pedido
+            const letter = getFractionLetter(i);
+            const fracOp = `${opBase}${letter}`;
+            const obsPadrao = !frac.observacao || /^Fração [A-Z]{2} \(Lote [A-Z]{2}\)$/.test(String(frac.observacao).trim());
+            const fracObs = obsPadrao ? `Fração ${letter} (Lote ${letter})` : frac.observacao;
             const fracLote = frac.lote || `Lote ${letter}`;
-            const fracNumLote = frac.numero_lote || letter;
+            const fracNumLote = letter;
 
             const fracSerieLynx = frac.serie_lynx || frac.serie_metalfisa || frac.numero_serie || null;
             const [ins] = await connection.query(
                 'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, numero_serie, serie_cliente, serie_metalfisa, serie_lynx, lote, numero_lote, op_protheus, data_prevista_faturamento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [pedidoClean, itemClean, fracDate, fracQtd, usuario || 'Gestão de OPs', fracObs, frac.numero_serie || null, frac.serie_cliente || null, fracSerieLynx, fracSerieLynx, fracLote, fracNumLote, fracOp, frac.data_prevista_faturamento || null]
+                [pedidoClean, itemClean, fracDate, fracQtd, usuarioNome, fracObs, frac.numero_serie || null, frac.serie_cliente || null, fracSerieLynx, fracSerieLynx, fracLote, fracNumLote, fracOp, frac.data_prevista_faturamento || null]
             );
 
             // 3. Grava o planejamento detalhado das operações por recurso no app_production_planning
@@ -4183,7 +4326,7 @@ router.post('/split-op', async (req, res) => {
                         pedidoClean,
                         startDt,
                         endDt,
-                        usuario || 'Gestão de OPs',
+                        usuarioNome,
                         `LOTE-SPLIT-${Date.now()}-${fracNumLote}`,
                         fracObs,
                         op.dias_necessarios ? Math.ceil(op.dias_necessarios) : 1
@@ -4193,12 +4336,24 @@ router.post('/split-op', async (req, res) => {
 
             savedFractions.push({
                 id: ins.insertId,
+                fracao: letter,
                 op_protheus: fracOp,
                 quantidade_pcp: fracQtd,
                 data_entrega_pcp: fracDate,
                 lote: fracLote
             });
         }
+
+        const reajuste = programacoesAntes.length > 1;
+        await registrarHistorico(connection, req, {
+            acao: reajuste ? ACOES.FRACIONAMENTO_REAJUSTADO : ACOES.FRACIONAMENTO_CRIADO,
+            pedido: pedidoClean,
+            item: itemClean,
+            op: opBase,
+            descricao: `${reajuste ? 'Frações reajustadas' : 'OP fracionada'} em ${savedFractions.length} frações: ${savedFractions.map(f => `${f.fracao}=${f.quantidade_pcp}`).join(', ')} (total ${somaQtd})`,
+            antes: programacoesAntes,
+            depois: savedFractions
+        });
 
         await connection.commit();
         invalidateForecastCache();
@@ -4215,6 +4370,9 @@ router.post('/split-op', async (req, res) => {
         });
     } catch (err) {
         await connection.rollback();
+        if (err instanceof OpBloqueadaError) {
+            return responderBloqueio(res, req, err, { pedido, item, acaoTentada: 'Fracionamento da OP' });
+        }
         console.error('Erro ao partir OP:', err);
         res.status(500).json({ error: err.message });
     } finally {
@@ -4229,22 +4387,64 @@ router.delete('/split-op/:pedido/:item', async (req, res) => {
     const itemClean = String(item).trim();
     const baseOp = `${pedidoClean.padStart(6, '0')}${itemClean.padStart(2, '0')}`;
 
+    const connection = await mysqlPool.getConnection();
+    await connection.beginTransaction();
     try {
-        await mysqlPool.query(
+        await assertItemLivre(connection, pedidoClean, itemClean, 'desfazer o fracionamento');
+
+        const [programacoesAntes] = await connection.query(
+            'SELECT id, quantidade_pcp, data_entrega_pcp, data_prevista_faturamento, op_protheus, numero_lote FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ? ORDER BY id',
+            [pedidoClean, itemClean]
+        );
+
+        await connection.query(
             'DELETE FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) = ? AND TRIM(item) = ?',
             [pedidoClean, itemClean]
         );
-        await mysqlPool.query(
+        await connection.query(
             'DELETE FROM app_production_planning WHERE op_numero LIKE ? OR (TRIM(pedido_venda) = ? AND TRIM(op_item) = ?)',
             [`${baseOp}%`, pedidoClean, itemClean]
         );
+
+        // Volta a um lote único: soma das frações na primeira Data PCP (o item não perde a programação)
+        let programacaoUnica = null;
+        if (programacoesAntes.length > 0) {
+            const total = programacoesAntes.reduce((s, p) => s + (parseFloat(p.quantidade_pcp) || 0), 0);
+            const datas = programacoesAntes.map(p => p.data_entrega_pcp).filter(Boolean).sort((a, b) => new Date(a) - new Date(b));
+            const datasFat = programacoesAntes.map(p => p.data_prevista_faturamento).filter(Boolean).sort((a, b) => new Date(a) - new Date(b));
+            const { opBase, origem } = await resolveItemOp(connection, pedidoClean, itemClean);
+            if (datas.length > 0) {
+                const [ins] = await connection.query(
+                    'INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao, op_protheus, data_prevista_faturamento) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [pedidoClean, itemClean, datas[0], parseFloat(total.toFixed(4)), nomeUsuario(req, 'Gestão de OPs'), 'Fracionamento desfeito (lote único)', origem !== 'sem_op' ? opBase : null, datasFat[0] || null]
+                );
+                programacaoUnica = { id: ins.insertId, quantidade_pcp: total, data_entrega_pcp: datas[0], op_protheus: origem !== 'sem_op' ? opBase : null };
+            }
+        }
+
+        await registrarHistorico(connection, req, {
+            acao: ACOES.FRACIONAMENTO_DESFEITO,
+            pedido: pedidoClean,
+            item: itemClean,
+            descricao: `Fracionamento desfeito: ${programacoesAntes.length} frações unificadas${programacaoUnica ? ` em lote único de ${programacaoUnica.quantidade_pcp} un.` : ''}`,
+            antes: programacoesAntes,
+            depois: programacaoUnica
+        });
+
+        await connection.commit();
         invalidateForecastCache();
         rebuildDailyOccupancyCache().catch(() => {});
 
         res.json({ success: true, message: 'Fracionamento desfeito com sucesso. OP unificada em lote único.' });
     } catch (err) {
+        await connection.rollback();
+        if (err instanceof OpBloqueadaError) {
+            return responderBloqueio(res, req, err, { pedido: pedidoClean, item: itemClean, acaoTentada: 'Desfazer fracionamento' });
+        }
         console.error('Erro ao unificar OP:', err);
         res.status(500).json({ error: 'Falha ao unificar OP.' });
+    } finally {
+        connection.release();
     }
 });
 
@@ -4256,6 +4456,28 @@ router.put('/pcp-forecasts/:id', validate(rules.pcpForecastUpdate), async (req, 
 
         if (!data_entrega_pcp || quantidade_pcp === undefined) {
             return res.status(400).json({ error: 'Data e quantidade são obrigatórios.' });
+        }
+
+        const [[programacaoAntes]] = await mysqlPool.query(
+            'SELECT id, pedido, item, quantidade_pcp, data_entrega_pcp, numero_lote, op_protheus, lpf_codigo FROM app_pcp_delivery_forecasts WHERE id = ?',
+            [id]
+        );
+        if (!programacaoAntes) {
+            return res.status(404).json({ error: 'Programação não encontrada.' });
+        }
+
+        // Item travado: só a Data PCP (e previsão de faturamento/observação) pode mudar
+        const mudouQuantidade = Math.abs((parseFloat(programacaoAntes.quantidade_pcp) || 0) - (parseFloat(quantidade_pcp) || 0)) > 0.0001;
+        const mudouFracao = String(programacaoAntes.numero_lote || '').trim() !== String(numero_lote || '').trim() && numero_lote !== undefined;
+        if (mudouQuantidade || mudouFracao) {
+            try {
+                await assertItemLivre(mysqlPool, programacaoAntes.pedido, programacaoAntes.item, mudouQuantidade ? 'alterar a quantidade da programação' : 'alterar a fração da programação');
+            } catch (lockErr) {
+                if (lockErr instanceof OpBloqueadaError) {
+                    return responderBloqueio(res, req, lockErr, { pedido: programacaoAntes.pedido, item: programacaoAntes.item, acaoTentada: 'Edição de programação PCP' });
+                }
+                throw lockErr;
+            }
         }
 
         let queryDup = `SELECT id FROM app_pcp_delivery_forecasts WHERE id != ? AND TRIM(pedido) = (SELECT TRIM(pedido) FROM app_pcp_delivery_forecasts WHERE id = ?) AND TRIM(item) = (SELECT TRIM(item) FROM app_pcp_delivery_forecasts WHERE id = ?) AND data_entrega_pcp = ? LIMIT 1`;
@@ -4295,6 +4517,17 @@ router.put('/pcp-forecasts/:id', validate(rules.pcpForecastUpdate), async (req, 
             'UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = ?, quantidade_pcp = ?, observacao = ?, numero_serie = ?, serie_cliente = ?, serie_metalfisa = ?, serie_lynx = ?, lote = ?, numero_lote = ?, data_prevista_faturamento = ? WHERE id = ?',
             [data_entrega_pcp, parseFloat(quantidade_pcp), observacao || null, numero_serie || null, serie_cliente || null, effectiveSerieLynx, effectiveSerieLynx, lote || null, numero_lote || null, data_prevista_faturamento || null, id]
         );
+
+        await registrarHistorico(null, req, {
+            acao: ACOES.PROGRAMACAO_EDITADA,
+            pedido: programacaoAntes.pedido,
+            item: programacaoAntes.item,
+            op: programacaoAntes.op_protheus,
+            fracao: numero_lote || programacaoAntes.numero_lote,
+            descricao: `Programação PCP editada${mudouQuantidade ? ` | Qtd: ${programacaoAntes.quantidade_pcp} → ${quantidade_pcp}` : ''} | Data PCP: ${programacaoAntes.data_entrega_pcp ? new Date(programacaoAntes.data_entrega_pcp).toISOString().split('T')[0] : '-'} → ${String(data_entrega_pcp).split('T')[0]}`,
+            antes: programacaoAntes,
+            depois: { id: Number(id), quantidade_pcp: parseFloat(quantidade_pcp), data_entrega_pcp, numero_lote: numero_lote || null, data_prevista_faturamento: data_prevista_faturamento || null }
+        });
 
         invalidateForecastCache();
         res.json({ success: true });
@@ -4536,22 +4769,50 @@ async function deleteOpAndUnifyFractions(conn, { pedido, item, op }) {
     }
 }
 
+// Remove SOMENTE a programação PCP informada (a OP do item não é tocada; para excluir a OP use /excluir-op)
 router.delete('/pcp-forecasts/:id', async (req, res) => {
     const conn = await mysqlPool.getConnection();
+    let programacao = null;
     try {
         await conn.beginTransaction();
-        const [rows] = await conn.query('SELECT pedido, item, op_protheus FROM app_pcp_delivery_forecasts WHERE id = ?', [req.params.id]);
-        if (rows.length > 0) {
-            const { pedido, item, op_protheus } = rows[0];
-            await deleteOpAndUnifyFractions(conn, { pedido, item, op: op_protheus });
-        } else {
-            await conn.query('DELETE FROM app_pcp_delivery_forecasts WHERE id = ?', [req.params.id]);
+        const [rows] = await conn.query(
+            'SELECT id, pedido, item, op_protheus, quantidade_pcp, data_entrega_pcp, numero_lote, lpf_codigo FROM app_pcp_delivery_forecasts WHERE id = ?',
+            [req.params.id]
+        );
+        if (rows.length === 0) {
+            await conn.rollback();
+            return res.status(404).json({ error: 'Programação não encontrada.' });
         }
+        programacao = rows[0];
+
+        await assertItemLivre(conn, programacao.pedido, programacao.item, 'remover a programação PCP');
+
+        await conn.query('DELETE FROM app_pcp_delivery_forecasts WHERE id = ?', [programacao.id]);
+
+        // Planejamento por recurso só pertence à programação quando ela é uma fração (OP original + letra)
+        const opProg = String(programacao.op_protheus || '').trim();
+        if (/^\d{11}[A-Z]{2}$/i.test(opProg)) {
+            await conn.query('DELETE FROM app_production_planning WHERE TRIM(op_numero) = ?', [opProg]);
+        }
+
+        await registrarHistorico(conn, req, {
+            acao: ACOES.PROGRAMACAO_REMOVIDA,
+            pedido: programacao.pedido,
+            item: programacao.item,
+            op: opProg || null,
+            fracao: programacao.numero_lote,
+            descricao: `Programação PCP removida: ${programacao.quantidade_pcp} un. em ${programacao.data_entrega_pcp ? new Date(programacao.data_entrega_pcp).toISOString().split('T')[0] : '-'}`,
+            antes: programacao
+        });
+
         await conn.commit();
         invalidateForecastCache();
-        res.json({ success: true, message: 'Programação e vínculos removidos com sucesso!' });
+        res.json({ success: true, message: 'Programação removida com sucesso!' });
     } catch (err) {
         await conn.rollback();
+        if (err instanceof OpBloqueadaError) {
+            return responderBloqueio(res, req, err, { pedido: programacao?.pedido, item: programacao?.item, acaoTentada: 'Remoção de programação PCP' });
+        }
         console.error('Error deleting PCP forecast:', err);
         res.status(500).json({ error: err.message });
     } finally {
@@ -4568,12 +4829,39 @@ router.post('/excluir-op', async (req, res) => {
             return res.status(400).json({ error: 'Pedido e Item são obrigatórios para excluir a OP.' });
         }
         await conn.beginTransaction();
+
+        // OP com lote, liberação, corte ou apontamento não pode ser excluída.
+        // Fração criada junto com a OP (01A) devolve a quantidade ao item base: ele também não pode estar travado.
+        await assertItemLivre(conn, pedido, item, 'excluir a OP');
+        const itemBase = String(item).trim().replace(/[A-Z]+$/i, '');
+        if (itemBase && itemBase !== String(item).trim()) {
+            await assertItemLivre(conn, pedido, itemBase, `excluir a OP da fração ${item} (o item ${itemBase} recebe a quantidade de volta)`);
+        }
+
+        const [programacoesAntes] = await conn.query(
+            'SELECT id, quantidade_pcp, data_entrega_pcp, op_protheus, numero_lote FROM app_pcp_delivery_forecasts WHERE TRIM(pedido) IN (?, ?) AND TRIM(item) = ?',
+            [String(pedido).trim(), normPedido(pedido), String(item).trim()]
+        );
+
         await deleteOpAndUnifyFractions(conn, { pedido, item, op });
+
+        await registrarHistorico(conn, req, {
+            acao: ACOES.OP_EXCLUIDA,
+            pedido,
+            item,
+            op: op || null,
+            descricao: `OP ${op || '-'} excluída (pedido ${pedido}, item ${item}); ${programacoesAntes.length} programação(ões) PCP removida(s)`,
+            antes: { op: op || null, programacoes: programacoesAntes }
+        });
+
         await conn.commit();
         invalidateForecastCache();
         res.json({ success: true, message: `OP referente ao item ${item} do pedido ${pedido} excluída com sucesso! Quantidades unificadas.` });
     } catch (err) {
         await conn.rollback();
+        if (err instanceof OpBloqueadaError) {
+            return responderBloqueio(res, req, err, { pedido: req.body?.pedido, item: req.body?.item, acaoTentada: 'Exclusão de OP' });
+        }
         console.error('Error excluding OP:', err);
         res.status(500).json({ error: err.message || 'Erro ao excluir OP' });
     } finally {
@@ -4602,34 +4890,62 @@ router.post('/pcp-forecasts/balance', async (req, res) => {
         const connection = await mysqlPool.getConnection();
         try {
             await connection.beginTransaction();
+            // Linhas de fração do mesmo item chegam repetidas: uma operação por pedido/item
+            const vistos = new Set();
             const operations = validItems.map(item => ({
                 dateToAssign: item.data_pcp || validDays[0],
                 saldo: parseFloat(item.qtd_faturar || 0),
                 cleanPedido: String(item.pedido).trim(),
                 cleanItem: String(item.item).trim()
-            }));
+            })).filter(q => {
+                const key = `${q.cleanPedido}_${q.cleanItem}`;
+                if (vistos.has(key)) return false;
+                vistos.add(key);
+                return true;
+            });
+            const avisos = [];
+            const historico = [];
 
             const BATCH_SIZE = 100;
             for (let i = 0; i < operations.length; i += BATCH_SIZE) {
                 const chunk = operations.slice(i, i + BATCH_SIZE);
                 const conditions = chunk.map(q => `(TRIM(pedido) = ${connection.escape(q.cleanPedido)} AND TRIM(item) = ${connection.escape(q.cleanItem)})`).join(' OR ');
-                const [existingRows] = await connection.query(`SELECT id, TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp FROM app_pcp_delivery_forecasts WHERE (${conditions})`);
+                const [existingRows] = await connection.query(`SELECT id, TRIM(pedido) as pedido, TRIM(item) as item, data_entrega_pcp, quantidade_pcp FROM app_pcp_delivery_forecasts WHERE (${conditions})`);
                 const existingMap = {};
                 for (const row of existingRows) {
                     const key = `${row.pedido}_${row.item}`;
                     if (!existingMap[key]) existingMap[key] = [];
-                    existingMap[key].push({ id: row.id, date: row.data_entrega_pcp });
+                    existingMap[key].push({ id: row.id, date: row.data_entrega_pcp, qtd: row.quantidade_pcp });
                 }
                 const inserts = [];
                 const updates = [];
                 for (const q of chunk) {
                     const existingRecords = existingMap[`${q.cleanPedido}_${q.cleanItem}`];
-                    if (existingRecords && existingRecords.length > 0) {
-                        for (const rec of existingRecords) {
-                            if (overwrite || !rec.date) updates.push([q.dateToAssign, q.saldo, usuario || 'Balanceamento Automático', 'Modificado por Lote', rec.id]);
-                        }
+                    if (existingRecords && existingRecords.length > 1) {
+                        // Antes: cada fração recebia o saldo inteiro (60+40 virava 100+100)
+                        avisos.push({ pedido: q.cleanPedido, item: q.cleanItem, motivo: 'Item fracionado: ajuste as frações individualmente (nada alterado).' });
+                    } else if (existingRecords && existingRecords.length === 1) {
+                        const rec = existingRecords[0];
+                        if (!(overwrite || !rec.date)) continue;
+                        // Travado: só a Data PCP muda, a quantidade fica
+                        const locks = await getItemLocks(connection, q.cleanPedido, q.cleanItem);
+                        const travado = locks.motivos.length > 0;
+                        const novaQtd = travado ? rec.qtd : q.saldo;
+                        if (travado) avisos.push({ pedido: q.cleanPedido, item: q.cleanItem, motivo: `Travado (${locks.motivos.map(m => m.descricao).join('; ')}): só a Data PCP foi alterada.` });
+                        updates.push([q.dateToAssign, novaQtd, usuario || 'Balanceamento Automático', 'Modificado por Lote', rec.id]);
+                        historico.push({
+                            acao: ACOES.PLANEJAMENTO_PCP_LOTE, pedido: q.cleanPedido, item: q.cleanItem,
+                            descricao: `Balanceamento PCP: Data PCP → ${q.dateToAssign}${travado ? ' (item travado, quantidade mantida)' : ` | Qtd ${rec.qtd} → ${novaQtd}`}`,
+                            antes: { id: rec.id, data_entrega_pcp: rec.date, quantidade_pcp: rec.qtd },
+                            depois: { id: rec.id, data_entrega_pcp: q.dateToAssign, quantidade_pcp: novaQtd }
+                        });
                     } else {
                         inserts.push([q.cleanPedido, q.cleanItem, q.dateToAssign, q.saldo, usuario || 'Balanceamento Automático', 'Criado por Lote']);
+                        historico.push({
+                            acao: ACOES.PROGRAMACAO_CRIADA, pedido: q.cleanPedido, item: q.cleanItem,
+                            descricao: `Programação PCP incluída (balanceamento): ${q.saldo} un. em ${q.dateToAssign}`,
+                            depois: { data_entrega_pcp: q.dateToAssign, quantidade_pcp: q.saldo }
+                        });
                     }
                 }
                 if (inserts.length > 0) await connection.query('INSERT INTO app_pcp_delivery_forecasts (pedido, item, data_entrega_pcp, quantidade_pcp, usuario, observacao) VALUES ?', [inserts]);
@@ -4642,9 +4958,12 @@ router.post('/pcp-forecasts/balance', async (req, res) => {
                     await connection.query(`UPDATE app_pcp_delivery_forecasts SET data_entrega_pcp = CASE id ${dateCase} END, quantidade_pcp = CASE id ${qtdCase} END, usuario = CASE id ${usuCase} END, observacao = CASE id ${obsCase} END WHERE id IN (${ids.map(id => connection.escape(id)).join(',')})`);
                 }
             }
+            for (const h of historico) {
+                await registrarHistorico(connection, req, h);
+            }
             await connection.commit();
             invalidateForecastCache();
-            res.json({ success: true, processedCount: validItems.length });
+            res.json({ success: true, processedCount: historico.length, avisos });
         } catch (txnErr) {
             await connection.rollback();
             throw txnErr;

@@ -137,7 +137,8 @@ export default function PCPBalanceModal({ isOpen, onClose, selectedItems, onSave
             }));
 
             let processedCount = 0;
-            
+            const avisos = [];
+
             // Processamento em pequenos lotes para não sobrecarregar e mostrar progresso
             for (let i = 0; i < payloadItems.length; i += CHUNK_SIZE) {
                 const chunk = payloadItems.slice(i, i + CHUNK_SIZE);
@@ -162,13 +163,17 @@ export default function PCPBalanceModal({ isOpen, onClose, selectedItems, onSave
                 
                 if (res.data?.success) {
                     processedCount += chunk.length;
+                    if (Array.isArray(res.data.avisos)) avisos.push(...res.data.avisos);
                     setSaveProgress({ current: processedCount, total: payloadItems.length });
                 } else {
                     throw new Error(res.data?.error || 'Erro desconhecido no servidor.');
                 }
             }
 
-            toast.success(`Balanceamento concluído! ${processedCount} itens salvos com sucesso.`);
+            toast.success(`Balanceamento concluído! ${processedCount - avisos.filter(a => a.motivo?.startsWith('Item fracionado')).length} itens salvos com sucesso.`);
+            // Itens fracionados (não alterados) e travados (só a Data PCP mudou)
+            avisos.slice(0, 5).forEach(a => toast.warning(`Pedido ${a.pedido} / Item ${a.item}: ${a.motivo}`, { autoClose: 8000 }));
+            if (avisos.length > 5) toast.warning(`+${avisos.length - 5} item(ns) com aviso (fracionados ou travados).`, { autoClose: 8000 });
             onSaveSuccess();
             onClose();
         } catch (err) {

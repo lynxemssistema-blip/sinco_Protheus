@@ -107,7 +107,7 @@ export default function ImprimirFolhaPortaModal({
                                 </span>
                             </div>
                             <p className="text-xs text-slate-300 mt-0.5">
-                                Impressão oficial MetalFisa com status do sistema e pauta para preenchimento manual
+                                Impressão oficial Lynx EMS com status do sistema e pauta para preenchimento manual
                             </p>
                         </div>
                     </div>
@@ -246,7 +246,7 @@ export default function ImprimirFolhaPortaModal({
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-600">
                             <div className="flex items-start gap-2 bg-white p-2 rounded-lg border border-slate-200">
                                 <span className="font-bold text-slate-700">🏢 Cabeçalho Oficial:</span>
-                                <span>Logo MetalFisa, capacidade, recursos e data formatada.</span>
+                                <span>Logo Lynx EMS, capacidade, recursos e data formatada.</span>
                             </div>
 
                             <div className="flex items-start gap-2 bg-white p-2 rounded-lg border border-slate-200">

@@ -239,9 +239,19 @@ router.get('/romaneio-number', async (req, res) => {
             AND table_name = 'app_romaneios'
         `;
         const [rows] = await pool.query(query);
-        const autoIncrement = rows[0]?.AUTO_INCREMENT || 0;
-        
-        res.json({ current_number: autoIncrement });
+        const autoIncrement = rows[0]?.AUTO_INCREMENT || 1;
+
+        // Busca o maior ID de romaneio já existente no banco
+        const [[maxRow]] = await pool.query('SELECT MAX(id) as max_id FROM app_romaneios');
+        const maiorExistente = maxRow?.max_id || 0;
+
+        res.json({ 
+            current_number: autoIncrement,
+            proximo_numero: autoIncrement,
+            proximo_formatado: `RO-${String(autoIncrement).padStart(6, '0')}`,
+            maior_existente: maiorExistente,
+            maior_formatado: maiorExistente > 0 ? `RO-${String(maiorExistente).padStart(6, '0')}` : 'Nenhum'
+        });
     } catch (err) {
         console.error("Error fetching romaneio auto increment:", err);
         res.status(500).json({ error: 'Erro ao buscar número do romaneio: ' + err.message });
@@ -251,17 +261,42 @@ router.get('/romaneio-number', async (req, res) => {
 // Set Initial Romaneio Number (AUTO_INCREMENT)
 router.post('/set-romaneio-number', async (req, res) => {
     try {
-        const { numero_inicial } = req.body;
+        let { numero_inicial } = req.body;
 
-        const numSafe = parseInt(numero_inicial, 10);
-        if (!numero_inicial || isNaN(numSafe) || numSafe < 1 || numSafe > 9999999) {
-            return res.status(400).json({ error: 'Número inicial inválido. Informe um número entre 1 e 9999999.' });
+        if (numero_inicial === undefined || numero_inicial === null || String(numero_inicial).trim() === '') {
+            return res.status(400).json({ error: 'Informe o número inicial do romaneio.' });
+        }
+
+        // Se o usuário digitou com prefixo "RO-" ou zeros à esquerda, extrai o número limpo
+        const numLimpo = String(numero_inicial).toUpperCase().replace(/^RO-?/i, '').replace(/\D/g, '');
+        const numSafe = parseInt(numLimpo, 10);
+
+        if (isNaN(numSafe) || numSafe < 1 || numSafe > 999999) {
+            return res.status(400).json({ error: 'Número inicial inválido. Informe um valor entre 1 e 999999.' });
+        }
+
+        // Validação contra retrocesso / colisão com romaneios já emitidos
+        const [[maxRow]] = await pool.query('SELECT MAX(id) as max_id FROM app_romaneios');
+        const maiorExistente = maxRow?.max_id || 0;
+
+        if (maiorExistente > 0 && numSafe <= maiorExistente) {
+            const formatadoMaior = `RO-${String(maiorExistente).padStart(6, '0')}`;
+            return res.status(400).json({ 
+                error: `O número inicial não pode ser menor ou igual ao maior romaneio já emitido (${formatadoMaior}) para evitar duplicidade de código.` 
+            });
         }
 
         const query = `ALTER TABLE app_romaneios AUTO_INCREMENT = ${numSafe}`;
         await pool.query(query);
 
-        res.json({ message: `Próximo número de Romaneio definido para ${numero_inicial}` });
+        const formatado = `RO-${String(numSafe).padStart(6, '0')}`;
+        res.json({ 
+            success: true,
+            message: `Próximo número de Romaneio definido com sucesso para ${formatado}`,
+            numero_inicial: numSafe,
+            numero_formatado: formatado,
+            proximo_formatado: formatado
+        });
     } catch (err) {
         console.error("Error setting romaneio auto increment:", err);
         res.status(500).json({ error: 'Erro ao configurar a numeração automática: ' + err.message });

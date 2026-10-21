@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const mysqlPool = require('../services/mysqlService');
+const { ACOES, registrarHistorico } = require('../services/opGuardService');
 
 // 1. Explosão de Corte
 router.post('/explosao', async (req, res) => {
@@ -276,6 +277,25 @@ router.post('/lotes', async (req, res) => {
                 [sanitizeStr(usuario || 'Sistema', 100), lpfClean, lpfClean]
             );
             console.log(`🔒 [CORTE LOTES] LPF ${lpfClean} marcado automaticamente como LIBERADO.`);
+        }
+
+        // Histórico: um registro por pedido/item que entrou no plano de corte
+        const itensCorte = new Map();
+        lotes.forEach((lote, idx) => (lote.items || []).forEach(it => {
+            const k = `${String(it.pedido_pai || '').trim()}|${String(it.item_pai || '').trim()}`;
+            if (!itensCorte.has(k)) itensCorte.set(k, { pedido: it.pedido_pai, item: it.item_pai, lotes: new Set(), ops: new Set() });
+            itensCorte.get(k).lotes.add(lotesGerados[idx]);
+            if (it.op_numero) itensCorte.get(k).ops.add(String(it.op_numero).trim());
+        }));
+        for (const ic of itensCorte.values()) {
+            await registrarHistorico(conn, req, {
+                acao: ACOES.PLANO_CORTE_GERADO,
+                pedido: ic.pedido,
+                item: ic.item,
+                lote: req.body.lpf_codigo || null,
+                descricao: `Plano de corte gerado: ${[...ic.lotes].join(', ')} (OPs filhas: ${[...ic.ops].join(', ') || '-'})${req.body.lpf_codigo ? ` | LPF ${req.body.lpf_codigo} LIBERADO` : ''}`,
+                depois: { lotes_corte: [...ic.lotes], ops: [...ic.ops], lpf: req.body.lpf_codigo || null }
+            });
         }
 
         await conn.commit();

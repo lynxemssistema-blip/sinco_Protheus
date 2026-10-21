@@ -14,7 +14,7 @@ const tenantTablesSet = new Set([
     'app_romaneios', 'app_romaneio_items', 'app_romaneios_nfs', 'app_romaneio_types',
     'app_production_appointments', 'app_production_planning', 'app_production_planning_diario',
     'app_pcp_releases', 'app_pcp_snapshots', 'app_pcp_lotes', 'app_pcp_lote_itens',
-    'app_op_priorities', 'app_pedidos_inativos', 'app_pedido_itens_classificacao',
+    'app_op_priorities', 'app_op_historico', 'app_pedidos_inativos', 'app_pedido_itens_classificacao',
     'app_engineering_releases', 'app_engineering_bom_items', 'app_engineering_timesheets',
     'app_sgq_rncs', 'app_sgq_processos', 'app_sgq_nao_conformidades', 'app_sgq_cargos_funcoes',
     'app_solicitacoes_almoxarifado', 'app_lotes_corte', 'app_lotes_corte_itens',
@@ -65,6 +65,53 @@ async function loadTenantTables(pool) {
 }
 
 /**
+ * Acrescenta o IdEmpresa ao fim de cada tupla de VALUES, a partir de `start` (posição do primeiro "(").
+ * Conta parênteses e ignora o que está entre aspas, para não confundir VALUES(col) do
+ * ON DUPLICATE KEY UPDATE, NOW() ou textos com parênteses com o fim da tupla.
+ * Retorna "(...), (...)<resto da query>" ou null se a query não tiver o formato esperado.
+ */
+function appendTenantToValueTuples(sql, start, tenantNum) {
+    const tuples = [];
+    let i = start;
+
+    while (i < sql.length && sql[i] === '(') {
+        let depth = 0;
+        let quoteChar = null;
+        let end = -1;
+        for (let j = i; j < sql.length; j++) {
+            const c = sql[j];
+            if (quoteChar) {
+                if (c === '\\') { j++; continue; }
+                if (c === quoteChar) {
+                    if (sql[j + 1] === quoteChar) { j++; continue; } // aspas duplicadas ('')
+                    quoteChar = null;
+                }
+                continue;
+            }
+            if (c === "'" || c === '"' || c === '`') { quoteChar = c; continue; }
+            if (c === '(') depth++;
+            else if (c === ')' && --depth === 0) { end = j; break; }
+        }
+        if (end === -1) return null;
+
+        tuples.push(`${sql.slice(i, end)}, ${tenantNum})`);
+        i = end + 1;
+
+        // Próxima tupla (insert de várias linhas): ", (...)"
+        let k = i;
+        while (k < sql.length && /\s/.test(sql[k])) k++;
+        if (sql[k] !== ',') break;
+        k++;
+        while (k < sql.length && /\s/.test(sql[k])) k++;
+        if (sql[k] !== '(') break;
+        i = k;
+    }
+
+    if (tuples.length === 0) return null;
+    return tuples.join(', ') + sql.slice(i);
+}
+
+/**
  * Injeta filtro de IdEmpresa na query SQL de forma segura
  */
 function injectTenantSql(sql, tenantId) {
@@ -86,14 +133,15 @@ function injectTenantSql(sql, tenantId) {
     const tenantNum = parseInt(tenantId, 10);
     if (isNaN(tenantNum) || tenantNum <= 0) return sql;
 
-    // ── 1. INSERT INTO table (cols) VALUES (vals) ──────────────────────────
-    const insertMatch = trimmed.match(/^INSERT\s+INTO\s+([`"]?[a-zA-Z0-9_]+[`"]?)\s*\(([^)]+)\)\s*VALUES\s*\(([\s\S]+)\)/i);
+    // ── 1. INSERT INTO table (cols) VALUES (vals)[, (vals)...] [ON DUPLICATE KEY UPDATE ...] ──
+    const insertMatch = trimmed.match(/^INSERT\s+INTO\s+([`"]?[a-zA-Z0-9_]+[`"]?)\s*\(([^)]+)\)\s*VALUES\s*(?=\()/i);
     if (insertMatch) {
         const rawTable = insertMatch[1].replace(/[`"]/g, '').toLowerCase();
         if (tenantTablesSet.has(rawTable) && !EXCLUDED_TABLES.has(rawTable)) {
-            const cols = insertMatch[2];
-            const vals = insertMatch[3];
-            return `INSERT INTO ${insertMatch[1]} (${cols}, IdEmpresa) VALUES (${vals}, ${tenantNum})`;
+            const valuesAndRest = appendTenantToValueTuples(trimmed, insertMatch[0].length, tenantNum);
+            // Formato inesperado (parênteses desbalanceados): mantém a query original em vez de corrompê-la
+            if (valuesAndRest === null) return sql;
+            return `INSERT INTO ${insertMatch[1]} (${insertMatch[2]}, IdEmpresa) VALUES ${valuesAndRest}`;
         }
         return sql;
     }

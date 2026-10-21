@@ -36,7 +36,7 @@ export const generateSaldoMateriaisExcel = async (items = [], filters = {}, user
     const pad = (n) => String(n).padStart(2, '0');
     const fileTimestamp = `${nowStamp.getFullYear()}${pad(nowStamp.getMonth() + 1)}${pad(nowStamp.getDate())}_${pad(nowStamp.getHours())}${pad(nowStamp.getMinutes())}`;
 
-    // ── Paleta Oficial MetalFisa ──
+    // ── Paleta Oficial Lynx EMS ──
     const NAVY_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
     const BLUE_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
     const SLATE_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };

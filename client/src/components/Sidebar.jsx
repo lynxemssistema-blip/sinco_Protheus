@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LogOut, ChevronLeft, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, HelpCircle, Search, Key, FileText, Siren, Star, GripVertical } from 'lucide-react';
+import { LogOut, ChevronLeft, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, HelpCircle, Search, Key, FileText, Siren, Star, GripVertical, Target, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useHelp } from '../contexts/HelpContext';
 import api, { getCompanySettings } from '../services/api';
@@ -107,7 +107,7 @@ const GroupTitle = ({ label, id, isOpen, isCollapsed, onToggle, badgeCount }) =>
 
 const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
     const location = useLocation();
-    const { user, logout, hasPermission, isAdmin } = useAuth();
+    const { user, logout, hasPermission, isAdmin, isSuperAdmin } = useAuth();
     const { toggleHelp } = useHelp();
     const [visibleItems, setVisibleItems] = useState({});
     const [generalConfig, setGeneralConfig] = useState({});
@@ -142,21 +142,42 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
         if (!uid) return;
         const storageKey = `metalfisa_fav_menu_${uid}`;
 
+        // 1. Tenta carregar do localStorage imediatamente para render sem atraso
         try {
             const local = localStorage.getItem(storageKey);
             if (local) {
                 const parsed = JSON.parse(local);
-                if (Array.isArray(parsed)) setFavoriteItemIds(parsed);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    setFavoriteItemIds(parsed);
+                }
             }
         } catch (e) {
             console.warn('Erro ao ler favoritos locais:', e);
         }
 
+        // 2. Sincroniza com a nuvem (MySQL)
         api.get('/users/preferences/user_favorite_menus')
             .then(res => {
-                if (res.data && Array.isArray(res.data.value)) {
+                if (res.data && Array.isArray(res.data.value) && res.data.value.length > 0) {
                     setFavoriteItemIds(res.data.value);
                     localStorage.setItem(storageKey, JSON.stringify(res.data.value));
+                } else {
+                    // Se a nuvem não tiver, checa se tem localmente e sobe para o banco
+                    const local = localStorage.getItem(storageKey);
+                    if (local) {
+                        try {
+                            const parsed = JSON.parse(local);
+                            if (Array.isArray(parsed) && parsed.length > 0) {
+                                api.put('/users/preferences/user_favorite_menus', { value: parsed }).catch(() => {});
+                                return;
+                            }
+                        } catch (_) {}
+                    }
+                    // Se não tiver nem na nuvem nem local, aplica favoritos padrão
+                    const defaultFavs = ['vendas', 'erp_pedidos', 'erp_produtos', 'erp_producao', 'dashboard_faturamento'];
+                    setFavoriteItemIds(defaultFavs);
+                    localStorage.setItem(storageKey, JSON.stringify(defaultFavs));
+                    api.put('/users/preferences/user_favorite_menus', { value: defaultFavs }).catch(() => {});
                 }
             })
             .catch(() => {});
@@ -221,14 +242,13 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
         setDragOverFavIdx(null);
     };
     
-    // Acesso exclusivo Superadmin Lynx
+    // Acesso exclusivo Superadmin Lynx (apenas Superadmin global da plataforma)
     const userEmail = (user?.email || '').toLowerCase().trim();
-    const userLogin = (user?.login || '').toLowerCase().trim();
-    const userTipo = (user?.tipo || user?.TipoUsuario || '').toUpperCase().trim();
+    const userLogin = (user?.login || user?.Login || '').toLowerCase().trim();
     const isSuperAdminLynx = 
+        Boolean(isSuperAdmin) ||
         userLogin === 'superadmin' || 
         userLogin === 'edson' ||
-        userTipo === 'SA' ||
         user?.id === 37 ||
         userEmail === 'edsonmanoel2012@gmail.com' || 
         userLogin === 'edsonmanoel2012@gmail.com';
@@ -532,16 +552,12 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                         if (group.id === 'portaria' && generalConfig?.module_portaria_active === false) return null;
                         if (group.id === 'pcp' && generalConfig?.module_pcp_active === false) return null;
                         if (group.id === 'op_fracionada' && generalConfig?.module_op_fracionada_active === false) return null;
-                        if (group.id === 'ronaldo' && generalConfig?.module_gestao_vista_active === false) return null;
                         if (group.id === 'engenharia' && generalConfig?.module_engenharia_active === false) return null;
                         if (group.id === 'comercial' && generalConfig?.module_comercial_active === false) return null;
                         if (group.id === 'sinco_erp' && generalConfig?.module_erp_active === false) return null;
                         if (group.id === 'cadastros_basicos' && generalConfig?.module_cadastros_basicos_active === false) return null;
-                        if (group.id === 'suprimentos' && generalConfig?.module_suprimentos_active === false) return null;
                         if (group.id === 'logistica' && generalConfig?.module_logistica_active === false) return null;
-                        if (group.id === 'financeiro' && generalConfig?.module_financeiro_active === false) return null;
                         if (group.id === 'corporativo' && generalConfig?.module_corporativo_active === false) return null;
-                        if (group.id === 'cliente' && generalConfig?.module_cliente_active === false) return null;
 
                         // Filter items based on visibility config and search term
                         const visibleGroupItems = group.items.filter(item => {
@@ -622,6 +638,36 @@ const Sidebar = ({ isOpen, setIsOpen, isMobile }) => {
                             <span className="text-xs font-black tracking-wider uppercase truncate">Emergência</span>
                         )}
                     </button>
+
+                    {/* Botão Exclusivo Superadmin: Google Ads & Conversões */}
+                    {isSuperAdminLynx && (
+                        <Link
+                            to="/admin/google-ads"
+                            title="Painel Google Ads & Conversões (Superadmin)"
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 mb-2 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500 hover:text-slate-950 transition-all shadow-sm group ${isCollapsed ? 'justify-center px-2' : ''}`}
+                        >
+                            <Target className="h-4 w-4 flex-shrink-0 text-emerald-400 group-hover:text-slate-950 transition-colors" />
+                            {!isCollapsed && (
+                                <span className="text-xs font-black tracking-wide uppercase truncate">Google Ads</span>
+                            )}
+                        </Link>
+                    )}
+
+                    {/* Botão Exclusivo Superadmin: Configurações Globais */}
+                    {isSuperAdminLynx && (
+                        <Link
+                            to="/admin/configuracoes"
+                            title="Configurações Globais da Plataforma (Exclusivo Superadmin)"
+                            className={`w-full flex items-center gap-2.5 px-3 py-2 mb-2 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600 hover:text-white transition-all shadow-sm group ${
+                                isCollapsed ? 'justify-center px-2' : ''
+                            }`}
+                        >
+                            <SlidersHorizontal className="h-4 w-4 flex-shrink-0 text-indigo-400 group-hover:text-white transition-colors" />
+                            {!isCollapsed && (
+                                <span className="text-xs font-bold truncate">Configurações Globais</span>
+                            )}
+                        </Link>
+                    )}
 
                     {/* Help Button */}
                     <button

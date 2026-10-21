@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../services/mysqlService');
-const { tenantMiddleware } = require('../middlewares/tenantMiddleware');
+const { tenantMiddleware, requireMaster } = require('../middlewares/tenantMiddleware');
 
 router.use(tenantMiddleware);
+router.use(requireMaster);
 
 // GET /api/sistema/backup-config - Consulta status e agendamento de backup
 router.get('/backup-config', async (req, res) => {

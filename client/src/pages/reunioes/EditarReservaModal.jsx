@@ -109,13 +109,13 @@ export default function EditarReservaModal({
 
         const salaAtual = salas.find(s => String(s.id) === String(salaId));
 
-        return `🔔 *CONVITE DE REUNIÃO - METALFISA*\n` +
+        return `🔔 *CONVITE DE REUNIÃO - LYNX EMS*\n` +
                `--------------------------------------------------\n` +
                `📌 *Assunto:* ${titulo || 'Reunião de Alinhamento'}\n` +
-               `🏢 *Sala:* ${salaAtual?.nome || 'Sala de Reunião'} (${salaAtual?.localizacao || 'Metalfisa'})\n` +
+               `🏢 *Sala:* ${salaAtual?.nome || 'Sala de Reunião'} (${salaAtual?.localizacao || 'Lynx EMS'})\n` +
                `📅 *Data:* ${dataFmt}\n` +
                `⏰ *Horário:* ${horaInicio} às ${horaFim}\n` +
-               `👤 *Organizador:* ${reserva?.organizador_nome || 'Metalfisa'}\n` +
+               `👤 *Organizador:* ${reserva?.organizador_nome || 'Lynx EMS'}\n` +
                (pauta ? `📝 *Pauta:* ${pauta}\n` : '') +
                `👥 *Participantes:* ${nomesParticipantes}\n` +
                `--------------------------------------------------\n` +
@@ -575,7 +575,7 @@ export default function EditarReservaModal({
                                                                     {u.NomeCompleto}
                                                                 </div>
                                                                 <div className="text-[10px] text-slate-500">
-                                                                    {u.Setor || 'Metalfisa'} {u.email && `• ${u.email}`}
+                                                                    {u.Setor || 'Lynx EMS'} {u.email && `• ${u.email}`}
                                                                 </div>
                                                             </div>
                                                         </div>

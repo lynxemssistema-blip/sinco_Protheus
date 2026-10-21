@@ -384,7 +384,7 @@ export default function CIPAUrnaTotemPage() {
 
             {/* Rodapé Seguro */}
             <div className="max-w-4xl w-full mx-auto text-center text-[10px] text-slate-500 border-t border-slate-800 pt-3">
-                MetalFisa Industrial Ltda • Sistema de Eleição Eletrônica CIPA • NR-05.5.4 & Lei nº 14.457/2022
+                Lynx EMS • Sistema de Eleição Eletrônica CIPA • NR-05.5.4 & Lei nº 14.457/2022
             </div>
         </div>
     );

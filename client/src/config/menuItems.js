@@ -5,7 +5,7 @@ import {
     Database, ClipboardList, ClipboardCheck, ArrowLeftRight, HelpCircle, Layers,
     FileUp, Target, History, GitMerge, Inbox, ShieldCheck, ListOrdered, Box, BarChart2,
     Landmark, Link, PieChart, CheckSquare, Wrench, UserMinus, AlertTriangle, Play, FileCheck, Award, Smartphone, AlertOctagon, Sparkles, Cpu,
-    Tag, Scale, Hash, Flame, Shield, Clock, Palette
+    Tag, Scale, Hash, Flame, Shield, Clock, Palette, Sliders
 } from 'lucide-react';
 
 export const MENU_GROUPS = [
@@ -15,7 +15,7 @@ export const MENU_GROUPS = [
         label: 'SINCO ERP Nativo',
         items: [
             { id: 'erp_produtos', label: 'Cadastro de Produtos', path: '/erp/produtos', icon: Package },
-            { id: 'erp_pedidos', label: 'Pedidos de Venda', path: '/erp/pedidos', icon: ShoppingCart },
+            { id: 'erp_pedidos', label: 'Orçamentos', path: '/erp/pedidos', icon: ShoppingCart },
             { id: 'erp_clientes', label: 'Cadastro de Clientes', path: '/erp/clientes', icon: Users },
             { id: 'erp_producao', label: 'Ordens de Produção', path: '/erp/producao', icon: Factory }
         ]
@@ -24,12 +24,15 @@ export const MENU_GROUPS = [
         id: 'cadastros_basicos',
         label: 'Cadastros Básicos',
         items: [
-            { id: 'cadastros_basicos_hub', label: 'Cadastros Básicos (Geral)', path: '/cadastros/basicos', icon: Database },
-            { id: 'cadastro_prefixos', label: 'Prefixos (Famílias)', path: '/cadastros/basicos?tab=prefixos', icon: Hash },
-            { id: 'cadastro_tipos', label: 'Tipos de Produto', path: '/cadastros/basicos?tab=tipos', icon: Tag },
-            { id: 'cadastro_unidades', label: 'Unidades de Medida', path: '/cadastros/basicos?tab=unidades', icon: Scale },
-            { id: 'cadastro_armazens', label: 'Armazéns / Locais', path: '/cadastros/basicos?tab=armazens', icon: Building2 },
-            { id: 'cadastro_cores_aco', label: 'Codificação de Aço (Cores)', path: '/cadastros/basicos?tab=cores', icon: Palette }
+            { id: 'cadastro_prefixos', label: 'Prefixos (Famílias)', path: '/cadastros/prefixos', icon: Hash },
+            { id: 'cadastro_tipos', label: 'Tipos de Produto', path: '/cadastros/tipos-produto', icon: Tag },
+            { id: 'cadastro_unidades', label: 'Unidades de Medida', path: '/cadastros/unidades-medida', icon: Scale },
+            { id: 'cadastro_armazens', label: 'Armazéns / Locais', path: '/cadastros/armazens', icon: Building2 },
+            { id: 'cadastro_cores_aco', label: 'Codificação de Aço (Cores)', path: '/cadastros/cores-aco', icon: Palette },
+            { id: 'cadastro_templates_produto', label: 'Form. Específicos (Matriz)', path: '/cadastros/templates-produto', icon: Sliders },
+            { id: 'setores_cadastro', label: 'Cadastro de Setores', path: '/pcp/setores', icon: Landmark },
+            { id: 'recursos_cadastro', label: 'Cadastro de Recursos', path: '/pcp/recursos', icon: Cpu },
+            { id: 'setores_recursos', label: 'Recursos por Setor', path: '/pcp/setores/recursos', icon: Link }
         ]
     },
     {
@@ -40,8 +43,7 @@ export const MENU_GROUPS = [
             { id: 'itens_faturar', label: 'Itens a Faturar', path: '/vendas/itens-faturar', icon: ListOrdered },
             { id: 'dashboard_faturamento', label: 'Dashboard de Faturamento', path: '/comercial/dashboard-faturamento', icon: BarChart2 },
             { id: 'visao_gerencial', label: 'Visão Gerencial (Atrasos)', path: '/comercial/atrasos', icon: Target },
-            { id: 'controle_faturamento', label: 'Controle de Faturamento', path: '/comercial/faturamento', icon: FileText },
-            { id: 'gestao_ops', label: 'Gestão de OPs', path: '/comercial/gestao-ops', icon: Layers }
+            { id: 'controle_faturamento', label: 'Controle de Faturamento', path: '/comercial/faturamento', icon: FileText }
         ]
     },
     {
@@ -52,7 +54,6 @@ export const MENU_GROUPS = [
             { id: 'bom', label: 'Gerador de BOM', path: '/bom-generator', icon: Database },
 
             { id: 'sinco_formulario', label: 'SolidEdeg', path: '/engenharia/sinco/formulario', icon: Box },
-            { id: 'sinco_estrutura_completa', label: 'SolidEdeg Estrutura', path: '/engenharia/sinco/estrutura-completa', icon: Layers },
             { id: 'controle_engenharia', label: 'Controle de Engenharia', path: '/engenharia/relatorio-controle', icon: FileText },
             { id: 'relatorio_liberacao', label: 'Relatório de Liberação', path: '/engenharia/relatorio-liberacao', icon: ClipboardList }
         ]
@@ -70,43 +71,18 @@ export const MENU_GROUPS = [
             { id: 'analytics', label: 'Analytics da Fábrica', path: '/pcp/analytics', icon: BarChart },
             { id: 'apontamento_usuario_op', label: 'Apontamento por Usuário', path: '/pcp/apontamento-por-usuario-op', icon: Users },
             { id: 'planejamento_estrutura_routing', label: 'Explosão BOM + Roteiro (Pull)', path: '/pcp/planejamento-estrutura-routing', icon: GitMerge },
-            { id: 'painel_controle', label: 'Painel de Controle', path: '/controle-producao', icon: LayoutDashboard },
             { id: 'producao_matrix', label: 'Matriz de Produção', path: '/producao-matrix', icon: Grid },
             { id: 'bom_appointment', label: 'Apontamento por Estrutura', path: '/pcp/apontamento-estrutura', icon: Network },
-            { id: 'consulta_op', label: 'Consulta Detalhada OP', path: '/producao/op', icon: FileText },
             { id: 'visao_setores', label: 'Visão Gerencial por Setor', path: '/pcp/visao-setores', icon: PieChart },
-            { id: 'setores_cadastro', label: 'Cadastro de Setores', path: '/pcp/setores', icon: Landmark },
-            { id: 'recursos_cadastro', label: 'Cadastro de Recursos', path: '/pcp/recursos', icon: Cpu },
-            { id: 'setores_recursos', label: 'Recursos por Setor', path: '/pcp/setores/recursos', icon: Link },
-            { id: 'pcp_fila_dependencias', label: 'Fila e Dependências (WIP)', path: '/pcp/fila-dependencias', icon: ArrowLeftRight },
-            { id: 'pcp_controle_execucao', label: 'Controle de Execução', path: '/pcp/controle-execucao', icon: Play },
-            { id: 'pcp_programas_ncn', label: 'Programa CNC', path: '/pcp/programas-ncn', icon: FileText },
-            { id: 'montagem_solicitacoes', label: 'Pendências da Montagem', path: '/pcp/montagem-solicitacoes', icon: ClipboardList }
+            { id: 'pcp_fila_dependencias', label: 'Fila e Dependências (WIP)', path: '/pcp/fila-dependencias', icon: ArrowLeftRight }
         ]
     },
     {
         id: 'pcp_refinado',
         label: 'PCP Refinado',
         items: [
-            { id: 'pcp_cadastro_capacidade', label: 'Cadastro de Capacidade', path: '/pcp-refinado/capacidade', icon: Layers },
             { id: 'pcp_ocupacao_recursos', label: 'Taxa de Ocupação', path: '/pcp-refinado/ocupacao', icon: BarChart2 },
             { id: 'rastreabilidade_pedidos', label: 'Rastreio de Faturamento', path: '/pcp-refinado/rastreabilidade', icon: Network }
-        ]
-    },
-    {
-        id: 'op_fracionada',
-        label: 'OP Fracionada',
-        items: [
-            { id: 'ind_pcp_release', label: 'Liberação PCP (Mescla)', path: '/ind-pcp-release', icon: Layers },
-            { id: 'ind_factory_floor', label: 'Painel da Fábrica (Local)', path: '/ind-factory-floor', icon: Factory },
-            { id: 'ind_apontamento', label: 'Apontamento Fracionado', path: '/ind-apontamento', icon: CheckSquare }
-        ]
-    },
-    {
-        id: 'ronaldo',
-        label: 'Gestão a Vista',
-        items: [
-            { id: 'evolucao_apontamento', label: 'Evolução Apontamentos', path: '/analytics/evolucao', icon: TrendingUp }
         ]
     },
     {
@@ -120,27 +96,6 @@ export const MENU_GROUPS = [
         ]
     },
     {
-        id: 'financeiro',
-        label: 'Financeiro',
-        items: [
-            { id: 'fluxo_caixa', label: 'Fluxo de Caixa', path: '/financeiro/fluxo-caixa', icon: TrendingUp },
-            { id: 'dashboard_financeiro', label: 'Dashboard Gerencial', path: '/financeiro/dashboard', icon: Database },
-            { id: 'balancete', label: 'Balancete Dinâmico', path: '/financeiro/balancete', icon: Layers }
-        ]
-    },
-    {
-        id: 'suprimentos',
-        label: 'Suprimentos',
-        items: [
-            { id: 'solicitacoes', label: 'Solicitações', path: '/solicitacoes-compras', icon: ShoppingCart },
-            { id: 'pedidos_pv', label: 'Pedidos x PV Cliente', path: '/pedidos-compras-pv', icon: FileText },
-            { id: 'requisicoes_internas', label: 'Requisições Internas', path: '/suprimentos/requisicoes', icon: ClipboardList },
-            { id: 'rastreio_sc', label: 'Rastreio SC -> NF', path: '/fluxo-compras-nf', icon: ArrowLeftRight },
-            { id: 'espelho_nf', label: 'Ver Espelho da NF', path: '/suprimentos/espelho-nf', icon: FileText },
-            { id: 'auditoria_pc', label: 'Auditoria PC x XML', path: '/auditoria-pc', icon: ShieldCheck }
-        ]
-    },
-    {
         id: 'qualidade',
         label: 'Qualidade',
         items: [
@@ -150,9 +105,7 @@ export const MENU_GROUPS = [
             { id: 'sgq_romaneios', label: 'Romaneios SGQ', path: '/sgq/romaneios', icon: Truck },
             { id: 'sgq_mapeamento', label: 'Mapeamento de Processos', path: '/sgq/mapeamento-processos', icon: Network },
             { id: 'treinamentos', label: 'Treinamentos', path: '/sgq/treinamento', icon: ClipboardCheck },
-            { id: 'sgq_rncs', label: 'Gestão de RNCs', path: '/sgq/gestao-rncs', icon: AlertTriangle },
-            { id: 'ppaps_buscar_produto', label: 'Buscar Produto (PPAPs)', path: '/ppaps/buscar-produto', icon: Database },
-            { id: 'relatorios', label: 'Relatórios Gerais', path: '/relatorios', icon: FileText }
+            { id: 'sgq_rncs', label: 'Gestão de RNCs', path: '/sgq/gestao-rncs', icon: AlertTriangle }
         ]
     },
     {

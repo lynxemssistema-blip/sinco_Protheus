@@ -4,7 +4,7 @@ import autoTable from 'jspdf-autotable';
 import { logoBase64 } from './metalfisaLogoBase64';
 import { getCompanyLegalName, getCompanyCnpjCityLine } from './companyBranding';
 
-// Helper de Cabeçalho Corporativo Metalfisa
+// Helper de Cabeçalho Corporativo Lynx EMS
 const drawHeader = (doc, title, subtitle) => {
     const ML = 14;
     const MR = 196;
@@ -21,7 +21,7 @@ const drawHeader = (doc, title, subtitle) => {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
-    doc.setTextColor(30, 58, 95); // Azul Marinho Metalfisa
+    doc.setTextColor(30, 58, 95); // Azul Marinho Lynx EMS
     doc.text(getCompanyLegalName(), 56, currentY + 4);
 
     doc.setFont('helvetica', 'normal');
@@ -61,7 +61,7 @@ const drawFooter = (doc, pageText = 'Documento Gerado Eletronicamente') => {
         doc.setFontSize(7);
         doc.setTextColor(148, 163, 184);
         doc.line(14, 285, 196, 285);
-        doc.text(`${pageText} — Autenticação Eletrônica MetalFisa`, 14, 289);
+        doc.text(`${pageText} — Autenticação Eletrônica Lynx EMS`, 14, 289);
         doc.text(`Página ${i} de ${pageCount}`, 196, 289, { align: 'right' });
     }
 };
@@ -84,7 +84,7 @@ export const generateEditalCipaPdf = (data) => {
     doc.setTextColor(30, 41, 59);
 
     const textoEdital = [
-        `A METALFISA INDUSTRIAL LTDA, em conformidade com as disposições da Norma Regulamentadora nº 05 (NR-05) da Secretaria de Trabalho e Emprego e a Lei nº 14.457/2022, CONVOCA todos os seus empregados para a Eleição dos seus representantes na Comissão Interna de Prevenção de Acidentes e Assédio (CIPA) para o mandato da Gestão ${gestao?.ano_inicio}/${gestao?.ano_fim}.`,
+        `A LYNX EMS, em conformidade com as disposições da Norma Regulamentadora nº 05 (NR-05) da Secretaria de Trabalho e Emprego e a Lei nº 14.457/2022, CONVOCA todos os seus empregados para a Eleição dos seus representantes na Comissão Interna de Prevenção de Acidentes e Assédio (CIPA) para o mandato da Gestão ${gestao?.ano_inicio}/${gestao?.ano_fim}.`,
         '',
         `1. DO PROCESSO ELEITORAL ELETRÔNICO: A eleição será realizada de forma 100% eletrônica, garantindo o sigilo absoluto do voto, a ampla participação dos colaboradores através do Portal do Colaborador (celular) e totens acessíveis nas áreas de fábrica e portaria.`,
         '',
@@ -242,7 +242,7 @@ export const generateAtaPosseCipaPdf = (data) => {
     doc.setFontSize(8.5);
     doc.setTextColor(30, 41, 59);
 
-    const textoPosse = `Aos ${gestao?.data_inicio_mandato ? new Date(gestao.data_inicio_mandato).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR')}, nas dependências da METALFISA INDUSTRIAL LTDA, reuniram-se os representantes dos empregados eleitos por voto secreto e os representantes indicados pela direção da empresa para a cerimônia de Instalação e Posse da Comissão Interna de Prevenção de Acidentes e Assédio (CIPA), mandato ${gestao?.ano_inicio}/${gestao?.ano_fim}.\n\nOs membros abaixo empossados completaram o treinamento obrigatório de 20 horas e firmam o compromisso de zelar pela segurança dos colaboradores e combater ativamente o assédio sexual e moral no ambiente de trabalho.`;
+    const textoPosse = `Aos ${gestao?.data_inicio_mandato ? new Date(gestao.data_inicio_mandato).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR')}, nas dependências da LYNX EMS, reuniram-se os representantes dos empregados eleitos por voto secreto e os representantes indicados pela direção da empresa para a cerimônia de Instalação e Posse da Comissão Interna de Prevenção de Acidentes e Assédio (CIPA), mandato ${gestao?.ano_inicio}/${gestao?.ano_fim}.\n\nOs membros abaixo empossados completaram o treinamento obrigatório de 20 horas e firmam o compromisso de zelar pela segurança dos colaboradores e combater ativamente o assédio sexual e moral no ambiente de trabalho.`;
     const splitPosse = doc.splitTextToSize(textoPosse, 182);
     doc.text(splitPosse, 14, y);
     y += splitPosse.length * 4.2 + 4;
@@ -273,7 +273,7 @@ export const generateAtaPosseCipaPdf = (data) => {
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
-    doc.text('DIRETORIA METALFISA INDUSTRIAL', 52, y + 4, { align: 'center' });
+    doc.text('DIRETORIA LYNX EMS', 52, y + 4, { align: 'center' });
     doc.text('PRESIDENTE EMPOSTO DA CIPA', 148, y + 4, { align: 'center' });
 
     drawFooter(doc, 'Ata de Instalação e Posse CIPA');
@@ -296,7 +296,7 @@ export const generateAtaReuniaoCipaPdf = (data) => {
     const dadosReuniao = [
         ['Data da Reunião:', reuniao?.data_reuniao ? new Date(reuniao.data_reuniao).toLocaleDateString('pt-BR') : 'Data'],
         ['Horário de Realização:', `${reuniao?.horario_inicio || '09:00'} às ${reuniao?.horario_fim || '10:00'}`],
-        ['Local da Reunião:', reuniao?.local || 'Sala de Reuniões Principal - Metalfisa'],
+        ['Local da Reunião:', reuniao?.local || 'Sala de Reuniões Principal - Lynx EMS'],
         ['Pauta Discutida:', reuniao?.pauta || 'Avaliação mensal de riscos e segurança']
     ];
 

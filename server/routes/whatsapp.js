@@ -36,11 +36,11 @@ router.get('/logs', async (req, res) => {
         let rows = [], total = 0;
 
         if (channel === 'whatsapp') {
-            [[{ total }]] = await mysqlPool.query('SELECT COUNT(*) AS total FROM app_whatsapp_logs');
+            [[{ total }]] = await mysqlPool.query('SELECT COUNT(*) AS total FROM app_whatsapp_logs WHERE 1=1');
             [rows] = await mysqlPool.query(
                 `SELECT id, 'whatsapp' AS channel, recipient AS recipient, subject,
                         message AS body_preview, status, error_info, sent_at AS sent_at
-                 FROM app_whatsapp_logs ORDER BY sent_at DESC LIMIT ? OFFSET ?`,
+                 FROM app_whatsapp_logs WHERE 1=1 ORDER BY sent_at DESC LIMIT ? OFFSET ?`,
                 [limit, offset]
             );
         } else if (channel === 'email') {
@@ -53,10 +53,10 @@ router.get('/logs', async (req, res) => {
                 [limit, offset]
             );
         } else {
-            // UNION das duas tabelas
+            // UNION das duas tabelas com escopos isolados de WHERE
             [[{ total }]] = await mysqlPool.query(`
                 SELECT COUNT(*) AS total FROM (
-                    SELECT id FROM app_whatsapp_logs
+                    SELECT id FROM app_whatsapp_logs WHERE 1=1
                     UNION ALL
                     SELECT id FROM app_emails WHERE folder = 'SENT'
                 ) t
@@ -64,7 +64,7 @@ router.get('/logs', async (req, res) => {
             [rows] = await mysqlPool.query(
                 `SELECT id, 'whatsapp' AS channel, recipient, subject,
                         message AS body_preview, status, error_info, sent_at
-                 FROM app_whatsapp_logs
+                 FROM app_whatsapp_logs WHERE 1=1
                  UNION ALL
                  SELECT id, 'email' AS channel, recipient_email AS recipient, subject,
                         SUBSTRING(COALESCE(body_text, body_html), 1, 200) AS body_preview,

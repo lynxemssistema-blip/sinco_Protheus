@@ -86,7 +86,7 @@ async function fetchReportData(filters, pagination = { page: 1, limit: 100 }) {
         ${whereClause}
     `;
     const countRes = await db.query(countSql, params);
-    const totalRecords = parseInt(countRes.rows[0].total);
+    const totalRecords = parseInt(countRes.rows?.[0]?.total || 0);
 
     // 2. Enhance with MySQL Data (Status & Progress)
     // Fetch aggregated progress from MySQL for these OPs
@@ -672,7 +672,7 @@ async function fetchSalesPlanningData(filters, pagination = { page: 1, limit: 10
         ${whereClause}
     `;
     const countRes = await db.query(countSql, params);
-    const totalRecords = parseInt(countRes.rows[0].total);
+    const totalRecords = parseInt(countRes.rows?.[0]?.total || 0);
 
     // Main Query (Headers)
     const sql = `

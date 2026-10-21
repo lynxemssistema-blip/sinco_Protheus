@@ -1051,7 +1051,9 @@ router.get('/:id/generate-bundle', requirePermission('romaneios', 'read'), async
 
             // Se não tiver diretório salvo, reconstrói o padrão (fallback/retrocompatibilidade)
             if (!folderPath) {
-                folderPath = path.join(getRomaneioBaseDir(), `RO-${id}`);
+                const formattedDir = path.join(getRomaneioBaseDir(), `RO-${String(id).padStart(6, '0')}`);
+                const legacyDir = path.join(getRomaneioBaseDir(), `RO-${id}`);
+                folderPath = fs.existsSync(legacyDir) ? legacyDir : formattedDir;
             }
 
             if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
@@ -1157,7 +1159,7 @@ router.post('/', requirePermission('romaneios', 'create'), async (req, res) => {
         // --- INTEGRAÇÃO COM DIRETÓRIO DE REDE ---
         const insertId = result.insertId;
         const baseDir = getRomaneioBaseDir();
-        const dir = path.join(baseDir, `RO-${insertId}`);
+        const dir = path.join(baseDir, `RO-${String(insertId).padStart(6, '0')}`);
         
         console.log(`📂 [Romaneios] Tentando criar pasta na rede: ${dir}`);
         try {
@@ -1190,13 +1192,17 @@ router.post('/:id/create-folder', requirePermission('romaneios', 'edit'), async 
     try {
         const romaneioId = req.params.id;
         const baseDir = getRomaneioBaseDir();
-        const romaneioDir = path.join(baseDir, `RO-${romaneioId}`);
+        const formattedDir = path.join(baseDir, `RO-${String(romaneioId).padStart(6, '0')}`);
+        const legacyDir = path.join(baseDir, `RO-${romaneioId}`);
+        const romaneioDir = fs.existsSync(legacyDir) ? legacyDir : formattedDir;
 
         if (fs.existsSync(romaneioDir)) {
+            await mysqlPool.execute('UPDATE app_romaneios SET diretorio_rede = ? WHERE id = ?', [romaneioDir, romaneioId]);
             return res.status(200).json({ message: 'A pasta já existe na rede!', path: romaneioDir });
         }
 
         await fs.promises.mkdir(romaneioDir, { recursive: true });
+        await mysqlPool.execute('UPDATE app_romaneios SET diretorio_rede = ? WHERE id = ?', [romaneioDir, romaneioId]);
         res.status(200).json({ message: 'Pasta criada com sucesso!', path: romaneioDir });
     } catch (err) {
         console.error('Erro ao criar pasta manual:', err);
@@ -1590,7 +1596,15 @@ router.post('/:id/revisions', requirePermission('romaneios', 'edit'), async (req
 
         // --- INTEGRAÇÃO COM DIRETÓRIO DE REDE (REVISÃO) ---
         const newRev = currentRev + 1;
-        const revDir = path.join(getRomaneioBaseDir(), `RO-${romaneioId}`, `REV-${newRev}`);
+        const [romRows] = await conn.execute('SELECT diretorio_rede FROM app_romaneios WHERE id = ?', [romaneioId]);
+        let parentDir = romRows[0]?.diretorio_rede;
+        if (!parentDir) {
+            const baseDir = getRomaneioBaseDir();
+            const formattedParent = path.join(baseDir, `RO-${String(romaneioId).padStart(6, '0')}`);
+            const legacyParent = path.join(baseDir, `RO-${romaneioId}`);
+            parentDir = fs.existsSync(legacyParent) ? legacyParent : formattedParent;
+        }
+        const revDir = path.join(parentDir, `REV-${newRev}`);
         fs.promises.mkdir(revDir, { recursive: true })
             .then(() => console.log(`✅ Pasta de revisão criada na rede: ${revDir}`))
             .catch(e => console.error(`⚠️ Erro ao criar pasta de revisão na rede (${revDir}):`, e.message));

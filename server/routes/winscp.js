@@ -1,12 +1,20 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../services/mysqlService');
+const { requireMaster } = require('../middlewares/tenantMiddleware');
 
-// GET all connections
+// Apenas administradores Master e Superadmin podem gerenciar conexões WinSCP/FTP
+router.use(requireMaster);
+
+// GET all connections (mascara senhas para segurança)
 router.get('/connections', async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM winscp_connections ORDER BY id DESC');
-        res.json(rows);
+        const [rows] = await pool.query('SELECT id, nome, usuario, endereco_origem, endereco_destino, extensao, objetivo, criado_em FROM winscp_connections ORDER BY id DESC');
+        const safeRows = rows.map(r => ({
+            ...r,
+            senha: '••••••••'
+        }));
+        res.json(safeRows);
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Erro ao buscar conexões.' });
@@ -34,10 +42,17 @@ router.put('/connections/:id', async (req, res) => {
     const { id } = req.params;
     const { nome, usuario, senha, endereco_origem, endereco_destino, extensao, objetivo } = req.body;
     try {
-        await pool.query(
-            `UPDATE winscp_connections SET nome=?, usuario=?, senha=?, endereco_origem=?, endereco_destino=?, extensao=?, objetivo=? WHERE id=?`,
-            [nome, usuario, senha, endereco_origem, endereco_destino, extensao, objetivo, id]
-        );
+        if (senha && senha !== '••••••••') {
+            await pool.query(
+                `UPDATE winscp_connections SET nome=?, usuario=?, senha=?, endereco_origem=?, endereco_destino=?, extensao=?, objetivo=? WHERE id=?`,
+                [nome, usuario, senha, endereco_origem, endereco_destino, extensao, objetivo, id]
+            );
+        } else {
+            await pool.query(
+                `UPDATE winscp_connections SET nome=?, usuario=?, endereco_origem=?, endereco_destino=?, extensao=?, objetivo=? WHERE id=?`,
+                [nome, usuario, endereco_origem, endereco_destino, extensao, objetivo, id]
+            );
+        }
         res.json({ message: 'Conexão atualizada com sucesso.' });
     } catch (error) {
         console.error(error);

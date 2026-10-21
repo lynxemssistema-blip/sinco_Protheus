@@ -216,41 +216,41 @@ export default function PortariaGuaritaPage() {
         if (min < 60) return `${min} min`;
         const h = Math.floor(min / 60);
         const m = min % 60;
-        return `${h}h ${m > 0 ? `${m}m` : ''}`;
+        return `${h}h ${m}m`;
     };
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col pb-20 sm:pb-8">
+        <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-col pb-20 sm:pb-8">
             {/* 1. BARRA SUPERIOR RESPONSIVA */}
-            <header className="bg-slate-900 border-b border-slate-800 px-3 py-2.5 sm:px-6 sm:py-3 sticky top-0 z-30 shadow-md">
+            <header className="bg-white border-b border-slate-200 px-3 py-2.5 sm:px-6 sm:py-3 sticky top-0 z-30 shadow-xs">
                 <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
                     {/* Título & Badge */}
                     <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
                             <Shield className="w-5 h-5 sm:w-6 sm:h-6" />
                         </div>
                         <div className="min-w-0">
                             <div className="flex items-center gap-1.5 sm:gap-2">
-                                <h1 className="text-sm sm:text-lg font-bold text-white tracking-wide truncate">
+                                <h1 className="text-sm sm:text-lg font-bold text-slate-900 tracking-wide truncate">
                                     Portaria • Guarita
                                 </h1>
-                                <span className="hidden sm:flex px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                <span className="hidden sm:flex px-2 py-0.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                     Terminal
                                 </span>
                             </div>
-                            <p className="text-[10px] sm:text-xs text-slate-400 truncate">Guarita de Acesso</p>
+                            <p className="text-[10px] sm:text-xs text-slate-500 truncate">Guarita de Acesso</p>
                         </div>
                     </div>
 
                     {/* Porteiro no Posto & Relógio */}
                     <div className="flex items-center gap-2 sm:gap-4">
-                        {/* Relógio Digital (oculto em telas muito pequenas para economizar espaço) */}
-                        <div className="hidden lg:flex flex-col items-end px-3 py-1 bg-slate-950/60 border border-slate-800 rounded-lg">
-                            <span className="text-[10px] text-slate-400 font-medium">
+                        {/* Relógio Digital */}
+                        <div className="hidden lg:flex flex-col items-end px-3 py-1 bg-slate-50 border border-slate-200 rounded-lg">
+                            <span className="text-[10px] text-slate-500 font-medium">
                                 {currentTime.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}
                             </span>
-                            <span className="text-sm font-mono font-bold text-slate-200">
+                            <span className="text-sm font-mono font-bold text-slate-800">
                                 {currentTime.toLocaleTimeString('pt-BR')}
                             </span>
                         </div>
@@ -258,7 +258,7 @@ export default function PortariaGuaritaPage() {
                         {/* Card do Porteiro Ativo */}
                         <div
                             onClick={() => setIsTrocaPorteiroOpen(true)}
-                            className="flex items-center gap-2 bg-slate-950/90 border border-slate-800 rounded-xl p-1 sm:p-1.5 sm:pr-3 cursor-pointer hover:border-slate-700 active:scale-95 transition"
+                            className="flex items-center gap-2 bg-slate-50 border border-slate-200 hover:border-slate-300 hover:bg-slate-100/70 rounded-xl p-1 sm:p-1.5 sm:pr-3 cursor-pointer active:scale-95 transition"
                             title="Clique para alternar porteiro"
                         >
                             <div className="relative shrink-0">
@@ -266,22 +266,22 @@ export default function PortariaGuaritaPage() {
                                     <img
                                         src={porteiroAtivo.foto_url}
                                         alt={porteiroAtivo.nome}
-                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg object-cover border border-slate-700"
+                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg object-cover border border-slate-200"
                                     />
                                 ) : (
-                                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">
+                                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-600">
                                         <User className="w-4 h-4 sm:w-5 sm:h-5" />
                                     </div>
                                 )}
-                                <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 sm:w-2.5 sm:h-2.5 bg-emerald-500 border-2 border-slate-900 rounded-full" />
+                                <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 sm:w-2.5 sm:h-2.5 bg-emerald-500 border-2 border-white rounded-full" />
                             </div>
                             <div className="text-left hidden sm:block">
-                                <div className="text-xs font-semibold text-white leading-tight truncate max-w-[120px]">
+                                <div className="text-xs font-semibold text-slate-900 leading-tight truncate max-w-[120px]">
                                     {porteiroAtivo?.nome?.split(' ')[0] || 'Porteiro'}
                                 </div>
-                                <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                                <div className="text-[10px] text-slate-500 flex items-center gap-1">
                                     <span>{porteiroAtivo?.nome_turno?.split(' ')[0] || 'Plantão'}</span>
-                                    <span className="text-emerald-400 font-semibold">• Trocar</span>
+                                    <span className="text-emerald-600 font-semibold">• Trocar</span>
                                 </div>
                             </div>
                         </div>
@@ -290,10 +290,10 @@ export default function PortariaGuaritaPage() {
                         <button
                             type="button"
                             onClick={toggleHelp}
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-slate-950/90 border border-slate-800 hover:border-amber-500/50 hover:bg-amber-500/10 rounded-xl text-slate-300 hover:text-amber-400 active:scale-95 transition"
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-slate-50 border border-slate-200 hover:border-amber-300 hover:bg-amber-50 rounded-xl text-slate-700 hover:text-amber-700 active:scale-95 transition shadow-xs"
                             title="Ajuda e Manual da Guarita"
                         >
-                            <HelpCircle className="w-4 h-4 text-amber-400" />
+                            <HelpCircle className="w-4 h-4 text-amber-500" />
                             <span className="hidden md:inline text-xs font-semibold">Ajuda</span>
                         </button>
                     </div>
@@ -301,50 +301,50 @@ export default function PortariaGuaritaPage() {
             </header>
 
             {/* 2. BARRA DE MÉTRICAS EM TEMPO REAL (GRID 2x2 MOBILE) */}
-            <div className="bg-slate-900/60 border-b border-slate-800/80 px-3 py-2.5 sm:px-6 sm:py-3">
+            <div className="bg-slate-100/70 border-b border-slate-200 px-3 py-2.5 sm:px-6 sm:py-3">
                 <div className="max-w-7xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-                    <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 sm:p-3 flex items-center justify-between">
+                    <div className="bg-white border border-slate-200/80 rounded-xl p-2.5 sm:p-3 flex items-center justify-between shadow-xs">
                         <div>
-                            <span className="text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider">No Pátio</span>
-                            <div className="text-lg sm:text-2xl font-black text-white">{totalNoPatio}</div>
+                            <span className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">No Pátio</span>
+                            <div className="text-lg sm:text-2xl font-black text-slate-900">{totalNoPatio}</div>
                         </div>
-                        <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400">
+                        <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
                             <UserCheck className="w-4 h-4 sm:w-5 sm:h-5" />
                         </div>
                     </div>
 
-                    <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 sm:p-3 flex items-center justify-between">
+                    <div className="bg-white border border-slate-200/80 rounded-xl p-2.5 sm:p-3 flex items-center justify-between shadow-xs">
                         <div>
-                            <span className="text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider">Veículos</span>
-                            <div className="text-lg sm:text-2xl font-black text-slate-100">{totalVeiculos}</div>
+                            <span className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Veículos</span>
+                            <div className="text-lg sm:text-2xl font-black text-slate-900">{totalVeiculos}</div>
                         </div>
-                        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                        <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
                             <Car className="w-4 h-4 sm:w-5 sm:h-5" />
                         </div>
                     </div>
 
-                    <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 sm:p-3 flex items-center justify-between">
+                    <div className="bg-white border border-slate-200/80 rounded-xl p-2.5 sm:p-3 flex items-center justify-between shadow-xs">
                         <div>
-                            <span className="text-[10px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider">Cargas / Caminhões</span>
-                            <div className="text-lg sm:text-2xl font-black text-amber-300">{totalCargas}</div>
+                            <span className="text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wider">Cargas / Caminhões</span>
+                            <div className="text-lg sm:text-2xl font-black text-amber-600">{totalCargas}</div>
                         </div>
-                        <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400">
+                        <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
                             <Truck className="w-4 h-4 sm:w-5 sm:h-5" />
                         </div>
                     </div>
 
-                    <div className={`rounded-xl p-2.5 sm:p-3 flex items-center justify-between border transition ${
+                    <div className={`rounded-xl p-2.5 sm:p-3 flex items-center justify-between border transition shadow-xs ${
                         totalCriticos > 0
-                            ? 'bg-rose-950/30 border-rose-500/50 text-rose-200'
-                            : 'bg-slate-900/90 border-slate-800 text-slate-400'
+                            ? 'bg-rose-50 border-rose-200 text-rose-800'
+                            : 'bg-white border-slate-200/80 text-slate-600'
                     }`}>
                         <div>
-                            <span className="text-[10px] sm:text-xs font-medium uppercase tracking-wider">&gt; 4 Horas</span>
-                            <div className={`text-lg sm:text-2xl font-black ${totalCriticos > 0 ? 'text-rose-400' : 'text-slate-100'}`}>
+                            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider">&gt; 4 Horas</span>
+                            <div className={`text-lg sm:text-2xl font-black ${totalCriticos > 0 ? 'text-rose-600' : 'text-slate-900'}`}>
                                 {totalCriticos}
                             </div>
                         </div>
-                        <div className={`p-2 rounded-lg ${totalCriticos > 0 ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-800 text-slate-500'}`}>
+                        <div className={`p-2 rounded-lg ${totalCriticos > 0 ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500'}`}>
                             <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />
                         </div>
                     </div>
@@ -362,12 +362,12 @@ export default function PortariaGuaritaPage() {
                             placeholder="Buscar placa, nome, crachá, CPF..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500 transition"
+                            className="w-full bg-white border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition shadow-xs"
                         />
                         {searchTerm && (
                             <button
                                 onClick={() => setSearchTerm('')}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -376,12 +376,12 @@ export default function PortariaGuaritaPage() {
 
                     <div className="flex items-center gap-2">
                         {/* Seletor Cartões vs Tabela */}
-                        <div className="hidden sm:flex bg-slate-900 border border-slate-800 rounded-xl p-1 gap-1">
+                        <div className="hidden sm:flex bg-white border border-slate-200 rounded-xl p-1 gap-1 shadow-xs">
                             <button
                                 type="button"
                                 onClick={() => setViewMode('tabela')}
                                 className={`p-1.5 rounded-lg text-xs font-medium transition ${
-                                    viewMode === 'tabela' ? 'bg-slate-800 text-white shadow' : 'text-slate-400 hover:text-white'
+                                    viewMode === 'tabela' ? 'bg-slate-100 text-slate-900 font-bold shadow-xs' : 'text-slate-500 hover:text-slate-800'
                                 }`}
                                 title="Visualização em Tabela"
                             >
@@ -391,7 +391,7 @@ export default function PortariaGuaritaPage() {
                                 type="button"
                                 onClick={() => setViewMode('cards')}
                                 className={`p-1.5 rounded-lg text-xs font-medium transition ${
-                                    viewMode === 'cards' ? 'bg-slate-800 text-white shadow' : 'text-slate-400 hover:text-white'
+                                    viewMode === 'cards' ? 'bg-slate-100 text-slate-900 font-bold shadow-xs' : 'text-slate-500 hover:text-slate-800'
                                 }`}
                                 title="Visualização em Cartões"
                             >
@@ -403,10 +403,10 @@ export default function PortariaGuaritaPage() {
                         <button
                             type="button"
                             onClick={() => setIsFormOpen(!isFormOpen)}
-                            className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-lg transition active:scale-95 ${
+                            className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-xs transition active:scale-95 ${
                                 isFormOpen
-                                    ? 'bg-slate-800 hover:bg-slate-700 text-slate-200'
-                                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50'
+                                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                             }`}
                         >
                             {isFormOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -417,20 +417,20 @@ export default function PortariaGuaritaPage() {
 
                 {/* FORMULÁRIO DE ENTRADA RESPONSIVO */}
                 {isFormOpen && (
-                    <div className="bg-slate-900 border border-slate-700/80 rounded-2xl p-4 sm:p-6 shadow-2xl animate-in slide-in-from-top-4 duration-200">
-                        <div className="flex items-center justify-between pb-3 sm:pb-4 mb-4 sm:mb-5 border-b border-slate-800">
+                    <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm animate-in slide-in-from-top-4 duration-200">
+                        <div className="flex items-center justify-between pb-3 sm:pb-4 mb-4 sm:mb-5 border-b border-slate-100">
                             <div className="flex items-center gap-2.5">
-                                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                                <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
                                     <UserCheck className="w-5 h-5" />
                                 </div>
                                 <div>
-                                    <h2 className="text-sm sm:text-base font-bold text-white">Registrar Entrada</h2>
-                                    <p className="text-[11px] sm:text-xs text-slate-400">Check-in de veículos e visitantes na fábrica</p>
+                                    <h2 className="text-sm sm:text-base font-bold text-slate-900">Registrar Entrada</h2>
+                                    <p className="text-[11px] sm:text-xs text-slate-500">Check-in de veículos e visitantes na fábrica</p>
                                 </div>
                             </div>
                             <button
                                 onClick={() => setIsFormOpen(false)}
-                                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+                                className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
                             >
                                 <X className="w-5 h-5" />
                             </button>
@@ -439,7 +439,7 @@ export default function PortariaGuaritaPage() {
                         <form onSubmit={handleCheckInSubmit} className="space-y-4 sm:space-y-5">
                             {/* Tipo de Acesso */}
                             <div>
-                                <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                                <label className="block text-[11px] font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                                     Tipo de Acesso
                                 </label>
                                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 sm:gap-2">
@@ -456,8 +456,8 @@ export default function PortariaGuaritaPage() {
                                             onClick={() => setFormData({ ...formData, tipo: t.id })}
                                             className={`py-2 px-2.5 text-xs font-semibold rounded-xl border transition ${
                                                 formData.tipo === t.id
-                                                    ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300'
-                                                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                                                    ? 'bg-emerald-50 border-emerald-500 text-emerald-800 font-bold shadow-xs'
+                                                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                                             }`}
                                         >
                                             {t.label}
@@ -469,8 +469,8 @@ export default function PortariaGuaritaPage() {
                             {/* Dados do Visitante */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                                 <div className="sm:col-span-2">
-                                    <label className="block text-xs font-medium text-slate-300 mb-1">
-                                        Nome Completo <span className="text-rose-400">*</span>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                        Nome Completo <span className="text-rose-500">*</span>
                                     </label>
                                     <input
                                         type="text"
@@ -478,29 +478,29 @@ export default function PortariaGuaritaPage() {
                                         placeholder="Ex: João da Silva"
                                         value={formData.nome_pessoa}
                                         onChange={(e) => setFormData({ ...formData, nome_pessoa: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-xs"
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-300 mb-1">CPF ou RG</label>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">CPF ou RG</label>
                                     <input
                                         type="text"
                                         placeholder="Ex: 000.000.000-00"
                                         value={formData.documento}
                                         onChange={(e) => setFormData({ ...formData, documento: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-xs"
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-300 mb-1">Telefone / WhatsApp</label>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Telefone / WhatsApp</label>
                                     <input
                                         type="tel"
                                         placeholder="Ex: (11) 99999-9999"
                                         value={formData.telefone}
                                         onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-xs"
                                     />
                                 </div>
                             </div>
@@ -508,40 +508,40 @@ export default function PortariaGuaritaPage() {
                             {/* Empresa & Destino */}
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-300 mb-1">Empresa / Transportadora</label>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Empresa / Transportadora</label>
                                     <input
                                         type="text"
                                         placeholder="Ex: Transportadora XYZ"
                                         value={formData.empresa_origem}
                                         onChange={(e) => setFormData({ ...formData, empresa_origem: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-xs"
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-300 mb-1">Setor de Destino</label>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Setor de Destino</label>
                                     <input
                                         list="setores-list"
                                         placeholder="Ex: Usinagem, Almoxarifado"
                                         value={formData.setor_destino}
                                         onChange={(e) => setFormData({ ...formData, setor_destino: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-xs"
                                     />
                                     <datalist id="setores-list">
                                         {auxiliares.setores?.map((s, idx) => (
-                                            <option key={idx} value={s} />
+                                             <option key={idx} value={s} />
                                         ))}
                                     </datalist>
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-300 mb-1">Responsável Interno</label>
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">Responsável Interno</label>
                                     <input
                                         list="colaboradores-list"
                                         placeholder="Nome do colaborador visitado"
                                         value={formData.responsavel_interno}
                                         onChange={(e) => setFormData({ ...formData, responsavel_interno: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-xs"
                                     />
                                     <datalist id="colaboradores-list">
                                         {auxiliares.colaboradores?.map((c) => (
@@ -552,18 +552,18 @@ export default function PortariaGuaritaPage() {
                             </div>
 
                             {/* Identificação do Veículo */}
-                            <div className="p-3.5 sm:p-4 bg-slate-950/60 border border-slate-800/80 rounded-xl space-y-3">
-                                <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                                    <Car className="w-4 h-4 text-emerald-400" />
+                            <div className="p-3.5 sm:p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                                <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                    <Car className="w-4 h-4 text-emerald-600" />
                                     Identificação do Veículo
                                 </span>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                     <div>
-                                        <label className="block text-xs font-medium text-slate-400 mb-1">Tipo de Veículo</label>
+                                        <label className="block text-xs font-medium text-slate-600 mb-1">Tipo de Veículo</label>
                                         <select
                                             value={formData.tipo_veiculo}
                                             onChange={(e) => setFormData({ ...formData, tipo_veiculo: e.target.value })}
-                                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200"
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 shadow-xs"
                                         >
                                             <option value="NENHUM">Nenhum (Entrada a pé)</option>
                                             <option value="CARRETA">Carreta / Bitrem</option>
@@ -578,37 +578,37 @@ export default function PortariaGuaritaPage() {
                                     {formData.tipo_veiculo !== 'NENHUM' && (
                                         <>
                                             <div>
-                                                <label className="block text-xs font-medium text-slate-400 mb-1">
-                                                    Placa <span className="text-rose-400">*</span>
+                                                <label className="block text-xs font-medium text-slate-600 mb-1">
+                                                    Placa <span className="text-rose-500">*</span>
                                                 </label>
                                                 <input
                                                     type="text"
                                                     placeholder="ABC1D23"
                                                     value={formData.placa_veiculo}
                                                     onChange={(e) => setFormData({ ...formData, placa_veiculo: e.target.value.toUpperCase() })}
-                                                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-mono font-bold text-slate-100 uppercase"
+                                                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 uppercase shadow-xs"
                                                 />
                                             </div>
 
                                             <div>
-                                                <label className="block text-xs font-medium text-slate-400 mb-1">Modelo</label>
+                                                <label className="block text-xs font-medium text-slate-600 mb-1">Modelo</label>
                                                 <input
                                                     type="text"
                                                     placeholder="Ex: Scania / Gol"
                                                     value={formData.modelo_veiculo}
                                                     onChange={(e) => setFormData({ ...formData, modelo_veiculo: e.target.value })}
-                                                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200"
+                                                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 shadow-xs"
                                                 />
                                             </div>
 
                                             <div>
-                                                <label className="block text-xs font-medium text-slate-400 mb-1">Cor</label>
+                                                <label className="block text-xs font-medium text-slate-600 mb-1">Cor</label>
                                                 <input
                                                     type="text"
                                                     placeholder="Ex: Branco, Prata"
                                                     value={formData.cor_veiculo}
                                                     onChange={(e) => setFormData({ ...formData, cor_veiculo: e.target.value })}
-                                                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200"
+                                                    className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-800 shadow-xs"
                                                 />
                                             </div>
                                         </>
@@ -619,23 +619,23 @@ export default function PortariaGuaritaPage() {
                             {/* Crachá, NF e Botões de Foto Mobile-First */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
                                         Nº do Crachá Provisório
                                     </label>
                                     <div className="relative">
-                                        <Hash className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                                        <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                         <input
                                             type="text"
                                             placeholder="Ex: 14"
                                             value={formData.numero_cracha}
                                             onChange={(e) => setFormData({ ...formData, numero_cracha: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-sm text-slate-100 font-bold focus:ring-2 focus:ring-emerald-500/50"
+                                            className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-sm text-slate-900 font-bold focus:ring-2 focus:ring-emerald-500/20 shadow-xs"
                                         />
                                     </div>
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
                                         Nº Nota Fiscal / Romaneio
                                     </label>
                                     <input
@@ -643,13 +643,13 @@ export default function PortariaGuaritaPage() {
                                         placeholder="Ex: NF 104523"
                                         value={formData.numero_nf}
                                         onChange={(e) => setFormData({ ...formData, numero_nf: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-slate-100"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 shadow-xs"
                                     />
                                 </div>
 
                                 {/* Botão de Foto Visitante */}
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
                                         Foto do Visitante / Motorista
                                     </label>
                                     <button
@@ -659,13 +659,13 @@ export default function PortariaGuaritaPage() {
                                             target: 'pessoa',
                                             title: 'Capturar Foto do Visitante'
                                         })}
-                                        className={`w-full py-2.5 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition active:scale-95 ${
+                                        className={`w-full py-2.5 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition active:scale-95 shadow-xs ${
                                             formData.foto_pessoa_base64
-                                                ? 'bg-emerald-950/40 border-emerald-500 text-emerald-300'
-                                                : 'bg-slate-950 border-slate-800 text-slate-200 hover:border-slate-700'
+                                                ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
+                                                : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
                                         }`}
                                     >
-                                        <Camera className="w-4 h-4 text-emerald-400" />
+                                        <Camera className="w-4 h-4 text-emerald-600" />
                                         {formData.foto_pessoa_base64 ? '✓ Foto Capturada' : 'Câmera / Celular'}
                                     </button>
                                 </div>
@@ -673,7 +673,7 @@ export default function PortariaGuaritaPage() {
                                 {/* Botão de Foto Veículo */}
                                 {formData.tipo_veiculo !== 'NENHUM' ? (
                                     <div>
-                                        <label className="block text-xs font-medium text-slate-300 mb-1">
+                                        <label className="block text-xs font-semibold text-slate-700 mb-1">
                                             Foto da Placa / Veículo
                                         </label>
                                         <button
@@ -683,13 +683,13 @@ export default function PortariaGuaritaPage() {
                                                 target: 'veiculo',
                                                 title: 'Capturar Foto da Placa/Veículo'
                                             })}
-                                            className={`w-full py-2.5 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition active:scale-95 ${
+                                            className={`w-full py-2.5 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition active:scale-95 shadow-xs ${
                                                 formData.foto_veiculo_base64
-                                                    ? 'bg-emerald-950/40 border-emerald-500 text-emerald-300'
-                                                    : 'bg-slate-950 border-slate-800 text-slate-200 hover:border-slate-700'
+                                                    ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
+                                                    : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
                                             }`}
                                         >
-                                            <Camera className="w-4 h-4 text-emerald-400" />
+                                            <Camera className="w-4 h-4 text-emerald-600" />
                                             {formData.foto_veiculo_base64 ? '✓ Foto da Placa' : 'Câmera / Celular'}
                                         </button>
                                     </div>
@@ -699,18 +699,18 @@ export default function PortariaGuaritaPage() {
                             </div>
 
                             {/* Botão de Envio Full-Width no Mobile */}
-                            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-3 border-t border-slate-800">
+                            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-3 border-t border-slate-100">
                                 <button
                                     type="button"
                                     onClick={() => setIsFormOpen(false)}
-                                    className="w-full sm:w-auto px-4 py-3 text-xs font-semibold text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition text-center"
+                                    className="w-full sm:w-auto px-4 py-2.5 text-xs font-semibold text-slate-500 hover:text-slate-800 rounded-xl hover:bg-slate-100 transition text-center"
                                 >
                                     Cancelar
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={submitting}
-                                    className="w-full sm:w-auto px-6 py-3 text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 transition active:scale-95 disabled:opacity-50"
+                                    className="w-full sm:w-auto px-6 py-2.5 text-sm font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl flex items-center justify-center gap-2 shadow-xs transition active:scale-95 disabled:opacity-50"
                                 >
                                     {submitting ? (
                                         <>
@@ -734,7 +734,7 @@ export default function PortariaGuaritaPage() {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <h2 className="text-sm sm:text-base font-bold text-white">
+                            <h2 className="text-sm sm:text-base font-bold text-slate-900">
                                 No Pátio ({acessosFiltrados.length})
                             </h2>
                         </div>
@@ -744,21 +744,21 @@ export default function PortariaGuaritaPage() {
                             type="button"
                             onClick={carregarDados}
                             title="Atualizar lista"
-                            className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900 border border-slate-800 transition"
+                            className="p-2 text-slate-500 hover:text-slate-800 rounded-xl bg-white border border-slate-200 shadow-xs hover:bg-slate-50 transition"
                         >
                             <RefreshCw className="w-4 h-4" />
                         </button>
                     </div>
 
                     {loading ? (
-                        <div className="p-12 text-center text-slate-400 flex flex-col items-center justify-center gap-3 bg-slate-900 border border-slate-800 rounded-2xl">
-                            <RefreshCw className="w-8 h-8 animate-spin text-emerald-400" />
+                        <div className="p-12 text-center text-slate-500 flex flex-col items-center justify-center gap-3 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                            <RefreshCw className="w-8 h-8 animate-spin text-emerald-600" />
                             <span className="text-xs">Atualizando pátio da portaria...</span>
                         </div>
                     ) : acessosFiltrados.length === 0 ? (
-                        <div className="p-10 text-center text-slate-500 flex flex-col items-center justify-center gap-2 bg-slate-900 border border-slate-800 rounded-2xl">
-                            <UserCheck className="w-10 h-10 text-slate-600 stroke-1" />
-                            <span className="text-sm font-semibold text-slate-300">Nenhum visitante ou veículo no pátio.</span>
+                        <div className="p-10 text-center text-slate-500 flex flex-col items-center justify-center gap-2 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                            <UserCheck className="w-10 h-10 text-slate-400 stroke-1" />
+                            <span className="text-sm font-semibold text-slate-800">Nenhum visitante ou veículo no pátio.</span>
                             <span className="text-xs text-slate-500">Novas entradas liberadas aparecerão aqui automaticamente.</span>
                         </div>
                     ) : (
@@ -770,8 +770,8 @@ export default function PortariaGuaritaPage() {
                                     return (
                                         <div
                                             key={item.id}
-                                            className={`bg-slate-900 border rounded-2xl p-4 flex flex-col justify-between shadow-md space-y-3 transition ${
-                                                isCritico ? 'border-rose-500/50 bg-rose-950/15' : 'border-slate-800 hover:border-slate-700'
+                                            className={`bg-white border rounded-2xl p-4 flex flex-col justify-between shadow-xs hover:shadow-md hover:border-slate-300 space-y-3 transition ${
+                                                isCritico ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'
                                             }`}
                                         >
                                             <div className="space-y-3">
@@ -783,18 +783,18 @@ export default function PortariaGuaritaPage() {
                                                                 src={item.foto_pessoa_url}
                                                                 alt={item.nome_pessoa}
                                                                 onClick={() => setFotoAmpliada(item.foto_pessoa_url)}
-                                                                className="w-12 h-12 rounded-xl object-cover border border-slate-700 cursor-pointer shrink-0"
+                                                                className="w-12 h-12 rounded-xl object-cover border border-slate-200 cursor-pointer shrink-0"
                                                             />
                                                         ) : (
-                                                            <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 shrink-0">
+                                                            <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 shrink-0">
                                                                 <User className="w-6 h-6" />
                                                             </div>
                                                         )}
                                                         <div className="min-w-0">
-                                                            <div className="font-bold text-sm text-white truncate">
+                                                            <div className="font-bold text-sm text-slate-900 truncate">
                                                                 {item.nome_pessoa}
                                                             </div>
-                                                            <div className="text-[11px] text-slate-400 truncate">
+                                                            <div className="text-[11px] text-slate-500 truncate">
                                                                 {item.empresa_origem || item.tipo}
                                                             </div>
                                                         </div>
@@ -802,25 +802,25 @@ export default function PortariaGuaritaPage() {
 
                                                     {/* Badge Crachá */}
                                                     {item.numero_cracha ? (
-                                                        <span className="px-2 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold rounded-lg text-xs font-mono shrink-0">
+                                                        <span className="px-2 py-1 bg-amber-50 border border-amber-200 text-amber-800 font-bold rounded-lg text-xs font-mono shrink-0">
                                                             #{item.numero_cracha}
                                                         </span>
                                                     ) : null}
                                                 </div>
 
                                                 {/* Detalhes do Veículo & Destino */}
-                                                <div className="p-2.5 bg-slate-950/80 rounded-xl border border-slate-800/80 space-y-1.5 text-xs">
+                                                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5 text-xs text-slate-700">
                                                     {item.tipo_veiculo && item.tipo_veiculo !== 'NENHUM' ? (
                                                         <div className="flex items-center justify-between">
-                                                            <span className="text-slate-400 flex items-center gap-1.5">
+                                                            <span className="text-slate-600 flex items-center gap-1.5 font-medium">
                                                                 {['CARRETA', 'CAMINHAO'].includes(item.tipo_veiculo) ? (
-                                                                    <Truck className="w-3.5 h-3.5 text-amber-400" />
+                                                                    <Truck className="w-3.5 h-3.5 text-amber-600" />
                                                                 ) : (
-                                                                    <Car className="w-3.5 h-3.5 text-emerald-400" />
+                                                                    <Car className="w-3.5 h-3.5 text-emerald-600" />
                                                                 )}
                                                                 {item.modelo_veiculo || item.tipo_veiculo}
                                                             </span>
-                                                            <span className="font-mono font-bold text-slate-100 bg-slate-800 px-2 py-0.5 rounded text-[11px]">
+                                                            <span className="font-mono font-bold text-slate-800 bg-white border border-slate-200 px-2 py-0.5 rounded text-[11px]">
                                                                 {item.placa_veiculo}
                                                             </span>
                                                         </div>
@@ -828,15 +828,15 @@ export default function PortariaGuaritaPage() {
                                                         <div className="text-slate-500 italic text-[11px]">Entrada a pé</div>
                                                     )}
 
-                                                    <div className="flex items-center justify-between text-slate-300 pt-1 border-t border-slate-800/60">
+                                                    <div className="flex items-center justify-between text-slate-600 pt-1 border-t border-slate-200/60">
                                                         <span className="text-slate-500">Destino:</span>
-                                                        <span className="font-medium truncate max-w-[150px]">{item.setor_destino || '-'}</span>
+                                                        <span className="font-medium truncate max-w-[150px] text-slate-800">{item.setor_destino || '-'}</span>
                                                     </div>
 
-                                                    <div className="flex items-center justify-between text-slate-300">
+                                                    <div className="flex items-center justify-between text-slate-600">
                                                         <span className="text-slate-500">Permanência:</span>
                                                         <span className={`font-bold inline-flex items-center gap-1 ${
-                                                            isCritico ? 'text-rose-400 animate-pulse' : 'text-slate-200'
+                                                            isCritico ? 'text-rose-600 animate-pulse' : 'text-slate-800'
                                                         }`}>
                                                             <Clock className="w-3 h-3" />
                                                             {formatPermanencia(item.permanencia_atual_min)}
@@ -849,7 +849,7 @@ export default function PortariaGuaritaPage() {
                                             <button
                                                 type="button"
                                                 onClick={() => handleCheckOut(item)}
-                                                className="w-full py-3 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow transition active:scale-98"
+                                                className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition active:scale-98"
                                             >
                                                 <LogOut className="w-4 h-4" />
                                                 Registrar Saída (Check-out)
@@ -860,10 +860,10 @@ export default function PortariaGuaritaPage() {
                             </div>
                         ) : (
                             /* VISUALIZAÇÃO EM TABELA (DESKTOP) */
-                            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
-                                <div className="divide-y divide-slate-800/80 overflow-x-auto">
+                            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                                <div className="overflow-x-auto">
                                     <table className="w-full text-left border-collapse text-xs">
-                                        <thead className="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                                        <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
                                             <tr>
                                                 <th className="py-3 px-4">Visitante / Empresa</th>
                                                 <th className="py-3 px-4">Veículo / Placa</th>
@@ -873,11 +873,11 @@ export default function PortariaGuaritaPage() {
                                                 <th className="py-3 px-4 text-right">Ação</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-800/60">
+                                        <tbody className="divide-y divide-slate-100">
                                             {acessosFiltrados.map((item) => {
                                                 const isCritico = (item.permanencia_atual_min > 240);
                                                 return (
-                                                    <tr key={item.id} className="hover:bg-slate-800/40 transition">
+                                                    <tr key={item.id} className="hover:bg-slate-50/70 transition">
                                                         <td className="py-3 px-4">
                                                             <div className="flex items-center gap-3">
                                                                 {item.foto_pessoa_url ? (
@@ -885,48 +885,48 @@ export default function PortariaGuaritaPage() {
                                                                         src={item.foto_pessoa_url}
                                                                         alt={item.nome_pessoa}
                                                                         onClick={() => setFotoAmpliada(item.foto_pessoa_url)}
-                                                                        className="w-10 h-10 rounded-xl object-cover border border-slate-700 cursor-pointer"
+                                                                        className="w-10 h-10 rounded-xl object-cover border border-slate-200 cursor-pointer"
                                                                     />
                                                                 ) : (
-                                                                    <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400">
+                                                                    <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500">
                                                                         <User className="w-5 h-5" />
                                                                     </div>
                                                                 )}
                                                                 <div>
-                                                                    <div className="font-bold text-white text-sm">{item.nome_pessoa}</div>
-                                                                    <div className="text-[11px] text-slate-400">{item.empresa_origem || item.tipo}</div>
+                                                                    <div className="font-bold text-slate-900 text-sm">{item.nome_pessoa}</div>
+                                                                    <div className="text-[11px] text-slate-500">{item.empresa_origem || item.tipo}</div>
                                                                 </div>
                                                             </div>
                                                         </td>
                                                         <td className="py-3 px-4">
                                                             {item.tipo_veiculo !== 'NENHUM' ? (
                                                                 <div>
-                                                                    <span className="font-mono font-bold text-slate-100 bg-slate-800 px-1.5 py-0.5 rounded text-xs">
+                                                                    <span className="font-mono font-bold text-slate-800 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-xs">
                                                                         {item.placa_veiculo}
                                                                     </span>
-                                                                    <div className="text-[10px] text-slate-400 mt-0.5">{item.modelo_veiculo || item.tipo_veiculo}</div>
+                                                                    <div className="text-[10px] text-slate-500 mt-0.5">{item.modelo_veiculo || item.tipo_veiculo}</div>
                                                                 </div>
                                                             ) : (
-                                                                <span className="text-slate-500 italic">Entrada a pé</span>
+                                                                <span className="text-slate-400 italic">Entrada a pé</span>
                                                             )}
                                                         </td>
                                                         <td className="py-3 px-4">
-                                                            <div className="font-medium text-slate-200">{item.setor_destino || '-'}</div>
-                                                            {item.responsavel_interno && <div className="text-[11px] text-slate-400">Resp: {item.responsavel_interno}</div>}
+                                                            <div className="font-medium text-slate-800">{item.setor_destino || '-'}</div>
+                                                            {item.responsavel_interno && <div className="text-[11px] text-slate-500">Resp: {item.responsavel_interno}</div>}
                                                         </td>
                                                         <td className="py-3 px-4 text-center">
                                                             {item.numero_cracha ? (
-                                                                <span className="px-2 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold rounded-lg text-xs font-mono">
+                                                                <span className="px-2 py-1 bg-amber-50 border border-amber-200 text-amber-800 font-bold rounded-lg text-xs font-mono">
                                                                     #{item.numero_cracha}
                                                                 </span>
                                                             ) : '-'}
                                                         </td>
                                                         <td className="py-3 px-4">
-                                                            <div className="text-slate-300 font-mono text-[11px]">
+                                                            <div className="text-slate-800 font-mono text-[11px]">
                                                                 {new Date(item.data_entrada).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                                                             </div>
                                                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold mt-0.5 ${
-                                                                isCritico ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse' : 'bg-slate-800 text-slate-300'
+                                                                isCritico ? 'bg-rose-50 text-rose-700 border border-rose-200 animate-pulse' : 'bg-slate-100 text-slate-700'
                                                             }`}>
                                                                 <Clock className="w-2.5 h-2.5" />
                                                                 {formatPermanencia(item.permanencia_atual_min)}
@@ -936,7 +936,7 @@ export default function PortariaGuaritaPage() {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleCheckOut(item)}
-                                                                className="px-3.5 py-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-sm transition active:scale-95 inline-flex items-center gap-1.5"
+                                                                className="px-3.5 py-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-xs transition active:scale-95 inline-flex items-center gap-1.5"
                                                             >
                                                                 <LogOut className="w-3.5 h-3.5" />
                                                                 Saída
@@ -963,7 +963,7 @@ export default function PortariaGuaritaPage() {
                             setIsFormOpen(true);
                             window.scrollTo({ top: 0, behavior: 'smooth' });
                         }}
-                        className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl shadow-2xl shadow-emerald-950 flex items-center gap-2 border border-emerald-400/30 active:scale-95 transition"
+                        className="px-5 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl shadow-xl flex items-center gap-2 active:scale-95 transition"
                     >
                         <Plus className="w-5 h-5" />
                         <span>Novo Check-in</span>
@@ -987,18 +987,18 @@ export default function PortariaGuaritaPage() {
 
             {/* MODAL DE TROCAR PORTEIRO */}
             {isTrocaPorteiroOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
-                    <div className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl p-5 text-slate-100">
-                        <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
-                            <h3 className="font-bold text-base text-white">Selecionar Operador da Guarita</h3>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in">
+                    <div className="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl p-5 text-slate-800">
+                        <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+                            <h3 className="font-bold text-base text-slate-900">Selecionar Operador da Guarita</h3>
                             <button
                                 onClick={() => setIsTrocaPorteiroOpen(false)}
-                                className="text-slate-400 hover:text-white"
+                                className="text-slate-400 hover:text-slate-600"
                             >
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
-                        <p className="text-xs text-slate-400 mb-4">
+                        <p className="text-xs text-slate-500 mb-4">
                             Selecione o operador responsável por este terminal:
                         </p>
                         <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -1013,27 +1013,27 @@ export default function PortariaGuaritaPage() {
                                     }}
                                     className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition ${
                                         porteiroAtivo?.id === porteiro.id
-                                            ? 'bg-emerald-950/40 border-emerald-500 text-white'
-                                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
+                                            ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-semibold'
+                                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                                     }`}
                                 >
                                     {porteiro.foto_url ? (
                                         <img
                                             src={porteiro.foto_url}
                                             alt={porteiro.nome}
-                                            className="w-10 h-10 rounded-lg object-cover border border-slate-700"
+                                            className="w-10 h-10 rounded-lg object-cover border border-slate-200"
                                         />
                                     ) : (
-                                        <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400">
+                                        <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center text-slate-500">
                                             <User className="w-5 h-5" />
                                         </div>
                                     )}
                                     <div className="flex-1 min-w-0">
                                         <div className="font-semibold text-sm truncate">{porteiro.nome}</div>
-                                        <div className="text-xs text-slate-400 truncate">Turno: {porteiro.nome_turno || 'Padrão'}</div>
+                                        <div className="text-xs text-slate-500 truncate">Turno: {porteiro.nome_turno || 'Padrão'}</div>
                                     </div>
                                     {porteiroAtivo?.id === porteiro.id && (
-                                        <CheckCircle className="w-5 h-5 text-emerald-400" />
+                                        <CheckCircle className="w-5 h-5 text-emerald-600" />
                                     )}
                                 </button>
                             ))}
@@ -1046,13 +1046,13 @@ export default function PortariaGuaritaPage() {
             {fotoAmpliada && (
                 <div
                     onClick={() => setFotoAmpliada(null)}
-                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 cursor-pointer"
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 cursor-pointer"
                 >
-                    <div className="relative max-w-2xl max-h-[85vh] rounded-2xl overflow-hidden border border-slate-700 bg-black">
+                    <div className="relative max-w-2xl max-h-[85vh] rounded-2xl overflow-hidden border border-slate-200 bg-white">
                         <img src={fotoAmpliada} alt="Foto Ampliada" className="w-full h-full object-contain" />
                         <button
                             onClick={() => setFotoAmpliada(null)}
-                            className="absolute top-3 right-3 p-2 bg-slate-900/80 text-white rounded-full hover:bg-slate-800"
+                            className="absolute top-3 right-3 p-2 bg-slate-900/60 text-white rounded-full hover:bg-slate-900"
                         >
                             <X className="w-5 h-5" />
                         </button>

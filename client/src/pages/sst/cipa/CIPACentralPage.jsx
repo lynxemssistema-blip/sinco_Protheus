@@ -35,7 +35,7 @@ export default function CIPACentralPage() {
     const [gestaoData, setGestaoData] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    // Colaboradores da Metalfisa (RH)
+    // Colaboradores da Lynx EMS (RH)
     const [colaboradores, setColaboradores] = useState([]);
 
     // Reuniões & Atas
@@ -114,7 +114,7 @@ export default function CIPACentralPage() {
         data_reuniao: new Date().toISOString().split('T')[0],
         horario_inicio: '09:00',
         horario_fim: '10:00',
-        local: 'Sala de Reuniões Principal - Metalfisa',
+        local: 'Sala de Reuniões Principal - Lynx EMS',
         pauta: 'Reunião mensal ordinária da CIPA',
         conteudo_ata: 'Discussão e deliberação sobre as rotinas de segurança na fábrica e ações de combate ao assédio.'
     });
@@ -320,7 +320,7 @@ export default function CIPACentralPage() {
                 data_reuniao: new Date().toISOString().split('T')[0],
                 horario_inicio: '09:00',
                 horario_fim: '10:00',
-                local: 'Sala de Reuniões Principal - Metalfisa',
+                local: 'Sala de Reuniões Principal - Lynx EMS',
                 pauta: 'Reunião mensal ordinária da CIPA',
                 conteudo_ata: 'Discussão e deliberação sobre as rotinas de segurança na fábrica e ações de combate ao assédio.'
             });
@@ -890,7 +890,7 @@ export default function CIPACentralPage() {
                                                 <td className="p-3">
                                                     <div className="font-bold text-slate-900">{m.nome_completo}</div>
                                                     <div className="text-[11px] text-slate-500">
-                                                        {m.Matricula ? `Matrícula: ${m.Matricula} • ` : ''}{m.Funcao || m.Setor || 'Metalfisa'}
+                                                        {m.Matricula ? `Matrícula: ${m.Matricula} • ` : ''}{m.Funcao || m.Setor || 'Lynx EMS'}
                                                     </div>
                                                 </td>
                                                 <td className="p-3 font-bold text-blue-700 uppercase">
@@ -1557,7 +1557,7 @@ export default function CIPACentralPage() {
                         </div>
                         <form onSubmit={handleAddMembroManual} className="space-y-4 text-xs">
                             <div>
-                                <label className="font-bold text-slate-700">Colaborador (Cadastro Oficial Metalfisa)</label>
+                                <label className="font-bold text-slate-700">Colaborador (Cadastro Oficial Lynx EMS)</label>
                                 <select
                                     required
                                     value={membroManualForm.usuario_id}

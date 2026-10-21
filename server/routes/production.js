@@ -7,6 +7,7 @@ const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 const { hasFinancialAccess } = require('../util/permissionHelper');
 const nodemailer = require('nodemailer');
 const { getCorporateEmailTemplate } = require('../utils/emailTemplate');
+const { getFractionBalances } = require('../services/opGuardService');
 
 // GET /api/production/analytics-dashboard - Production Analytics Dashboard
 
@@ -2869,10 +2870,31 @@ const uploadConferencia = multer({
 });
 
 // POST /api/production/appoint - Save Appointment
+// GET /api/production/op-fractions — Frações PCP (AA, AB...) da OP, com saldo por fração na operação informada.
+// Usado pelo apontamento para o operador escolher a fração antes de gravar (Etapa 2 do PCP, out/2026).
+router.get('/op-fractions', async (req, res) => {
+    try {
+        const { op_numero, op_item, op_sequencia, operacao_codigo } = req.query;
+        if (!op_numero || !op_item) {
+            return res.status(400).json({ error: 'Informe op_numero e op_item.' });
+        }
+        const connection = await mysqlPool.getConnection();
+        try {
+            const result = await getFractionBalances(connection, db, { op_numero, op_item, op_sequencia, operacao_codigo });
+            res.json(result);
+        } finally {
+            connection.release();
+        }
+    } catch (err) {
+        console.error('[OP-FRACTIONS ERROR]', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.post('/appoint', async (req, res) => {
     let connection;
     try {
-        const { op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, skip_cascade } = req.body;
+        const { op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, skip_cascade, fracao_pcp } = req.body;
 
         const qtyNum = Number(quantidade) || 0;
         if (qtyNum <= 0) {
@@ -2983,6 +3005,19 @@ router.post('/appoint', async (req, res) => {
             }
         }
 
+        // --- VALIDAÇÃO DE SALDO POR FRAÇÃO PCP (Etapa 2, out/2026) ---
+        // Opcional: só quando a tela informa de qual fração (AA, AB...) é este apontamento.
+        // Não substitui a validação do saldo da OP acima — é uma restrição adicional por fração.
+        if (fracao_pcp) {
+            const fractionInfo = await getFractionBalances(connection, db, { op_numero, op_item, op_sequencia, operacao_codigo });
+            const fracao = fractionInfo.fractions.find(f => String(f.numero_lote).toUpperCase() === String(fracao_pcp).trim().toUpperCase());
+            if (fracao && fracao.saldo !== null && qtyNum > fracao.saldo + 0.001) {
+                await connection.rollback();
+                return res.status(400).json({
+                    error: `Quantidade excede o saldo da Fração ${fracao.numero_lote}! Planejado: ${fracao.planejado.toFixed(2)} | Já Apontado: ${fracao.apontado.toFixed(2)} | Tentativa: ${qtyNum}`
+                });
+            }
+        }
 
         // --- VALIDAÇÃO DE SEQUÊNCIA (modo: sequence) ---
         if (appointmentMode === 'sequence') {
@@ -3028,9 +3063,9 @@ router.post('/appoint', async (req, res) => {
 
         await connection.execute(`
             INSERT INTO app_production_appointments
-    (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, conferencia_status)
-VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiaisJson, initialStatus]);
+    (op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiais_utilizados, conferencia_status, fracao_pcp)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [op_numero, op_item, op_sequencia, operacao_codigo, usuario, quantidade, data_inicio, data_fim, observacao, materiaisJson, initialStatus, fracao_pcp || null]);
 
         // CASCATA (Baixa Automática) - Recursive BOM Explosion and Appointment
         if (!skip_cascade) {

@@ -1,31 +1,35 @@
-# MetalFisa PCP - Sistema de Gestão de Produção
+# SINCO Suite | Lynx EMS
 
-Sistema integrado para controle de produção, gestão de estoque local e integração de desenhos técnicos para a rede local da MetalFisa.
+Sistema integrado de gestão industrial (PCP, produção, engenharia/BOM, faturamento, romaneios, SGQ, RH/SST, portaria, compras, manutenção e portal do cliente) da **Lynx EMS**.
 
-## 🚀 Como Iniciar
+## Stack
+- **Frontend:** React + Vite + Tailwind CSS (`client/`)
+- **Backend:** Node.js + Express 5 + Socket.io (`server/`)
+- **Banco de dados:** MySQL `u494795077_SINCO` (Hostinger) — único banco permitido
+- **Produção:** https://lynxems.com.br (PM2)
 
-### 1. Servidor Backend
-O servidor gerencia a API e o banco de dados.
-- **Arquivo:** `INICIAR_SISTEMA.bat`
-- **Acesso:** `http://192.168.1.169:3001`
+## Desenvolvimento
+```bash
+npm run dev:all        # sobe API e frontend
+cd server && npm test  # testes unitários
+cd client && npm run build
+```
 
-### 2. Frontend (Build)
-O sistema já está compilado na pasta `client/dist`. O servidor backend serve esses arquivos automaticamente.
+## Publicação
+1. `cd client && npm run build`
+2. `powershell ./sync-deployment.ps1` (sincroniza `linux-deployment/`)
+3. Deploy via workflow `/publicacao-sinco` (SSH/SCP para a Hostinger)
 
-### 3. Agente SolidEdge (Engenharia)
-Necessário apenas para extrair metadados de desenhos técnicos abertos no SolidEdge.
-- **Guia:** [GUIA_INSTALACAO_AGENT.md](file:///c:/Users/adm/Desktop/MetalFisa%20Anty/GUIA_INSTALACAO_AGENT.md)
-
-## 📚 Documentação e Guias Rápidos
-
-- [GUIA_RAPIDO_DISPONIBILIZACAO.md](file:///c:/Users/adm/Desktop/MetalFisa%20Anty/GUIA_RAPIDO_DISPONIBILIZACAO.md) - Passo a passo para colocar no ar.
-- [GUIA_ACESSO_USUARIOS.md](file:///c:/Users/adm/Desktop/MetalFisa%20Anty/GUIA_ACESSO_USUARIOS.md) - Instruções para os colaboradores.
-- [VERSAO_PRODUCAO.md](file:///c:/Users/adm/Desktop/MetalFisa%20Anty/VERSAO_PRODUCAO.md) - Notas da versão e histórico de alterações.
-
-## 🛠️ Tecnologias
-- **Frontend:** React + Vite + Tailwind CSS
-- **Backend:** Node.js + Express
-- **Banco de Dados:** MySQL (Local/App) + PostgreSQL (Protheus)
+## Estrutura
+| Pasta | Conteúdo |
+|---|---|
+| `client/src/pages` | Páginas por módulo (lazy-loaded) |
+| `server/routes` | Rotas da API por domínio |
+| `server/services` | Regras de negócio, e-mail, WhatsApp, PDFs |
+| `server/migrations` | Migrações de schema |
+| `scripts/` | Utilitários de manutenção |
+| `tests/` | Testes unitários |
+| `_arquivo_morto/` | Arquivos legados (ignorado pelo git e fora do deploy) |
 
 ---
-**MetalFisa Anty - 2026**
+**Lynx EMS - 2026**

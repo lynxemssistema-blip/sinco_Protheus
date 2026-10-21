@@ -607,7 +607,7 @@ export default function LabelPrintModal({ items, onClose }) {
             const rawVal = getFieldValue(item, field.dataKey, field.label);
             const val = formatIfDate(rawVal, field.dataKey);
 
-            // Ajusta rótulo dinamicamente: substitui Metalfisa pelo nome da empresa ativa
+            // Ajusta rótulo dinamicamente: substitui o marcador legado Metalfisa pelo nome da empresa ativa
             let fieldLabel = field.label || '';
             if (/metalfisa/i.test(fieldLabel)) {
                 fieldLabel = fieldLabel.replace(/metalfisa/gi, shortName || 'Empresa');

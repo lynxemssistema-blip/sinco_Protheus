@@ -2,9 +2,17 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const pool = require('../services/mysqlService');
 const propostaAiService = require('../services/propostaAiService');
+
+// Segurança: :id é usado em nomes de arquivo temporários e comandos; aceita apenas caracteres seguros.
+router.param('id', (req, res, next, id) => {
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(id))) {
+        return res.status(400).json({ error: 'Identificador de proposta inválido.' });
+    }
+    next();
+});
 
 // Template inicial da proposta da Irricom (Rev 00)
 const IRRICOM_PROPOSTA_INICIAL = {
@@ -1423,8 +1431,7 @@ router.post('/:id/gerar-pptx', async (req, res) => {
     const tmpJson = path.join(__dirname, '..', '..', `tmp_${id}.json`);
     fs.writeFileSync(tmpJson, JSON.stringify(proposta, null, 2), 'utf-8');
 
-    const cmd = `python "${scriptPath}" "${tmpJson}" "${outPublic}"`;
-    exec(cmd, (error, stdout, stderr) => {
+    execFile('python', [scriptPath, tmpJson, outPublic], (error, stdout, stderr) => {
         // Limpa arquivo temporário
         try { fs.unlinkSync(tmpJson); } catch {}
 
@@ -1492,8 +1499,7 @@ router.post('/:id/gerar-word', async (req, res) => {
     const tmpJson = path.join(__dirname, '..', '..', `tmp_word_${id}.json`);
     fs.writeFileSync(tmpJson, JSON.stringify(proposta, null, 2), 'utf-8');
 
-    const cmd = `python "${scriptPath}" "${tmpJson}" "${outPublic}"`;
-    exec(cmd, (error, stdout, stderr) => {
+    execFile('python', [scriptPath, tmpJson, outPublic], (error, stdout, stderr) => {
         // Limpa arquivo temporário
         try { fs.unlinkSync(tmpJson); } catch {}
 

@@ -367,7 +367,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                 });
                 
                 // 3. DEPOIS: Grava Programações no PCP Batch (com a OP já associada)
-                await api.post('/pedidos/pcp-forecasts/batch', {
+                const batchRes = await api.post('/pedidos/pcp-forecasts/batch', {
                     items: batchItems,
                     data_entrega_pcp: formData.data_entrega_pcp,
                     usuario: user?.nome || user?.name || user?.login || 'Usuário',
@@ -382,8 +382,15 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                 });
 
                 toast.success('Programação Lote adicionada com sucesso!');
+                // Itens fracionados (não alterados) e travados (só a Data PCP mudou)
+                (batchRes.data?.avisos || []).slice(0, 5).forEach(a => toast.warning(`Pedido ${a.pedido} / Item ${a.item}: ${a.motivo}`, { autoClose: 8000 }));
                 setFormData(EMPTY_FORM);
-                if (onSaveSuccess) onSaveSuccess();
+                if (onSaveSuccess) onSaveSuccess(null, {
+                    isBatch: true,
+                    targetItems,
+                    generatedOpsMap,
+                    data_entrega_pcp: formData.data_entrega_pcp
+                });
             } catch (err) {
                 console.error("❌ [ERRO API PROTHEUS/LOTE] Detalhes:", err.response?.data || err);
                 const errMsg = err.response?.data?.details || err.response?.data?.error || err.message || 'Erro ao processar lote.';
@@ -415,6 +422,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
             const qtdFinal = parseFloat(formData.quantidade_pcp);
             let opGerada = null;
             let targetItem = itemNum;
+            let protheusRes = null;
 
             // 1. PRIMEIRO: Cria a OP no ERP com sufixo de lote (se marcado)
             if (canGenerateOp && formData.gerar_op_protheus) {
@@ -432,7 +440,7 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
                 console.log(`🚀 [PROTHEUS SINGLE] Enviando JSON:`, JSON.stringify({ items: protheusItems }, null, 2));
                 
                 try {
-                    const protheusRes = await api.post('/protheus/ordem-producao/incluir', { items: protheusItems });
+                    protheusRes = await api.post('/protheus/ordem-producao/incluir', { items: protheusItems });
                     const genOp = protheusRes.data?.generated_ops?.[0];
                     if (genOp?.op_num) {
                         opGerada = genOp.op_num;
@@ -476,7 +484,18 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
             toast.success('Programação adicionada com sucesso!');
             setFormData(prev => ({ ...EMPTY_FORM, isBatch: prev.isBatch, data_entrega_pcp: prev.data_entrega_pcp }));
             const newProgs = await loadProgramacoes();
-            if (onSaveSuccess) onSaveSuccess(newProgs);
+            if (opGerada && item) {
+                item.op_num = opGerada;
+                item.op_num_completa = opGerada;
+                item.op_protheus = opGerada;
+            }
+            if (onSaveSuccess) onSaveSuccess(newProgs, {
+                opGerada,
+                targetItem,
+                generatedOps: protheusRes?.data?.generated_ops,
+                pedido,
+                itemNum
+            });
         } catch (err) {
             const errData = err.response?.data;
             const errMsg = errData?.details || errData?.error || err.message || 'Erro ao salvar.';
@@ -579,7 +598,17 @@ const PCPForecastModal = ({ isOpen, onClose, item, onSaveSuccess, canEdit = true
 
             cancelEdit();
             const newProgs = await loadProgramacoes();
-            if (onSaveSuccess) onSaveSuccess(newProgs);
+            if (opAtualizada && item) {
+                item.op_num = opAtualizada;
+                item.op_num_completa = opAtualizada;
+                item.op_protheus = opAtualizada;
+            }
+            if (onSaveSuccess) onSaveSuccess(newProgs, {
+                opGerada: opAtualizada,
+                targetItem: item?.item || itemNum,
+                pedido: item?.pedido || pedido,
+                itemNum: item?.item || itemNum
+            });
         } catch (err) {
             toast.error(err.response?.data?.error || err.message || 'Erro ao atualizar.');
         } finally {

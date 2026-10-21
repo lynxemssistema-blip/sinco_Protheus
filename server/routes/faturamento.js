@@ -1035,8 +1035,8 @@ router.post('/enviar-email-lote', async (req, res) => {
         if (escapedIds.length === 0) return res.status(400).json({ error: 'IDs inválidos.' });
 
         // Busca dados
-        const [sols] = await mysqlPool.query(`SELECT * FROM app_faturamento_solicitacoes WHERE id IN (${escapedIds.join(',')})`);
-        const [items] = await mysqlPool.query(`SELECT * FROM app_faturamento_solicitacao_itens WHERE solicitacao_id IN (${escapedIds.join(',')})`);
+        const [sols] = await mysqlPool.query(`SELECT * FROM app_faturamento_solicitacoes WHERE id IN (?)`, [escapedIds]);
+        const [items] = await mysqlPool.query(`SELECT * FROM app_faturamento_solicitacao_itens WHERE solicitacao_id IN (?)`, [escapedIds]);
 
         let conteudosHtml = '';
         for (const sol of sols) {

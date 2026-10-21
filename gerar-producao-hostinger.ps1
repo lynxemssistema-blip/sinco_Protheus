@@ -44,30 +44,18 @@ $clientDist = Join-Path $clientDir "dist"
 robocopy "$clientDist" (Join-Path $dest "client\dist") /E /NJH /NJS /NDL /NFL /NC /NS
 robocopy "$clientDist" (Join-Path $dest "public") /E /NJH /NJS /NDL /NFL /NC /NS
 
-# Copia index.html, .htaccess e assets para a raiz de producao-hostinger (para LiteSpeed servir direto)
-Copy-Item (Join-Path $clientDist "index.html") -Destination $dest -Force
-if (Test-Path (Join-Path $clientDist ".htaccess")) {
-    Copy-Item (Join-Path $clientDist ".htaccess") -Destination $dest -Force
-}
-if (Test-Path (Join-Path $clientDist "favicon.png")) {
-    Copy-Item (Join-Path $clientDist "favicon.png") -Destination $dest -Force
-}
-if (Test-Path (Join-Path $clientDist "app-logo.png")) {
-    Copy-Item (Join-Path $clientDist "app-logo.png") -Destination $dest -Force
-}
-if (Test-Path (Join-Path $clientDist "assets")) {
-    robocopy (Join-Path $clientDist "assets") (Join-Path $dest "assets") /E /NJH /NJS /NDL /NFL /NC /NS
-}
+# Copia TODOS os arquivos e pastas estáticas de client/dist para a raiz de producao-hostinger (para LiteSpeed servir direto)
+robocopy "$clientDist" "$dest" /E /XF *.zip *.log /NJH /NJS /NDL /NFL /NC /NS
 
 # 4. Copiar Backend limpo (sem logs, sem node_modules, sem chaves privadas)
 Write-Host "`n[4/6] Copiando backend e dependências limpas..." -ForegroundColor Yellow
 $serverDest = Join-Path $dest "server"
 
 # Arquivos raiz do server (SEM copiar .env de desenvolvimento)
-robocopy "$serverDir" "$serverDest" index.js package.json package-lock.json /IS /IT /NJH /NJS /NDL /NFL /NC /NS
+robocopy "$serverDir" "$serverDest" index.js db.js package.json package-lock.json /IS /IT /NJH /NJS /NDL /NFL /NC /NS
 
-# Subpastas de código do backend
-$codeDirs = @("routes", "middlewares", "services", "utils", "config", "sql", "public", "scripts", "templates")
+# Subpastas de código do backend (incluindo util, utils, migrations, etc.)
+$codeDirs = @("routes", "middlewares", "services", "util", "utils", "config", "sql", "public", "scripts", "templates", "migrations")
 foreach ($d in $codeDirs) {
     $srcSub = Join-Path $serverDir $d
     $destSub = Join-Path $serverDest $d
@@ -76,7 +64,7 @@ foreach ($d in $codeDirs) {
     }
 }
 
-# Gerar .env.example seguro para produção na Hostinger
+# Gerar .env.example e .env de produção seguro para a Hostinger
 $envExample = @"
 # =====================================================================
 # CONFIGURACAO DE PRODUCAO HOSTINGER (https://lynxems.com.br)
@@ -94,12 +82,23 @@ MYSQL_DB=u494795077_SINCO
 # Autenticação e Segurança
 JWT_SECRET=lynxems_security_key_2026
 
+# Google Gemini API
+GEMINI_API_KEY=AIzaSyCbPG50oJfcQCSHqLacuZIjh_iPN_AEXGU
+
 # Integrações (WhatsApp / Evolution)
 EVOLUTION_API_URL=https://evo.lynxems.com.br
 EVOLUTION_API_KEY=883217421C2C-4849-B02B-438A6C49200F
 EVOLUTION_INSTANCE=LynxEMS
 
-# Desativação de bancos legados on-prem Metalfisa
+# SMTP Oficial Hostinger (SINCO / Lynx ERP)
+SMTP_HOST=smtp.hostinger.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=suporte@lynxems.com.br
+SMTP_PASS=10207597Rdv*
+SMTP_FROM="SINCO / Lynx" <suporte@lynxems.com.br>
+
+# Desativação de bancos legados on-prem Lynx EMS
 ENABLE_PROTHEUS=false
 ENABLE_FIREBIRD=false
 "@
@@ -157,6 +156,13 @@ module.exports = {
 };
 "@
 Set-Content -Path (Join-Path $dest "ecosystem.config.js") -Value $ecosystem -Encoding UTF8
+
+# Sinalizador para Phusion Passenger recarregar automaticamente o Node.js na extração
+$tmpDir = Join-Path $dest "tmp"
+if (-not (Test-Path $tmpDir)) {
+    New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+}
+Set-Content -Path (Join-Path $tmpDir "restart.txt") -Value ((Get-Date).ToString("yyyy-MM-dd HH:mm:ss")) -Encoding UTF8
 
 # Manual de Publicação Seguro
 $instrucoes = @"

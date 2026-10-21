@@ -794,7 +794,7 @@ router.post('/urna/:gestaoId/votar', async (req, res) => {
         let emailEnviado = false;
         const dataFormatada = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
-        const msgTexto = `🛡️ *COMPROVANTE DE VOTAÇÃO - CIPA METALFISA*\n\n` +
+        const msgTexto = `🛡️ *COMPROVANTE DE VOTAÇÃO - CIPA LYNX EMS*\n\n` +
             `📋 *Eleição:* ${gCheck[0].descricao || 'CIPA'}\n` +
             `👤 *Eleitor:* ${voter.NomeCompleto || 'Colaborador'}${voter.Matricula ? ` (Matrícula: ${voter.Matricula})` : ''}\n` +
             `🔐 *Token de Auditoria (SHA-256):*\n\`${hashComprovante}\`\n\n` +
@@ -1029,7 +1029,7 @@ router.post('/urna/:gestaoId/apurar', async (req, res) => {
         `, [totalAptos, totalVotaram, gestaoId]);
 
         // 7. Gerar automaticamente registro da Ata de Eleição e Apuração
-        const ataTexto = `Aos ${new Date().toLocaleDateString('pt-BR')}, nas dependências da METALFISA INDUSTRIAL LTDA, realizou-se a eleição dos representantes dos empregados na Comissão Interna de Prevenção de Acidentes e Assédio (CIPA) - Gestão ${gestao.ano_inicio}/${gestao.ano_fim}, sob a supervisão da Comissão Eleitoral.\n\n` +
+        const ataTexto = `Aos ${new Date().toLocaleDateString('pt-BR')}, nas dependências da LYNX EMS, realizou-se a eleição dos representantes dos empregados na Comissão Interna de Prevenção de Acidentes e Assédio (CIPA) - Gestão ${gestao.ano_inicio}/${gestao.ano_fim}, sob a supervisão da Comissão Eleitoral.\n\n` +
             `Total de Colaboradores Aptos: ${totalAptos}\n` +
             `Total de Votos Coletados: ${totalVotaram} (Quórum de ${((totalVotaram/totalAptos)*100).toFixed(1)}% - Quórum Legal NR-05 Atingido)\n` +
             `Votos Brancos: ${totalBrancos} | Votos Nulos: ${totalNulos}\n\n` +
@@ -1160,7 +1160,7 @@ router.post('/gestoes/:id/dar-posse', async (req, res) => {
 
         // Gerar Ata de Posse
         const [gestao] = await mysqlPool.query(`SELECT * FROM cipa_gestoes WHERE id = ?`, [id]);
-        const ataTexto = `Aos ${new Date(data_posse || Date.now()).toLocaleDateString('pt-BR')}, nas dependências da METALFISA INDUSTRIAL LTDA, deu-se posse aos membros eleitos pelos empregados e designados pelo empregador para compor a CIPA - Gestão ${gestao[0].ano_inicio}/${gestao[0].ano_fim}.\n\n` +
+        const ataTexto = `Aos ${new Date(data_posse || Date.now()).toLocaleDateString('pt-BR')}, nas dependências da LYNX EMS, deu-se posse aos membros eleitos pelos empregados e designados pelo empregador para compor a CIPA - Gestão ${gestao[0].ano_inicio}/${gestao[0].ano_fim}.\n\n` +
             `Os membros empossados assumem o compromisso legal de zelar pela integridade física e saúde de todos os trabalhadores, atuando com prioridade no combate a todas as formas de assédio no ambiente laboral (Lei 14.457/2022).`;
 
         await mysqlPool.query(`
@@ -1174,7 +1174,7 @@ router.post('/gestoes/:id/dar-posse', async (req, res) => {
         `, [
             id,
             data_posse || null,
-            local_posse || 'Auditório / Sala de Reuniões Metalfisa',
+            local_posse || 'Auditório / Sala de Reuniões Lynx EMS',
             ataTexto,
             req.user?.NomeCompleto || 'Diretoria & RH'
         ]);
@@ -1258,7 +1258,7 @@ router.post('/gestoes/:id/reunioes', uploadCipaAta.single('arquivo_anexo'), asyn
             data_reuniao,
             horario_inicio || '09:00',
             horario_fim || '10:00',
-            local || 'Sala de Reuniões Principal - Metalfisa',
+            local || 'Sala de Reuniões Principal - Lynx EMS',
             pauta || (req.file ? `Ata Anexada: ${arquivoNomeOriginal}` : 'Reunião CIPA'),
             conteudo_ata || (req.file ? `Documento digitalizado/anexado: ${arquivoNomeOriginal}` : 'Reunião mensal da CIPA para alinhamento de rotinas de segurança e combate ao assédio.'),
             req.user?.NomeCompleto || req.user?.login || 'Secretário CIPA',
@@ -1429,7 +1429,7 @@ router.get('/auditar-comprovante/:hash', async (req, res) => {
         if (!rows.length) {
             return res.status(404).json({
                 valido: false,
-                mensagem: 'Comprovante não localizado ou inválido no ecossistema eleitoral da Metalfisa.'
+                mensagem: 'Comprovante não localizado ou inválido no ecossistema eleitoral da Lynx EMS.'
             });
         }
 
@@ -1446,7 +1446,7 @@ router.get('/auditar-comprovante/:hash', async (req, res) => {
             canal: v.dispositivo,
             eleitor_auditado: nomeMascarado,
             matricula_auditada: v.Matricula ? `***${String(v.Matricula).slice(-3)}` : 'Confirmada',
-            mensagem: 'Comprovante oficial emitido e auditado com sucesso pela CIPA da Metalfisa.'
+            mensagem: 'Comprovante oficial emitido e auditado com sucesso pela CIPA da Lynx EMS.'
         });
     } catch (err) {
         console.error('[CIPA Validação Hash] Erro:', err);

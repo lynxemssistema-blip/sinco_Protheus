@@ -422,7 +422,7 @@ router.post('/bulk-explosion', async (req, res) => {
             const ph = prodCodes.map((_, i) => `$${i + 2}`).join(',');
             const rotRes = await db.query(
                 `SELECT DISTINCT TRIM(g2_produto) AS produto
-                 FROM public.sg2010
+                 FROM sg2010
                  WHERE TRIM(g2_recurso) = $1
                    AND TRIM(g2_produto) IN (${ph})
                    AND COALESCE(d_e_l_e_t_,'') IN ('', ' ')`,
@@ -432,22 +432,30 @@ router.post('/bulk-explosion', async (req, res) => {
             console.log(`[BULK EXPLOSION] Produtos com recurso ${recurso_solda}: ${rotRes.rows.length} → ${[...soldaProdutosSet].join(', ')}`);
         }
 
-        // Transforma os itens em JSON string para passar pro Postgres jsonb_to_recordset
-        const itemsJson = JSON.stringify(items);
+        // Constrói CTE de itens de entrada compatível com MySQL/MariaDB
+        const itemSelects = items.map(() => 'SELECT ? AS produto, CAST(? AS DECIMAL(15,4)) AS qtd_total').join(' UNION ALL ');
+        const itemParams = [];
+        items.forEach(it => {
+            itemParams.push(String(it.produto || '').trim().toUpperCase(), Number(it.qtd_total) || 0);
+        });
 
-        // Query Recursiva corrigida: saldo SB2 via CTE separada (evita subquery correlacionada no GROUP BY)
+        // Query Recursiva compatível com MariaDB/MySQL: saldo SB2 via CTE separada
         const query = `
-            WITH RECURSIVE estrutura AS (
+            WITH RECURSIVE
+            item_inputs AS (
+                ${itemSelects}
+            ),
+            estrutura AS (
                 -- Nivel 0: raizes passadas no payload
                 SELECT
                     0 AS nivel,
                     TRIM(g1.g1_cod)  AS produto_pai,
                     TRIM(g1.g1_comp) AS componente,
                     TRIM(i.produto)  AS produto_raiz,
-                    g1.g1_quant::numeric AS qtd_unitaria,
-                    g1.g1_quant::numeric * i.qtd_total::numeric AS qtd_total
+                    CAST(g1.g1_quant AS DECIMAL(15,4)) AS qtd_unitaria,
+                    CAST(g1.g1_quant * i.qtd_total AS DECIMAL(15,4)) AS qtd_total
                 FROM sg1010 g1
-                JOIN jsonb_to_recordset($1::jsonb) AS i(produto text, qtd_total numeric)
+                JOIN item_inputs i
                   ON TRIM(g1.g1_cod) = TRIM(i.produto)
                 WHERE COALESCE(g1.d_e_l_e_t_, '') = ''
 
@@ -459,8 +467,8 @@ router.post('/bulk-explosion', async (req, res) => {
                     TRIM(e.componente),
                     TRIM(g1.g1_comp),
                     e.produto_raiz,
-                    g1.g1_quant::numeric,
-                    e.qtd_total * g1.g1_quant::numeric
+                    CAST(g1.g1_quant AS DECIMAL(15,4)),
+                    CAST(e.qtd_total * g1.g1_quant AS DECIMAL(15,4))
                 FROM estrutura e
                 JOIN sg1010 g1 ON TRIM(g1.g1_cod) = TRIM(e.componente)
                 WHERE COALESCE(g1.d_e_l_e_t_, '') = ''
@@ -471,8 +479,7 @@ router.post('/bulk-explosion', async (req, res) => {
                 SELECT
                     TRIM(e.componente)  AS codigo,
                     SUM(e.qtd_total)    AS qtd_total_necessaria,
-                    -- Mantém array dos produtos raiz que consomem este componente
-                    array_agg(DISTINCT TRIM(e.produto_raiz)) AS produtos_raiz
+                    GROUP_CONCAT(DISTINCT TRIM(e.produto_raiz) SEPARATOR ',') AS produtos_raiz
                 FROM estrutura e
                 JOIN sb1010 b1
                     ON TRIM(b1.b1_cod) = TRIM(e.componente)
@@ -518,14 +525,16 @@ router.post('/bulk-explosion', async (req, res) => {
             ORDER BY n.codigo ASC
         `;
 
-        const pgRes = await db.query(query, [itemsJson]);
+        const pgRes = await db.query(query, itemParams);
 
         // Necessidade liquida calculada APENAS com base no Almox 01
         // tag tem_solda = true se ALGUM produto raiz que consome este MP passa pelo recurso de solda
         const soldaProdutosArr = [...soldaProdutosSet];
         const resultados = pgRes.rows.map(mat => {
             const necessidade = Number(mat.qtd_total_necessaria) - Number(mat.saldo_almox01);
-            const produtosRaiz = Array.isArray(mat.produtos_raiz) ? mat.produtos_raiz : [];
+            const produtosRaiz = typeof mat.produtos_raiz === 'string'
+                ? mat.produtos_raiz.split(',').map(s => s.trim()).filter(Boolean)
+                : (Array.isArray(mat.produtos_raiz) ? mat.produtos_raiz : []);
             const temSolda = produtosRaiz.some(p => soldaProdutosSet.has((p || '').trim().toUpperCase()));
             return {
                 ...mat,

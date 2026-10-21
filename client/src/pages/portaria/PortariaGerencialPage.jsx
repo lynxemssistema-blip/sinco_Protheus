@@ -248,19 +248,19 @@ export default function PortariaGerencialPage() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col p-4 sm:p-6 lg:p-8">
+        <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-col p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl w-full mx-auto space-y-6">
                 {/* 1. CABEÇALHO DO PAINEL GERENCIAL */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
                     <div className="flex items-center gap-3.5">
-                        <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                        <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600">
                             <Shield className="w-6 h-6" />
                         </div>
                         <div>
-                            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                            <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
                                 Gestão de Portaria & Segurança
                             </h1>
-                            <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+                            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
                                 Indicadores de pátio, equipe de guarita e auditoria de acessos
                             </p>
                         </div>
@@ -268,7 +268,7 @@ export default function PortariaGerencialPage() {
 
                     <div className="flex flex-wrap items-center gap-2">
                         {/* Abas de Navegação */}
-                        <div className="flex flex-wrap items-center gap-1.5 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
+                        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
                             {[
                                 { id: 'dashboard', label: 'Dashboard & Pátio', icon: Shield },
                                 { id: 'porteiros', label: 'Equipe & Turnos', icon: Users },
@@ -284,8 +284,8 @@ export default function PortariaGerencialPage() {
                                         onClick={() => setActiveTab(tab.id)}
                                         className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition ${
                                             isActive
-                                                ? 'bg-blue-600 text-white shadow-sm'
-                                                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                                                ? 'bg-white text-blue-700 shadow-xs font-bold'
+                                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                                         }`}
                                     >
                                         <Icon className="w-4 h-4" />
@@ -299,10 +299,10 @@ export default function PortariaGerencialPage() {
                         <button
                             type="button"
                             onClick={toggleHelp}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-slate-950 border border-slate-800 hover:border-amber-500/50 hover:bg-amber-500/10 rounded-xl text-slate-300 hover:text-amber-400 active:scale-95 transition text-xs font-semibold"
+                            className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-200 hover:border-amber-300 hover:bg-amber-50 rounded-xl text-slate-700 hover:text-amber-700 active:scale-95 transition text-xs font-semibold shadow-xs"
                             title="Ajuda e Manual da Gestão de Portaria"
                         >
-                            <HelpCircle className="w-4 h-4 text-amber-400" />
+                            <HelpCircle className="w-4 h-4 text-amber-500" />
                             <span className="hidden sm:inline">Ajuda</span>
                         </button>
                     </div>
@@ -314,44 +314,44 @@ export default function PortariaGerencialPage() {
                     <div className="space-y-6">
                         {/* KPIs Principais */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
-                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ocupação do Pátio</span>
-                                <div className="text-3xl font-black text-white mt-1">
+                            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+                                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ocupação do Pátio</span>
+                                <div className="text-3xl font-black text-slate-900 mt-1">
                                     {dashboardData.kpis.total_no_patio}
                                 </div>
-                                <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                                <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
                                     <span>{dashboardData.kpis.total_veiculos} veículos</span> • <span>{dashboardData.kpis.total_cargas} cargas</span>
                                 </div>
                             </div>
 
-                            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
-                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Movimentação Hoje</span>
-                                <div className="text-3xl font-black text-emerald-400 mt-1">
+                            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+                                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Movimentação Hoje</span>
+                                <div className="text-3xl font-black text-emerald-600 mt-1">
                                     +{dashboardData.kpis.entradasHoje || dashboardData.kpis.entradas_hoje || 0}
                                 </div>
-                                <div className="text-[11px] text-slate-400 mt-1">
+                                <div className="text-[11px] text-slate-500 mt-1">
                                     {dashboardData.kpis.saidasHoje || dashboardData.kpis.saidas_hoje || 0} saídas registradas
                                 </div>
                             </div>
 
-                            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
-                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tempo Médio Hoje</span>
-                                <div className="text-3xl font-black text-blue-400 mt-1">
+                            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+                                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tempo Médio Hoje</span>
+                                <div className="text-3xl font-black text-blue-600 mt-1">
                                     {dashboardData.kpis.tempo_medio_minutos_hoje || 0} min
                                 </div>
-                                <div className="text-[11px] text-slate-400 mt-1">
+                                <div className="text-[11px] text-slate-500 mt-1">
                                     Permanência média por veículo
                                 </div>
                             </div>
 
-                            <div className={`rounded-2xl p-4 border transition shadow-sm ${
+                            <div className={`rounded-2xl p-4 border transition shadow-xs ${
                                 dashboardData.kpis.total_retidos_criticos > 0
-                                    ? 'bg-rose-950/20 border-rose-500/40 text-rose-300'
-                                    : 'bg-slate-900 border-slate-800 text-slate-400'
+                                    ? 'bg-rose-50/70 border-rose-200 text-rose-800'
+                                    : 'bg-white border-slate-200 text-slate-500'
                             }`}>
                                 <span className="text-xs font-semibold uppercase tracking-wider">Retidos Críticos (&gt; 4h)</span>
                                 <div className={`text-3xl font-black mt-1 ${
-                                    dashboardData.kpis.total_retidos_criticos > 0 ? 'text-rose-400 animate-pulse' : 'text-slate-100'
+                                    dashboardData.kpis.total_retidos_criticos > 0 ? 'text-rose-600 animate-pulse' : 'text-slate-900'
                                 }`}>
                                     {dashboardData.kpis.total_retidos_criticos}
                                 </div>
@@ -362,15 +362,15 @@ export default function PortariaGerencialPage() {
                         </div>
 
                         {/* Veículos Retidos Críticos em Destaque */}
-                        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
-                            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between bg-white">
                                 <div className="flex items-center gap-2.5">
-                                    <AlertTriangle className="w-5 h-5 text-rose-400" />
+                                    <AlertTriangle className="w-5 h-5 text-rose-600" />
                                     <div>
-                                        <h2 className="text-sm sm:text-base font-bold text-white">
+                                        <h2 className="text-sm sm:text-base font-bold text-slate-900">
                                             Atenção: Permanências Críticas e Pernoites ({dashboardData.veiculosCriticos?.length || 0})
                                         </h2>
-                                        <p className="text-xs text-slate-400">Veículos ou pessoas com mais de 4 horas dentro da empresa</p>
+                                        <p className="text-xs text-slate-500">Veículos ou pessoas com mais de 4 horas dentro da empresa</p>
                                     </div>
                                 </div>
                             </div>
@@ -380,9 +380,9 @@ export default function PortariaGerencialPage() {
                                     ✅ Nenhuma ocorrência crítica de permanência excedida no momento.
                                 </div>
                             ) : (
-                                <div className="divide-y divide-slate-800/80 overflow-x-auto">
+                                <div className="divide-y divide-slate-200 overflow-x-auto">
                                     <table className="w-full text-left text-xs">
-                                        <thead className="bg-slate-950/60 text-[11px] font-semibold text-slate-400 uppercase">
+                                        <thead className="bg-slate-50 text-[11px] font-semibold text-slate-600 uppercase border-b border-slate-200">
                                             <tr>
                                                 <th className="py-2.5 px-4">Visitante</th>
                                                 <th className="py-2.5 px-4">Placa / Veículo</th>
@@ -391,22 +391,24 @@ export default function PortariaGerencialPage() {
                                                 <th className="py-2.5 px-4">Permanência</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-800/60">
+                                        <tbody className="divide-y divide-slate-100">
                                             {dashboardData.veiculosCriticos?.map((item) => (
-                                                <tr key={item.id} className="hover:bg-slate-800/30">
-                                                    <td className="py-2.5 px-4 font-semibold text-white">
+                                                <tr key={item.id} className="hover:bg-slate-50">
+                                                    <td className="py-2.5 px-4 font-semibold text-slate-900">
                                                         {item.nome_pessoa}
                                                     </td>
-                                                    <td className="py-2.5 px-4 font-mono font-bold text-amber-300">
-                                                        {item.placa_veiculo || 'A pé'}
+                                                    <td className="py-2.5 px-4">
+                                                        <span className="font-mono font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-xs">
+                                                            {item.placa_veiculo || 'A pé'}
+                                                        </span>
                                                     </td>
-                                                    <td className="py-2.5 px-4 text-slate-300">
+                                                    <td className="py-2.5 px-4 text-slate-700">
                                                         {item.setor_destino || '-'} ({item.empresa_origem || 'Próprio'})
                                                     </td>
-                                                    <td className="py-2.5 px-4 text-slate-400 font-mono">
+                                                    <td className="py-2.5 px-4 text-slate-600 font-mono">
                                                         {new Date(item.data_entrada).toLocaleString('pt-BR')}
                                                     </td>
-                                                    <td className="py-2.5 px-4 font-bold text-rose-400">
+                                                    <td className="py-2.5 px-4 font-bold text-rose-600">
                                                         {Math.floor(item.permanencia_min / 60)}h {item.permanencia_min % 60}m
                                                     </td>
                                                 </tr>
@@ -424,13 +426,13 @@ export default function PortariaGerencialPage() {
                     <div className="space-y-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <h2 className="text-base font-bold text-white">Quadro de Porteiros e Vigilantes</h2>
-                                <p className="text-xs text-slate-400">Cadastro de colaboradores de guarita, escalas e contatos de emergência</p>
+                                <h2 className="text-base font-bold text-slate-900">Quadro de Porteiros e Vigilantes</h2>
+                                <p className="text-xs text-slate-500">Cadastro de colaboradores de guarita, escalas e contatos de emergência</p>
                             </div>
                             <button
                                 type="button"
                                 onClick={handleNewPorteiro}
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition"
                             >
                                 <Plus className="w-4 h-4" />
                                 Cadastrar Porteiro
@@ -442,7 +444,7 @@ export default function PortariaGerencialPage() {
                             {porteiros.map((p) => (
                                 <div
                                     key={p.id}
-                                    className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between shadow-md hover:border-slate-700 transition"
+                                    className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between shadow-xs hover:border-slate-300 transition"
                                 >
                                     <div>
                                         <div className="flex items-start justify-between gap-3">
@@ -451,27 +453,27 @@ export default function PortariaGerencialPage() {
                                                     <img
                                                         src={p.foto_url}
                                                         alt={p.nome}
-                                                        className="w-14 h-14 rounded-2xl object-cover border-2 border-slate-700 shadow"
+                                                        className="w-14 h-14 rounded-2xl object-cover border-2 border-slate-200 shadow-xs"
                                                     />
                                                 ) : (
-                                                    <div className="w-14 h-14 rounded-2xl bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-slate-400 shadow">
+                                                    <div className="w-14 h-14 rounded-2xl bg-slate-100 border-2 border-slate-200 flex items-center justify-center text-slate-500 shadow-xs">
                                                         <Users className="w-7 h-7" />
                                                     </div>
                                                 )}
                                                 <div>
-                                                    <h3 className="font-bold text-base text-white leading-tight">
+                                                    <h3 className="font-bold text-base text-slate-900 leading-tight">
                                                         {p.nome}
                                                     </h3>
                                                     {p.apelido && (
-                                                        <span className="text-xs text-slate-400">
+                                                        <span className="text-xs text-slate-500">
                                                             "{p.apelido}"
                                                         </span>
                                                     )}
                                                     <div className="mt-1">
                                                         <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
                                                             p.status === 'ATIVO'
-                                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                                                : 'bg-slate-800 text-slate-400 border-slate-700'
+                                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                : 'bg-slate-100 text-slate-600 border-slate-200'
                                                         }`}>
                                                             {p.status}
                                                         </span>
@@ -482,26 +484,26 @@ export default function PortariaGerencialPage() {
                                             <button
                                                 type="button"
                                                 onClick={() => handleEditPorteiro(p)}
-                                                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+                                                className="p-2 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
                                             >
                                                 <Edit2 className="w-4 h-4" />
                                             </button>
                                         </div>
 
-                                        <div className="mt-4 pt-4 border-t border-slate-800/80 space-y-2 text-xs">
-                                            <div className="flex items-center justify-between text-slate-300">
+                                        <div className="mt-4 pt-4 border-t border-slate-100 space-y-2 text-xs">
+                                            <div className="flex items-center justify-between text-slate-600">
                                                 <span className="text-slate-500">Turno de Trabalho:</span>
-                                                <span className="font-semibold text-slate-200">{p.nome_turno || 'Não definido'}</span>
+                                                <span className="font-semibold text-slate-800">{p.nome_turno || 'Não definido'}</span>
                                             </div>
 
                                             {p.telefone && (
-                                                <div className="flex items-center justify-between text-slate-300">
+                                                <div className="flex items-center justify-between text-slate-600">
                                                     <span className="text-slate-500">Telefone / WhatsApp:</span>
                                                     <a
                                                         href={`https://wa.me/55${p.telefone.replace(/\D/g, '')}`}
                                                         target="_blank"
                                                         rel="noreferrer"
-                                                        className="font-medium text-emerald-400 hover:underline flex items-center gap-1"
+                                                        className="font-medium text-emerald-700 hover:underline flex items-center gap-1"
                                                     >
                                                         <Phone className="w-3 h-3" />
                                                         {p.telefone}
@@ -510,9 +512,9 @@ export default function PortariaGerencialPage() {
                                             )}
 
                                             {p.telefone_emergencia && (
-                                                <div className="flex items-center justify-between text-slate-300">
+                                                <div className="flex items-center justify-between text-slate-600">
                                                     <span className="text-slate-500">Contato Emergência:</span>
-                                                    <span className="font-medium text-rose-300">
+                                                    <span className="font-medium text-rose-700">
                                                         {p.contato_emergencia_nome ? `${p.contato_emergencia_nome} • ` : ''}
                                                         {p.telefone_emergencia}
                                                     </span>
@@ -522,7 +524,7 @@ export default function PortariaGerencialPage() {
                                     </div>
 
                                     {p.observacoes && (
-                                        <div className="mt-3 pt-3 border-t border-slate-800/60 text-[11px] text-slate-400 italic">
+                                        <div className="mt-3 pt-3 border-t border-slate-100 text-[11px] text-slate-500 italic">
                                             "{p.observacoes}"
                                         </div>
                                     )}
@@ -531,13 +533,13 @@ export default function PortariaGerencialPage() {
                         </div>
 
                         {/* Tabela de Turnos Cadastrados */}
-                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-3">
-                            <h3 className="font-bold text-sm text-white">Escalas e Turnos da Portaria</h3>
+                        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
+                            <h3 className="font-bold text-sm text-slate-900">Escalas e Turnos da Portaria</h3>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 {turnos.map((t) => (
-                                    <div key={t.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl">
-                                        <div className="font-bold text-xs text-white">{t.nome}</div>
-                                        <div className="text-[11px] text-emerald-400 font-mono mt-0.5">
+                                    <div key={t.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                                        <div className="font-bold text-xs text-slate-900">{t.nome}</div>
+                                        <div className="text-[11px] text-emerald-700 font-mono mt-0.5">
                                             {t.hora_inicio.slice(0, 5)} até {t.hora_fim.slice(0, 5)}
                                         </div>
                                         {t.descricao && (
@@ -555,13 +557,13 @@ export default function PortariaGerencialPage() {
                     <div className="space-y-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <h2 className="text-base font-bold text-white">Livro Digital de Ocorrências da Portaria</h2>
-                                <p className="text-xs text-slate-400">Rastreabilidade formal de trocas de plantão e incidentes reportados</p>
+                                <h2 className="text-base font-bold text-slate-900">Livro Digital de Ocorrências da Portaria</h2>
+                                <p className="text-xs text-slate-500">Rastreabilidade formal de trocas de plantão e incidentes reportados</p>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setIsOcorrenciaModalOpen(true)}
-                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow transition"
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition"
                             >
                                 <Plus className="w-4 h-4" />
                                 Registrar Passagem de Turno
@@ -570,41 +572,41 @@ export default function PortariaGerencialPage() {
 
                         <div className="space-y-4">
                             {ocorrencias.length === 0 ? (
-                                <div className="p-12 text-center text-slate-500 text-xs bg-slate-900 border border-slate-800 rounded-2xl">
+                                <div className="p-12 text-center text-slate-500 text-xs bg-white border border-slate-200 rounded-2xl">
                                     Nenhuma passagem de turno registrada no livro até o momento.
                                 </div>
                             ) : (
                                 ocorrencias.map((item) => (
                                     <div
                                         key={item.id}
-                                        className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3 shadow-md"
+                                        className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3 shadow-xs"
                                     >
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                                             <div className="flex items-center gap-3">
-                                                <div className="p-2 bg-blue-500/10 text-blue-400 rounded-xl">
+                                                <div className="p-2 bg-blue-50 text-blue-600 rounded-xl border border-blue-200">
                                                     <ArrowRightLeft className="w-5 h-5" />
                                                 </div>
                                                 <div>
-                                                    <div className="font-bold text-sm text-white">
+                                                    <div className="font-bold text-sm text-slate-900">
                                                         Passagem de Turno: {item.nome_turno || 'Plantão'}
                                                     </div>
-                                                    <div className="text-xs text-slate-400">
-                                                        Saiu: <span className="text-slate-200 font-semibold">{item.nome_porteiro_saida || 'Não informado'}</span> • 
-                                                        Assumiu: <span className="text-slate-200 font-semibold">{item.nome_porteiro_entrada || 'Não informado'}</span>
+                                                    <div className="text-xs text-slate-500">
+                                                        Saiu: <span className="text-slate-800 font-semibold">{item.nome_porteiro_saida || 'Não informado'}</span> • 
+                                                        Assumiu: <span className="text-slate-800 font-semibold">{item.nome_porteiro_entrada || 'Não informado'}</span>
                                                     </div>
                                                 </div>
                                             </div>
                                             <div className="text-right">
-                                                <div className="text-xs font-mono font-bold text-slate-300">
+                                                <div className="text-xs font-mono font-bold text-slate-700">
                                                     {new Date(item.data_registro).toLocaleString('pt-BR')}
                                                 </div>
-                                                <div className="text-[11px] text-amber-400">
+                                                <div className="text-[11px] text-amber-700 font-medium">
                                                     {item.total_veiculos_patio} veículos no pátio no momento
                                                 </div>
                                             </div>
                                         </div>
 
-                                        <div className="text-xs text-slate-300 whitespace-pre-line leading-relaxed bg-slate-950/60 p-3.5 rounded-xl border border-slate-800/80">
+                                        <div className="text-xs text-slate-800 whitespace-pre-line leading-relaxed bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                                             {item.descricao_ocorrencias}
                                         </div>
                                     </div>
@@ -618,15 +620,15 @@ export default function PortariaGerencialPage() {
                 {activeTab === 'historico' && (
                     <div className="space-y-6">
                         {/* Filtros */}
-                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg space-y-4">
+                        <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <h2 className="text-sm sm:text-base font-bold text-white">
+                                <h2 className="text-sm sm:text-base font-bold text-slate-900">
                                     Filtros de Auditoria e Relatório
                                 </h2>
                                 <button
                                     type="button"
                                     onClick={handleExportExcel}
-                                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow transition"
+                                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition"
                                 >
                                     <Download className="w-4 h-4" />
                                     Exportar para Excel (.xlsx)
@@ -635,29 +637,29 @@ export default function PortariaGerencialPage() {
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
                                 <div>
-                                    <label className="block text-slate-400 mb-1">Data Início</label>
+                                    <label className="block text-slate-600 font-medium mb-1">Data Início</label>
                                     <input
                                         type="date"
                                         value={filtros.dataInicio}
                                         onChange={(e) => setFiltros({ ...filtros, dataInicio: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-slate-400 mb-1">Data Fim</label>
+                                    <label className="block text-slate-600 font-medium mb-1">Data Fim</label>
                                     <input
                                         type="date"
                                         value={filtros.dataFim}
                                         onChange={(e) => setFiltros({ ...filtros, dataFim: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-slate-400 mb-1">Tipo de Acesso</label>
+                                    <label className="block text-slate-600 font-medium mb-1">Tipo de Acesso</label>
                                     <select
                                         value={filtros.tipo}
                                         onChange={(e) => setFiltros({ ...filtros, tipo: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                     >
                                         <option value="TODOS">Todos os tipos</option>
                                         <option value="VISITANTE">Visitante</option>
@@ -668,15 +670,15 @@ export default function PortariaGerencialPage() {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-slate-400 mb-1">Busca Rápida</label>
+                                    <label className="block text-slate-600 font-medium mb-1">Busca Rápida</label>
                                     <div className="relative">
-                                        <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                                         <input
                                             type="text"
                                             placeholder="Placa, nome, crachá, NF..."
                                             value={filtros.busca}
                                             onChange={(e) => setFiltros({ ...filtros, busca: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-slate-200"
+                                            className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-slate-900"
                                         />
                                     </div>
                                 </div>
@@ -686,7 +688,7 @@ export default function PortariaGerencialPage() {
                                 <button
                                     type="button"
                                     onClick={carregarDados}
-                                    className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow transition flex items-center gap-2"
+                                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-2"
                                 >
                                     <Search className="w-4 h-4" />
                                     Aplicar Filtros
@@ -695,10 +697,10 @@ export default function PortariaGerencialPage() {
                         </div>
 
                         {/* Tabela de Resultados */}
-                        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-xs border-collapse">
-                                    <thead className="bg-slate-950/70 text-[11px] font-semibold text-slate-400 uppercase">
+                                    <thead className="bg-slate-50 text-[11px] font-semibold text-slate-600 uppercase border-b border-slate-200">
                                         <tr>
                                             <th className="py-3 px-4">Visitante</th>
                                             <th className="py-3 px-4">Veículo / Placa</th>
@@ -710,7 +712,7 @@ export default function PortariaGerencialPage() {
                                             <th className="py-3 px-4">Status</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-800/60">
+                                    <tbody className="divide-y divide-slate-100">
                                         {historico.length === 0 ? (
                                             <tr>
                                                 <td colSpan="8" className="p-8 text-center text-slate-500">
@@ -719,35 +721,45 @@ export default function PortariaGerencialPage() {
                                             </tr>
                                         ) : (
                                             historico.map((row) => (
-                                                <tr key={row.id} className="hover:bg-slate-800/30">
+                                                <tr key={row.id} className="hover:bg-slate-50">
                                                     <td className="py-3 px-4">
-                                                        <div className="font-bold text-white">{row.nome_pessoa}</div>
+                                                        <div className="font-bold text-slate-900">{row.nome_pessoa}</div>
                                                         <div className="text-[10px] text-slate-500">{row.tipo}</div>
                                                     </td>
-                                                    <td className="py-3 px-4 font-mono font-bold text-slate-200">
-                                                        {row.placa_veiculo || 'A pé'}
+                                                    <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                                                        {row.placa_veiculo ? (
+                                                            <span className="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-xs">
+                                                                {row.placa_veiculo}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-slate-400 italic font-normal">A pé</span>
+                                                        )}
                                                     </td>
-                                                    <td className="py-3 px-4 text-slate-300">
+                                                    <td className="py-3 px-4 text-slate-700">
                                                         <div>{row.empresa_origem || '-'}</div>
                                                         <div className="text-[10px] text-slate-500">{row.setor_destino || '-'}</div>
                                                     </td>
-                                                    <td className="py-3 px-4 text-center font-mono font-bold text-amber-300">
-                                                        {row.numero_cracha ? `#${row.numero_cracha}` : '-'}
+                                                    <td className="py-3 px-4 text-center">
+                                                        {row.numero_cracha ? (
+                                                            <span className="font-mono font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-xs">
+                                                                #{row.numero_cracha}
+                                                            </span>
+                                                        ) : '-'}
                                                     </td>
-                                                    <td className="py-3 px-4 font-mono text-slate-300">
+                                                    <td className="py-3 px-4 font-mono text-slate-700">
                                                         {new Date(row.data_entrada).toLocaleString('pt-BR')}
                                                     </td>
-                                                    <td className="py-3 px-4 font-mono text-slate-400">
+                                                    <td className="py-3 px-4 font-mono text-slate-500">
                                                         {row.data_saida ? new Date(row.data_saida).toLocaleString('pt-BR') : '-'}
                                                     </td>
-                                                    <td className="py-3 px-4 font-bold text-blue-300">
+                                                    <td className="py-3 px-4 font-bold text-blue-700">
                                                         {row.tempo_permanencia_min ? `${row.tempo_permanencia_min} min` : '-'}
                                                     </td>
                                                     <td className="py-3 px-4">
                                                         <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
                                                             row.status === 'NO_PATIO'
-                                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                                                : 'bg-slate-800 text-slate-400 border-slate-700'
+                                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                : 'bg-slate-100 text-slate-600 border-slate-200'
                                                         }`}>
                                                             {row.status === 'NO_PATIO' ? 'No Pátio' : 'Finalizado'}
                                                         </span>
@@ -764,15 +776,15 @@ export default function PortariaGerencialPage() {
 
                 {/* MODAL CADASTRAR/EDITAR PORTEIRO */}
                 {isPorteiroModalOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-                        <div className="bg-slate-900 border border-slate-700 w-full max-w-xl rounded-2xl shadow-2xl p-6 text-slate-100 my-8">
-                            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                                <h3 className="font-bold text-base text-white">
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
+                        <div className="bg-white border border-slate-200 w-full max-w-xl rounded-2xl shadow-2xl p-6 text-slate-800 my-8">
+                            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                                <h3 className="font-bold text-base text-slate-900">
                                     {selectedPorteiro ? 'Editar Dados do Porteiro' : 'Cadastrar Novo Porteiro'}
                                 </h3>
                                 <button
                                     onClick={() => setIsPorteiroModalOpen(false)}
-                                    className="text-slate-400 hover:text-white"
+                                    className="text-slate-400 hover:text-slate-600"
                                 >
                                     <X className="w-5 h-5" />
                                 </button>
@@ -780,25 +792,25 @@ export default function PortariaGerencialPage() {
 
                             <form onSubmit={handleSavePorteiro} className="space-y-4 mt-4">
                                 {/* Foto com Câmera ou Upload */}
-                                <div className="flex items-center gap-4 p-3 bg-slate-950 rounded-xl border border-slate-800">
+                                <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl border border-slate-200">
                                     {porteiroForm.foto_base64 || selectedPorteiro?.foto_url ? (
                                         <img
                                             src={porteiroForm.foto_base64 || selectedPorteiro?.foto_url}
                                             alt="Foto do Porteiro"
-                                            className="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-500 shadow"
+                                            className="w-16 h-16 rounded-2xl object-cover border-2 border-emerald-500 shadow-xs"
                                         />
                                     ) : (
-                                        <div className="w-16 h-16 rounded-2xl bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-slate-400 shadow">
+                                        <div className="w-16 h-16 rounded-2xl bg-slate-200 border-2 border-slate-300 flex items-center justify-center text-slate-500 shadow-xs">
                                             <Users className="w-8 h-8" />
                                         </div>
                                     )}
                                     <div>
-                                        <div className="text-xs font-semibold text-white">Foto de Perfil</div>
-                                        <p className="text-[11px] text-slate-400 mb-2">Tire a foto usando a webcam do PC ou faça upload</p>
+                                        <div className="text-xs font-semibold text-slate-900">Foto de Perfil</div>
+                                        <p className="text-[11px] text-slate-500 mb-2">Tire a foto usando a webcam do PC ou faça upload</p>
                                         <button
                                             type="button"
                                             onClick={() => setIsCameraOpen(true)}
-                                            className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 rounded-lg text-xs font-medium flex items-center gap-1.5 transition"
+                                            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
                                         >
                                             <Camera className="w-3.5 h-3.5" />
                                             {porteiroForm.foto_base64 || selectedPorteiro?.foto_url ? 'Alterar Foto (Câmera / Arquivo)' : 'Capturar Foto com a Câmera'}
@@ -808,67 +820,67 @@ export default function PortariaGerencialPage() {
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                                     <div>
-                                        <label className="block text-slate-300 mb-1">Nome Completo *</label>
+                                        <label className="block text-slate-700 font-medium mb-1">Nome Completo *</label>
                                         <input
                                             type="text"
                                             required
                                             value={porteiroForm.nome}
                                             onChange={(e) => setPorteiroForm({ ...porteiroForm, nome: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100"
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-slate-300 mb-1">Apelido de Guarita</label>
+                                        <label className="block text-slate-700 font-medium mb-1">Apelido de Guarita</label>
                                         <input
                                             type="text"
                                             value={porteiroForm.apelido}
                                             onChange={(e) => setPorteiroForm({ ...porteiroForm, apelido: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100"
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-slate-300 mb-1">CPF</label>
+                                        <label className="block text-slate-700 font-medium mb-1">CPF</label>
                                         <input
                                             type="text"
                                             value={porteiroForm.cpf}
                                             onChange={(e) => setPorteiroForm({ ...porteiroForm, cpf: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100"
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-slate-300 mb-1">Telefone Principal (WhatsApp)</label>
+                                        <label className="block text-slate-700 font-medium mb-1">Telefone Principal (WhatsApp)</label>
                                         <input
                                             type="text"
                                             value={porteiroForm.telefone}
                                             onChange={(e) => setPorteiroForm({ ...porteiroForm, telefone: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100"
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-slate-300 mb-1">Telefone de Emergência</label>
+                                        <label className="block text-slate-700 font-medium mb-1">Telefone de Emergência</label>
                                         <input
                                             type="text"
                                             value={porteiroForm.telefone_emergencia}
                                             onChange={(e) => setPorteiroForm({ ...porteiroForm, telefone_emergencia: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100"
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-slate-300 mb-1">Nome do Contato Emergência</label>
+                                        <label className="block text-slate-700 font-medium mb-1">Nome do Contato Emergência</label>
                                         <input
                                             type="text"
                                             placeholder="Ex: Esposa / Mãe"
                                             value={porteiroForm.contato_emergencia_nome}
                                             onChange={(e) => setPorteiroForm({ ...porteiroForm, contato_emergencia_nome: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100"
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-slate-300 mb-1">Turno de Trabalho</label>
+                                        <label className="block text-slate-700 font-medium mb-1">Turno de Trabalho</label>
                                         <select
                                             value={porteiroForm.turno_id}
                                             onChange={(e) => setPorteiroForm({ ...porteiroForm, turno_id: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100"
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                         >
                                             <option value="">Selecione o turno</option>
                                             {turnos.map((t) => (
@@ -879,11 +891,11 @@ export default function PortariaGerencialPage() {
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-slate-300 mb-1">Status</label>
+                                        <label className="block text-slate-700 font-medium mb-1">Status</label>
                                         <select
                                             value={porteiroForm.status}
                                             onChange={(e) => setPorteiroForm({ ...porteiroForm, status: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100"
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                         >
                                             <option value="ATIVO">Ativo</option>
                                             <option value="FERIAS">Em Férias</option>
@@ -892,11 +904,11 @@ export default function PortariaGerencialPage() {
                                         </select>
                                     </div>
                                     <div className="sm:col-span-2">
-                                        <label className="block text-slate-300 mb-1">Login no sistema (opcional)</label>
+                                        <label className="block text-slate-700 font-medium mb-1">Login no sistema (opcional)</label>
                                         <select
                                             value={porteiroForm.usuario_id}
                                             onChange={(e) => setPorteiroForm({ ...porteiroForm, usuario_id: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100"
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                         >
                                             <option value="">Sem vínculo</option>
                                             {colaboradores.map((c) => (
@@ -911,18 +923,18 @@ export default function PortariaGerencialPage() {
                                     </div>
                                 </div>
 
-                                <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                                     <button
                                         type="button"
                                         onClick={() => setIsPorteiroModalOpen(false)}
-                                        className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
+                                        className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
                                     >
                                         Cancelar
                                     </button>
                                     <button
                                         type="submit"
                                         disabled={isSavingPorteiro}
-                                        className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
+                                        className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
                                     >
                                         {isSavingPorteiro ? 'Salvando...' : 'Salvar Porteiro'}
                                     </button>
@@ -934,13 +946,13 @@ export default function PortariaGerencialPage() {
 
                 {/* MODAL REGISTRAR PASSAGEM DE TURNO NO LIVRO */}
                 {isOcorrenciaModalOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                        <div className="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl p-6 text-slate-100">
-                            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                                <h3 className="font-bold text-base text-white">Registrar Passagem de Turno</h3>
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+                        <div className="bg-white border border-slate-200 w-full max-w-lg rounded-2xl shadow-2xl p-6 text-slate-800">
+                            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                <h3 className="font-bold text-base text-slate-900">Registrar Passagem de Turno</h3>
                                 <button
                                     onClick={() => setIsOcorrenciaModalOpen(false)}
-                                    className="text-slate-400 hover:text-white"
+                                    className="text-slate-400 hover:text-slate-600"
                                 >
                                     <X className="w-5 h-5" />
                                 </button>
@@ -949,11 +961,11 @@ export default function PortariaGerencialPage() {
                             <form onSubmit={handleSaveOcorrencia} className="space-y-4 mt-4 text-xs">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
-                                        <label className="block text-slate-300 mb-1">Porteiro que está saindo</label>
+                                        <label className="block text-slate-700 font-medium mb-1">Porteiro que está saindo</label>
                                         <select
                                             value={ocorrenciaForm.porteiro_saida_id}
                                             onChange={(e) => setOcorrenciaForm({ ...ocorrenciaForm, porteiro_saida_id: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100"
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                         >
                                             <option value="">Selecione</option>
                                             {porteiros.map((p) => (
@@ -962,11 +974,11 @@ export default function PortariaGerencialPage() {
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-slate-300 mb-1">Porteiro que está assumindo</label>
+                                        <label className="block text-slate-700 font-medium mb-1">Porteiro que está assumindo</label>
                                         <select
                                             value={ocorrenciaForm.porteiro_entrada_id}
                                             onChange={(e) => setOcorrenciaForm({ ...ocorrenciaForm, porteiro_entrada_id: e.target.value })}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100"
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                         >
                                             <option value="">Selecione</option>
                                             {porteiros.map((p) => (
@@ -977,11 +989,11 @@ export default function PortariaGerencialPage() {
                                 </div>
 
                                 <div>
-                                    <label className="block text-slate-300 mb-1">Turno que assume</label>
+                                    <label className="block text-slate-700 font-medium mb-1">Turno que assume</label>
                                     <select
                                         value={ocorrenciaForm.turno_id}
                                         onChange={(e) => setOcorrenciaForm({ ...ocorrenciaForm, turno_id: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100"
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                                     >
                                         <option value="">Selecione o turno</option>
                                         {turnos.map((t) => (
@@ -991,28 +1003,28 @@ export default function PortariaGerencialPage() {
                                 </div>
 
                                 <div>
-                                    <label className="block text-slate-300 mb-1">Descrição das Ocorrências / Pendências *</label>
+                                    <label className="block text-slate-700 font-medium mb-1">Descrição das Ocorrências / Pendências *</label>
                                     <textarea
                                         rows="4"
                                         required
                                         placeholder="Ex: Plantão encerrado sem novidades. Permanece no pátio a carreta placa XYZ descarregando chapa na área 2..."
                                         value={ocorrenciaForm.descricao_ocorrencias}
                                         onChange={(e) => setOcorrenciaForm({ ...ocorrenciaForm, descricao_ocorrencias: e.target.value })}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-100"
+                                        className="w-full bg-white border border-slate-300 rounded-xl p-3 text-slate-900"
                                     />
                                 </div>
 
-                                <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                                     <button
                                         type="button"
                                         onClick={() => setIsOcorrenciaModalOpen(false)}
-                                        className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
+                                        className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
                                     >
                                         Cancelar
                                     </button>
                                     <button
                                         type="submit"
-                                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition"
+                                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition"
                                     >
                                         Confirmar Passagem de Turno
                                     </button>

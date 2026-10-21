@@ -2,8 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Package, Calendar, FileText, CheckCircle, Save, Settings, Clock, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { saveAppointment, getProductionStructureRouting } from '../../services/api';
+import { saveAppointment, getProductionStructureRouting, getOpFractions } from '../../services/api';
 import { toast } from 'react-toastify';
+
+// Formata a Data PCP (data_entrega_pcp) de cada fração, sem deslocar o dia por fuso horário
+const formatDataEntrega = (valor) => {
+    if (!valor) return '-';
+    const d = new Date(valor);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+};
 
 export default function FornecedorRomaneioDetalhes() {
     const { id } = useParams();
@@ -20,6 +27,10 @@ export default function FornecedorRomaneioDetalhes() {
     const [routingOps, setRoutingOps] = useState([]);
     const [loadingRouting, setLoadingRouting] = useState(false);
 
+    // Item com mais de uma programação PCP (fração AA, AB...): o apontamento precisa dizer para qual fração é
+    const [fractionInfo, setFractionInfo] = useState(null);
+    const [selectedFracao, setSelectedFracao] = useState('');
+
     // Form state
     const [apontamentoForm, setApontamentoForm] = useState({
         operacao_codigo: '',
@@ -32,6 +43,17 @@ export default function FornecedorRomaneioDetalhes() {
     useEffect(() => {
         fetchDetails();
     }, [id]);
+
+    // Busca as frações PCP da OP assim que a operação é escolhida (o saldo de cada fração depende da operação)
+    useEffect(() => {
+        if (!isApontamentoModalOpen || !selectedItem) {
+            setFractionInfo(null);
+            return;
+        }
+        getOpFractions(selectedItem.pedido, selectedItem.item_pedido || '01', apontamentoForm.op_sequencia || '001', apontamentoForm.operacao_codigo)
+            .then(data => setFractionInfo(data?.fracionado ? data : null))
+            .catch(() => setFractionInfo(null));
+    }, [isApontamentoModalOpen, selectedItem, apontamentoForm.op_sequencia, apontamentoForm.operacao_codigo]);
 
     const fetchDetails = async () => {
         try {
@@ -66,6 +88,8 @@ export default function FornecedorRomaneioDetalhes() {
             observacao: ''
         });
         setRoutingOps([]);
+        setFractionInfo(null);
+        setSelectedFracao('');
         setIsApontamentoModalOpen(true);
 
         if (item.pedido) {
@@ -83,6 +107,14 @@ export default function FornecedorRomaneioDetalhes() {
         }
     };
 
+    // Ao escolher a fração, pré-preenche a quantidade com o saldo DESSA fração (não a quantidade do romaneio inteiro)
+    const handleSelectFracao = (letra, saldo) => {
+        setSelectedFracao(letra);
+        setApontamentoForm(prev => ({ ...prev, quantidade: saldo > 0 ? saldo : '' }));
+    };
+
+    const selectedFractionData = fractionInfo?.fractions.find(f => f.numero_lote === selectedFracao) || null;
+
     const handleSaveApontamento = async (e) => {
         e.preventDefault();
         
@@ -92,6 +124,14 @@ export default function FornecedorRomaneioDetalhes() {
 
         if (Number(apontamentoForm.quantidade) <= 0) {
             return toast.warn('A quantidade deve ser maior que zero.');
+        }
+
+        if (fractionInfo?.fracionado && !selectedFracao) {
+            return toast.warn('Este item tem mais de uma fração (AA, AB...). Escolha para qual fração é este apontamento.');
+        }
+
+        if (selectedFractionData && selectedFractionData.saldo !== null && Number(apontamentoForm.quantidade) > selectedFractionData.saldo + 0.001) {
+            return toast.warn(`A quantidade excede o saldo da Fração ${selectedFractionData.numero_lote} (${selectedFractionData.saldo.toLocaleString('pt-BR')} un.).`);
         }
 
         setSaving(true);
@@ -105,7 +145,8 @@ export default function FornecedorRomaneioDetalhes() {
                 quantidade: Number(apontamentoForm.quantidade),
                 data_inicio: new Date().toISOString(),
                 data_fim: new Date().toISOString(),
-                observacao: apontamentoForm.observacao
+                observacao: apontamentoForm.observacao,
+                fracao_pcp: fractionInfo?.fracionado ? selectedFracao : undefined
             };
 
             await saveAppointment(payload);
@@ -315,14 +356,54 @@ export default function FornecedorRomaneioDetalhes() {
                                 )}
                             </div>
 
+                            {fractionInfo?.fracionado && (
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                                    <p className="text-xs font-bold text-amber-800 mb-2">
+                                        Este item tem {fractionInfo.fractions.length} frações. Escolha para qual é este apontamento:
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {fractionInfo.fractions.map(f => {
+                                            const semSaldo = (f.saldo ?? 0) <= 0;
+                                            const isSel = selectedFracao === f.numero_lote;
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    key={f.numero_lote}
+                                                    onClick={() => handleSelectFracao(f.numero_lote, f.saldo ?? 0)}
+                                                    disabled={semSaldo}
+                                                    className={`px-3 py-2 rounded-lg border text-xs text-left transition-colors ${
+                                                        isSel ? 'bg-amber-600 border-amber-700 text-white font-bold shadow-sm' :
+                                                        semSaldo ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed' :
+                                                        'bg-white border-amber-300 text-amber-800 hover:bg-amber-100'
+                                                    }`}
+                                                >
+                                                    <div className="font-bold">Fração {f.numero_lote}</div>
+                                                    <div className="opacity-90">
+                                                        {f.quantidade_pcp.toLocaleString('pt-BR')} un. · Entrega: {formatDataEntrega(f.data_entrega_pcp)}
+                                                        {f.saldo !== null && <><br />Saldo: {f.saldo.toLocaleString('pt-BR')}</>}
+                                                        {semSaldo && ' (concluída)'}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Quantidade Concluída
                                 </label>
-                                <input 
+                                {selectedFractionData && (
+                                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 mb-1.5">
+                                        Apontando para a <strong>Fração {selectedFractionData.numero_lote}</strong> — Entrega: {formatDataEntrega(selectedFractionData.data_entrega_pcp)} — Saldo: {(selectedFractionData.saldo ?? 0).toLocaleString('pt-BR')} un.
+                                    </p>
+                                )}
+                                <input
                                     type="number"
                                     min="0.01"
                                     step="0.01"
+                                    max={selectedFractionData?.saldo ?? undefined}
                                     required
                                     className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                                     value={apontamentoForm.quantidade}
@@ -353,7 +434,7 @@ export default function FornecedorRomaneioDetalhes() {
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={saving || routingOps.length === 0}
+                                    disabled={saving || routingOps.length === 0 || (fractionInfo?.fracionado && !selectedFracao)}
                                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                 >
                                     {saving ? <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" /> : <Save className="h-4 w-4" />}

@@ -45,12 +45,18 @@ for (const p of potentialPaths) {
 // Histórico de Conversas
 const HISTORY_CACHE = {}; 
 
-const SUPORTE_INSTANCE = 'Suporte Lynx';
-const SUPORTE_APIKEY = '1C62EE90D11A-4C75-B1BA-383CDF634A39';
+const SUPORTE_INSTANCE = process.env.EVOLUTION_INSTANCE || 'Suporte Lynx';
+const SUPORTE_APIKEY = process.env.EVOLUTION_API_KEY || '';
 const SUPORTE_GROUP_NAME = 'Lynx - Suporte Lynx';
 
 router.post('/suporte-ia', async (req, res) => {
     try {
+        // Validação de segurança opcional no webhook: se EVOLUTION_API_KEY estiver configurada, exige match via header ou query
+        const providedKey = req.headers['apikey'] || req.headers['x-api-key'] || req.query.apikey;
+        if (SUPORTE_APIKEY && providedKey && providedKey !== SUPORTE_APIKEY) {
+            return res.status(401).json({ error: 'Chave de webhook inválida' });
+        }
+
         const body = req.body;
 
         // Responde de imediato para webhooks de conexão, status etc.

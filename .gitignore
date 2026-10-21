@@ -105,3 +105,9 @@ server/data/*_backup_*.json
 *.cfg
 SIMPLIFICADO/
 preparação SGQ - EMS/
+
+# Arquivos legados (fora do deploy)
+_arquivo_morto/
+*.tar.gz
+*.zip
+Imagens para o site/

@@ -132,12 +132,12 @@ export default function NovaReservaModal({
             dataFmt = `${d}/${m}/${y}`;
         } catch (e) {}
 
-        const orgNome = user?.nome || 'Metalfisa';
+        const orgNome = user?.nome || 'Lynx EMS';
 
-        return `🔔 *CONVITE DE REUNIÃO - METALFISA*\n` +
+        return `🔔 *CONVITE DE REUNIÃO - LYNX EMS*\n` +
                `--------------------------------------------------\n` +
                `📌 *Assunto:* ${titulo || 'Reunião de Alinhamento'}\n` +
-               `🏢 *Sala:* ${salaEscolhida?.nome || 'Sala de Reunião'} (${salaEscolhida?.localizacao || 'Metalfisa'})\n` +
+               `🏢 *Sala:* ${salaEscolhida?.nome || 'Sala de Reunião'} (${salaEscolhida?.localizacao || 'Lynx EMS'})\n` +
                `📅 *Data:* ${dataFmt}\n` +
                `⏰ *Horário:* ${horaInicio} às ${horaFim}\n` +
                `👤 *Organizador:* ${orgNome}\n` +
@@ -441,7 +441,7 @@ export default function NovaReservaModal({
                                 />
                             </div>
 
-                            {/* CONVOCAÇÃO DE PARTICIPANTES (Usuários do Sistema Metalfisa) */}
+                            {/* CONVOCAÇÃO DE PARTICIPANTES (Usuários do Sistema Lynx EMS) */}
                             <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                                 <div className="flex items-center justify-between">
                                     <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
@@ -530,7 +530,7 @@ export default function NovaReservaModal({
                                                                 {u.NomeCompleto}
                                                             </div>
                                                             <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
-                                                                <span>{u.Setor || 'Metalfisa'}</span>
+                                                                <span>{u.Setor || 'Lynx EMS'}</span>
                                                                 {u.email && (
                                                                     <span className="text-blue-600 truncate max-w-[140px]" title={u.email}>
                                                                         • {u.email}

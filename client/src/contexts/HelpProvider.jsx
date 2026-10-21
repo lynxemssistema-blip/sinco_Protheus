@@ -1,10 +1,26 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import axios from 'axios';
 
 import { HELP_CONTENT } from '../config/helpContent';
 import { HelpContext } from './HelpContext';
 
+const ROUTE_ALIASES = {
+    '/settings': '/configuracoes',
+    '/pedidos': '/visao-geral',
+    '/pedidos-venda': '/visao-geral',
+    '/saldos-estoque': '/estoque/saldos',
+    '/estrutura': '/estrutura-produtos',
+    '/estrutura-produto': '/estrutura-produtos',
+    '/salas': '/salas-reuniao',
+    '/portaria': '/portaria/gerencial',
+    '/cadastros/basicos': '/cadastros/prefixos',
+    '/sst/brigada/inspecao': '/sst/brigada/inspecao-rapida',
+    '/sst/cipa/urna': '/sst/cipa'
+};
+
 export function HelpProvider({ children }) {
+    const location = useLocation();
     const [isOpen, setIsOpen] = useState(false);
     const [forcedPath, setForcedPath] = useState(null);
     const [isPinned, setIsPinned] = useState(() => {
@@ -14,6 +30,11 @@ export function HelpProvider({ children }) {
     // SGQ Database State
     const [allModules, setAllModules] = useState([]);
     const [loadingHelp, setLoadingHelp] = useState(false);
+
+    // Quando o usuário navega para uma nova rota, limpa qualquer caminho forçado anterior
+    useEffect(() => {
+        setForcedPath(null);
+    }, [location.pathname]);
 
     const togglePin = useCallback(() => {
         setIsPinned(prev => {
@@ -78,7 +99,6 @@ export function HelpProvider({ children }) {
     }, [fetchHelpData]);
 
     // Sincroniza estado visual global do HelpDrawer (classes CSS e variáveis de largura)
-    // para permitir que todos os modais e painéis da aplicação se ajustem automaticamente
     useEffect(() => {
         const updateDrawerCssState = () => {
             const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
@@ -124,6 +144,11 @@ export function HelpProvider({ children }) {
             pathname = pathname.slice(0, -1);
         }
 
+        // Apply route alias if present
+        if (ROUTE_ALIASES[pathname]) {
+            pathname = ROUTE_ALIASES[pathname];
+        }
+
         // 1. Exact match in allModules (SGQ Database)
         if (allModules && allModules.length > 0) {
             const exact = allModules.find(m => m.route_path === pathname || m.path === pathname);
@@ -151,8 +176,46 @@ export function HelpProvider({ children }) {
                 if (found) return found;
             }
         }
-        
-        return HELP_CONTENT['/'] || Object.values(HELP_CONTENT)[0]; // Global fallback
+
+        // 4. Se for raiz exata '/', retorna Dashboard Principal
+        if (pathname === '/' || pathname === '') {
+            return HELP_CONTENT['/'] || Object.values(HELP_CONTENT)[0];
+        }
+
+        // 5. Fallback contextual dinâmico inteligente (ao invés de Dashboard Principal)
+        const pathSegments = pathname.split('/').filter(Boolean);
+        const segmentName = pathSegments[pathSegments.length - 1] || 'modulo';
+        const formattedTitle = segmentName
+            .replace(/-/g, ' ')
+            .replace(/\b\w/g, l => l.toUpperCase());
+
+        return {
+            category: pathSegments[0]?.toUpperCase() || 'Módulo',
+            categoryColor: '#425750',
+            title: `Ajuda: ${formattedTitle}`,
+            icon: 'HelpCircle',
+            description: `Orientações e instruções de operação para a tela ${formattedTitle} (${pathname}).`,
+            tabs: [
+                {
+                    id: 'visao_geral',
+                    label: 'Visão Geral',
+                    description: `Informações de uso para ${formattedTitle}.`,
+                    steps: [
+                        `Esta tela permite visualizar e gerenciar os dados de ${formattedTitle}.`,
+                        'Utilize os botões de ação e filtros no topo da página para refinar os resultados.',
+                        'Para dúvidas adicionais ou sugestões de documentação, acione a Central de Suporte.'
+                    ]
+                }
+            ],
+            tips: [
+                'Você pode fixar este menu de ajuda clicando no ícone de pino no canto superior.',
+                'Use os atalhos de teclado e filtros para agilizar o fluxo operacional.'
+            ],
+            links: [
+                { path: '/', label: 'Página Inicial' },
+                { path: '/ajuda', label: 'Central de Ajuda SGQ' }
+            ]
+        };
     }, [allModules]);
 
     return (
@@ -164,3 +227,4 @@ export function HelpProvider({ children }) {
         </HelpContext.Provider>
     );
 }
+

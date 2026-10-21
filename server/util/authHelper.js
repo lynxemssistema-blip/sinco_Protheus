@@ -70,7 +70,7 @@ function getTenantContext(req) {
         return parseInt(req.tenantId);
     }
 
-    // Default isolado: empresa do usuário logado ou empresa 1 (Metalfisa matriz)
+    // Default isolado: empresa do usuário logado ou empresa 1 (Lynx EMS matriz)
     return req.user?.IdEmpresa || 1;
 }
 

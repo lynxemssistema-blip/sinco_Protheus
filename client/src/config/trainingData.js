@@ -129,7 +129,7 @@ export const ALL_TRAINING_SCREENS = [
     {
         id: 'comercial_gestao_ops',
         name: 'Gestão de OPs Comercial',
-        path: '/comercial/gestao-ops',
+        path: '/visao-geral',
         badge: 'Rastreio Comercial',
         category: 'Comercial',
         targetAudience: 'Vendedores, SAC e Representantes Comerciais',

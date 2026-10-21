@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const { createSafeFileFilter, DEFAULT_UPLOAD_LIMITS } = require('../util/uploadSecurity');
 const fs = require('fs');
 const path = require('path');
 const db = require('../services/mysqlService');
@@ -20,10 +21,15 @@ const storage = multer.diskStorage({
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, `cv-${uniqueSuffix}-${file.originalname}`);
+        const cleanName = (file.originalname || 'curriculo').replace(/[^a-zA-Z0-9._-]/g, '_');
+        cb(null, `cv-${uniqueSuffix}-${cleanName}`);
     }
 });
-const upload = multer({ storage });
+const upload = multer({
+    storage,
+    limits: DEFAULT_UPLOAD_LIMITS,
+    fileFilter: createSafeFileFilter(['.pdf', '.doc', '.docx', '.txt', '.png', '.jpg', '.jpeg'])
+});
 
 // Initialize Gemini Clients (primary + fallback)
 const aiPrimary = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });

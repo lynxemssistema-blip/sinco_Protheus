@@ -54,22 +54,25 @@ const SincoEmailModal = ({ isOpen, onClose, arvore, arquivo }) => {
         }
     }, [isOpen, userName]);
 
-    const handleSearchOrders = async (e) => {
+    const handleSearchOrders = async (e, overrideQuery = null, overrideType = null) => {
         if (e) e.preventDefault();
-        if (!searchQuery.trim()) return;
+        const q = overrideQuery !== null ? overrideQuery : searchQuery;
+        const type = overrideType !== null ? overrideType : searchType;
         setSearchLoading(true);
         setSearchError('');
         try {
             const params = {
-                limit: 30,
+                limit: 50,
                 only_active: 'false'
             };
-            if (searchType === 'pedido') {
-                params.pedido = searchQuery.trim();
-            } else if (searchType === 'produto') {
-                params.produto = searchQuery.trim();
-            } else if (searchType === 'cliente') {
-                params.cliente = searchQuery.trim();
+            if (q && q.trim()) {
+                if (type === 'pedido') {
+                    params.pedido = q.trim();
+                } else if (type === 'produto') {
+                    params.produto = q.trim();
+                } else if (type === 'cliente') {
+                    params.cliente = q.trim();
+                }
             }
             const response = await api.get('/pedidos/flat', { params });
             if (response.data && Array.isArray(response.data.data)) {
@@ -86,6 +89,18 @@ const SincoEmailModal = ({ isOpen, onClose, arvore, arquivo }) => {
             setSearchLoading(false);
         }
     };
+
+    // Auto-carregar pedidos ao abrir a modal de pesquisa
+    useEffect(() => {
+        if (showSearchModal) {
+            const prodCode = arvore?.codigo || arquivo?.codigo || '';
+            const initialQuery = pedido?.trim() || prodCode?.trim() || '';
+            const initialType = pedido?.trim() ? 'pedido' : (prodCode?.trim() ? 'produto' : 'pedido');
+            setSearchType(initialType);
+            setSearchQuery(initialQuery);
+            handleSearchOrders(null, initialQuery, initialType);
+        }
+    }, [showSearchModal]);
 
     if (!isOpen) return null;
 
@@ -479,8 +494,17 @@ const SincoEmailModal = ({ isOpen, onClose, arvore, arquivo }) => {
                                         <span className="text-sm font-medium">Buscando itens na base...</span>
                                     </div>
                                 ) : searchResults.length === 0 ? (
-                                    <div className="py-12 text-center text-slate-400 text-sm">
-                                        {searchQuery ? 'Nenhum resultado encontrado.' : 'Selecione o filtro e faça sua busca.'}
+                                    <div className="py-12 text-center text-slate-400 text-sm flex flex-col items-center justify-center gap-2">
+                                        <span>{searchQuery ? 'Nenhum resultado encontrado para esta pesquisa.' : 'Nenhum pedido encontrado.'}</span>
+                                        {searchQuery && (
+                                            <button
+                                                type="button"
+                                                onClick={() => { setSearchQuery(''); handleSearchOrders(null, '', 'pedido'); }}
+                                                className="text-xs text-blue-600 hover:underline font-semibold"
+                                            >
+                                                Listar todos os pedidos recentes
+                                            </button>
+                                        )}
                                     </div>
                                 ) : (
                                     <table className="w-full text-left text-xs border-collapse">

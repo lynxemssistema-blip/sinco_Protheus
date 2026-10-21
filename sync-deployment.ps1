@@ -1,8 +1,8 @@
-# MetalFisa Deployment Sync Script
+# Lynx EMS Deployment Sync Script
 # Updates linux-deployment with latest changes
 
 Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "  MetalFisa - Syncing Linux Deployment" -ForegroundColor Cyan
+Write-Host "  Lynx EMS - Syncing Linux Deployment" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 
 $root = Get-Location
@@ -18,7 +18,7 @@ robocopy "$serverSrc" "$serverDest" index.js db.js package.json package-lock.jso
 
 # 2. Mirror code subdirectories — /MIR + /IS + /IT garante sincronia completa de conteúdo
 Write-Host "Mirroring Backend subdirectories..." -ForegroundColor Yellow
-$codeDirs = @("routes", "middlewares", "services", "util", "utils", "config", "sql", "public", "scripts", "templates")
+$codeDirs = @("routes", "middlewares", "services", "util", "utils", "config", "sql", "public", "scripts", "templates", "migrations")
 foreach ($dir in $codeDirs) {
     $srcDir = Join-Path $serverSrc $dir
     $destDir = Join-Path $serverDest $dir

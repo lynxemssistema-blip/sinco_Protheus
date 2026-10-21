@@ -3,7 +3,7 @@ import {
     Cpu, Plus, Edit2, Trash2, Power, AlertCircle, Loader2,
     CheckCircle, X, Save, Search, Link as LinkIcon,
     Layers, Wrench, Clock, Filter, Eye, ChevronRight,
-    Building2, Shield
+    Building2, Shield, Printer
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -20,6 +20,7 @@ const TIPO_CONFIG = {
 // ─── Modal de Criação / Edição de Recurso ──────────────────────────────────────
 function RecursoModal({ recurso, onClose, onSave, isSuperAdmin, empresas }) {
     const isEdit = Boolean(recurso);
+    const [labelTemplates, setLabelTemplates] = useState([]);
     const [form, setForm] = useState({
         codigo: recurso?.codigo || '',
         nome: recurso?.nome || '',
@@ -27,9 +28,22 @@ function RecursoModal({ recurso, onClose, onSave, isSuperAdmin, empresas }) {
         descricao: recurso?.descricao || '',
         capacidade_padrao: recurso?.capacidade_padrao || '',
         ativo: recurso?.ativo !== undefined ? Boolean(recurso.ativo) : true,
-        IdEmpresa: recurso?.IdEmpresa || (empresas?.length > 0 ? empresas[0].IdEmpresa : 1)
+        IdEmpresa: recurso?.IdEmpresa || (empresas?.length > 0 ? empresas[0].IdEmpresa : 1),
+        label_template_id: recurso?.label_template_id || '',
+        printer_host: recurso?.printer_host || '',
+        printer_port: recurso?.printer_port || ''
     });
     const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        api.get('/labels/config')
+            .then(res => {
+                if (Array.isArray(res.data?.configs)) {
+                    setLabelTemplates(res.data.configs);
+                }
+            })
+            .catch(() => {});
+    }, []);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -52,7 +66,10 @@ function RecursoModal({ recurso, onClose, onSave, isSuperAdmin, empresas }) {
                 tipo: form.tipo,
                 descricao: form.descricao.trim(),
                 capacidade_padrao: form.capacidade_padrao ? parseFloat(form.capacidade_padrao) : 0,
-                ativo: form.ativo ? 1 : 0
+                ativo: form.ativo ? 1 : 0,
+                label_template_id: form.label_template_id ? parseInt(form.label_template_id, 10) : null,
+                printer_host: form.printer_host ? form.printer_host.trim() : null,
+                printer_port: form.printer_port ? parseInt(form.printer_port, 10) : null
             };
             if (isSuperAdmin && form.IdEmpresa) {
                 payload.IdEmpresa = form.IdEmpresa;
@@ -201,6 +218,61 @@ function RecursoModal({ recurso, onClose, onSave, isSuperAdmin, empresas }) {
                             placeholder="Especificações técnicas, restrições ou notas..."
                             className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
                         />
+                    </div>
+
+                    {/* Configuração de Etiqueta Térmica & Impressora do Posto */}
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                        <div className="flex items-center gap-2">
+                            <Printer className="w-4 h-4 text-slate-700" />
+                            <span className="text-xs font-black uppercase text-slate-700 tracking-wider">
+                                Etiqueta Térmica do Recurso (Zebra / Argox)
+                            </span>
+                        </div>
+                        
+                        <div>
+                            <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                                Modelo de Etiqueta Padrão deste Posto
+                            </label>
+                            <select
+                                value={form.label_template_id}
+                                onChange={e => setForm(f => ({ ...f, label_template_id: e.target.value }))}
+                                className="w-full px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option value="">Usar Modelo Padrão Global do Sistema</option>
+                                {labelTemplates.map(tpl => (
+                                    <option key={tpl.id} value={tpl.id}>
+                                        {tpl.name} ({tpl.width_mm || 100}x{tpl.height_mm || 50}mm)
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                            <div className="col-span-2">
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                    IP / Host Impressora (opcional)
+                                </label>
+                                <input
+                                    type="text"
+                                    placeholder="Ex: 192.168.1.150 ou Zebra-Setor"
+                                    value={form.printer_host}
+                                    onChange={e => setForm(f => ({ ...f, printer_host: e.target.value }))}
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-mono bg-white outline-none"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                                    Porta TCP
+                                </label>
+                                <input
+                                    type="number"
+                                    placeholder="9100"
+                                    value={form.printer_port}
+                                    onChange={e => setForm(f => ({ ...f, printer_port: e.target.value }))}
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-mono bg-white outline-none"
+                                />
+                            </div>
+                        </div>
                     </div>
 
                     {/* Ativo */}

@@ -128,9 +128,9 @@ const ErpValidator = {
         if (codigoLimpo.length < 2) erros.push('Código do produto obrigatório');
         if (descLimpa.length < 2) erros.push('Descrição do produto obrigatória');
 
-        // BUGFIX (IA): Validação estrita de peso líquido contra NaN, Infinity e valores negativos
+        // BUGFIX (IA): Validação estrita de peso líquido contra NaN, Infinity e valores negativos (aceita vírgula ou ponto)
         if (dados.peso_liquido !== undefined && dados.peso_liquido !== null && dados.peso_liquido !== '') {
-            const peso = parseFloat(dados.peso_liquido);
+            const peso = parseFloat(String(dados.peso_liquido).trim().replace(',', '.'));
             if (!Number.isFinite(peso) || peso < 0) {
                 erros.push('Peso líquido não pode ser negativo ou número inválido');
             }

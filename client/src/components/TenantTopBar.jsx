@@ -42,15 +42,15 @@ const TenantTopBar = () => {
         setLoading(true);
         try {
             if (!empresa) {
-                // Voltar para visão global
-                delete api.defaults.headers['x-tenant-override'];
-                localStorage.removeItem('@Lynx:tenant_override');
+                // Alternar explicitamente para visão global
+                api.defaults.headers['x-tenant-override'] = 'all';
+                localStorage.setItem('@Lynx:tenant_override', 'all');
                 window.location.reload();
                 return;
             }
 
             // Alternar para tenant selecionado
-            api.defaults.headers['x-tenant-override'] = empresa.IdEmpresa;
+            api.defaults.headers['x-tenant-override'] = String(empresa.IdEmpresa);
             localStorage.setItem('@Lynx:tenant_override', String(empresa.IdEmpresa));
             setEmpresaAtiva({
                 id: empresa.IdEmpresa,
@@ -68,8 +68,30 @@ const TenantTopBar = () => {
 
     if (!user) return null;
 
-    const isImpersonating = !!localStorage.getItem('@Lynx:tenant_override');
-    const nomeExibicao = empresaAtiva?.nome || user?.empresa?.nomeFantasia || user?.empresa?.razaoSocial || 'SINCO Industrial';
+    const tenantOverride = localStorage.getItem('@Lynx:tenant_override');
+    const isGlobalView = tenantOverride === 'all';
+    const activeTenantId = isGlobalView ? null : (tenantOverride ? Number(tenantOverride) : (empresaAtiva?.id || user?.IdEmpresa || 1));
+    const activeEmp = empresas.find(e => e.IdEmpresa === activeTenantId);
+
+    // Cálculo unificado dos dias restantes da empresa selecionada (mensalidade ou teste)
+    const dataVenc = activeEmp?.data_vencimento || planoInfo?.empresa?.dataVencimento || planoInfo?.empresa?.trialExpiraEm;
+    const statusPlanoEmpresa = activeEmp?.status_plano || planoInfo?.empresa?.status || 'ativo';
+    const isTrial = statusPlanoEmpresa === 'trial';
+
+    let diasRestantes = null;
+    if (dataVenc) {
+        const diffMs = new Date(dataVenc) - new Date();
+        diasRestantes = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+    } else if (typeof planoInfo?.empresa?.diasRestantes === 'number') {
+        diasRestantes = planoInfo.empresa.diasRestantes;
+    } else if (typeof planoInfo?.empresa?.diasRestantesTrial === 'number') {
+        diasRestantes = planoInfo.empresa.diasRestantesTrial;
+    }
+
+    const isImpersonating = !!tenantOverride && tenantOverride !== 'all' && Number(tenantOverride) !== (user?.IdEmpresa || 1);
+    const nomeExibicao = isGlobalView
+        ? 'Visão Global (Todas as Empresas)'
+        : (activeEmp?.NomeFantasia || activeEmp?.RazaoSocial || empresaAtiva?.nome || user?.empresa?.nomeFantasia || user?.empresa?.razaoSocial || 'Delta Parafusos');
     const planoNome = (empresaAtiva?.plano || user?.empresa?.plano || 'pro').toUpperCase();
 
     return (
@@ -86,9 +108,9 @@ const TenantTopBar = () => {
                     {planoNome}
                 </span>
 
-                {typeof planoInfo?.empresa?.diasRestantesTrial === 'number' && (
-                    <span className="hidden md:inline-flex text-[11px] text-amber-400 font-medium">
-                        ⏳ {planoInfo?.empresa?.diasRestantesTrial} dias de teste
+                {diasRestantes !== null && !isGlobalView && (
+                    <span className={`hidden md:inline-flex items-center gap-1 text-[11px] font-medium ${isTrial ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {isTrial ? `⏳ ${diasRestantes} dias de teste` : `📅 Em dia (${diasRestantes} dias)`}
                     </span>
                 )}
             </div>
@@ -102,7 +124,7 @@ const TenantTopBar = () => {
                             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
                                 isImpersonating
                                     ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 hover:bg-amber-500/30'
-                                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                                    : (isGlobalView ? 'bg-blue-500/20 border-blue-500/40 text-blue-300 hover:bg-blue-500/30' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700')
                             }`}
                         >
                             <ArrowRightLeft className="w-3 h-3 text-blue-400" />
@@ -122,14 +144,16 @@ const TenantTopBar = () => {
                                 <div className="max-h-60 overflow-y-auto py-1">
                                     <button
                                         onClick={() => handleSwitchTenant(null)}
-                                        className="w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center justify-between transition-colors text-xs text-blue-300 font-semibold"
+                                        className={`w-full text-left px-3 py-1.5 hover:bg-slate-800 flex items-center justify-between transition-colors text-xs font-semibold ${
+                                            isGlobalView ? 'bg-blue-600/20 text-white font-bold' : 'text-blue-300'
+                                        }`}
                                     >
                                         <span>🌐 Visão Global (Todas)</span>
-                                        {!isImpersonating && <Check className="w-3.5 h-3.5 text-blue-400" />}
+                                        {isGlobalView && <Check className="w-3.5 h-3.5 text-blue-400" />}
                                     </button>
 
                                     {empresas.map((emp) => {
-                                        const isSelected = empresaAtiva?.id === emp.IdEmpresa;
+                                        const isSelected = !isGlobalView && (activeTenantId === emp.IdEmpresa);
                                         return (
                                             <button
                                                 key={emp.IdEmpresa}

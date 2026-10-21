@@ -5,6 +5,7 @@ const { authenticateToken } = require('./auth');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const { createSafeFileFilter, DEFAULT_UPLOAD_LIMITS } = require('../util/uploadSecurity');
 const { sendText: waSend } = require('../services/whatsapp');
 
 // ============================================================================
@@ -24,7 +25,8 @@ const certStorage = multer.diskStorage({
 });
 const uploadCertificado = multer({
     storage: certStorage,
-    limits: { fileSize: 25 * 1024 * 1024 } // 25MB
+    limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
+    fileFilter: createSafeFileFilter()
 });
 
 const simuladoStorage = multer.diskStorage({
@@ -41,7 +43,8 @@ const simuladoStorage = multer.diskStorage({
 });
 const uploadSimulado = multer({
     storage: simuladoStorage,
-    limits: { fileSize: 30 * 1024 * 1024 }
+    limits: { fileSize: 30 * 1024 * 1024 },
+    fileFilter: createSafeFileFilter()
 });
 
 const inspecaoStorage = multer.diskStorage({
@@ -58,7 +61,8 @@ const inspecaoStorage = multer.diskStorage({
 });
 const uploadInspecao = multer({
     storage: inspecaoStorage,
-    limits: { fileSize: 30 * 1024 * 1024 }
+    limits: { fileSize: 30 * 1024 * 1024 },
+    fileFilter: createSafeFileFilter()
 });
 
 const emergenciaStorage = multer.diskStorage({
@@ -75,7 +79,8 @@ const emergenciaStorage = multer.diskStorage({
 });
 const uploadEmergencia = multer({
     storage: emergenciaStorage,
-    limits: { fileSize: 50 * 1024 * 1024 } // 50MB (permite fotos e pequenos vídeos de evidência)
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB (permite fotos e pequenos vídeos de evidência)
+    fileFilter: createSafeFileFilter()
 });
 
 // Garante tabela de histórico de alertas de emergência
@@ -913,7 +918,7 @@ router.delete('/simulados/:id', async (req, res) => {
 router.post('/alerta-emergencia', uploadEmergencia.single('midia'), async (req, res) => {
     try {
         const { local_incidente, descricao_ocorrencia, nivel_urgencia, turno_alvo } = req.body;
-        const solicitanteNome = req.user?.NomeCompleto || req.user?.login || 'Colaborador MetalFisa';
+        const solicitanteNome = req.user?.NomeCompleto || req.user?.login || 'Colaborador Lynx EMS';
         const solicitanteId = req.user?.idUsuario || null;
 
         if (!local_incidente || !descricao_ocorrencia) {
@@ -947,14 +952,14 @@ router.post('/alerta-emergencia', uploadEmergencia.single('midia'), async (req, 
 
         let midiaTexto = '';
         if (midiaUrl) {
-            const host = req.get('host') || 'metalfisa.com.br';
+            const host = req.get('host') || 'lynxems.com.br';
             const protocol = req.protocol || 'http';
             const linkCompleto = `${protocol}://${host}${midiaUrl}`;
             midiaTexto = `\n📷 *Evidência (${tipoMidia === 'video' ? 'Vídeo Gravado' : 'Foto Tirada'}):* ${linkCompleto}\n`;
         }
 
         const mensagemTexto = 
-            `🚨 *ALERTA DE EMERGÊNCIA - BRIGADA DE INCÊNDIO METALFISA* 🚨\n\n` +
+            `🚨 *ALERTA DE EMERGÊNCIA - BRIGADA DE INCÊNDIO LYNX EMS* 🚨\n\n` +
             `📍 *Local do Incidente:* ${local_incidente}\n` +
             `⚠️ *Nível de Urgência:* ${(nivel_urgencia || 'GRAVE').toUpperCase()}\n` +
             `📋 *Descrição:* ${descricao_ocorrencia}\n` +

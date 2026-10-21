@@ -380,7 +380,7 @@ const ProductStructure = () => {
                 structure,
                 routes: allRoutesMap,
                 productStatuses,
-                userName: user?.nome || user?.email || 'Comercial MetalFisa'
+                userName: user?.nome || user?.email || 'Comercial Lynx EMS'
             });
         } catch (err) {
             console.error('Erro ao exportar Excel Comercial:', err);
@@ -552,7 +552,7 @@ const ProductStructure = () => {
                                                     ? 'bg-emerald-100 text-emerald-600 border border-emerald-300 cursor-not-allowed'
                                                     : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-700/20 active:scale-[0.98]'
                                             }`}
-                                            title="Exportar Relatório Comercial de Custos e Formação de Preço em Excel (Padrão Oficial MetalFisa: Materiais, NCM, Preço de Venda e Mão de Obra)"
+                                            title="Exportar Relatório Comercial de Custos e Formação de Preço em Excel (Padrão Oficial Lynx EMS: Materiais, NCM, Preço de Venda e Mão de Obra)"
                                         >
                                             {isExportingExcel ? (
                                                 <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />

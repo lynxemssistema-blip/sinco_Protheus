@@ -18,13 +18,13 @@ import MeetingReportModal from './MeetingReportModal';
 import ProductImageModal from './ProductImageModal';
 import EngineeringControlModal from './EngineeringControlModal';
 import PCPForecastModal from './PCPForecastModal';
-import PCPMetalDrawer from './PCPMetalDrawer';
 import InvoiceDetailsModal from './InvoiceDetailsModal';
 import PCPBalanceModal from './PCPBalanceModal';
 import ClassificacaoModal from './orders/ClassificacaoModal';
 import PlanejamentoInteligenteModal from './PlanejamentoInteligenteModal';
 import SplitOPModal from './SplitOPModal';
 import ManageLotModal from './ManageLotModal';
+import OpHistoricoModal from './orders/OpHistoricoModal';
 import BOMStructureModal from './BOMStructureModal';
 import ProductStructureStockModal from './orders/ProductStructureStockModal';
 import { useAuth } from '../contexts/AuthContext';
@@ -41,7 +41,7 @@ import ItemStatusBadge from './orders/ItemStatusBadge';
 import TableSkeletonRows from './orders/TableSkeletonRows';
 import RetryToast from './orders/RetryToast';
 import { useOrders } from '../hooks/useOrders';
-import ColumnSettingsPanel, { loadColConfigLocal, loadColConfigFromServer, saveColConfig } from './orders/ColumnSettingsPanel';
+import ColumnSettingsPanel, { loadColConfigLocal, loadColConfigFromServer, saveColConfig, getColumnWidthStyle, MIN_COLUMN_WIDTH } from './orders/ColumnSettingsPanel';
 import * as XLSX from 'xlsx';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import VirtualFlatList from './orders/VirtualFlatList';
@@ -57,7 +57,7 @@ export const ALL_FLAT_COLUMNS = [
     { key: 'cliente', label: 'Cliente', required: false, width: 150 },
     { key: 'pc', label: 'PC', required: false, width: 90 },
     { key: 'item', label: 'It', required: false, width: 40 },
-    { key: 'op', label: 'OP', required: false, width: 80 },
+    { key: 'op', label: 'OP', required: false, width: 175 },
     { key: 'codigo', label: 'Cód. Prod', required: false, width: 140 },
     { key: 'c6_xrevm', label: 'C6_XREVM', required: false },
     { key: 'rev_cliente', label: 'Rev. Cliente', required: false },
@@ -76,6 +76,17 @@ export const ALL_FLAT_COLUMNS = [
     { key: 'prev_fat', label: 'Prev. Fat.', required: false },
     { key: 'evolucao_op', label: 'Evolução OP', required: false, width: 100 },
 ];
+
+// "Lote LPF" foi criada depois: configurações salvas antes a receberam no fim da tabela.
+// Leva a coluna para logo após "Pedido" uma única vez (marca placedByDefault para respeitar mudanças posteriores do usuário).
+const placeLoteLpfColumn = (cfg) => {
+    const idx = cfg.findIndex(c => c.key === 'lote_lpf');
+    if (idx === -1 || cfg[idx].placedByDefault) return cfg;
+    const rest = cfg.filter(c => c.key !== 'lote_lpf');
+    const pedidoIdx = rest.findIndex(c => c.key === 'pedido');
+    rest.splice(pedidoIdx + 1, 0, { ...cfg[idx], visible: true, placedByDefault: true });
+    return rest;
+};
 
 const getFractionLetter = (index) => {
     const firstChar = String.fromCharCode(65 + Math.floor(index / 26));
@@ -235,10 +246,6 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     const [prioritySubmitting, setPrioritySubmitting] = useState(false);
     const [pageBlocking, setPageBlocking] = useState(null); // null = free, string = blocking message
 
-    // PCPMetal AI Drawer State
-    const [pcpmetalOpen, setPcpmetalOpen] = useState(false);
-    const [pcpmetalContext, setPcpmetalContext] = useState({});
-
     // Invoice Modal State
     const [selectedInvoice, setSelectedInvoice] = useState(null);
     const [invoiceModalItem, setInvoiceModalItem] = useState(null);
@@ -247,7 +254,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     const [openActionMenu, setOpenActionMenu] = useState(null);
     const [menuPosition, setMenuPosition] = useState({ top: undefined, bottom: undefined, right: 0 });
 
-    const [colConfig, setColConfig] = useState(() => loadColConfigLocal(PREF_KEY, ALL_FLAT_COLUMNS));
+    const [colConfig, setColConfig] = useState(() => placeLoteLpfColumn(loadColConfigLocal(PREF_KEY, ALL_FLAT_COLUMNS)));
     const [showColSettings, setShowColSettings] = useState(false);
 
     // Frações e Lotes de Fabricação (LPF)
@@ -260,6 +267,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     const [batchProgress, setBatchProgress] = useState(null);
     const [exportingMasterSheet, setExportingMasterSheet] = useState(false);
     const [filterLote, setFilterLote] = useState('');
+    const [historicoTarget, setHistoricoTarget] = useState(null);
 
     // PCP Excel Import State
     const [importProgress, setImportProgress] = useState(null);
@@ -360,19 +368,104 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
 
     useEffect(() => {
         loadColConfigFromServer(PREF_KEY, ALL_FLAT_COLUMNS).then(cfg => {
-            if (cfg) setColConfig(cfg);
+            if (!cfg) return;
+            const placed = placeLoteLpfColumn(cfg);
+            setColConfig(placed);
+            if (placed !== cfg) saveColConfig(PREF_KEY, placed);
         });
     }, []);
+
+    // ── Largura das colunas (Lista Plana): arrastar a borda direita do cabeçalho; salva nas preferências do usuário ──
+    const colConfigRef = useRef(colConfig);
+    useEffect(() => { colConfigRef.current = colConfig; }, [colConfig]);
+    // O clique que encerra o arraste não deve ordenar a coluna
+    const justResizedRef = useRef(false);
+
+    const applyColWidth = (key, width) => {
+        const next = colConfigRef.current.map(c => (c.key === key ? { ...c, customWidth: width } : c));
+        colConfigRef.current = next;
+        setColConfig(next);
+        return next;
+    };
+
+    const handleColResizeStart = (e, key) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const startX = e.clientX;
+        const startWidth = e.currentTarget.parentElement.getBoundingClientRect().width;
+        let lastWidth = null;
+        let frame = null;
+
+        const onMove = (ev) => {
+            lastWidth = Math.max(MIN_COLUMN_WIDTH, Math.round(startWidth + ev.clientX - startX));
+            if (frame) return;
+            frame = requestAnimationFrame(() => {
+                frame = null;
+                applyColWidth(key, lastWidth);
+            });
+        };
+        const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            if (frame) cancelAnimationFrame(frame);
+            if (lastWidth === null) return;
+            saveColConfig(PREF_KEY, applyColWidth(key, lastWidth));
+            justResizedRef.current = true;
+            setTimeout(() => { justResizedRef.current = false; }, 0);
+        };
+
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    };
+
+    const handleColResizeReset = (e, key) => {
+        e.stopPropagation();
+        saveColConfig(PREF_KEY, applyColWidth(key, undefined));
+    };
+
+    // Aplica a largura salva e a alça de redimensionamento ao <th> da coluna
+    const withColumnSizing = (col, th) => {
+        if (!th) return th;
+        const isSticky = String(th.props.className || '').includes('sticky');
+        // A coluna de seleção é fixa (a coluna Pedido fica "grudada" logo depois dela)
+        if (col.key === 'checkbox') return th;
+        return React.cloneElement(
+            th,
+            {
+                className: `${th.props.className || ''}${isSticky ? '' : ' relative'}`,
+                style: { ...(th.props.style || {}), ...(getColumnWidthStyle(col) || {}) }
+            },
+            <>
+                {th.props.children}
+                <span
+                    onMouseDown={(e) => handleColResizeStart(e, col.key)}
+                    onDoubleClick={(e) => handleColResizeReset(e, col.key)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize select-none z-30 hover:bg-blue-400/50 active:bg-blue-500/60"
+                    title="Arraste para ajustar a largura (duplo clique volta ao padrão)"
+                />
+            </>
+        );
+    };
 
     useEffect(() => {
         if (!openActionMenu) return;
         const close = () => setOpenActionMenu(null);
+        // Rolagem dentro do próprio menu (menu longo) não deve fechá-lo
+        const closeOnScroll = (e) => {
+            if (e.target?.closest?.('[data-action-menu]')) return;
+            setOpenActionMenu(null);
+        };
         document.addEventListener('click', close);
-        document.addEventListener('scroll', close, true);
+        document.addEventListener('scroll', closeOnScroll, true);
         window.addEventListener('resize', close);
         return () => {
             document.removeEventListener('click', close);
-            document.removeEventListener('scroll', close, true);
+            document.removeEventListener('scroll', closeOnScroll, true);
             window.removeEventListener('resize', close);
         };
     }, [openActionMenu]);
@@ -427,7 +520,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     }, [setPage]);
 
     const limit = viewMode === 'flat' ? 50 : 20;
-    const colSpanCount = viewMode === 'flat' ? 24 : 7;
+    const colSpanCount = viewMode === 'flat' ? ALL_FLAT_COLUMNS.length : 7;
 
     // Quando fixedClassificacao é definido (ex: painel de PPAP's), a restrição precisa
     // chegar ao BACKEND — não só filtrar visualmente depois de já ter buscado tudo.
@@ -628,7 +721,10 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
     const handleExcluirOp = useCallback(async (item) => {
         if (!item?.pedido || !item?.item) return;
         const opName = item.op_num_completa || item.op_num || item.item;
-        const msg = item.item_fracionado 
+        // Linha de fração PCP (AA, AB...): a exclusão atinge a OP do item inteiro, não só esta fração
+        const msg = item.is_fraction
+            ? `ATENÇÃO: esta linha é a Fração ${item.fraction_letter} do item ${item.item} (Pedido ${item.pedido}).\n\nExcluir a O.P. apaga a OP ${opName} do item INTEIRO, incluindo todas as ${item.total_fractions} frações e suas programações PCP.\n\nPara apenas desfazer as frações, use "Unificar OP (Excluir Frações)".\n\nDeseja excluir a OP do item inteiro?`
+            : item.item_fracionado
             ? `Tem certeza que deseja excluir a OP ${opName} (Item Fracionado ${item.item}) do Pedido ${item.pedido}?\n\nAo excluir, esta fração será removida e sua quantidade retornará ao item original do pedido.`
             : `Tem certeza que deseja excluir a OP ${opName} do Pedido ${item.pedido}?`;
 
@@ -1527,6 +1623,441 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
         });
     }, [orders, filters.sortBy, filters.sortOrder, viewMode, fixedClassificacao, filters.classificacao_item]);
 
+    // Linhas exibidas na Lista Plana (uma por fração) + filtro de Lote e recorte por Data PCP das frações
+    const flatRows = React.useMemo(() => {
+        if (viewMode !== 'flat') return sortedOrders;
+        let rows = buildFlatRows(sortedOrders);
+
+        if (filterLote.trim()) {
+            const term = filterLote.trim().toLowerCase();
+            rows = rows.filter(r =>
+                (r.lpf_codigo && String(r.lpf_codigo).toLowerCase().includes(term)) ||
+                (r.fraction_letter && r.fraction_letter.toLowerCase().includes(term)) ||
+                (r.numero_lote && String(r.numero_lote).toLowerCase().includes(term)) ||
+                (r.visual_op && String(r.visual_op).toLowerCase().includes(term))
+            );
+        }
+
+        // O backend devolve o item inteiro quando alguma programação cai no período; aqui ficam só as frações do período
+        if (filters.dateType === 'entrega_pcp' && (filters.dataInicial || filters.dataFinal)) {
+            const start = filters.dataInicial ? new Date(filters.dataInicial + 'T00:00:00') : null;
+            const end = filters.dataFinal ? new Date(filters.dataFinal + 'T23:59:59') : null;
+            rows = rows.filter(r => {
+                if (!r.is_fraction || !r.data_entrega_pcp) return true;
+                let cleanDate = String(r.data_entrega_pcp).trim();
+                if (/^\d{8}$/.test(cleanDate)) {
+                    cleanDate = `${cleanDate.substring(0, 4)}-${cleanDate.substring(4, 6)}-${cleanDate.substring(6, 8)}`;
+                }
+                const d = new Date(cleanDate.includes('T') ? cleanDate : cleanDate + 'T00:00:00');
+                if (isNaN(d.getTime())) return true;
+                if (start && d < start) return false;
+                if (end && d > end) return false;
+                return true;
+            });
+        }
+        return rows;
+    }, [sortedOrders, viewMode, filterLote, filters.dateType, filters.dataInicial, filters.dataFinal]);
+
+    const selectedFlatRows = viewMode === 'flat' ? selectedItems.filter(i => i && typeof i === 'object') : [];
+    const hasSelectedWithLot = selectedFlatRows.some(r => r.lpf_codigo);
+
+    const allFreeSelected = React.useMemo(() => {
+        if (viewMode !== 'flat') return false;
+        const selectedIds = new Set(selectedItems.map(s => s?.fraction_id));
+        const freeRows = flatRows.filter(r => !r.lpf_codigo);
+        return freeRows.length > 0 && freeRows.every(r => selectedIds.has(r.fraction_id));
+    }, [flatRows, selectedItems, viewMode]);
+
+    const handleSelectAllFree = (e) => {
+        setSelectedItems(e.target.checked ? flatRows.filter(r => !r.lpf_codigo) : []);
+    };
+
+    // ── Fracionamento de OP ──
+    const handleUnifyOp = async (item) => {
+        if (!window.confirm(`Deseja excluir as frações do item ${item.item} (Pedido ${item.pedido}) e unificar a OP de volta em um único lote?`)) return;
+        try {
+            await api.delete(`/pedidos/split-op/${item.pedido}/${item.item}`);
+            toast.success('Fracionamento desfeito! OP unificada com sucesso.');
+            reloadFromStart();
+        } catch (err) {
+            console.error(err);
+            toast.error(err.response?.data?.error || 'Erro ao unificar OP.');
+        }
+    };
+
+    const handleOpenSmartPlanOp = (item) => {
+        const op = item.op_num || item.visual_op;
+        if (!op || String(op).trim() === '' || String(op).trim() === '-') {
+            toast.warning('Item sem OP para calcular com o Agente.');
+            return;
+        }
+        setSmartPlanTarget([]);
+        setSmartPlanOps([{ op, op_num: op, pedido: item.pedido, item: item.item, produto: item.codigo || item.produto }]);
+        setShowSmartPlanModal(true);
+    };
+
+    // ── Lotes de Fabricação (LPF) ──
+    const handleOpenManageLotModal = (customItems = null, preselectedCode = null) => {
+        let itemsToAssign = Array.isArray(customItems) && customItems.length > 0 ? customItems : selectedFlatRows;
+
+        if (!preselectedCode) {
+            // Lote novo: itens que já estão em outro lote ficam de fora
+            const blockedItems = itemsToAssign.filter(f => f.lpf_codigo);
+            const freeItems = itemsToAssign.filter(f => !f.lpf_codigo);
+            if (blockedItems.length > 0) {
+                if (freeItems.length === 0) {
+                    toast.warning(`Todos os ${blockedItems.length} item(ns) selecionado(s) já pertencem a um Lote de Fabricação e estão bloqueados. Remova-os do lote atual antes de transferir.`);
+                    return;
+                }
+                toast.info(`${blockedItems.length} item(ns) já pertencentes a outros lotes foram desconsiderados.`);
+                itemsToAssign = freeItems;
+            }
+        } else {
+            const foreignItems = itemsToAssign.filter(f => f.lpf_codigo && f.lpf_codigo !== preselectedCode);
+            if (foreignItems.length > 0) {
+                toast.warning(`${foreignItems.length} item(ns) pertencem a outros lotes e não podem ser incluídos neste.`);
+                itemsToAssign = itemsToAssign.filter(f => !f.lpf_codigo || f.lpf_codigo === preselectedCode);
+            }
+        }
+
+        if (itemsToAssign.length === 0) {
+            toast.warning('Nenhum item disponível para inclusão no lote.');
+            return;
+        }
+
+        setManageLotSelectedItems(itemsToAssign);
+        setManageLotPreselectedCode(preselectedCode || null);
+        setIsManageLotModalOpen(true);
+    };
+
+    const handleRemoveSelectedFromLot = async () => {
+        const itemsToRemove = selectedFlatRows.filter(f => f.lpf_codigo);
+        if (itemsToRemove.length === 0) {
+            toast.warning('Nenhum item pertencente a lote foi selecionado.');
+            return;
+        }
+        if (!window.confirm(`Deseja remover ${itemsToRemove.length} item(ns) selecionado(s) de seus respectivos lotes?`)) return;
+
+        try {
+            for (const it of itemsToRemove) {
+                await api.post('/pcp-releases/remove-item-from-lot', {
+                    pedido: it.pedido,
+                    item: it.item,
+                    fraction_id: it.fraction_id,
+                    is_fraction: it.is_fraction,
+                    fraction_letter: it.fraction_letter,
+                    codigo_lote: it.lpf_codigo
+                });
+            }
+            toast.success(`${itemsToRemove.length} item(ns) removido(s) do lote com sucesso!`);
+            setSelectedItems([]);
+            reloadFromStart();
+        } catch (err) {
+            console.error('Erro ao remover itens do lote:', err);
+            toast.error('Erro ao remover do lote: ' + (err.response?.data?.error || err.message));
+        }
+    };
+
+    const handleRemoveItemFromLot = async (item) => {
+        const itemIdentifier = `${item.pedido} - Item ${item.item}${item.is_fraction ? ` (Fração ${item.fraction_letter || item.numero_lote || ''})` : ''}`;
+        if (!window.confirm(`Deseja remover ${itemIdentifier} do lote ${item.lpf_codigo}?`)) return;
+        try {
+            await api.post('/pcp-releases/remove-item-from-lot', {
+                pedido: item.pedido,
+                item: item.item,
+                fraction_id: item.fraction_id,
+                is_fraction: !!item.is_fraction,
+                fraction_letter: item.fraction_letter || item.numero_lote || ''
+            });
+            toast.success(`Item removido do lote ${item.lpf_codigo}.`);
+            reloadFromStart();
+        } catch (err) {
+            console.error('Erro ao remover do lote:', err);
+            toast.error(err.response?.data?.error || 'Erro ao remover item do lote.');
+        }
+    };
+
+    const handleDissolveLot = async (codigoLote) => {
+        if (!window.confirm(`ATENÇÃO: Deseja realmente desmanchar o Lote ${codigoLote}? Todos os itens serão desvinculados.`)) return;
+        try {
+            await api.post('/pcp-releases/dissolve-lot', { codigo_lote: codigoLote });
+            toast.success(`Lote ${codigoLote} desmanchado com sucesso.`);
+            reloadFromStart();
+        } catch (err) {
+            console.error('Erro ao desmanchar lote:', err);
+            toast.error(err.response?.data?.error || 'Erro ao desmanchar lote.');
+        }
+    };
+
+    const downloadPdfBytes = (pdfBytes, fileName) => {
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+    };
+
+    // Reimprime o pacote do lote: usa o PDF arquivado no servidor ou gera na hora com os itens do lote
+    const handleReprintLPF = async (codigo) => {
+        try {
+            setDownloadingPDF(true);
+            setPrintingOrderId('batch');
+            setBatchProgress({ current: 1, total: 1, status: `Buscando pacote do Lote ${codigo}...` });
+
+            let hasServerPdf = false;
+            try {
+                const res = await api.get(`/pcp-releases/find/${encodeURIComponent(codigo)}`);
+                if (res.data?.caminho_arquivo) {
+                    window.open(`${api.defaults.baseURL}/pcp-releases/download/${encodeURIComponent(codigo)}`, '_blank');
+                    hasServerPdf = true;
+                }
+            } catch (findErr) {
+                console.log(`PDF não arquivado no servidor para o Lote ${codigo}. Gerando na hora...`);
+            }
+
+            if (!hasServerPdf) {
+                const targetItems = flatRows.filter(r => r.lpf_codigo === codigo);
+                if (targetItems.length === 0) {
+                    toast.warning(`Nenhum item encontrado no lote ${codigo} para gerar o PDF.`);
+                    return;
+                }
+                setBatchProgress({ current: 1, total: targetItems.length, status: `Gerando pacote com desenhos do lote ${codigo}...` });
+                const { generateLoteWithDrawingsPdf } = await import('../services/loteWithDrawingsPdfGenerator');
+                const pdfBytes = await generateLoteWithDrawingsPdf(targetItems, user?.nome || 'Usuário', codigo);
+                if (pdfBytes) {
+                    downloadPdfBytes(pdfBytes, `LOTE_${codigo.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`);
+                    toast.success(`Pacote do Lote ${codigo} gerado com sucesso!`);
+                }
+            }
+        } catch (err) {
+            console.error('Erro na re-impressão.', err);
+            toast.error('Erro ao gerar documento do lote: ' + err.message);
+        } finally {
+            setDownloadingPDF(false);
+            setPrintingOrderId(null);
+            setBatchProgress(null);
+        }
+    };
+
+    // Liberar Produção / Aglutinar: abre a confirmação (registrar ou não a liberação)
+    const handleOpenRelease = (targets) => {
+        if (!targets || targets.length === 0) {
+            toast.info('Selecione uma ou mais OPs na tabela com os checkboxes para liberar para fabricação.');
+            return;
+        }
+        // Um lote existente é liberado inteiro com o próprio código; não se mistura com outro lote nem com itens livres
+        const lotes = [...new Set(targets.map(t => t.lpf_codigo).filter(Boolean))];
+        if (lotes.length > 1 || (lotes.length === 1 && targets.some(t => !t.lpf_codigo))) {
+            toast.error(`Itens de lotes diferentes (${lotes.join(', ')}) ou misturados com itens sem lote não podem ser aglutinados juntos. Selecione apenas os itens de um lote, ou apenas itens sem lote.`);
+            return;
+        }
+        setPcpReleaseModal({ open: true, targets, registerRelease: true });
+    };
+
+    const executeBatchPrintAglutinado = async (targets, registerRelease) => {
+        setPcpReleaseModal({ open: false, targets: [], registerRelease: true });
+        try {
+            setDownloadingPDF(true);
+            setPrintingOrderId('batch');
+            setBatchProgress({ current: 1, total: targets.length, status: 'Consolidando Lote Aglutinado e extraindo desenhos...' });
+
+            // 1. Registra a liberação primeiro para obter o código único (LPF).
+            // Itens que já formam um lote usam o código desse lote (não nasce um LPF novo)
+            const loteExistente = targets[0]?.lpf_codigo && targets.every(t => t.lpf_codigo === targets[0].lpf_codigo)
+                ? targets[0].lpf_codigo
+                : null;
+            let codigoLiberacao = registerRelease ? loteExistente : null;
+            if (registerRelease && !loteExistente) {
+                try {
+                    const loteInfoStr = targets.map(t => t.visual_op || t.op_num || (t.pedido ? `Ped. ${t.pedido}` : '-')).join(', ');
+                    const dataPcpGeral = targets[0]?.data_entrega_pcp
+                        ? new Date(targets[0].data_entrega_pcp).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+                        : '-';
+                    const opsPayload = targets.map(t => ({
+                        pedido: t.pedido,
+                        item: t.item,
+                        fraction_id: t.fraction_id,
+                        is_fraction: !!t.is_fraction,
+                        visual_op: t.visual_op || t.op_num,
+                        produto: t.cod_produto || t.produto || t.codigo,
+                        codigo: t.cod_produto || t.produto || t.codigo,
+                        descricao: t.descricao || t.desc_produto || '',
+                        qtd: t.visual_qtd || t.qtd_faturar,
+                        cliente: t.nome_cliente || t.cliente || '',
+                        nome_cliente: t.nome_cliente || t.cliente || '',
+                        data_entrega_pcp: t.data_entrega_pcp || t.pcp_delivery_forecast_date || ''
+                    }));
+                    const logRes = await api.post('/pcp-releases/log', {
+                        lote_info: loteInfoStr,
+                        data_pcp: dataPcpGeral,
+                        usuario: user?.nome || 'Usuário',
+                        qtd_ops: targets.length,
+                        ops_json: JSON.stringify(opsPayload)
+                    });
+                    codigoLiberacao = logRes.data?.codigo_liberacao || null;
+                } catch (logErr) {
+                    console.warn('Falha ao registrar liberação PCP:', logErr.message);
+                    if (logErr.response?.status === 409) {
+                        toast.error(logErr.response.data?.error || 'Liberação bloqueada.');
+                        return;
+                    }
+                    toast.warning('Não foi possível registrar a liberação. O PDF será gerado sem código LPF.');
+                }
+            }
+
+            // 2. Gera o PDF com o código da liberação no cabeçalho
+            const { generateLoteWithDrawingsPdf } = await import('../services/loteWithDrawingsPdfGenerator');
+            const pdfBytes = await generateLoteWithDrawingsPdf(targets, user?.nome || 'Usuário', codigoLiberacao);
+
+            if (pdfBytes) {
+                const loteInfo = targets[0]?.lote || targets[0]?.raw_numero_lote || 'Geral';
+                const fileName = codigoLiberacao ? `${codigoLiberacao}_LOTE_${loteInfo}.pdf` : `LOTE_${loteInfo}_AGRUPADO.pdf`;
+                downloadPdfBytes(pdfBytes, fileName);
+
+                // 3. Com liberação registrada: salva na pasta de OS e vincula as OPs/frações ao lote
+                if (codigoLiberacao) {
+                    try {
+                        setBatchProgress({ current: targets.length, total: targets.length, status: 'Salvando na pasta de OS...' });
+                        const uint8 = new Uint8Array(pdfBytes);
+                        let binary = '';
+                        uint8.forEach(b => { binary += String.fromCharCode(b); });
+                        await api.post('/pcp-releases/save-pdf', {
+                            codigo_liberacao: codigoLiberacao,
+                            filename: fileName,
+                            pdfBase64: btoa(binary)
+                        });
+
+                        // Lote existente: os itens já estão vinculados a ele
+                        if (!loteExistente) await api.post('/pcp-releases/create-or-assign-lot', {
+                            codigo_lote: codigoLiberacao,
+                            data_pcp: targets[0]?.data_entrega_pcp ? new Date(targets[0].data_entrega_pcp).toISOString().split('T')[0] : null,
+                            items: targets.map(t => ({
+                                pedido: t.pedido,
+                                item: t.item,
+                                fraction_id: t.fraction_id,
+                                is_fraction: !!t.is_fraction,
+                                fraction_letter: t.fraction_letter || t.numero_lote || '',
+                                quantidade_pcp: t.visual_qtd || t.quantidade_pcp || t.qtd_faturar,
+                                data_entrega_pcp: t.data_entrega_pcp || null
+                            })),
+                            usuario: user?.nome || 'PCP Gestão'
+                        });
+
+                        setSelectedItems([]);
+                        reloadFromStart();
+                    } catch (saveErr) {
+                        console.warn('Falha ao salvar PDF na rede ou vincular lote:', saveErr.message);
+                        toast.warning('PDF gerado, mas houve falha ao salvar na pasta de OS ou vincular o lote.');
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Erro na impressão em lote aglutinado:', error);
+            alert(`Erro na impressão em lote: ${error.message}`);
+        } finally {
+            setDownloadingPDF(false);
+            setPrintingOrderId(null);
+            setBatchProgress(null);
+        }
+    };
+
+    // Pacote único: OP + Desenhos de todas as linhas selecionadas em um só PDF (rastreabilidade)
+    const handleBatchPrintPacoteUnico = async () => {
+        const targets = selectedFlatRows;
+        if (targets.length === 0) {
+            alert('Nenhuma OP disponível para impressão nesse filtro/seleção.');
+            return;
+        }
+        if (!window.confirm(`Deseja gerar o documento de Rastreabilidade das Operações para as ${targets.length} peças selecionadas?`)) return;
+
+        try {
+            setDownloadingPDF(true);
+            setPrintingOrderId('batch');
+            setBatchProgress({ current: 0, total: targets.length, status: 'Iniciando montagem...' });
+
+            const { PDFDocument } = await import('pdf-lib');
+            const { generateOPByOperationWithDrawingsPdf } = await import('../services/opByOperationWithDrawingsPdfGenerator');
+            const finalPdf = await PDFDocument.create();
+
+            for (let i = 0; i < targets.length; i++) {
+                const row = targets[i];
+                const visualOpInfo = row.visual_op || row.op_num || (row.pedido ? `Item ${row.item || ''} Ped. ${row.pedido}` : '-');
+                setBatchProgress({ current: i + 1, total: targets.length, status: `Adicionando OP Lote ${visualOpInfo}...` });
+
+                const endpoint = row.is_fraction && row.visual_qtd
+                    ? `/pedidos/op-mirror/${row.pedido}?item=${row.item}&qtd_lote=${row.visual_qtd}`
+                    : `/pedidos/op-mirror/${row.pedido}?item=${row.item}`;
+                const response = await api.get(endpoint);
+                const rowPdfBytes = await generateOPByOperationWithDrawingsPdf(response.data, user?.nome || 'Usuário', row, true);
+
+                if (rowPdfBytes) {
+                    const rowDoc = await PDFDocument.load(rowPdfBytes, { ignoreEncryption: true });
+                    const copiedPages = await finalPdf.copyPages(rowDoc, rowDoc.getPageIndices());
+                    copiedPages.forEach(p => finalPdf.addPage(p));
+                }
+            }
+
+            setBatchProgress({ current: targets.length, total: targets.length, status: 'Finalizando arquivo...' });
+            const mergedPdfBytes = await finalPdf.save({ useObjectStreams: false });
+            const loteInfo = targets[0]?.lote || targets[0]?.raw_numero_lote || 'Geral';
+            downloadPdfBytes(mergedPdfBytes, `Pacote_Rastreabilidade_LOTE_${loteInfo}.pdf`);
+        } catch (error) {
+            console.error('Erro na impressão em lote com desenhos:', error);
+            alert(`Erro na impressão em lote: ${error.message}`);
+        } finally {
+            setDownloadingPDF(false);
+            setPrintingOrderId(null);
+            setBatchProgress(null);
+        }
+    };
+
+    // Planilha Mestra por OP/Fração (selecionadas ou todas as linhas da tela)
+    const handleExportFractionalMasterSheet = async () => {
+        const targetItems = selectedFlatRows.length > 0 ? selectedFlatRows : flatRows;
+        if (!targetItems || targetItems.length === 0) {
+            toast.warning('Nenhuma OP / fração disponível para exportar a Planilha Mestra.');
+            return;
+        }
+
+        setExportingMasterSheet(true);
+        try {
+            // Engenharia complementar (BOM e recursos) dos produtos exportados
+            let masterData = {};
+            try {
+                const uniqueProds = [...new Set(targetItems.map(it => (it.codigo || it.produto || '').trim()).filter(Boolean))];
+                const prodParam = filters.produto || (uniqueProds.length > 0 && uniqueProds.length <= 50 ? uniqueProds.join(',') : undefined);
+                masterData = await getSalesPlanningMasterSheet({
+                    cliente: filters.cliente,
+                    pedido: filters.pedido,
+                    produto: prodParam,
+                    pedcli: filters.pedcli,
+                    refCliente: filters.refCliente,
+                    only_active: filters.only_active
+                });
+            } catch (e) {
+                console.warn('[Planilha Mestra] Falha ao carregar engenharia complementar:', e);
+            }
+
+            await exportFractionalMasterSheetExcel(targetItems, masterData, {
+                cliente: filters.cliente,
+                pedido: filters.pedido,
+                pedcli: filters.pedcli,
+                refCliente: filters.refCliente,
+                only_active: filters.only_active
+            });
+            toast.success(`Planilha Mestra exportada com sucesso (${targetItems.length} OPs/frações)!`);
+        } catch (err) {
+            console.error('Erro ao exportar Planilha Mestra:', err);
+            toast.error(err.message || 'Erro ao exportar Planilha Mestra.');
+        } finally {
+            setExportingMasterSheet(false);
+        }
+    };
+
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-5rem)] md:h-[calc(100vh-2.5rem)] overflow-hidden print:overflow-visible print:shadow-none print:border-none relative">
             {/* Global Overlay for PDF Generation */}
@@ -1535,7 +2066,17 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                     <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center text-center max-w-md border border-gray-100">
                         <Loader2 className="h-12 w-12 text-blue-600 animate-spin mb-4" />
                         <h3 className="text-xl font-bold text-gray-800 mb-2">Processando PDF...</h3>
-                        <p className="text-sm text-gray-600">Por favor, aguarde enquanto o sistema consolida a Estrutura da OP e anexa todos os Desenhos. Isso pode demorar alguns segundos e o download iniciará automaticamente.</p>
+                        {batchProgress ? (
+                            <div className="w-full mt-2">
+                                <p className="text-sm font-semibold text-blue-700 mb-2">{batchProgress.status}</p>
+                                <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                                    <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${batchProgress.total ? (batchProgress.current / batchProgress.total) * 100 : 0}%` }}></div>
+                                </div>
+                                <p className="text-xs text-gray-500">{batchProgress.current} de {batchProgress.total} Concluídos</p>
+                            </div>
+                        ) : (
+                            <p className="text-sm text-gray-600">Por favor, aguarde enquanto o sistema consolida a Estrutura da OP e anexa todos os Desenhos. Isso pode demorar alguns segundos e o download iniciará automaticamente.</p>
+                        )}
                     </div>
                 </div>
             )}
@@ -1867,7 +2408,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                     </div>
 
                     {/* Filtro Tipo de Item (Multi-select Pills) */}
-                    <div className="flex flex-col gap-1 md:col-span-2 lg:col-span-3">
+                    <div className={`flex flex-col gap-1 md:col-span-2 ${viewMode === 'flat' ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
                         <label className="text-[11px] font-medium text-gray-600 ml-1">Tipo de Item:</label>
                         <div className="flex flex-wrap gap-1">
                             {['PCP', 'Restrição', 'Revisão', 'Novo'].map(tipo => {
@@ -1895,6 +2436,25 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                             })}
                         </div>
                     </div>
+
+                    {/* Filtro Lote (Lote LPF, fração ou OP da fração) — aplicado na Lista Plana */}
+                    {viewMode === 'flat' && (
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[11px] font-medium text-gray-600 ml-1">Lote:</label>
+                            <div className="relative">
+                                <Layers className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                                <input
+                                    type="text"
+                                    name="lote"
+                                    placeholder="LPF / Fração..."
+                                    value={filterLote}
+                                    onChange={(e) => setFilterLote(e.target.value)}
+                                    className="pl-10 w-full rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                                    title="Filtrar por código do Lote LPF, letra da fração (AA, AB...) ou OP da fração"
+                                />
+                            </div>
+                        </div>
+                    )}
 
                     <div className="md:col-span-4 lg:col-span-5 flex flex-wrap gap-2">
                         <button
@@ -1946,6 +2506,19 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                 <FileText className="h-4 w-4" />
                             )}
                         </button>
+
+                        {viewMode === 'flat' && (
+                            <button
+                                type="button"
+                                onClick={handleExportFractionalMasterSheet}
+                                disabled={exportingMasterSheet || flatRows.length === 0}
+                                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-medium rounded-lg text-sm px-2.5 py-2.5 text-center transition-colors flex items-center justify-center gap-1 disabled:opacity-40"
+                                title="Planilha Mestra por OP/Fração (Excel) — itens selecionados ou todos da tela"
+                            >
+                                {exportingMasterSheet ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                                <span className="font-semibold text-xs tracking-tight">OP/Fração</span>
+                            </button>
+                        )}
 
                         {viewMode === 'flat' && (
                             <button
@@ -2072,7 +2645,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                 
                 {/* Lote Actions */}
                 {selectedItems.length > 0 && (
-                    <div className="px-4 flex items-center gap-2">
+                    <div className="px-4 py-1 flex flex-wrap items-center justify-end gap-2">
                         <button
                             onClick={() => openPriorityModal(selectedItems, 'faturamento')}
                             className="flex items-center gap-2 px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded shadow text-sm font-medium transition-colors"
@@ -2095,7 +2668,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                             Ata ({selectedItems.length})
                         </button>
                                                 <button
-                            onClick={() => { setSmartPlanTarget(selectedItems); setShowSmartPlanModal(true); }}
+                            onClick={() => { setSmartPlanOps([]); setSmartPlanTarget(selectedItems); setShowSmartPlanModal(true); }}
                             className="flex items-center gap-2 px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded shadow text-sm font-medium transition-colors"
                         >
                             <Bot className="w-4 h-4" />
@@ -2141,8 +2714,39 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                 <button onClick={() => handleBulkPrint('op_stamp_resource_drawings')} className="w-full flex text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors">OP + Desenhos (Por Recurso + Carimbo)</button>
                                 <button onClick={() => handleBulkPrint('op_stamp_desc_drawings')} className="w-full flex text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors">OP + Desenhos (Carimbo + Descrição)</button>
                                 <button onClick={() => handleBulkPrint('op_stamp_desc_resource_drawings')} className="w-full flex text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-blue-600 transition-colors">OP + Desenhos (Por Recurso + Carimbo + Descrição)</button>
+                                {viewMode === 'flat' && (
+                                    <>
+                                        <div className="border-t border-gray-100 my-1" />
+                                        <button onClick={handleBatchPrintPacoteUnico} disabled={downloadingPDF} className="w-full flex text-left px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 transition-colors disabled:opacity-40" title="OP + Desenhos de todos os itens selecionados em um único PDF">Pacote Único (OP + Desenhos, 1 arquivo)</button>
+                                    </>
+                                )}
                             </div>
                         </div>
+
+                        {/* Lote de Fabricação (LPF) Dropdown */}
+                        {viewMode === 'flat' && (
+                            <div className="relative group z-[100]">
+                                <button className="flex items-center gap-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded shadow text-sm font-medium transition-colors">
+                                    <Layers className="w-4 h-4" />
+                                    Lote LPF ({selectedItems.length})
+                                    <ChevronDown className="w-4 h-4 ml-1" />
+                                </button>
+                                <div className="absolute top-full right-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-2xl py-2 hidden group-hover:block z-[100]">
+                                    <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Lote de Fabricação</div>
+                                    <button onClick={() => handleOpenManageLotModal()} className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                                        <Layers className="w-4 h-4 text-indigo-500" /> Criar / Inserir no Lote
+                                    </button>
+                                    <button onClick={() => handleOpenRelease(selectedFlatRows)} disabled={downloadingPDF} className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors disabled:opacity-40" title="Liberar formalmente para a fábrica e gerar documento com código LPF e Carimbo Oficial">
+                                        <Factory className="w-4 h-4 text-emerald-600" /> Liberar Produção / Aglutinar
+                                    </button>
+                                    {hasSelectedWithLot && (
+                                        <button onClick={handleRemoveSelectedFromLot} className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm text-rose-600 hover:bg-rose-50 transition-colors">
+                                            <Trash2 className="w-4 h-4 text-rose-500" /> Remover do Lote
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -2166,7 +2770,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                     </tr>
                                 ) : (
                                     <tr>
-                                        {colConfig.filter(c => c.visible).map(col => {
+                                        {colConfig.filter(c => c.visible).map(col => withColumnSizing(col, (() => {
                                             const isSortable = ['pedido', 'emissao', 'entrega', 'data_pcp', 'prev_fat'].includes(col.key);
                                             const sortKeyMap = { 'pedido': 'pedido', 'emissao': 'emissao', 'entrega': 'entrega', 'data_pcp': 'entrega_pcp', 'prev_fat': 'prev_fat' };
                                             const isActiveSort = isSortable && filters.sortBy === sortKeyMap[col.key];
@@ -2174,6 +2778,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                             
                                             const thProps = isSortable ? {
                                                 onClick: () => {
+                                                    if (justResizedRef.current) return;
                                                     const mapped = sortKeyMap[col.key];
                                                     setFilters(prev => ({
                                                         ...prev,
@@ -2192,7 +2797,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                         <th key="checkbox" className="px-2 py-3 border-b border-slate-700 text-center sticky left-0 z-20 bg-gray-50 min-w-[40px] max-w-[40px] w-[40px]">
                                                             <input 
                                                                 type="checkbox" 
-                                                                checked={orders.length > 0 && selectedItems.length === orders.length}
+                                                                checked={flatRows.length > 0 && selectedItems.length === flatRows.length}
                                                                 onChange={handleSelectAll}
                                                                 className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                                                             />
@@ -2200,6 +2805,22 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                     );
                                                 case 'pedido':
                                                     return <th key="pedido" {...thProps} className={`px-3 py-3 font-semibold sticky left-[40px] z-20 bg-gray-50 min-w-[90px] max-w-[90px] w-[90px] ${thProps.className || ''}`}>Pedido{sortIcon}</th>;
+                                                case 'lote_lpf': {
+                                                    return (
+                                                        <th key="lote_lpf" className="px-3 py-3 font-semibold text-center bg-gray-50 min-w-[110px] whitespace-nowrap">
+                                                            <div className="flex items-center justify-center gap-1.5">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={allFreeSelected}
+                                                                    onChange={handleSelectAllFree}
+                                                                    className="w-3.5 h-3.5 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
+                                                                    title="Selecionar todos os itens sem lote"
+                                                                />
+                                                                Lote LPF
+                                                            </div>
+                                                        </th>
+                                                    );
+                                                }
                                                 case 'emissao':
                                                     return <th key="emissao" {...thProps} className={`px-3 py-3 font-semibold text-center bg-gray-50 min-w-[90px] max-w-[90px] w-[90px] ${thProps.className || ''}`}>Emissão{sortIcon}</th>;
                                                 case 'ref_cliente':
@@ -2211,7 +2832,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                 case 'item':
                                                     return <th key="item" className="px-2 py-3 font-semibold text-center bg-gray-50 min-w-[40px] max-w-[40px] w-[40px]">It</th>;
                                                 case 'op':
-                                                    return <th key="op" className="px-3 py-3 font-semibold text-center bg-gray-50 min-w-[80px] max-w-[80px] w-[80px]">OP</th>;
+                                                    return <th key="op" className="px-3 py-3 font-semibold text-center bg-gray-50 min-w-[175px] w-[175px]">OP</th>;
                                                 case 'codigo':
                                                     return <th key="codigo" className="px-3 py-3 font-semibold bg-gray-50 min-w-[140px] max-w-[140px] w-[140px]">Cód. Prod</th>;
                                                 case 'c6_xrevm':
@@ -2248,7 +2869,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                     return <th key="evolucao_op" className="px-4 py-3 font-semibold text-center text-xs w-[100px]">Evolução OP</th>;
                                                 default: return null;
                                             }
-                                        })}
+                                        })()))}
                                     </tr>
                                 )}
                             </thead>
@@ -2952,8 +3573,15 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                             ))
                                         ) : (
                                             // FLAT VIEW -- virtualized: only visible rows in DOM
+                                            flatRows.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={colSpanCount} className="px-6 py-12 text-center text-gray-400">
+                                                        Nenhum registro encontrado para o filtro de Lote / Data PCP.
+                                                    </td>
+                                                </tr>
+                                            ) : (
                                             <VirtualFlatList
-                                                orders={sortedOrders}
+                                                orders={flatRows}
                                                 scrollContainerRef={tableScrollRef}
                                                 canEdit={canEdit}
                                                 hasNextPage={hasNextPage}
@@ -2993,7 +3621,18 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                                 onOpenBomStructure={(op, itemPv, pedido, produto) => setBomStructureTarget({ op, itemPv, pedido, produto })}
                                                 onOpenStructureStock={setStructureStockTarget}
                                                 onExcluirOp={handleExcluirOp}
+                                                onSplitOp={setSplitOpTarget}
+                                                onUnifyOp={handleUnifyOp}
+                                                onSmartPlanOp={handleOpenSmartPlanOp}
+                                                onOpenManageLot={handleOpenManageLotModal}
+                                                onRemoveFromLot={handleRemoveItemFromLot}
+                                                onReprintLot={handleReprintLPF}
+                                                onDissolveLot={handleDissolveLot}
+                                                onReleaseProduction={handleOpenRelease}
+                                                onCorteForecast={setCorteForecastTarget}
+                                                onOpenHistorico={setHistoricoTarget}
                                             />
+                                            )
                                         )}
                                     </>
                                 )}
@@ -3154,6 +3793,8 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                         onSaveSuccess={() => {
                             setCorteForecastTarget(null);
                             setSelectedItems([]);
+                            // Plano de corte pode liberar o lote LPF — atualiza a coluna de lote
+                            reloadFromStart();
                         }}
                         usuario={user?.nome}
                         canEdit={canEdit}
@@ -3203,8 +3844,9 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                     <div onClick={e => e.stopPropagation()}>
                         <PlanejamentoInteligenteModal
                             isOpen={showSmartPlanModal}
-                            onClose={() => setShowSmartPlanModal(false)}
+                            onClose={() => { setShowSmartPlanModal(false); setSmartPlanOps([]); }}
                             selectedPedidos={smartPlanTarget}
+                            selectedOps={smartPlanOps}
                             onPlanSuccess={() => {
                                 fetchData(); // atualiza dados mas NÃO fecha o modal — usuário precisa imprimir o relatório
                             }}
@@ -3222,43 +3864,177 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                             }}
                             canEdit={canEdit}
                         item={pcpForecastTarget}
-                        onSaveSuccess={(newProgs) => {
+                        onSaveSuccess={(newProgs, extraInfo = {}) => {
                             const target = pcpForecastTarget;
                             if (!target) return;
-                            if (Array.isArray(target) || !newProgs) {
-                                fetchData();
-                            } else {
-                                let pcpDate = null;
-                                let pcpQtd = 0;
-                                if (newProgs && newProgs.length > 0) {
-                                    pcpQtd = newProgs.reduce((sum, p) => sum + parseFloat(p.quantidade_pcp || 0), 0);
-                                    const validProgs = newProgs.filter(p => p.data_entrega_pcp);
-                                    if (validProgs.length > 0) {
-                                        const sorted = [...validProgs].sort((a, b) => new Date(a.data_entrega_pcp) - new Date(b.data_entrega_pcp));
-                                        pcpDate = sorted[0].data_entrega_pcp.split('T')[0];
+
+                            // 1. Cenário Lote / Batch
+                            if (Array.isArray(target) || extraInfo?.isBatch) {
+                                const targetList = Array.isArray(target) ? target : (extraInfo?.targetItems || []);
+                                const generatedOpsMap = extraInfo?.generatedOpsMap || {};
+                                const batchDate = extraInfo?.data_entrega_pcp;
+                                const targetKeys = new Set(targetList.map(t => `${String(t.pedido).trim()}_${String(t.item).trim()}`));
+
+                                setOrders(prev => prev.map(o => {
+                                    const k = `${String(o.pedido).trim()}_${String(o.item).trim()}`;
+                                    if (!targetKeys.has(k)) return o;
+                                    const genOp = generatedOpsMap[k];
+                                    const cleanOp = genOp ? String(genOp).trim() : null;
+                                    return {
+                                        ...o,
+                                        ...(batchDate ? { pcp_delivery_forecast_date: batchDate, data_entrega_pcp: batchDate } : {}),
+                                        ...(cleanOp ? {
+                                            op_num: cleanOp.length >= 6 ? cleanOp.substring(0, 6) : cleanOp,
+                                            op_num_completa: cleanOp,
+                                            visual_op: cleanOp,
+                                            op_protheus: cleanOp,
+                                            op_tipo: 'F',
+                                            tem_op: true
+                                        } : {})
+                                    };
+                                }));
+
+                                targetList.forEach(t => {
+                                    if (orderItems[t.pedido]) {
+                                        const k = `${String(t.pedido).trim()}_${String(t.item).trim()}`;
+                                        const genOp = generatedOpsMap[k];
+                                        const cleanOp = genOp ? String(genOp).trim() : null;
+                                        const newItems = orderItems[t.pedido].map(i => {
+                                            if (String(i.item).trim() !== String(t.item).trim()) return i;
+                                            return {
+                                                ...i,
+                                                ...(batchDate ? { pcp_delivery_forecast_date: batchDate, data_entrega_pcp: batchDate } : {}),
+                                                ...(cleanOp ? {
+                                                    op_num: cleanOp.length >= 6 ? cleanOp.substring(0, 6) : cleanOp,
+                                                    op_num_completa: cleanOp,
+                                                    visual_op: cleanOp,
+                                                    op_protheus: cleanOp,
+                                                    op_tipo: 'F',
+                                                    tem_op: true
+                                                } : {})
+                                            };
+                                        });
+                                        updateOrderItemsForPedido(t.pedido, newItems);
                                     }
+                                });
+                                return;
+                            }
+
+                            // 2. Cenário Item Específico (Single Item)
+                            const opFromExtra = extraInfo?.opGerada ? String(extraInfo.opGerada).trim() : null;
+                            const progWithOp = (newProgs || []).find(p => p.op_protheus && String(p.op_protheus).trim() !== '' && String(p.op_protheus).trim() !== '-');
+                            const opFromProgs = progWithOp?.op_protheus ? String(progWithOp.op_protheus).trim() : null;
+                            const existingTargetOp = (target.op_num_completa || target.op_num || target.op_protheus) ? String(target.op_num_completa || target.op_num || target.op_protheus).trim() : null;
+                            const resolvedOp = opFromExtra || opFromProgs || (existingTargetOp && existingTargetOp !== '-' ? existingTargetOp : null);
+
+                            let pcpDate = null;
+                            let pcpQtd = 0;
+                            if (newProgs && newProgs.length > 0) {
+                                pcpQtd = newProgs.reduce((sum, p) => sum + parseFloat(p.quantidade_pcp || 0), 0);
+                                const validProgs = newProgs.filter(p => p.data_entrega_pcp);
+                                if (validProgs.length > 0) {
+                                    const sorted = [...validProgs].sort((a, b) => new Date(a.data_entrega_pcp) - new Date(b.data_entrega_pcp));
+                                    pcpDate = sorted[0].data_entrega_pcp.split('T')[0];
                                 }
-                                
-                                const newData = {
-                                    pcp_delivery_forecast_date: pcpDate,
-                                    pcp_delivery_forecast_qtd: pcpQtd
-                                };
-                                
-                                if (orderItems[target.pedido]) {
-                                    const newItems = orderItems[target.pedido].map(i =>
-                                        i.item === target.item ? { ...i, ...newData } : i
-                                    );
-                                    updateOrderItemsForPedido(target.pedido, newItems);
-                                }
-                                
-                                if (viewMode === 'flat') {
-                                    setOrders(prev => prev.map(o => {
-                                        if (o.pedido === target.pedido && o.item === target.item) {
-                                            return { ...o, ...newData };
+                            }
+
+                            const cleanOp = resolvedOp ? String(resolvedOp).trim() : null;
+                            const targetItemSeq = extraInfo?.targetItem || target.item;
+                            const generatedOps = extraInfo?.generatedOps || [];
+                            const fractionOp = generatedOps.find(g => g.is_fracionado && g.item !== target.item);
+
+                            const opPatch = cleanOp ? {
+                                op_num: cleanOp.length >= 6 ? cleanOp.substring(0, 6) : cleanOp,
+                                op_num_completa: cleanOp,
+                                visual_op: cleanOp,
+                                op_protheus: cleanOp,
+                                op_tipo: 'F',
+                                tem_op: true
+                            } : {};
+
+                            const newData = {
+                                pcp_delivery_forecast_date: pcpDate,
+                                pcp_delivery_forecast_qtd: pcpQtd,
+                                data_entrega_pcp: pcpDate,
+                                ...opPatch
+                            };
+
+                            // Sincroniza referência local do modal caso continue aberto
+                            if (pcpForecastTarget) {
+                                Object.assign(pcpForecastTarget, newData);
+                            }
+
+                            // Atualiza a linha específica em `orders` (Flat view)
+                            setOrders(prev => {
+                                if (fractionOp) {
+                                    const newRows = [];
+                                    for (const o of prev) {
+                                        const isOriginal = o.pedido === target.pedido && o.item === target.item;
+                                        if (isOriginal) {
+                                            const saldoRestante = Math.max(0, (parseFloat(o.quantidade_original || o.quantidade) || 0) - parseFloat(fractionOp.quantidade));
+                                            newRows.push({
+                                                ...o,
+                                                quantidade: saldoRestante,
+                                                qtd_faturar: saldoRestante
+                                            });
+                                            const fracCleanOp = String(fractionOp.op_num || cleanOp).trim();
+                                            newRows.push({
+                                                ...o,
+                                                item: fractionOp.item,
+                                                item_raw: fractionOp.item,
+                                                quantidade: parseFloat(fractionOp.quantidade),
+                                                qtd_faturar: parseFloat(fractionOp.quantidade),
+                                                quantidade_original: parseFloat(o.quantidade_original || o.quantidade),
+                                                op_num: fracCleanOp.length >= 6 ? fracCleanOp.substring(0, 6) : fracCleanOp,
+                                                op_num_completa: fractionOp.op_completa || fracCleanOp,
+                                                visual_op: fracCleanOp,
+                                                op_protheus: fracCleanOp,
+                                                op_tipo: 'F',
+                                                tem_op: true,
+                                                item_fracionado: true,
+                                                is_fraction: true,
+                                                fraction_id: `${fractionOp.pedido}-${fractionOp.item}`,
+                                                pcp_delivery_forecast_date: pcpDate,
+                                                pcp_delivery_forecast_qtd: parseFloat(fractionOp.quantidade),
+                                                data_entrega_pcp: pcpDate
+                                            });
+                                        } else if (o.pedido === target.pedido && o.item === fractionOp.item) {
+                                            newRows.push({
+                                                ...o,
+                                                ...newData,
+                                                op_num: fractionOp.op_num.length >= 6 ? fractionOp.op_num.substring(0, 6) : fractionOp.op_num,
+                                                visual_op: fractionOp.op_num,
+                                                op_num_completa: fractionOp.op_completa || fractionOp.op_num,
+                                                tem_op: true
+                                            });
+                                        } else {
+                                            newRows.push(o);
                                         }
-                                        return o;
-                                    }));
+                                    }
+                                    return newRows;
                                 }
+
+                                return prev.map(o => {
+                                    const isTarget = o.pedido === target.pedido && (
+                                        (target.fraction_id && o.fraction_id === target.fraction_id) ||
+                                        o.item === target.item ||
+                                        o.item === targetItemSeq
+                                    );
+                                    if (!isTarget) return o;
+                                    return {
+                                        ...o,
+                                        ...newData
+                                    };
+                                });
+                            });
+
+                            // Atualiza os itens em `orderItems` (Tree view)
+                            if (orderItems[target.pedido]) {
+                                const newItems = orderItems[target.pedido].map(i => {
+                                    const isTarget = i.item === target.item || i.item === targetItemSeq;
+                                    return isTarget ? { ...i, ...newData } : i;
+                                });
+                                updateOrderItemsForPedido(target.pedido, newItems);
                             }
                         }}
                     />
@@ -3266,13 +4042,111 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                 )
             }
 
-            {/* PCPMetal AI Drawer */}
-            <PCPMetalDrawer
-                isOpen={pcpmetalOpen}
-                onClose={() => setPcpmetalOpen(false)}
-                context={pcpmetalContext}
-                pageData={{ ops: orders, total: orders?.length || 0 }}
+            {/* Histórico da OP (fracionamento, programações, lotes, liberação) */}
+            <OpHistoricoModal
+                isOpen={!!historicoTarget}
+                onClose={() => setHistoricoTarget(null)}
+                pedido={historicoTarget?.pedido}
+                item={historicoTarget?.item}
+                descricao={historicoTarget?.descricao}
             />
+
+            {/* Modal de Partir / Fracionar OP */}
+            <SplitOPModal
+                isOpen={!!splitOpTarget}
+                onClose={() => setSplitOpTarget(null)}
+                item={splitOpTarget}
+                onSaveSuccess={() => reloadFromStart()}
+            />
+
+            {/* Modal de Gestão de Lotes (LPF) */}
+            <ManageLotModal
+                isOpen={isManageLotModalOpen}
+                onClose={() => {
+                    setIsManageLotModalOpen(false);
+                    setManageLotPreselectedCode(null);
+                }}
+                selectedItems={manageLotSelectedItems}
+                preselectedLotCode={manageLotPreselectedCode}
+                onSuccess={() => {
+                    setSelectedItems([]);
+                    reloadFromStart();
+                }}
+            />
+
+            {/* Modal de Liberação PCP (Lote Aglutinado) */}
+            {pcpReleaseModal.open && (
+                <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+                        <div className="flex items-center gap-3 p-5 bg-gradient-to-r from-slate-800 to-slate-700">
+                            <div className="p-2 bg-green-500 rounded-xl">
+                                <Factory className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-bold text-white">Lote Aglutinado</h2>
+                                <p className="text-slate-300 text-xs">{pcpReleaseModal.targets.length} OP(s) selecionada(s)</p>
+                            </div>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <p className="text-slate-600 text-sm">
+                                Será gerado o PDF consolidado com capa, operações, resumo de materiais e desenhos.
+                            </p>
+
+                            <div className="bg-slate-50 rounded-xl p-3 max-h-32 overflow-y-auto border border-slate-100">
+                                {pcpReleaseModal.targets.map((t, i) => (
+                                    <div key={i} className="flex items-center gap-2 py-0.5">
+                                        <span className="text-[10px] font-bold bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-mono">
+                                            {t.visual_op || t.op_num || t.pedido}
+                                        </span>
+                                        <span className="text-xs text-slate-500 truncate">{t.descricao || t.desc_produto || ''}</span>
+                                        <span className="text-xs font-bold text-slate-700 ml-auto">{t.visual_qtd}</span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <label className="flex items-start gap-3 cursor-pointer group">
+                                <div className="relative mt-0.5">
+                                    <input
+                                        type="checkbox"
+                                        className="sr-only peer"
+                                        checked={pcpReleaseModal.registerRelease}
+                                        onChange={e => setPcpReleaseModal(prev => ({ ...prev, registerRelease: e.target.checked }))}
+                                    />
+                                    <div className="w-5 h-5 rounded-md border-2 border-slate-300 peer-checked:bg-green-500 peer-checked:border-green-500 flex items-center justify-center transition-all">
+                                        {pcpReleaseModal.registerRelease && (
+                                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        )}
+                                    </div>
+                                </div>
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-700">Registrar como Liberação para Produção</p>
+                                    <p className="text-xs text-slate-400">O evento será registrado no Relatório de Liberação (Engenharia → PCP)</p>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div className="flex gap-3 px-6 pb-6 pt-2">
+                            <button
+                                onClick={() => setPcpReleaseModal({ open: false, targets: [], registerRelease: true })}
+                                className="flex-1 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all border border-slate-200"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={() => executeBatchPrintAglutinado(pcpReleaseModal.targets, pcpReleaseModal.registerRelease)}
+                                className="flex-1 py-2.5 text-sm font-bold text-white bg-green-600 hover:bg-green-700 rounded-xl transition-all shadow-lg shadow-green-200 flex items-center justify-center gap-2"
+                            >
+                                <Factory className="w-4 h-4" />
+                                Gerar PDF
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             
             {showColSettings && (
                 <ColumnSettingsPanel
@@ -3298,7 +4172,7 @@ const OrdersTable = ({ pageTitle = null, pageSubtitle = null, fixedClassificacao
                                 <p className="text-xs text-slate-500">
                                     {priorityMode === 'op'
                                         ? 'Reordena a produção da OP inteira (afeta todos os itens da mesma OP).'
-                                        : 'Notificará todos via Hermes Live Feed — não altera a fila de produção da OP.'}
+                                        : 'Notificará o setor de faturamento — não altera a fila de produção da OP.'}
                                 </p>
                             </div>
                         </div>

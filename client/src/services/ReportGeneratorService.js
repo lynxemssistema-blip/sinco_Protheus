@@ -8,9 +8,6 @@
  * e rodapé padronizado "Desenvolvido por Lynxems".
  */
 
-import ExcelJS from 'exceljs';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import {
     getCompany,
     loadCompanyBranding,
@@ -26,7 +23,7 @@ import { downloadBlob } from '../utils/downloadHelper';
  * Invoca o plugin jspdf-autotable de forma universal e resiliente
  * (suporta tanto default export, named export autoTable ou método no protótipo doc.autoTable)
  */
-const applyAutoTable = (doc, options) => {
+const applyAutoTable = (doc, options, autoTable) => {
     if (typeof autoTable === 'function') {
         return autoTable(doc, options);
     }
@@ -186,6 +183,7 @@ export const ReportGeneratorService = {
         const colCount = Math.max(columns.length, 6);
         const lastColLetter = String.fromCharCode(64 + Math.min(colCount, 26));
 
+        const { default: ExcelJS } = await import('exceljs');
         const workbook = new ExcelJS.Workbook();
         workbook.creator = 'Lynxems SaaS Suite';
         workbook.lastModifiedBy = context.usuarioEmissor;
@@ -384,6 +382,10 @@ export const ReportGeneratorService = {
 
         const context = await resolveActiveContext(explicitCompany);
 
+        const { jsPDF } = await import('jspdf');
+        const autoTableModule = await import('jspdf-autotable');
+        const autoTable = autoTableModule.default || autoTableModule;
+
         // Auto-detecta orientação: mais de 6 colunas usa paisagem por padrão para legibilidade
         const autoOrientation = orientation || (columns.length > 6 ? 'landscape' : 'portrait');
         const doc = new jsPDF({
@@ -517,7 +519,7 @@ export const ReportGeneratorService = {
                     doc.line(marginLeft, 10, pageWidth - marginRight, 10);
                 }
             }
-        });
+        }, autoTable);
 
         // ── 3. RODAPÉ INSTITUCIONAL OBRIGATÓRIO (PAGINAÇÃO X DE Y) ─────────────────
         const totalPages = doc.internal.getNumberOfPages();

@@ -24,8 +24,37 @@ class PropostaAiService {
         }
 
         try {
+            const parsed = new URL(cleanUrl);
+
+            // Validações Anti-SSRF rigorosas
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                return null;
+            }
+
+            const hostname = parsed.hostname.toLowerCase();
+
+            // Bloqueia loopback, localhost e nomes internos sem domínio
+            if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0' || hostname === '::1' || !hostname.includes('.')) {
+                console.warn(`[SSRF Prevention] Bloqueada tentativa de acesso a host local: ${hostname}`);
+                return null;
+            }
+
+            // Bloqueia faixas de IP privadas (RFC 1918) e Cloud Metadata (169.254.169.254)
+            const isPrivateIp = /^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|169\.254\.)/.test(hostname);
+            if (isPrivateIp || hostname.endsWith('.local') || hostname.endsWith('.internal') || hostname.endsWith('.lan')) {
+                console.warn(`[SSRF Prevention] Bloqueada tentativa de acesso a IP/rede privada: ${hostname}`);
+                return null;
+            }
+
+            // Bloqueia portas internas não padrão
+            if (parsed.port && !['80', '443'].includes(parsed.port)) {
+                console.warn(`[SSRF Prevention] Bloqueada tentativa de acesso a porta não padrão: ${parsed.port}`);
+                return null;
+            }
+
             const response = await axios.get(cleanUrl, {
                 timeout: 10000,
+                maxRedirects: 3,
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',

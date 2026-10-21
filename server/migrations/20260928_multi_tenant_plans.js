@@ -78,12 +78,12 @@ async function runMigration() {
         try {
             const [matriz] = await db.query('SELECT IdEmpresa FROM empresa WHERE IdEmpresa = 1');
             if (matriz.length === 0) {
-                console.log('  -> Inserindo Empresa Matriz padrão (ID: 1 - MetalFisa / Lynx)...');
+                console.log('  -> Inserindo Empresa Matriz padrão (ID: 1 - Lynx EMS)...');
                 await db.query(`
                     INSERT INTO empresa (
                         IdEmpresa, RazaoSocial, NomeFantasia, Segmento, plano, status_plano, limite_usuarios
                     ) VALUES (
-                        1, 'MetalFisa Industrial Ltda', 'MetalFisa / Lynx (Matriz)', 'Metalúrgica & Caldeiraria', 'enterprise', 'ativo', 9999
+                        1, 'Lynx EMS', 'Lynx EMS (Matriz)', 'Metalúrgica & Caldeiraria', 'enterprise', 'ativo', 9999
                     )
                 `);
             } else {

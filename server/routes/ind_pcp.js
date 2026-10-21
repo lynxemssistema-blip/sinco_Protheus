@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db'); // PostgreSQL (Protheus)
 const mysqlPool = require('../services/mysqlService'); // MySQL (Local)
+const { ACOES, registrarHistorico } = require('../services/opGuardService');
 const { getInactiveOrdersFilter } = require('../util/pedidoFilterHelper');
 
 // Função auxiliar para formatar datas (YYYYMMDD) que vêm do Protheus
@@ -207,6 +208,24 @@ router.post('/release-op', async (req, res) => {
         }
 
         await connection.commit();
+        // Histórico: liberação na Mescla, vinculada ao pedido/item de origem da OP
+        try {
+            const [origem] = await mysqlPool.query(
+                'SELECT TRIM(c2_pedido) AS pedido, TRIM(c2_itempv) AS itempv FROM sc2010 WHERE TRIM(c2_num) = ? AND TRIM(c2_item) = ? LIMIT 1',
+                [op_base.substring(0, 6), op_base.substring(6, 8) || '01']
+            );
+            await registrarHistorico(null, req, {
+                acao: ACOES.MESCLA_LIBERADA,
+                pedido: origem[0]?.pedido || null,
+                item: origem[0]?.itempv || null,
+                op: op_base,
+                descricao: `Liberação PCP (Mescla) da OP ${op_base}: ${fracoes.length} fração(ões) ${fracoes.map(f => `${op_base}${f.suf}=${f.qtde}`).join(', ')}`,
+                depois: { op_base, produto, quantidade_total, fracoes }
+            });
+        } catch (histErr) {
+            console.error('[ind_pcp] Falha ao gravar histórico da liberação:', histErr.message);
+        }
+
         res.json({ success: true, message: 'OP liberada e fracionada com sucesso no ambiente local.' });
 
     } catch (error) {

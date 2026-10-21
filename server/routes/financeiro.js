@@ -76,7 +76,15 @@ router.get('/empresas', async (req, res) => {
             WHERE d_e_l_e_t_ = ' ' AND m0_codigo = '01'
             ORDER BY m0_codfil
         `);
-        res.json(rows);
+        if (rows && rows.length > 0) {
+            return res.json(rows);
+        }
+
+        // Fallback: empresas cadastradas no SINCO
+        const [empRows] = await mysqlPool.query(
+            `SELECT CAST(IdEmpresa AS CHAR) as id, NomeFantasia as nome, RazaoSocial as razao_social FROM empresa WHERE Deletado = 0 ORDER BY IdEmpresa`
+        );
+        res.json(empRows || []);
     } catch (error) {
         console.error('Erro na rota financeiro/empresas:', error);
         res.status(500).json({ error: 'Erro interno ao consultar empresas.' });
@@ -245,16 +253,13 @@ router.get('/fluxo-caixa', async (req, res) => {
             querySE2 += ` AND SE2.E2_VENCTO >= TO_CHAR(CURRENT_DATE - INTERVAL '3 months', 'YYYYMMDD') `;
         }
 
-        if (filiais !== undefined) {
-            const filiaisArr = filiais.split(',').filter(Boolean);
+        if (filiais !== undefined && String(filiais).trim() !== '') {
+            const filiaisArr = filiais.split(',').map(f => f.trim()).filter(Boolean);
             if (filiaisArr.length > 0) {
                 const placeholders = filiaisArr.map((_, i) => `$${params.length + i + 1}`).join(',');
                 querySE1 += ` AND TRIM(SE1.E1_FILIAL) IN (${placeholders}) `;
                 querySE2 += ` AND TRIM(SE2.E2_FILIAL) IN (${placeholders}) `;
                 params.push(...filiaisArr);
-            } else {
-                querySE1 += ` AND 1 = 0 `;
-                querySE2 += ` AND 1 = 0 `;
             }
         }
 

@@ -119,7 +119,7 @@ export default function BrigadaCentralPage() {
     const [arquivoAtaSimulado, setArquivoAtaSimulado] = useState(null);
 
     const [formConfig, setFormConfig] = useState({
-        planta_nome: 'Planta Principal - MetalFisa',
+        planta_nome: 'Planta Principal - Lynx EMS',
         grau_risco: 'medio',
         populacao_fixa_total: 200,
         populacao_1_turno: 100,
@@ -164,7 +164,7 @@ export default function BrigadaCentralPage() {
 
             if (dashRes.data?.config) {
                 setFormConfig({
-                    planta_nome: dashRes.data.config.planta_nome || 'Planta Principal - MetalFisa',
+                    planta_nome: dashRes.data.config.planta_nome || 'Planta Principal - Lynx EMS',
                     grau_risco: dashRes.data.config.grau_risco || 'medio',
                     populacao_fixa_total: dashRes.data.config.populacao_fixa_total || 200,
                     populacao_1_turno: dashRes.data.config.populacao_1_turno || 100,
@@ -526,7 +526,7 @@ export default function BrigadaCentralPage() {
     const abrirModalConfig = () => {
         if (dashboardData?.config) {
             setFormConfig({
-                planta_nome: dashboardData.config.planta_nome || 'Planta Principal - MetalFisa',
+                planta_nome: dashboardData.config.planta_nome || 'Planta Principal - Lynx EMS',
                 grau_risco: dashboardData.config.grau_risco || 'medio',
                 populacao_fixa_total: dashboardData.config.populacao_fixa_total || 200,
                 populacao_1_turno: dashboardData.config.populacao_1_turno || 100,
@@ -812,7 +812,7 @@ export default function BrigadaCentralPage() {
                                         <span>Conformidade Legal por Turno (Dimensionamento NBR 14276)</span>
                                     </h3>
                                     <p className="text-xs text-slate-500 mt-1">
-                                        Planta Industrial MetalFisa • Grau de Risco: <strong>{(config.grau_risco || 'Médio').toUpperCase()}</strong> • População Fixa: <strong>{config.populacao_fixa_total || 200} colaboradores</strong>
+                                        Planta Industrial Lynx EMS • Grau de Risco: <strong>{(config.grau_risco || 'Médio').toUpperCase()}</strong> • População Fixa: <strong>{config.populacao_fixa_total || 200} colaboradores</strong>
                                     </p>
                                 </div>
                                 <button
@@ -1511,7 +1511,7 @@ export default function BrigadaCentralPage() {
                             {/* CABEÇALHO DO DOCUMENTO */}
                             <div className="flex items-center justify-between border-b-2 border-slate-800 pb-4">
                                 <div>
-                                    <h2 className="text-xl font-black text-slate-900 tracking-tight">METALFISA INDÚSTRIA METALÚRGICA LTDA</h2>
+                                    <h2 className="text-xl font-black text-slate-900 tracking-tight">LYNX EMS INDÚSTRIA METALÚRGICA LTDA</h2>
                                     <p className="text-xs text-slate-600">SESMT - Serviço Especializado em Engenharia de Segurança e Medicina do Trabalho</p>
                                     <p className="text-xs text-slate-500">CNPJ: 19.345.678/0001-90 • Inscrição Estadual: 001.234.567.89</p>
                                 </div>
@@ -1604,12 +1604,12 @@ export default function BrigadaCentralPage() {
                             {/* TERMO DE RESPONSABILIDADE */}
                             <div className="pt-8 border-t border-slate-200 text-center text-xs text-slate-500 space-y-4">
                                 <p>
-                                    Declaramos para os devidos fins de direito que a Brigada de Incêndio da MetalFisa encontra-se dimensionada e capacitada conforme as prescrições da Norma Regulamentadora NR-23 e ABNT NBR 14276.
+                                    Declaramos para os devidos fins de direito que a Brigada de Incêndio da Lynx EMS encontra-se dimensionada e capacitada conforme as prescrições da Norma Regulamentadora NR-23 e ABNT NBR 14276.
                                 </p>
                                 <div className="flex justify-around pt-6">
                                     <div className="border-t border-slate-400 pt-2 w-64">
                                         <div className="font-bold text-slate-800">Coordenador Geral da Brigada</div>
-                                        <div className="text-[10px]">MetalFisa Indústria Metalúrgica</div>
+                                        <div className="text-[10px]">Lynx EMS Indústria Metalúrgica</div>
                                     </div>
                                     <div className="border-t border-slate-400 pt-2 w-64">
                                         <div className="font-bold text-slate-800">Engenheiro / Técnico de SST</div>

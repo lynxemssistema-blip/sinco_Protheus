@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../services/mysqlService');
 const multer = require('multer');
+const { createSafeFileFilter, DEFAULT_UPLOAD_LIMITS } = require('../util/uploadSecurity');
 const path = require('path');
 const fs = require('fs');
 const { emitHermesAlert } = require('../services/hermes/proactiveCron');
@@ -44,7 +45,11 @@ const storage = multer.diskStorage({
         cb(null, 'ajuda-' + uniqueSuffix + path.extname(file.originalname));
     }
 });
-const upload = multer({ storage });
+const upload = multer({
+    storage,
+    limits: DEFAULT_UPLOAD_LIMITS,
+    fileFilter: createSafeFileFilter()
+});
 
 // Auxiliar: Parse seguro para Strings tipo JSON Text
 const safeParse = (data) => {

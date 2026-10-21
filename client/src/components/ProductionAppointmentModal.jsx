@@ -2,8 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Save, Clock, X, CheckSquare, ChevronRight, CheckCircle, AlertTriangle, History, ChevronDown, ChevronUp, Play, Pause, Square, RotateCcw } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useAuth } from '../contexts/AuthContext';
-import { getAppointmentHistory, getCompanySettings, getOpRoteiroSaldo, saveAppointment } from '../services/api';
+import { getAppointmentHistory, getCompanySettings, getOpRoteiroSaldo, getOpFractions, saveAppointment } from '../services/api';
 import { useTimer } from '../contexts/TimerContext';
+
+// Formata a Data PCP (data_entrega_pcp) de cada fração, sem deslocar o dia por fuso horário
+const formatDataEntrega = (valor) => {
+    if (!valor) return '-';
+    const d = new Date(valor);
+    return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+};
 
 // Helper de comparação segura de códigos de operação / recursos (string, int, com/sem zeros)
 const isSameOp = (a, b) => {
@@ -57,6 +64,15 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
     const [appointmentMode, setAppointmentMode] = useState(null);
     const [enableMultiOp, setEnableMultiOp] = useState(hasPermission('action_pcp_multi_appointment', 'view'));
 
+    // Item com mais de uma programação PCP (fração AA, AB... feita após a OP, ou item base de fração 01A/01B):
+    // o operador precisa dizer para qual fração está apontando, para o saldo de cada uma ficar correto.
+    const [fractionInfo, setFractionInfo] = useState(null);
+    const [loadingFractions, setLoadingFractions] = useState(true);
+    const [selectedFracao, setSelectedFracao] = useState('');
+    const selectedFractionData = fractionInfo?.fractions.find(f => f.numero_lote === selectedFracao) || null;
+    // Com fração escolhida, o limite da operação atual passa a ser o saldo DESSA fração, não o da OP inteira
+    const currentOpBalance = selectedFractionData?.saldo ?? fallbackBalance;
+
     // Auto-focus logic
     const qtdInputRef = useRef(null);
     useEffect(() => {
@@ -100,6 +116,7 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
     useEffect(() => {
         loadHistory();
         loadRouteOps();
+        loadFractions();
         getCompanySettings()
             .then(data => {
                 setAppointmentMode(data?.general_config?.production_appointment_mode || 'free');
@@ -120,6 +137,24 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
             console.error('Erro ao carregar histórico:', err);
         } finally {
             setLoadingHistory(false);
+        }
+    };
+
+    const loadFractions = async () => {
+        setLoadingFractions(true);
+        try {
+            const data = await getOpFractions(op.op, op.item_op || '01', op.sequen || '001', op.operacao);
+            setFractionInfo(data?.fracionado ? data : null);
+            // Preseleciona a única fração com saldo, se houver só uma
+            if (data?.fracionado) {
+                const comSaldo = data.fractions.filter(f => (f.saldo ?? 0) > 0);
+                if (comSaldo.length === 1) setSelectedFracao(comSaldo[0].numero_lote);
+            }
+        } catch (err) {
+            console.error('Erro ao buscar frações PCP da OP:', err);
+            setFractionInfo(null);
+        } finally {
+            setLoadingFractions(false);
         }
     };
 
@@ -166,6 +201,15 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
         }
     };
 
+    // Ao escolher a fração, pré-preenche a quantidade com o saldo DESSA fração (não o da OP inteira),
+    // já que cada fração tem sua própria data de entrega e quantidade de peças.
+    const handleSelectFracao = (letra, saldo) => {
+        setSelectedFracao(letra);
+        if (!enableMultiOp || routeOperations.length === 0) {
+            setQuantities(prev => ({ ...prev, [op.operacao]: saldo > 0 ? saldo : '' }));
+        }
+    };
+
     const handleQuantityChange = (opCode, value) => {
         setQuantities(prev => {
             const nextState = { ...prev, [opCode]: value };
@@ -194,7 +238,7 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
     const isExceedingBalance = () => {
         if (!enableMultiOp || routeOperations.length === 0) {
             const val = Number(quantities[op.operacao] || 0);
-            return val > fallbackBalance;
+            return val > currentOpBalance;
         }
 
         for (const row of routeOperations) {
@@ -223,6 +267,11 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
 
         if (getTotalQuantity() <= 0) {
             toast.warning('Preencha a quantidade em pelo menos uma operação.');
+            return;
+        }
+
+        if (fractionInfo?.fracionado && !selectedFracao) {
+            toast.warning('Este item tem mais de uma fração (AA, AB...). Escolha para qual fração é este apontamento.');
             return;
         }
 
@@ -260,7 +309,8 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
                     data_inicio: start,
                     data_fim: end,
                     observacao: formData.observacao,
-                    skip_cascade: true
+                    skip_cascade: true,
+                    fracao_pcp: fractionInfo?.fracionado ? selectedFracao : undefined
                 };
                 
                 await saveAppointment(payload);
@@ -329,6 +379,43 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
                         </div>
                     </div>
 
+                    {/* FRAÇÃO PCP — item com mais de uma programação (AA, AB...): o apontamento precisa dizer qual */}
+                    {loadingFractions ? (
+                        <div className="text-xs text-slate-400 animate-pulse px-1">Verificando frações da OP...</div>
+                    ) : fractionInfo?.fracionado && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                            <p className="text-xs font-bold text-amber-800 mb-2">
+                                Este item tem {fractionInfo.fractions.length} frações. Escolha para qual é este apontamento:
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                                {fractionInfo.fractions.map(f => {
+                                    const semSaldo = (f.saldo ?? 0) <= 0;
+                                    const isSel = selectedFracao === f.numero_lote;
+                                    return (
+                                        <button
+                                            type="button"
+                                            key={f.numero_lote}
+                                            onClick={() => handleSelectFracao(f.numero_lote, f.saldo ?? 0)}
+                                            disabled={semSaldo}
+                                            className={`px-3 py-2 rounded-lg border text-xs text-left transition-colors ${
+                                                isSel ? 'bg-amber-600 border-amber-700 text-white font-bold shadow-sm' :
+                                                semSaldo ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' :
+                                                'bg-white border-amber-300 text-amber-800 hover:bg-amber-100'
+                                            }`}
+                                        >
+                                            <div className="font-bold">Fração {f.numero_lote}</div>
+                                            <div className="opacity-90">
+                                                {f.quantidade_pcp.toLocaleString('pt-BR')} un. · Entrega: {formatDataEntrega(f.data_entrega_pcp)}
+                                                {f.saldo !== null && <><br />Saldo: {f.saldo.toLocaleString('pt-BR')}</>}
+                                                {semSaldo && ' (concluída)'}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     <form onSubmit={handleSubmit} className="space-y-4">
                         {/* STOPWATCH MODULE — Static display, no live counter */}
                         <div className="bg-white border rounded-lg p-3 text-center shadow-sm">
@@ -388,7 +475,12 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
                             <div className="bg-slate-100 px-3 py-2 border-b">
                                 <h4 className="text-xs font-bold text-slate-700">Operações do Roteiro (Até a atual)</h4>
                             </div>
-                            
+                            {selectedFractionData && enableMultiOp && routeOperations.length > 0 && (
+                                <p className="text-[11px] text-amber-700 bg-amber-50 border-b border-amber-100 px-3 py-1.5">
+                                    Apontando para a <strong>Fração {selectedFractionData.numero_lote}</strong> (Entrega: {formatDataEntrega(selectedFractionData.data_entrega_pcp)}). O saldo de cada etapa abaixo é da OP inteira — o sistema valida o saldo desta fração ao salvar.
+                                </p>
+                            )}
+
                             {loadingOps ? (
                                 <div className="p-4 text-center text-sm text-slate-500 animate-pulse">
                                     Carregando roteiro e saldos...
@@ -454,15 +546,22 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
                                     )}
                                     <div className="flex justify-between items-center mb-1">
                                         <label className="block text-xs font-bold text-slate-700">Qtd. Produzida</label>
-                                        <span className="text-xs font-bold text-slate-500">Saldo: {fallbackBalance}</span>
+                                        <span className="text-xs font-bold text-slate-500">
+                                            {selectedFractionData ? `Saldo da Fração ${selectedFractionData.numero_lote}: ${currentOpBalance.toLocaleString('pt-BR')}` : `Saldo: ${currentOpBalance.toLocaleString('pt-BR')}`}
+                                        </span>
                                     </div>
+                                    {selectedFractionData && (
+                                        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1 -mt-1">
+                                            Apontando para a <strong>Fração {selectedFractionData.numero_lote}</strong> — Entrega: {formatDataEntrega(selectedFractionData.data_entrega_pcp)} — {selectedFractionData.quantidade_pcp.toLocaleString('pt-BR')} un. no total desta fração.
+                                        </p>
+                                    )}
                                     <input type="number" step="0.01" required
                                         ref={qtdInputRef}
-                                        max={fallbackBalance}
+                                        max={currentOpBalance}
                                         className="w-full border rounded p-2 text-lg text-slate-900 border-slate-300 focus:border-green-500 outline-none"
-                                        value={quantities[op.operacao] || ''} 
+                                        value={quantities[op.operacao] || ''}
                                         onChange={e => handleQuantityChange(op.operacao, e.target.value)}
-                                        placeholder={`Máx: ${fallbackBalance}`} autoFocus />
+                                        placeholder={`Máx: ${currentOpBalance}`} autoFocus />
                                 </div>
                             )}
                         </div>
@@ -501,7 +600,7 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
 
                         <button
                             type="submit"
-                            disabled={loading || isExceedingBalance() || getTotalQuantity() <= 0}
+                            disabled={loading || isExceedingBalance() || getTotalQuantity() <= 0 || (fractionInfo?.fracionado && !selectedFracao)}
                             className="w-full bg-green-600 text-white rounded-lg p-3 font-bold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 shadow-sm transition-colors text-sm"
                         >
                             <Save className="w-5 h-5" />
@@ -537,10 +636,15 @@ export default function ProductionAppointmentModal({ op, onClose, onSave, onSave
                                         return (
                                             <div key={idx} className="p-3 border-b border-slate-100 last:border-b-0 hover:bg-white transition-colors">
                                                 <div className="flex items-start justify-between gap-2 mb-1">
-                                                    <div className="flex items-center gap-2 flex-1">
+                                                    <div className="flex items-center gap-2 flex-1 flex-wrap">
                                                         <div className="bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold text-sm">
                                                             {parseFloat(item.quantidade).toFixed(2)} pc
                                                         </div>
+                                                        {item.fracao_pcp && (
+                                                            <span className="bg-amber-100 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded font-bold text-[10px]">
+                                                                Fração {item.fracao_pcp}
+                                                            </span>
+                                                        )}
                                                         <span className="text-xs text-slate-600 font-medium">{item.usuario}</span>
                                                     </div>
                                                     <span className={`text-xs font-medium ${isToday ? 'text-blue-600' : 'text-slate-500'}`}>

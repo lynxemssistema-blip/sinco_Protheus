@@ -3,6 +3,7 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const { createSafeFileFilter, SAFE_IMAGE_EXTENSIONS, IMAGE_UPLOAD_LIMITS } = require('../util/uploadSecurity');
 const db = require('../services/mysqlService');
 const { authenticateToken } = require('./auth');
 
@@ -23,7 +24,8 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage,
-    limits: { fileSize: 15 * 1024 * 1024 } // 15MB
+    limits: IMAGE_UPLOAD_LIMITS,
+    fileFilter: createSafeFileFilter(SAFE_IMAGE_EXTENSIONS)
 });
 
 // Valores aceitos pelos ENUMs do banco (evita erro 500 ou valor vazio silencioso)
@@ -317,7 +319,7 @@ router.delete('/turnos/:id', async (req, res) => {
 });
 
 // ==========================================
-// 4. CHECK-IN (Entrada na Metalfisa)
+// 4. CHECK-IN (Entrada na Lynx EMS)
 // ==========================================
 router.post('/acessos/check-in', upload.fields([
     { name: 'foto_pessoa', maxCount: 1 },
@@ -433,7 +435,7 @@ router.post('/acessos/check-in', upload.fields([
 });
 
 // ==========================================
-// 5. CHECK-OUT (Saída da Metalfisa)
+// 5. CHECK-OUT (Saída da Lynx EMS)
 // ==========================================
 router.post('/acessos/check-out/:id', async (req, res) => {
     try {
@@ -487,7 +489,7 @@ router.post('/acessos/check-out/:id', async (req, res) => {
 });
 
 // ==========================================
-// 6. ACESSOS ATIVOS (Quem está na Metalfisa agora)
+// 6. ACESSOS ATIVOS (Quem está na Lynx EMS agora)
 // ==========================================
 router.get('/acessos/ativos', async (req, res) => {
     try {

@@ -93,17 +93,40 @@ router.post('/login', loginLimiter, async (req, res) => {
         if (tenantId) {
             try {
                 const [empRows] = await db.query(
-                    'SELECT IdEmpresa, RazaoSocial, NomeFantasia, plano, status_plano, trial_expira_em, limite_usuarios FROM empresa WHERE IdEmpresa = ?',
+                    'SELECT IdEmpresa, RazaoSocial, NomeFantasia, plano, status_plano, COALESCE(ativa, 1) as ativa, data_vencimento, motivo_bloqueio, trial_expira_em, limite_usuarios FROM empresa WHERE IdEmpresa = ?',
                     [tenantId]
                 );
                 if (empRows.length > 0) {
                     const emp = empRows[0];
+
+                    // Bloqueio de empresa desativada ou assinatura vencida (Superadmin sempre tem acesso irrestrito)
+                    const isEmpresaDesativada = emp.ativa === 0 || emp.status_plano === 'bloqueado' || emp.status_plano === 'inativo';
+                    const isAssinaturaVencida = emp.data_vencimento && new Date(emp.data_vencimento) < new Date(new Date().setHours(0,0,0,0));
+
+                    if (!isSuperAdmin && (isEmpresaDesativada || isAssinaturaVencida)) {
+                        return res.status(403).json({
+                            error: isAssinaturaVencida && emp.ativa !== 0 ? 'Assinatura Vencida' : 'Empresa Desativada',
+                            code: 'EMPRESA_DESATIVADA',
+                            message: emp.motivo_bloqueio || (isAssinaturaVencida 
+                                ? `A assinatura da empresa "${emp.NomeFantasia || emp.RazaoSocial}" expirou em ${new Date(emp.data_vencimento).toLocaleDateString('pt-BR')}. Entre em contato com a administração da plataforma para renovação da mensalidade.` 
+                                : `A empresa "${emp.NomeFantasia || emp.RazaoSocial}" está desativada no sistema. Entre em contato com a administração para reativar seu acesso.`),
+                            empresa: {
+                                id: emp.IdEmpresa,
+                                nome: emp.NomeFantasia || emp.RazaoSocial,
+                                vencimento: emp.data_vencimento,
+                                status: emp.ativa === 0 ? 'desativada' : (isAssinaturaVencida ? 'vencida' : emp.status_plano)
+                            }
+                        });
+                    }
+
                     empresaData = {
                         id: emp.IdEmpresa,
                         nomeFantasia: emp.NomeFantasia || emp.RazaoSocial,
                         razaoSocial: emp.RazaoSocial,
                         plano: emp.plano || 'pro',
                         statusPlano: emp.status_plano || 'ativo',
+                        ativa: emp.ativa === 1,
+                        dataVencimento: emp.data_vencimento,
                         limiteUsuarios: emp.limite_usuarios || 10,
                         trialExpiraEm: emp.trial_expira_em
                     };
@@ -335,12 +358,8 @@ router.post('/recuperar-senha', async (req, res) => {
 
 // Middleware for protected routes (exporting for use in other files if needed)
 const authenticateToken = (req, res, next) => {
-    // Bypass auth for document visualization and webhooks
-    if (
-        req.originalUrl.startsWith('/api/docs/view') || 
-        req.path === '/docs/view' ||
-        req.originalUrl.startsWith('/api/webhook')
-    ) {
+    // Webhook da Evolution API possui autenticação própria por chave
+    if (req.originalUrl.startsWith('/api/webhook')) {
         return next();
     }
 
@@ -492,6 +511,15 @@ router.post('/register-company', async (req, res) => {
         ]);
 
         const novaEmpresaId = empresaResult.insertId;
+
+        // Auto-seed de templates operacionais para a nova empresa (Setores, Recursos e Cores de Aço)
+        try {
+            const { seedCompanyDefaults } = require('../services/tenantSeedService');
+            await seedCompanyDefaults(novaEmpresaId);
+            console.log(`✅ [AUTH] Templates e padrão de cores de aço inicializados para a nova empresa ID ${novaEmpresaId}.`);
+        } catch (seedErr) {
+            console.warn(`⚠️ [AUTH] Falha ao executar seed para nova empresa ID ${novaEmpresaId}:`, seedErr.message);
+        }
 
         // 4. Criar o Usuário Master vinculado à Empresa com acesso irrestrito a todos os módulos
         const hashedPwd = await bcrypt.hash(senha, 10);

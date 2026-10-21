@@ -353,7 +353,7 @@ const FLUXO_STEPS = [
 export default function FluxogramaProcessoTab() {
     const navigate = useNavigate();
     const [selectedStep, setSelectedStep] = useState(FLUXO_STEPS[0]);
-    const [viewMode, setViewMode] = useState('diagram'); // 'diagram' | 'interactive_tree' | 'reality_matrix' | 'prompt_study'
+    const [viewMode, setViewMode] = useState('diagram'); // 'diagram' | 'interactive_tree' | 'reality_matrix'
     const [filterPhase, setFilterPhase] = useState('all'); // 'all' | 1 | 2 | 3 | 4 | 5
     const [searchFilter, setSearchFilter] = useState('');
     const [drawerStep, setDrawerStep] = useState(null); // Step inspecionado no drawer lateral
@@ -437,19 +437,6 @@ export default function FluxogramaProcessoTab() {
                         >
                             <AlertTriangle className="w-4 h-4" />
                             Matriz de Dependências
-                        </button>
-
-                        <button
-                            id="view-btn-prompt_study"
-                            onClick={() => setViewMode('prompt_study')}
-                            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                                viewMode === 'prompt_study'
-                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 ring-2 ring-blue-400 font-black'
-                                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700'
-                            }`}
-                        >
-                            <Cpu className="w-4 h-4" />
-                            Prompt de IA
                         </button>
                     </div>
                 </div>
@@ -694,13 +681,6 @@ export default function FluxogramaProcessoTab() {
                                         {selectedStep.summary}
                                     </p>
                                 </div>
-                                <button
-                                    onClick={() => handleNavigate(selectedStep.route)}
-                                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition flex-shrink-0"
-                                >
-                                    <span>{selectedStep.actionLabel}</span>
-                                    <ArrowRight className="w-3.5 h-3.5" />
-                                </button>
                             </div>
 
                             {/* Entradas & Saídas */}
@@ -749,39 +729,6 @@ export default function FluxogramaProcessoTab() {
                                 </div>
                             </div>
 
-                            {/* Alerta de consequência se pular */}
-                            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs">
-                                <div className="flex items-center gap-2 font-bold mb-1">
-                                    <AlertTriangle className="w-4 h-4 text-rose-600" />
-                                    <span>Consequência se esta etapa for ignorada:</span>
-                                </div>
-                                <p className="leading-relaxed text-rose-800">
-                                    {selectedStep.skippedWarning}
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Rodapé com Tabelas */}
-                        <div className="pt-6 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
-                            <div className="flex items-center gap-2">
-                                <Database className="w-4 h-4 text-slate-400" />
-                                <span>Tabelas MySQL:</span>
-                                <div className="flex flex-wrap gap-1">
-                                    {selectedStep.tables.map(t => (
-                                        <span key={t} className="px-2 py-0.5 rounded bg-slate-100 text-slate-800 font-mono text-[11px]">
-                                            {t}
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <button
-                                onClick={() => handleNavigate(selectedStep.route)}
-                                className="text-blue-600 font-bold hover:underline flex items-center gap-1"
-                            >
-                                <span>Acessar {selectedStep.route}</span>
-                                <ExternalLink className="w-3.5 h-3.5" />
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -843,51 +790,6 @@ export default function FluxogramaProcessoTab() {
                             </tbody>
                         </table>
                     </div>
-                </div>
-            )}
-
-            {/* ── MODO 4: PROMPT DE IA & ESPECIFICAÇÃO ── */}
-            {viewMode === 'prompt_study' && (
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                        <div>
-                            <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                                <Cpu className="w-5 h-5 text-amber-500" />
-                                Especificação Técnica do Fluxograma para IA
-                            </h3>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                                Prompt rigoroso e formal que descreve a arquitetura matemática de dados do SINCO ERP.
-                            </p>
-                        </div>
-                    </div>
-
-                    <pre className="p-4 rounded-xl bg-slate-900 text-slate-200 text-xs font-mono leading-relaxed overflow-x-auto max-h-[500px]">
-{`PROMPT INDUSTRIAL: ARQUITETURA DO FLUXOGRAMA OPERACIONAL SINCO ERP
---------------------------------------------------------------------------------
-1. FUNDAÇÃO (Multi-Tenant & RBAC):
-   - /settings [empresa, app_company_settings] -> IdEmpresa
-   - /empresa/colaboradores [usuario, app_user_permissions]
-   - /cadastros/basicos [app_cad_armazens, app_cad_unidades_medida, app_cad_tipos_produto]
-
-2. ENGENHARIA & RECURSOS:
-   - /pcp/recursos & /pcp/setores [pcp_recursos, pcp_setores]
-   - /saldo-materiais [material, sb1010, sb2010]
-   - /erp/produtos & /bom-generator [erp_produtos, erp_estruturas_bom, sg1010]
-   - /pcp/planejamento-estrutura-routing [erp_roteiros_operacoes, processofabricacao]
-
-3. DEMANDA & PLANEJAMENTO (PCP):
-   - /erp/pedidos [erp_clientes, erp_pedidos_venda, sc5010]
-   - /erp/producao & /planejamento-gantt [erp_ordens_producao, sc2010]
-
-4. CHÃO DE FÁBRICA & QUALIDADE (MES):
-   - /pcp/apontamento-vertical [ordemservicoitem, pcp_programas_execucoes]
-   - /sgq/gestao-rncs [app_sgq_nao_conformidades]
-
-5. EXPEDIÇÃO & FISCAL:
-   - /romaneios [app_romaneios, app_romaneio_items]
-   - /comercial/faturamento [app_faturamento_solicitacoes, sf2010 -> NF-e]
---------------------------------------------------------------------------------`}
-                    </pre>
                 </div>
             )}
 

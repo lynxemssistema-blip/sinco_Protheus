@@ -2,28 +2,35 @@ import React, { useState, useEffect } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 import api from '../services/api';
 
-const CompanyFilter = ({ selectedFiliais, onChange, defaultAll = true }) => {
+const CompanyFilter = ({ selectedFiliais = [], onChange, defaultAll = true }) => {
     const [empresas, setEmpresas] = useState([]);
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        let isMounted = true;
         const fetchEmpresas = async () => {
             try {
                 const { data } = await api.get('/financeiro/empresas');
-                const filtradas = data.filter(e => e.id !== '01');
+                if (!isMounted) return;
+                const rawList = Array.isArray(data) ? data : [];
+                // Se houver mais de uma filial e houver código '01' consolidado, filtrar '01' apenas se restarem filiais
+                const filtradas = rawList.length > 1 && rawList.some(e => e.id !== '01')
+                    ? rawList.filter(e => e.id !== '01')
+                    : rawList;
                 setEmpresas(filtradas);
                 
-                if (defaultAll && selectedFiliais.length === 0) {
+                if (defaultAll && filtradas.length > 0 && (!selectedFiliais || selectedFiliais.length === 0)) {
                     onChange(filtradas.map(e => e.id));
                 }
             } catch (err) {
                 console.error("Erro ao carregar empresas:", err);
             } finally {
-                setLoading(false);
+                if (isMounted) setLoading(false);
             }
         };
         fetchEmpresas();
+        return () => { isMounted = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 

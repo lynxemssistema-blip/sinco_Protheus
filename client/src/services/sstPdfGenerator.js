@@ -11,7 +11,7 @@ export function gerarFichaEpiPdf(colaborador, ficha, entregas = [], empresa = nu
         format: 'a4'
     });
 
-    const empresaNome = empresa?.nome || empresa?.RazaoSocial || 'MetalFisa / Lynx';
+    const empresaNome = empresa?.nome || empresa?.RazaoSocial || 'Lynx EMS';
     const agora = new Date().toLocaleDateString('pt-BR');
 
     // Cabeçalho da Empresa

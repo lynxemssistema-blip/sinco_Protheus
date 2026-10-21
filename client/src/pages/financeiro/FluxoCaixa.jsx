@@ -87,6 +87,7 @@ const FluxoCaixa = () => {
     const canViewValues = hasPermission('valores_financeiros', 'view');
     const [data, setData] = useState({ receber: [], pagar: [] });
     const [loading, setLoading] = useState(true);
+    const [initialLoading, setInitialLoading] = useState(true);
     const [selectedFiliais, setSelectedFiliais] = useState([]);
     const [dateRange, setDateRange] = useState({
         inicio: format(subMonths(new Date(), 1), 'yyyy-MM-dd'),
@@ -119,13 +120,14 @@ const FluxoCaixa = () => {
             const res = await getFluxoCaixa({ 
                 data_inicio: dateRange.inicio, 
                 data_fim: dateRange.fim,
-                filiais: selectedFiliais.join(',')
+                filiais: (selectedFiliais || []).join(',')
             });
-            setData(res);
+            setData(res && (res.receber || res.pagar) ? res : { receber: [], pagar: [] });
         } catch {
             toast.error('Erro ao carregar dados do fluxo de caixa.');
         } finally {
             setLoading(false);
+            setInitialLoading(false);
         }
     };
 
@@ -213,8 +215,8 @@ const FluxoCaixa = () => {
         );
     }
 
-    // ── Skeleton ───────────────────────────────────────────────────────────────
-    if (loading && !data.receber.length && !data.pagar.length) {
+    // ── Skeleton (apenas na carga inicial da tela para não desmontar filtros) ──
+    if (initialLoading) {
         return (
             <div className="p-6 bg-slate-50 min-h-screen">
                 <Skeleton className="h-10 w-72 mb-2" /><Skeleton className="h-5 w-96 mb-8" />
@@ -322,44 +324,58 @@ const FluxoCaixa = () => {
 
             {/* ── Gráficos ──────────────────────────────────────────────────── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 min-w-0">
                     <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
                         <TrendingUp className="w-5 h-5 text-indigo-600"/> Entradas vs Saídas Mensais
                     </h3>
-                    <div className="h-[320px] w-full">
-                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                            <BarChart data={chartData} margin={{ top:10, right:20, left:0, bottom:5 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fill:'#94a3b8',fontSize:12}} dy={10}/>
-                                <YAxis hide/>
-                                <Tooltip contentStyle={{borderRadius:'16px',border:'none',boxShadow:'0 10px 15px -3px rgb(0 0 0 / 0.1)'}} formatter={v=>fmt(v)}/>
-                                <Legend wrapperStyle={{paddingTop:'16px'}}/>
-                                <Bar dataKey="entrada" name="Entradas" fill="#10b981" radius={[6,6,0,0]} barSize={22}/>
-                                <Bar dataKey="saida"   name="Saídas"   fill="#ef4444" radius={[6,6,0,0]} barSize={22}/>
-                            </BarChart>
-                        </ResponsiveContainer>
+                    <div className="h-[320px] w-full min-w-0">
+                        {chartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height={320} minWidth={0} minHeight={320}>
+                                <BarChart data={chartData} margin={{ top:10, right:20, left:0, bottom:5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fill:'#94a3b8',fontSize:12}} dy={10}/>
+                                    <YAxis hide/>
+                                    <Tooltip contentStyle={{borderRadius:'16px',border:'none',boxShadow:'0 10px 15px -3px rgb(0 0 0 / 0.1)'}} formatter={v=>fmt(v)}/>
+                                    <Legend wrapperStyle={{paddingTop:'16px'}}/>
+                                    <Bar dataKey="entrada" name="Entradas" fill="#10b981" radius={[6,6,0,0]} barSize={22}/>
+                                    <Bar dataKey="saida"   name="Saídas"   fill="#ef4444" radius={[6,6,0,0]} barSize={22}/>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-[320px] w-full flex flex-col items-center justify-center text-slate-400 text-xs">
+                                <TrendingUp className="w-8 h-8 text-slate-300 mb-2 opacity-50" />
+                                <span>Sem movimentações para o período selecionado</span>
+                            </div>
+                        )}
                     </div>
                 </div>
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 min-w-0">
                     <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2">
                         <LineChartIcon className="w-5 h-5 text-indigo-600"/> Evolução do Saldo Acumulado
                     </h3>
-                    <div className="h-[320px] w-full">
-                        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                            <AreaChart data={chartData} margin={{ top:10, right:20, left:0, bottom:5 }}>
-                                <defs>
-                                    <linearGradient id="colorSaldo" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%"  stopColor="#6366f1" stopOpacity={0.15}/>
-                                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fill:'#94a3b8',fontSize:12}} dy={10}/>
-                                <YAxis hide/>
-                                <Tooltip contentStyle={{borderRadius:'16px',border:'none',boxShadow:'0 10px 15px -3px rgb(0 0 0 / 0.1)'}} formatter={v=>fmt(v)}/>
-                                <Area type="monotone" dataKey="acumulado" name="Saldo Acumulado" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorSaldo)" dot={{r:4,fill:'#6366f1',strokeWidth:0}} activeDot={{r:6}}/>
-                            </AreaChart>
-                        </ResponsiveContainer>
+                    <div className="h-[320px] w-full min-w-0">
+                        {chartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height={320} minWidth={0} minHeight={320}>
+                                <AreaChart data={chartData} margin={{ top:10, right:20, left:0, bottom:5 }}>
+                                    <defs>
+                                        <linearGradient id="colorSaldo" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%"  stopColor="#6366f1" stopOpacity={0.15}/>
+                                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{fill:'#94a3b8',fontSize:12}} dy={10}/>
+                                    <YAxis hide/>
+                                    <Tooltip contentStyle={{borderRadius:'16px',border:'none',boxShadow:'0 10px 15px -3px rgb(0 0 0 / 0.1)'}} formatter={v=>fmt(v)}/>
+                                    <Area type="monotone" dataKey="acumulado" name="Saldo Acumulado" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorSaldo)" dot={{r:4,fill:'#6366f1',strokeWidth:0}} activeDot={{r:6}}/>
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-[320px] w-full flex flex-col items-center justify-center text-slate-400 text-xs">
+                                <LineChartIcon className="w-8 h-8 text-slate-300 mb-2 opacity-50" />
+                                <span>Sem saldo acumulado para o período selecionado</span>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
