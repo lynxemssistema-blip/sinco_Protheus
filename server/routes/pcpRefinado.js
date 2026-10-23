@@ -2500,31 +2500,40 @@ router.get('/estrutura-pedido', async (req, res) => {
         const rotMap = {};
         sg2Rows.forEach(r => {
             if (!rotMap[r.produto]) rotMap[r.produto] = [];
-            rotMap[r.produto].push(r);
+            const existingIdx = rotMap[r.produto].findIndex(x => String(x.operac).trim() === String(r.operac).trim());
+            if (existingIdx >= 0) {
+                if (r.desc_recurso && (!rotMap[r.produto][existingIdx].desc_recurso || rotMap[r.produto][existingIdx].desc_recurso === rotMap[r.produto][existingIdx].recurso)) {
+                    rotMap[r.produto][existingIdx] = r;
+                }
+            } else {
+                rotMap[r.produto].push(r);
+            }
         });
 
         const rotOpMap = {};
-        if (isMysqlSource) {
-            // 3.1 Operações instanciadas da OP em erp_ordens_producao_operacoes
-            try {
-                const [opOps] = await mysqlPool.query(`
-                    SELECT TRIM(numero_op) AS op_num, TRIM(produto_codigo) AS produto, TRIM(operacao_seq) AS operac,
-                           TRIM(codigo_recurso) AS recurso,
-                           TRIM(COALESCE(NULLIF(descricao_operacao, ''), codigo_recurso)) AS desc_recurso,
-                           tempo_operacao_minutos AS tempo_padrao
-                    FROM erp_ordens_producao_operacoes
-                    WHERE numero_op IN (?) OR SUBSTRING(numero_op, 1, 6) IN (?)
-                    ORDER BY numero_op, CAST(REGEXP_REPLACE(operacao_seq, '[^0-9]', '') AS UNSIGNED) ASC, operacao_seq ASC
-                `, [opKeys, mainOpNums]);
-                (opOps || []).forEach(o => {
-                    if (!rotOpMap[o.op_num]) rotOpMap[o.op_num] = [];
+        // 3.1 Operações instanciadas da OP em erp_ordens_producao_operacoes (sempre carregar do MySQL)
+        try {
+            const [opOps] = await mysqlPool.query(`
+                SELECT TRIM(numero_op) AS op_num, TRIM(produto_codigo) AS produto, TRIM(operacao_seq) AS operac,
+                       TRIM(codigo_recurso) AS recurso,
+                       TRIM(COALESCE(NULLIF(descricao_operacao, ''), codigo_recurso)) AS desc_recurso,
+                       tempo_operacao_minutos AS tempo_padrao
+                FROM erp_ordens_producao_operacoes
+                WHERE numero_op IN (?) OR SUBSTRING(numero_op, 1, 6) IN (?)
+                ORDER BY numero_op, CAST(REGEXP_REPLACE(operacao_seq, '[^0-9]', '') AS UNSIGNED) ASC, operacao_seq ASC
+            `, [opKeys.length > 0 ? opKeys : ['__NONE__'], mainOpNums.length > 0 ? mainOpNums : ['__NONE__']]);
+            (opOps || []).forEach(o => {
+                if (!rotOpMap[o.op_num]) rotOpMap[o.op_num] = [];
+                if (!rotOpMap[o.op_num].some(x => String(x.operac).trim() === String(o.operac).trim())) {
                     rotOpMap[o.op_num].push(o);
-                });
-            } catch (errOp) {
-                console.warn('[pcpRefinado] Aviso ao buscar erp_ordens_producao_operacoes:', errOp.message);
-            }
+                }
+            });
+        } catch (errOp) {
+            console.warn('[pcpRefinado] Aviso ao buscar erp_ordens_producao_operacoes:', errOp.message);
+        }
 
-            // 3.2 Roteiro padrão complementar do MySQL erp_roteiros_operacoes
+        // 3.2 Roteiro padrão complementar do MySQL erp_roteiros_operacoes
+        if (allComponentsArr.length > 0) {
             try {
                 const [myErpRot] = await mysqlPool.query(`
                     SELECT TRIM(o.codigo_produto) AS produto, TRIM(o.operacao_seq) AS operac,
@@ -2538,7 +2547,10 @@ router.get('/estrutura-pedido', async (req, res) => {
                 `, [allComponentsArr]);
                 (myErpRot || []).forEach(r => {
                     if (!rotMap[r.produto]) rotMap[r.produto] = [];
-                    if (!rotMap[r.produto].some(x => x.operac === r.operac)) {
+                    const existingIdx = rotMap[r.produto].findIndex(x => String(x.operac).trim() === String(r.operac).trim());
+                    if (existingIdx >= 0) {
+                        rotMap[r.produto][existingIdx] = r;
+                    } else {
                         rotMap[r.produto].push(r);
                     }
                 });
@@ -2791,15 +2803,18 @@ router.get('/estrutura-pedido', async (req, res) => {
                 const fcs = fcsItemSummary[`${op.pedido}|${op.item_op}`] || {};
                 const fc = forecastMap.get(`${numPedido}|${op.item_pv || op.item_op}`) || forecastMap.get(`${op.pedido}|${op.item_op}`) || {};
 
-                const itemOpKey = `${op.pedido}${op.item_op}${op.sequen}`;
-                const itemOpNum = `${op.pedido}${op.item_op}`;
-                const opOperacoes = (rotOpMap[itemOpKey] && rotOpMap[itemOpKey].length > 0)
+                const rawOperacoes = (rotOpMap[itemOpKey] && rotOpMap[itemOpKey].length > 0)
                     ? rotOpMap[itemOpKey]
                     : (rotOpMap[itemOpNum] && rotOpMap[itemOpNum].length > 0)
                         ? rotOpMap[itemOpNum]
                         : (rotOpMap[op.pedido] && rotOpMap[op.pedido].length > 0)
                             ? rotOpMap[op.pedido]
                             : (rotMap[op.produto] || []);
+
+                // Garantir unicidade absoluta das operações por código (seq de roteiro)
+                const opOperacoes = (rawOperacoes || []).filter((r, idx, arr) => 
+                    arr.findIndex(x => String(x.operac).trim() === String(r.operac).trim()) === idx
+                );
 
                 const roteiro = opOperacoes.map(r => {
                     const appt = apptMap[`${op.pedido}|${op.item_op}|${op.sequen}|${r.operac}`] || {};

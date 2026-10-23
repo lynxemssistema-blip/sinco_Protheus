@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { logoBase64 as metalfisaLogoBase64 } from '../../services/metalfisaLogoBase64';
+import { getCompanyLogoBase64, getCompanyShortName } from '../../services/companyBranding';
 
 export default function GestaoAtivos() {
     const [ativos, setAtivos] = useState([]);
@@ -419,8 +419,14 @@ export default function GestaoAtivos() {
         const doc = new jsPDF('l', 'mm', 'a4');
 
         // Header
-        if (metalfisaLogoBase64) {
-            doc.addImage(metalfisaLogoBase64, 'PNG', 14, 10, 40, 15);
+        const logo = getCompanyLogoBase64();
+        if (logo) {
+            doc.addImage(logo, 'PNG', 14, 10, 40, 15);
+        } else {
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(30, 58, 95);
+            doc.text(getCompanyShortName(), 14, 20);
         }
         
         doc.setFontSize(16);

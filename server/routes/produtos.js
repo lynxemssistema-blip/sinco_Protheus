@@ -59,7 +59,7 @@ router.get('/', async (req, res) => {
             p.status AS status
         `;
 
-        let baseQuery = "FROM erp_produtos p WHERE COALESCE(p.status, 'ativo') <> 'inativo'";
+        let baseQuery = "FROM erp_produtos p WHERE COALESCE(p.d_e_l_e_t_, ' ') <> '*' AND COALESCE(p.status, 'ativo') <> 'inativo'";
         let params = [];
         let paramIndex = 1;
 

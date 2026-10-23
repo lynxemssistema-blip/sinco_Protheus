@@ -275,7 +275,9 @@ const PortalClienteSolicitacoes = ({ user, allOrderItems = [], filters, onOpenDr
             const { default: jsPDFLib } = await import('jspdf');
             const jsPDF = jsPDFLib.jsPDF || jsPDFLib;
             const { default: autoTable } = await import('jspdf-autotable');
-            const { logoBase64 } = await import('../services/metalfisaLogoBase64');
+            const { getCompanyLogoBase64, getCompanyShortName } = await import('../services/companyBranding');
+            const logo = getCompanyLogoBase64();
+            const brandName = getCompanyShortName();
 
             const doc = new jsPDF('landscape', 'mm', 'a4');
             const pageWidth = doc.internal.pageSize.getWidth();
@@ -297,21 +299,21 @@ const PortalClienteSolicitacoes = ({ user, allOrderItems = [], filters, onOpenDr
                 pageDoc.setLineWidth(0.2);
                 [col1, col2].forEach(x => pageDoc.line(x, hY, x, hY + hH));
 
-                // Logo Lynx
+                // Logo da Empresa Ativa
                 try {
-                    if (logoBase64) {
-                        pageDoc.addImage(logoBase64, 'PNG', ML + 2, hY + 1, 38, 13);
+                    if (logo) {
+                        pageDoc.addImage(logo, 'PNG', ML + 2, hY + 1, 38, 13);
                     } else {
                         pageDoc.setFontSize(13);
                         pageDoc.setFont('helvetica', 'bold');
                         pageDoc.setTextColor(30, 58, 95);
-                        pageDoc.text('LYNX', ML + 4, hY + 9);
+                        pageDoc.text(brandName, ML + 4, hY + 9);
                     }
                 } catch(e) {
                     pageDoc.setFontSize(13);
                     pageDoc.setFont('helvetica', 'bold');
                     pageDoc.setTextColor(30, 58, 95);
-                    pageDoc.text('LYNX', ML + 4, hY + 9);
+                    pageDoc.text(brandName, ML + 4, hY + 9);
                 }
 
                 pageDoc.setTextColor(0, 0, 0);

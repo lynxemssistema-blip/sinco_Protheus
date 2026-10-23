@@ -1,0 +1,19 @@
+{
+  "watch": [
+    "routes/",
+    "services/",
+    "utils/",
+    "util/",
+    "index.js",
+    ".env"
+  ],
+  "ignore": [
+    "uploads/**",
+    "uploads/*",
+    "uploads",
+    "certs/*",
+    "*.log",
+    "node_modules/**"
+  ],
+  "ext": "js,mjs,cjs,json"
+}

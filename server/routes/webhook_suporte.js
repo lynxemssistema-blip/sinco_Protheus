@@ -45,15 +45,26 @@ for (const p of potentialPaths) {
 // Histórico de Conversas
 const HISTORY_CACHE = {}; 
 
-const SUPORTE_INSTANCE = process.env.EVOLUTION_INSTANCE || 'Suporte Lynx';
-const SUPORTE_APIKEY = process.env.EVOLUTION_API_KEY || '';
-const SUPORTE_GROUP_NAME = 'Lynx - Suporte Lynx';
+// GET /api/webhook - Health check e confirmação da URL do Webhook
+router.get(['/', '/status', '/suporte-ia', '/evolution'], (req, res) => {
+    res.json({
+        status: 'ok',
+        service: 'Lynx EMS Evolution API Webhook Listener',
+        webhook_url: 'https://lynxems.com.br/api/webhook',
+        instance: process.env.EVOLUTION_INSTANCE || 'Suporte Lynx',
+        timestamp: new Date().toISOString()
+    });
+});
 
-router.post('/suporte-ia', async (req, res) => {
+// POST /api/webhook ou /api/webhook/suporte-ia ou /api/webhook/evolution
+router.post(['/', '/suporte-ia', '/evolution'], async (req, res) => {
     try {
-        // Validação de segurança opcional no webhook: se EVOLUTION_API_KEY estiver configurada, exige match via header ou query
+        const SUPORTE_INSTANCE = process.env.EVOLUTION_INSTANCE || 'Suporte Lynx';
+        const SUPORTE_APIKEY = process.env.EVOLUTION_API_KEY || '1C62EE90D11A-4C75-B1BA-383CDF634A39';
+
+        // Validação de segurança opcional no webhook: se fornecida, valida apikey
         const providedKey = req.headers['apikey'] || req.headers['x-api-key'] || req.query.apikey;
-        if (SUPORTE_APIKEY && providedKey && providedKey !== SUPORTE_APIKEY) {
+        if (providedKey && SUPORTE_APIKEY && providedKey !== SUPORTE_APIKEY) {
             return res.status(401).json({ error: 'Chave de webhook inválida' });
         }
 

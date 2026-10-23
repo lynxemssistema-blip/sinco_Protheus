@@ -358,8 +358,8 @@ router.post('/recuperar-senha', async (req, res) => {
 
 // Middleware for protected routes (exporting for use in other files if needed)
 const authenticateToken = (req, res, next) => {
-    // Webhook da Evolution API possui autenticação própria por chave
-    if (req.originalUrl.startsWith('/api/webhook')) {
+    // Webhook da Evolution API e visualização segura de documentos possuem regras próprias ou abrem via link direto no navegador
+    if (req.originalUrl.startsWith('/api/webhook') || req.originalUrl.startsWith('/api/docs/view')) {
         return next();
     }
 

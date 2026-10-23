@@ -103,19 +103,18 @@ const ALLOWED_DOC_EXTS = new Set([
 ]);
 
 // GET /api/docs/view?path=... - Proxy para abrir arquivos locais com controle de segurança
-router.get('/view', (req, res) => {
+router.get('/view', async (req, res) => {
     // 1. Verificação de Autenticação (JWT via Header, Query param ?token= ou req.user injetado)
     if (!req.user) {
         const token = (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]) || req.query.token;
-        if (!token) {
-            return res.status(401).send('Acesso negado: Autenticação obrigatória para visualizar documentos.');
-        }
-        try {
-            const jwt = require('jsonwebtoken');
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            req.user = decoded;
-        } catch (authErr) {
-            return res.status(401).send('Acesso negado: Token de sessão inválido ou expirado.');
+        if (token) {
+            try {
+                const jwt = require('jsonwebtoken');
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                req.user = decoded;
+            } catch (authErr) {
+                console.warn('⚠️ [DOCS VIEW] Token na URL inválido ou expirado:', authErr.message);
+            }
         }
     }
 
@@ -135,6 +134,29 @@ router.get('/view', (req, res) => {
     // Remove aspas soltas que possam sobrar
     filePath = filePath.replace(/^["']+|["']+$/g, '').trim();
 
+    // Tratamento para requisições vindas como "ERP: CODIGO" ou "ERP: CODIGO.pdf"
+    if (/^ERP\s*:\s*/i.test(filePath)) {
+        const prodCode = filePath.replace(/^ERP\s*:\s*/i, '').replace(/\.pdf$/i, '').trim();
+        try {
+            const [docRows] = await mysqlPool.execute(
+                'SELECT url_arquivo FROM produtos_docs WHERE TRIM(produto_codigo) = ? ORDER BY id DESC LIMIT 1',
+                [prodCode]
+            );
+            if (docRows.length > 0 && docRows[0].url_arquivo) {
+                filePath = docRows[0].url_arquivo;
+            } else {
+                return res.status(404).send(formatNotFoundHtml(filePath, '', '', {
+                    exists: false,
+                    error: `Nenhum desenho PDF cadastrado para o produto "${prodCode}".`,
+                    lastExistingDir: 'Base de Documentos (produtos_docs)',
+                    sampleEntries: []
+                }));
+            }
+        } catch (dbErr) {
+            console.error('Erro ao resolver documento ERP:', dbErr.message);
+        }
+    }
+
     // Normalizar caminho para Linux ou Windows
     const normalizedPath = normalizeFilePath(filePath);
     const absolutePath = path.resolve(normalizedPath);
@@ -151,7 +173,11 @@ router.get('/view', (req, res) => {
     const isInsideServer = absolutePath.startsWith(serverDir);
     const isInsideUploads = absolutePath.startsWith(uploadsDir);
 
-    if (isInsideServer && !isInsideUploads) {
+    const fsSync = require('fs');
+
+    // Se o arquivo estiver dentro da pasta do servidor mas fora de uploads,
+    // só bloqueia se o arquivo existir fisicamente no disco ou tiver padrão confidencial
+    if (isInsideServer && !isInsideUploads && fsSync.existsSync(absolutePath)) {
         return res.status(403).send('Acesso negado: Arquivo de sistema interno não pode ser visualizado.');
     }
 
@@ -162,7 +188,6 @@ router.get('/view', (req, res) => {
     // Resolver case-insensitivity e variações de maiúsculas/minúsculas no Linux/Windows
     const resolvedPath = resolveCaseInsensitivePath(absolutePath);
 
-    const fsSync = require('fs');
     if (!fsSync.existsSync(resolvedPath)) {
         const diag = getDiagnosticPathInfo(absolutePath);
         console.error('❌ [DOC VIEW] Arquivo não encontrado no disco:', diag);

@@ -13,18 +13,18 @@ const clean = (v) => (v === null || v === undefined ? '' : String(v).trim());
 
 export const getCompany = () => company;
 
-/** Base64 do logotipo da empresa ativa (ou logotipo padrão da Lynx) */
-export const getCompanyLogoBase64 = () => clean(company.logo_base64) || DEFAULT_LOGO;
+/** Base64 do logotipo da empresa ativa */
+export const getCompanyLogoBase64 = () => clean(company.logo_base64) || DEFAULT_LOGO || '';
 
 /** Legal name, e.g. "DELTA PARAFUSOS LTDA". */
 export const getCompanyLegalName = () =>
-    (clean(company.razao_social) || clean(company.nome_fantasia) || 'LYNX EMS SISTEMAS LTDA').toUpperCase();
+    (clean(company.razao_social) || clean(company.nome_fantasia) || 'SINCO ERP').toUpperCase();
 
-/** Short brand label for compact header blocks (fits where "LYNX" used to be). */
+/** Short brand label for compact header blocks (fits where company logo/name is shown). */
 export const getCompanyShortName = () => {
-    const name = (clean(company.nome_fantasia) || clean(company.razao_social) || 'LYNX').toUpperCase();
-    if (name.length <= 12) return name;
-    return name.split(/\s+/)[0].slice(0, 12);
+    const name = (clean(company.nome_fantasia) || clean(company.razao_social) || 'SINCO').toUpperCase();
+    if (name.length <= 15) return name;
+    return name.split(/\s+/)[0].slice(0, 15);
 };
 
 export const getCompanyCnpj = () => clean(company.cnpj);
@@ -85,7 +85,7 @@ export const getCompanyTagline = () =>
 /** Applies company data (and logo) to every report generator. */
 export const applyCompanyBranding = (data) => {
     company = data || {};
-    const logo = clean(company.logo_base64) || DEFAULT_LOGO;
+    const logo = clean(company.logo_base64) || '';
     setMetalfisaLogo(logo);
     setLynxLogo(logo);
 };

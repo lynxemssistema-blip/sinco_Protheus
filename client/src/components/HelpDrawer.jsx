@@ -5,6 +5,7 @@ import {
     BookOpen, ExternalLink, List, Zap, Pin, PinOff, Layers, Printer
 } from 'lucide-react';
 import { useHelp } from '../contexts/HelpContext';
+import DOMPurify from 'dompurify';
 
 // ─── Icon Map ────────────────────────────────────────────────────────────────
 // ─── Icon Map ────────────────────────────────────────────────────────────────
@@ -272,7 +273,7 @@ export default function HelpDrawer() {
                             {content?.document_content ? (
                                 <div 
                                     className="sgq-document-content animate-in fade-in slide-in-from-bottom-2 duration-300 bg-white p-5 rounded-xl border border-slate-200 shadow-sm"
-                                    dangerouslySetInnerHTML={{ __html: content.document_content }}
+                                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(content.document_content) }}
                                 />
                             ) : (
                                 <>

@@ -1,9 +1,50 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const { execFileSync } = require('child_process');
+
+const uploadsDir = path.resolve(__dirname, '../uploads');
+
+/**
+ * Tenta fazer o download sob demanda de um arquivo de upload que esteja na VPS Hostinger
+ * caso o mesmo não exista na máquina local (ex: durante desenvolvimento localhost).
+ */
+function tryDownloadFromRemoteHostinger(targetPath) {
+    try {
+        const relativePart = path.relative(uploadsDir, targetPath);
+        if (!relativePart || relativePart.startsWith('..') || path.isAbsolute(relativePart)) {
+            return false;
+        }
+
+        const sshKey = path.join(os.homedir(), '.ssh', 'id_hostinger_lynx');
+        if (!fs.existsSync(sshKey)) {
+            return false;
+        }
+
+        const remoteSubPath = relativePart.replace(/\\/g, '/');
+        const remoteUrl = `/home/u494795077/domains/lynxems.com.br/public_html/server/uploads/${remoteSubPath}`;
+        
+        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+        
+        execFileSync('scp', [
+            '-i', sshKey,
+            '-P', '65002',
+            '-o', 'StrictHostKeyChecking=no',
+            '-o', 'ConnectTimeout=5',
+            `u494795077@89.116.115.59:${remoteUrl}`,
+            targetPath
+        ], { timeout: 15000, stdio: 'ignore' });
+
+        return fs.existsSync(targetPath);
+    } catch (_) {
+        return false;
+    }
+}
 
 /**
  * Normaliza caminhos de arquivo para Windows e Linux:
  * - Remove aspas e espaços extras
+ * - Mapeia caminhos de uploads (Linux Hostinger, Windows local, relativo ou absoluto) para a pasta uploads local
  * - Mapeia Q:\ e Q:/ para \\192.168.1.253\Engenharia\ (Windows) ou /mnt/engenharia/ (Linux)
  * - Mapeia UNC de Engenharia e Estrutura Lynx para /mnt/engenharia/ e /mnt/lynx/ no Linux
  * - Trata barras simples, duplas e invertidas
@@ -15,6 +56,18 @@ function normalizeFilePath(filePath) {
 
     // Remove aspas e espaços nas pontas
     let normalized = filePath.trim().replace(/^["']+|["']+$/g, '').trim();
+
+    // Intercepta e mapeia qualquer caminho de uploads (seja Linux Hostinger, Windows local, relativo ou absoluto)
+    const uploadMatch = normalized.match(/(?:^|[\\/])(?:server[\\/])?uploads[\\/](.+)$/i);
+    if (uploadMatch) {
+        let subPath = uploadMatch[1].replace(/^[\\/]+/, '');
+        if (process.platform !== 'win32') {
+            subPath = subPath.replace(/\\/g, '/');
+        } else {
+            subPath = subPath.replace(/\//g, '\\');
+        }
+        return path.join(uploadsDir, subPath);
+    }
 
     if (process.platform !== 'win32') {
         // --- AMBIENTE LINUX ---
@@ -55,6 +108,77 @@ function normalizeFilePath(filePath) {
 }
 
 /**
+ * Procura um arquivo dentro do diretório de uploads local.
+ * Útil quando o caminho gravado no banco aponta para pastas de rede interna (\\192.168.1.253\... ou /mnt/...)
+ * mas o arquivo foi sincronizado ou armazenado dentro de server/uploads (engineering, docs, os, etc.).
+ * @param {string} targetPath - Caminho ou nome do arquivo
+ * @returns {string|null} - Caminho absoluto no disco se encontrado, ou null
+ */
+function findFileInUploads(targetPath) {
+    if (!targetPath || typeof targetPath !== 'string') return null;
+    const filename = path.basename(targetPath).trim();
+    if (!filename) return null;
+
+    // 1. Se o caminho continha 000-PRODUTOS ou engineering (ex: engineering/LEN-2026-00001/...)
+    const matchProd = targetPath.match(/(?:000-PRODUTOS|engineering)[\\/](.+)$/i);
+    if (matchProd) {
+        const relSub = matchProd[1].replace(/\\/g, path.sep).replace(/\//g, path.sep);
+        const directCandidate = path.join(uploadsDir, 'engineering', relSub);
+        if (fs.existsSync(directCandidate)) return directCandidate;
+    }
+
+    // 2. Se o caminho continha 005-ORDEM DE SERVIÇO ou os
+    const matchOS = targetPath.match(/(?:005-ORDEM DE SERVIÇO|os)[\\/](.+)$/i);
+    if (matchOS) {
+        const relSub = matchOS[1].replace(/\\/g, path.sep).replace(/\//g, path.sep);
+        const directCandidate = path.join(uploadsDir, 'os', relSub);
+        if (fs.existsSync(directCandidate)) return directCandidate;
+    }
+
+    // 3. Pastas comuns dentro de uploads
+    const commonDirs = [
+        path.join(uploadsDir, 'engineering'),
+        path.join(uploadsDir, 'docs'),
+        path.join(uploadsDir, 'os'),
+        uploadsDir
+    ];
+
+    const targetLower = filename.toLowerCase();
+
+    for (const dir of commonDirs) {
+        if (!fs.existsSync(dir)) continue;
+        const candidate = path.join(dir, filename);
+        if (fs.existsSync(candidate)) return candidate;
+    }
+
+    // 4. Busca recursiva (até 3 níveis) para localizar por nome exato case-insensitive
+    function recursiveSearch(dir, depth = 0) {
+        if (depth > 3) return null;
+        try {
+            const list = fs.readdirSync(dir);
+            for (const item of list) {
+                const full = path.join(dir, item);
+                let stat;
+                try {
+                    stat = fs.statSync(full);
+                } catch (_) {
+                    continue;
+                }
+                if (stat.isDirectory()) {
+                    const found = recursiveSearch(full, depth + 1);
+                    if (found) return found;
+                } else if (item.toLowerCase().trim() === targetLower) {
+                    return full;
+                }
+            }
+        } catch (_) {}
+        return null;
+    }
+
+    return recursiveSearch(uploadsDir);
+}
+
+/**
  * Tenta resolver o caminho físico exato no disco de forma case-insensitive e tolerante a pequenas variações.
  * No Linux, diretórios e arquivos em montagens CIFS/SMB ou sistemas de arquivos nativos
  * são estritamente sensíveis a maiúsculas/minúsculas se não montados com flag 'nocase'.
@@ -72,6 +196,22 @@ function resolveCaseInsensitivePath(targetPath) {
     try {
         if (fs.existsSync(targetPath)) {
             return targetPath;
+        }
+    } catch (_) {}
+
+    // 2. Se for um arquivo de upload que não existe localmente, tenta sincronizar da Hostinger sob demanda
+    try {
+        if (tryDownloadFromRemoteHostinger(targetPath)) {
+            return targetPath;
+        }
+    } catch (_) {}
+
+    // 3. Fallback inteligente: Se o arquivo está na rede interna ou não existe no caminho original,
+    // verifica se existe dentro de server/uploads (engineering, docs, os, etc.)
+    try {
+        const uploadsCandidate = findFileInUploads(targetPath);
+        if (uploadsCandidate && fs.existsSync(uploadsCandidate)) {
+            return uploadsCandidate;
         }
     } catch (_) {}
 
@@ -221,11 +361,26 @@ function formatNotFoundHtml(originalPath, normalizedPath, resolvedPath, diag) {
            </div>`
         : '<p style="color:#64748b; font-size:13px;">Nenhum arquivo ou subpasta encontrado na pasta pai.</p>';
 
-    const mountWarning = diag.isLinux && diag.mountEngenhariaOk === false
-        ? `<div style="background:#fee2e2; border:1px solid #ef4444; color:#b91c1c; padding:10px 14px; border-radius:6px; margin-bottom:15px; font-weight:600;">
+    const isNetworkShare = /192\.168\.1\.253|Estrutura Lynx|Engenharia|^Q:/i.test(originalPath || '');
+    let mountWarning = '';
+
+    if (diag.isLinux && isNetworkShare && !diag.mountEngenhariaOk && !diag.mountLynxOk) {
+        mountWarning = `<div style="background:#451a03; border:1px solid #d97706; color:#fde68a; padding:14px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.5;">
+            <strong style="font-size:14px; color:#fbbf24; display:block; margin-bottom:6px;">📁 Arquivo Armazenado na Rede Local da Empresa (192.168.1.253)</strong>
+            O arquivo solicitado está referenciado no compartilhamento de rede interno da empresa (<code>${originalPath}</code>). Como este acesso está ocorrendo pelo servidor em nuvem (<strong>https://lynxems.com.br</strong>), a nuvem não possui rota direta para a rede física local da fábrica.
+            <div style="margin-top:8px;">
+                <strong>Como visualizar:</strong>
+                <ul style="margin:4px 0 0 16px; padding:0;">
+                    <li>Acesse a aplicação através da rede local da empresa (onde o compartilhamento 192.168.1.253 está acessível); ou</li>
+                    <li>Faça o upload do PDF diretamente no cadastro do produto pelo sistema para que o arquivo fique permanentemente disponível na nuvem.</li>
+                </ul>
+            </div>
+        </div>`;
+    } else if (diag.isLinux && diag.mountEngenhariaOk === false) {
+        mountWarning = `<div style="background:#fee2e2; border:1px solid #ef4444; color:#b91c1c; padding:10px 14px; border-radius:6px; margin-bottom:15px; font-weight:600;">
             ⚠️ Atenção: O ponto de montagem <code>/mnt/engenharia</code> NÃO está montado no servidor Linux! Verifique o fstab ou o comando de mount CIFS.
-           </div>`
-        : '';
+           </div>`;
+    }
 
     return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -273,5 +428,7 @@ module.exports = {
     normalizeFilePath,
     resolveCaseInsensitivePath,
     getDiagnosticPathInfo,
-    formatNotFoundHtml
+    formatNotFoundHtml,
+    tryDownloadFromRemoteHostinger,
+    uploadsDir
 };

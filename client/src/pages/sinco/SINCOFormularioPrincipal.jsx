@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-import api, { getSincoArvore, getSincoArvoreCompleta, getSincoRestricoes, getSincoRestricoesSz0, createSincoRestricaoSz0, getSincoOperacoes, getSincoProduto, updateSincoProduto, updateSincoProductStructure, updateSincoRoteiro, updateSincoProdutoCliente, searchSincoProdutos, getProcessList, getClientes, getProductDocuments } from '../../services/api';
+import api, { getSincoArvore, getSincoArvoreCompleta, getSincoRestricoes, getSincoRestricoesSz0, createSincoRestricaoSz0, getSincoOperacoes, getSincoProduto, updateSincoProduto, updateSincoProductStructure, updateSincoRoteiro, updateSincoProdutoCliente, searchSincoProdutos, getProcessList, getClientes, getProductDocuments, getFileUrl } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import CriarProdutoProtheusModal from '../../components/sinco/CriarProdutoProtheusModal';
 import DocsModal from '../../components/DocsModal';
@@ -1416,7 +1416,7 @@ export default function SINCOFormularioPrincipal() {
                 const pdfDoc = docsComp.find(d => (d.caminho_relativo || d.nome_arquivo || '').toLowerCase().endsWith('.pdf')) || docsComp[0];
                 const pdfPath = pdfDoc.caminho_relativo || pdfDoc.url_arquivo;
                 if (pdfPath) {
-                    window.open(`/api/docs/view?path=${encodeURIComponent(pdfPath)}`, '_blank', 'noopener,noreferrer');
+                    window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(pdfPath)}`), '_blank', 'noopener,noreferrer');
                     return;
                 }
             }
@@ -1453,53 +1453,69 @@ export default function SINCOFormularioPrincipal() {
                     <span className="text-slate-300 text-xs hidden sm:inline">|</span>
                     <div className="text-xs text-slate-600 flex items-center gap-1.5 flex-wrap">
                         <span className="text-slate-400 font-medium">Arquivo Corrente:</span>
-                        {temArquivo && dados.caminho && dados.caminho !== estadoVazio.caminho ? (
-                            <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                                <button
-                                    title="Abrir no Solid Edge"
-                                    onClick={() => {
-                                        fetch('http://localhost:8080/api/solidedge/open-file', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ caminho: dados.caminho })
-                                        }).catch(() => showToast('Agente Solid Edge não encontrado.\nInicie o INICIAR_AGENT.bat na sua máquina.', 'error'));
-                                    }}
-                                    className="font-mono text-blue-600 hover:text-blue-800 hover:underline cursor-pointer bg-transparent border-none p-0 text-xs font-semibold max-w-[280px] truncate"
-                                >
-                                    {dados.caminho}
-                                </button>
-                                <button
-                                    title={pdfDocUrl ? "Abrir PDF do Desenho (via Servidor)" : (dados.caminho !== 'Busca via ERP' ? "Abrir PDF do Desenho (Local)" : "PDF não encontrado")}
-                                    disabled={!pdfDocUrl && dados.caminho === 'Busca via ERP'}
-                                    onClick={() => {
-                                        if (pdfDocUrl) {
-                                            window.open(`/api/docs/view?path=${encodeURIComponent(pdfDocUrl)}`, '_blank', 'noopener,noreferrer');
-                                            return;
-                                        }
-                                        
-                                        // Fallback to local conversion if we have a real local path
-                                        if (dados.caminho !== 'Busca via ERP') {
-                                            const filePath = dados.caminho;
-                                            let pdfPath = filePath;
-                                            const lastDotIndex = filePath.lastIndexOf('.');
-                                            if (lastDotIndex > 0) {
-                                                pdfPath = filePath.substring(0, lastDotIndex) + '.pdf';
-                                            } else {
-                                                pdfPath = filePath + '.pdf';
+                        {temArquivo && dados.caminho && dados.caminho !== estadoVazio.caminho ? (() => {
+                            const isCaminhoERP = !dados.caminho || dados.caminho === 'Busca via ERP' || dados.caminho.startsWith('ERP:') || dados.caminho === estadoVazio.caminho;
+                            const temPdfValido = Boolean(pdfDocUrl) || !isCaminhoERP;
+
+                            return (
+                                <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                                    {isCaminhoERP ? (
+                                        <span
+                                            title="Produto localizado no ERP (Sem arquivo 3D Solid Edge associado)"
+                                            className="font-mono text-slate-700 bg-transparent p-0 text-xs font-semibold max-w-[280px] truncate select-all"
+                                        >
+                                            {dados.caminho}
+                                        </span>
+                                    ) : (
+                                        <button
+                                            title="Abrir no Solid Edge"
+                                            onClick={() => {
+                                                fetch('http://localhost:8080/api/solidedge/open-file', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ caminho: dados.caminho })
+                                                }).catch(() => showToast('Agente Solid Edge não encontrado.\nInicie o INICIAR_AGENT.bat na sua máquina.', 'error'));
+                                            }}
+                                            className="font-mono text-blue-600 hover:text-blue-800 hover:underline cursor-pointer bg-transparent border-none p-0 text-xs font-semibold max-w-[280px] truncate"
+                                        >
+                                            {dados.caminho}
+                                        </button>
+                                    )}
+                                    <button
+                                        title={pdfDocUrl ? "Abrir PDF do Desenho (via Servidor)" : (!isCaminhoERP ? "Abrir PDF do Desenho (Local)" : "Nenhum PDF cadastrado")}
+                                        disabled={!temPdfValido}
+                                        onClick={() => {
+                                            if (pdfDocUrl) {
+                                                window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(pdfDocUrl)}`), '_blank', 'noopener,noreferrer');
+                                                return;
                                             }
-                                            window.open(`/api/docs/view?path=${encodeURIComponent(pdfPath)}`, '_blank', 'noopener,noreferrer');
-                                        }
-                                    }}
-                                    className={`p-0.5 rounded transition-colors flex items-center justify-center ${
-                                        pdfDocUrl || dados.caminho !== 'Busca via ERP' 
-                                        ? 'text-red-600 hover:bg-red-50 hover:text-red-700' 
-                                        : 'text-gray-300 cursor-not-allowed'
-                                    }`}
-                                >
-                                    <FileText className="w-3.5 h-3.5" />
-                                </button>
-                            </div>
-                        ) : (
+                                            
+                                            // Fallback para conversão local se tiver caminho físico no disco
+                                            if (!isCaminhoERP) {
+                                                const filePath = dados.caminho;
+                                                let pdfPath = filePath;
+                                                const lastDotIndex = filePath.lastIndexOf('.');
+                                                if (lastDotIndex > 0) {
+                                                    pdfPath = filePath.substring(0, lastDotIndex) + '.pdf';
+                                                } else {
+                                                    pdfPath = filePath + '.pdf';
+                                                }
+                                                window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(pdfPath)}`), '_blank', 'noopener,noreferrer');
+                                            } else {
+                                                showToast(`Nenhum desenho PDF cadastrado para o produto ${dados.arquivo || ''}`, 'info');
+                                            }
+                                        }}
+                                        className={`p-0.5 rounded transition-colors flex items-center justify-center ${
+                                            temPdfValido 
+                                            ? 'text-red-600 hover:bg-red-50 hover:text-red-700 cursor-pointer' 
+                                            : 'text-gray-300 cursor-not-allowed opacity-60'
+                                        }`}
+                                    >
+                                        <FileText className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            );
+                        })() : (
                             <strong className="text-slate-400 font-mono text-xs">{dados.caminho}</strong>
                         )}
                     </div>

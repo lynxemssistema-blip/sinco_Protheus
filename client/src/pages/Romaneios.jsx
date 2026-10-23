@@ -157,26 +157,7 @@ export default function Romaneios() {
                                 Imprimir Romaneio
                             </button>
                         )}
-                        {view === 'form' && selectedId && (
-                            <button
-                                onClick={handleOpenFolder}
-                                className="bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300 px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition"
-                                title="Abrir a pasta do romaneio na rede ou copiar o caminho"
-                            >
-                                <FolderOpen className="w-4 h-4" />
-                                Acessar Pasta da Rede
-                            </button>
-                        )}
-                        {view === 'form' && selectedId && (
-                            <button
-                                onClick={handleCreateFolder}
-                                className="bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300 px-4 py-2 rounded-lg flex items-center gap-2 font-medium shadow-sm transition"
-                                title="Forçar a criação da pasta na rede caso ainda não exista"
-                            >
-                                <FolderPlus className="w-4 h-4" />
-                                Criar Pasta na Rede
-                            </button>
-                        )}
+
                         {view === 'form' && selectedId && (
                             <button
                                 onClick={() => handleEdit(selectedId)}

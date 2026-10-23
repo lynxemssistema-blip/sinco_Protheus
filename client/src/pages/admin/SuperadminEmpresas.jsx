@@ -5,7 +5,7 @@ import {
     Building2, Users, ShieldAlert, Sparkles, ExternalLink, 
     ArrowRightLeft, Edit, CheckCircle, XCircle, Search, RefreshCw,
     Calendar, DollarSign, Clock, AlertTriangle, Check, Power,
-    ShieldCheck, Lock, Unlock, Mail, Phone, Hash
+    ShieldCheck, Lock, Unlock, Mail, Phone, Hash, MessageSquare, Copy
 } from 'lucide-react';
 
 const SuperadminEmpresas = () => {
@@ -27,6 +27,13 @@ const SuperadminEmpresas = () => {
     const [formPlano, setFormPlano] = useState('pro');
     const [formStatusPlano, setFormStatusPlano] = useState('ativo');
     const [formLimiteUsuarios, setFormLimiteUsuarios] = useState(10);
+    const [formEvolutionAtivo, setFormEvolutionAtivo] = useState(false);
+    const [formEvolutionInstancia, setFormEvolutionInstancia] = useState('Suporte Lynx');
+    const [formEvolutionApiKey, setFormEvolutionApiKey] = useState('');
+    const [formEvolutionUrl, setFormEvolutionUrl] = useState('');
+    const [evoStatus, setEvoStatus] = useState(null);
+    const [verificandoEvo, setVerificandoEvo] = useState(false);
+    const [copiadoWebhook, setCopiadoWebhook] = useState(false);
     const [salvando, setSalvando] = useState(false);
 
     const carregarDados = async () => {
@@ -132,6 +139,49 @@ const SuperadminEmpresas = () => {
         }
     };
 
+    // Alternar Evolution API ativa/inativa com 1 clique direto na tabela
+    const handleToggleEvolution = async (empresa) => {
+        setActionLoadingId(`evo_${empresa.IdEmpresa}`);
+        try {
+            const res = await api.post(`/superadmin/empresas/${empresa.IdEmpresa}/evolution-toggle`);
+            const novoAtivo = res.data?.evolution_ativo;
+
+            setEmpresas(prev => prev.map(e => {
+                if (e.IdEmpresa === empresa.IdEmpresa) {
+                    return {
+                        ...e,
+                        evolution_ativo: novoAtivo,
+                        evolution_instancia: res.data?.evolution_instancia || e.evolution_instancia
+                    };
+                }
+                return e;
+            }));
+
+            mostrarFeedback(
+                novoAtivo === 1
+                    ? `WhatsApp / Evolution API ativado para "${empresa.NomeFantasia || empresa.RazaoSocial}"!`
+                    : `WhatsApp / Evolution API desativado para "${empresa.NomeFantasia || empresa.RazaoSocial}".`
+            );
+        } catch (err) {
+            alert(err.response?.data?.error || 'Erro ao alterar status da Evolution API.');
+        } finally {
+            setActionLoadingId(null);
+        }
+    };
+
+    // Consultar status de conexão em tempo real na Evolution API
+    const consultarStatusEvolution = async (empresaId) => {
+        setVerificandoEvo(true);
+        try {
+            const res = await api.get(`/superadmin/empresas/${empresaId}/evolution-status`);
+            setEvoStatus(res.data);
+        } catch (err) {
+            setEvoStatus({ success: false, state: 'error', message: 'Erro ao conectar na Evolution API' });
+        } finally {
+            setVerificandoEvo(false);
+        }
+    };
+
     // Abrir modal de edição
     const handleAbrirEdicao = (empresa) => {
         setSelectedEmpresa(empresa);
@@ -142,6 +192,12 @@ const SuperadminEmpresas = () => {
         setFormPlano(empresa.plano || 'pro');
         setFormStatusPlano(empresa.status_plano || 'ativo');
         setFormLimiteUsuarios(empresa.limite_usuarios || 10);
+        setFormEvolutionAtivo(empresa.evolution_ativo === 1);
+        setFormEvolutionInstancia(empresa.evolution_instancia || 'Suporte Lynx');
+        setFormEvolutionApiKey(empresa.evolution_apikey || '');
+        setFormEvolutionUrl(empresa.evolution_url || '');
+        setEvoStatus(null);
+        consultarStatusEvolution(empresa.IdEmpresa);
     };
 
     // Salvar alterações detalhadas do modal
@@ -158,11 +214,15 @@ const SuperadminEmpresas = () => {
                 motivo_bloqueio: formMotivoBloqueio || null,
                 plano: formPlano,
                 status_plano: formStatusPlano,
-                limite_usuarios: parseInt(formLimiteUsuarios) || 10
+                limite_usuarios: parseInt(formLimiteUsuarios) || 10,
+                evolution_ativo: formEvolutionAtivo ? 1 : 0,
+                evolution_instancia: formEvolutionInstancia || 'Suporte Lynx',
+                evolution_apikey: formEvolutionApiKey ? formEvolutionApiKey.trim() : null,
+                evolution_url: formEvolutionUrl ? formEvolutionUrl.trim() : null
             });
 
             setSelectedEmpresa(null);
-            mostrarFeedback('Dados da empresa e assinatura atualizados com sucesso!');
+            mostrarFeedback('Dados da empresa, assinatura e Evolution API atualizados com sucesso!');
             carregarDados();
         } catch (err) {
             alert(err.response?.data?.error || 'Erro ao salvar alterações da empresa');
@@ -434,6 +494,7 @@ const SuperadminEmpresas = () => {
                                     <th className="px-6 py-3.5">ID / Empresa</th>
                                     <th className="px-6 py-3.5">Responsável Master</th>
                                     <th className="px-6 py-3.5 text-center">Status de Acesso</th>
+                                    <th className="px-6 py-3.5 text-center">WhatsApp (Evo API)</th>
                                     <th className="px-6 py-3.5">Vencimento da Mensalidade</th>
                                     <th className="px-6 py-3.5">Plano & Valor</th>
                                     <th className="px-6 py-3.5 text-right">Ações de Gestão</th>
@@ -466,7 +527,7 @@ const SuperadminEmpresas = () => {
                                                 <div className="text-[11px] text-slate-400 mt-0.5 flex flex-col gap-0.5">
                                                     {e.responsavel_email && (
                                                         <span className="flex items-center gap-1">
-                                                            <Mail className="w-3 h-3 text-slate-400" />
+                                                             <Mail className="w-3 h-3 text-slate-400" />
                                                             {e.responsavel_email}
                                                         </span>
                                                     )}
@@ -500,6 +561,33 @@ const SuperadminEmpresas = () => {
                                                         isAtiva ? 'text-emerald-700' : 'text-rose-600'
                                                     }`}>
                                                         {isAtiva ? 'Ativa' : 'Desativada'}
+                                                    </span>
+                                                </div>
+                                            </td>
+
+                                            {/* WhatsApp / Evolution API Toggle */}
+                                            <td className="px-6 py-4 text-center">
+                                                <div className="flex flex-col items-center justify-center gap-1.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleToggleEvolution(e)}
+                                                        disabled={actionLoadingId === `evo_${e.IdEmpresa}`}
+                                                        title={e.evolution_ativo === 1 ? 'Clique para desativar o WhatsApp (Evolution API)' : 'Clique para ativar o WhatsApp (Evolution API)'}
+                                                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                                            e.evolution_ativo === 1 ? 'bg-emerald-600' : 'bg-slate-300'
+                                                        } ${actionLoadingId === `evo_${e.IdEmpresa}` ? 'opacity-50 cursor-wait' : ''}`}
+                                                    >
+                                                        <span
+                                                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                                                e.evolution_ativo === 1 ? 'translate-x-5' : 'translate-x-0'
+                                                            }`}
+                                                        />
+                                                    </button>
+                                                    <span className={`text-[10px] font-bold tracking-wider flex items-center gap-1 ${
+                                                        e.evolution_ativo === 1 ? 'text-emerald-700' : 'text-slate-400'
+                                                    }`}>
+                                                        <MessageSquare className="w-3 h-3" />
+                                                        <span>{e.evolution_ativo === 1 ? (e.evolution_instancia || 'Suporte Lynx') : 'Desativado'}</span>
                                                     </span>
                                                 </div>
                                             </td>
@@ -623,6 +711,106 @@ const SuperadminEmpresas = () => {
                                         }`}
                                     />
                                 </button>
+                            </div>
+
+                            {/* Configuração da Evolution API (WhatsApp) */}
+                            <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold">
+                                            <MessageSquare className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                            <span className="font-bold text-slate-900 block text-xs">WhatsApp (Evolution API)</span>
+                                            <span className="text-[11px] text-slate-500">
+                                                Ativar envio de mensagens e automações via WhatsApp para esta empresa
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormEvolutionAtivo(!formEvolutionAtivo)}
+                                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                            formEvolutionAtivo ? 'bg-emerald-600' : 'bg-slate-300'
+                                        }`}
+                                    >
+                                        <span
+                                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                                formEvolutionAtivo ? 'translate-x-5' : 'translate-x-0'
+                                            }`}
+                                        />
+                                    </button>
+                                </div>
+
+                                {formEvolutionAtivo && (
+                                    <div className="space-y-3 pt-2 border-t border-emerald-200/60">
+                                        <div>
+                                            <label className="block font-bold text-slate-700 mb-1">Nome da Instância</label>
+                                            <input
+                                                type="text"
+                                                value={formEvolutionInstancia}
+                                                onChange={(e) => setFormEvolutionInstancia(e.target.value)}
+                                                placeholder="Ex: Suporte Lynx"
+                                                className="w-full px-3 py-2 border border-slate-300 rounded-xl outline-none font-medium bg-white focus:ring-2 focus:ring-emerald-500"
+                                            />
+                                        </div>
+
+                                        {/* Status da Conexão em Tempo Real */}
+                                        <div className="p-2.5 rounded-lg bg-white border border-slate-200 flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[11px] font-semibold text-slate-600">Status no WhatsApp:</span>
+                                                {verificandoEvo ? (
+                                                    <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                                                        <RefreshCw className="w-3 h-3 animate-spin" /> Verificando...
+                                                    </span>
+                                                ) : evoStatus?.state === 'open' ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                                        <Check className="w-3 h-3" /> Conectado (open)
+                                                    </span>
+                                                ) : evoStatus?.state === 'connecting' ? (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                                        <RefreshCw className="w-3 h-3 animate-spin" /> Conectando...
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+                                                        {evoStatus?.state || 'Desconectado'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => consultarStatusEvolution(selectedEmpresa.IdEmpresa)}
+                                                disabled={verificandoEvo}
+                                                className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] flex items-center gap-1 transition-colors"
+                                            >
+                                                <RefreshCw className={`w-3 h-3 ${verificandoEvo ? 'animate-spin' : ''}`} />
+                                                Testar
+                                            </button>
+                                        </div>
+
+                                        {/* URL do Webhook Pronta para Copiar */}
+                                        <div className="p-2.5 rounded-lg bg-slate-900 text-slate-200">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">URL do Webhook (Cole na Evolution API)</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        navigator.clipboard.writeText('https://lynxems.com.br/api/webhook');
+                                                        setCopiadoWebhook(true);
+                                                        setTimeout(() => setCopiadoWebhook(false), 2500);
+                                                    }}
+                                                    className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1 transition-colors cursor-pointer"
+                                                >
+                                                    {copiadoWebhook ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                                    {copiadoWebhook ? 'Copiado!' : 'Copiar URL'}
+                                                </button>
+                                            </div>
+                                            <div className="font-mono text-[11px] text-emerald-400 break-all select-all">
+                                                https://lynxems.com.br/api/webhook
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Data de Vencimento com Atalhos */}

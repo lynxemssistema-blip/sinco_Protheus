@@ -213,6 +213,28 @@ export default function ModalCadastroProduto({
         pasta_servidor: ''
     });
 
+    const [deleting, setDeleting] = useState(false);
+
+    const handleDeleteSelf = async () => {
+        const cod = formData.codigo || initialData?.codigo;
+        if (!cod) return;
+        if (!window.confirm(`Deseja realmente excluir o produto ${cod}?\n\n(Atenção: A exclusão é lógica no padrão Protheus com D_E_L_E_T_ = *)`)) {
+            return;
+        }
+        setDeleting(true);
+        try {
+            await api.delete(`/erp/produtos/${encodeURIComponent(cod)}`);
+            toast.success(`Produto ${cod} excluído com sucesso!`);
+            if (onSuccess) onSuccess();
+            onClose();
+        } catch (err) {
+            console.error('Erro ao excluir produto:', err);
+            toast.error(err.response?.data?.error || 'Erro ao excluir produto');
+        } finally {
+            setDeleting(false);
+        }
+    };
+
     // Estados de Controle
     const [selectedPrefixo, setSelectedPrefixo] = useState(() => deduzirPrefixo(initialData) || 'PRD-1');
     const [availablePrefixos, setAvailablePrefixos] = useState([]);
@@ -1684,8 +1706,22 @@ export default function ModalCadastroProduto({
 
                     {/* 3. Modal Footer / Ações */}
                     <div className="flex items-center justify-between pt-2 border-t border-gray-200 shrink-0">
-                        <div className="text-[10px] text-gray-500">
-                            Campos com <span className="text-rose-500 font-bold">*</span> são obrigatórios.
+                        <div className="flex items-center gap-3">
+                            <div className="text-[10px] text-gray-500">
+                                Campos com <span className="text-rose-500 font-bold">*</span> são obrigatórios.
+                            </div>
+                            {isEditing && (
+                                <button
+                                    type="button"
+                                    onClick={handleDeleteSelf}
+                                    disabled={saving || deleting}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                    title="Excluir Produto (Soft Delete Protheus D_E_L_E_T_ = '*')"
+                                >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>{deleting ? 'Excluindo...' : 'Excluir Produto'}</span>
+                                </button>
+                            )}
                         </div>
                         <div className="flex items-center gap-2">
                             <button

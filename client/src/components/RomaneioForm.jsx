@@ -79,6 +79,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
     const [activeTab, setActiveTab] = useState('op'); // 'op' | 'manual'
     const [newItem, setNewItem] = useState({
         op: '',
+        pedido_filter: '',
         item: '',
         sequencia: '',
         qtd_enviar: '',
@@ -95,8 +96,13 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
         search: '',
         results: [],
         selected: null,
+        op: '',
+        item_op: '',
+        pedido: '',
         qtd: '',
-        obs: ''
+        obs: '',
+        valor_unitario: '',
+        client_filter: ''
     });
 
     // Editing Item
@@ -376,8 +382,8 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
     // --- ITEMS ---
     const searchOp = async () => {
         // Require at least one filter
-        if (!newItem.op && (!newItem.client_filter || newItem.client_filter.length < 3) && (!newItem.product_filter || newItem.product_filter.length < 3)) {
-            return alert('Informe a OP, Cliente (3+ letras) ou Produto (3+ letras)');
+        if (!newItem.op && !newItem.pedido_filter && (!newItem.client_filter || newItem.client_filter.length < 3) && (!newItem.product_filter || newItem.product_filter.length < 3)) {
+            return alert('Informe a OP, Pedido, Cliente (3+ letras) ou Produto (3+ letras)');
         }
 
         setLoading(true);
@@ -387,7 +393,8 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                 newItem.item,
                 newItem.sequencia,
                 newItem.client_filter,
-                newItem.product_filter
+                newItem.product_filter,
+                newItem.pedido_filter
             );
             setOpResults(res);
         } catch (err) { alert('Erro ao buscar OP: ' + (err.response?.data?.error || err.message)); } finally { setLoading(false); }
@@ -397,17 +404,18 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
         if (!selectedOpItem || !newItem.qtd_enviar) return alert('Selecione um item e informe a quantidade');
         setLoading(true);
         const payload = {
-            pedido: selectedOpItem.op_origem,
-            item_pedido: selectedOpItem.item_op,
+            pedido: selectedOpItem.op_origem || selectedOpItem.op,
+            item_pedido: selectedOpItem.item_op || '01',
             codigo_produto: selectedOpItem.codnoarvore,
             descricao_produto: selectedOpItem.descnoarvore,
             quantidade: newItem.qtd_enviar,
-            comentario: newItem.comentario
+            comentario: newItem.comentario,
+            peso_unitario: Number(selectedOpItem.pesonoarvore) || 0
         };
         try {
             await addRomaneioItem(currRomaneioId, payload);
             loadRomaneio(currRomaneioId); // Reload all
-            setNewItem({ op: '', item: '', sequencia: '', qtd_enviar: '', comentario: '' });
+            setNewItem({ op: '', pedido_filter: '', item: '', sequencia: '', qtd_enviar: '', comentario: '', client_filter: '', product_filter: '' });
             setOpResults([]);
             setSelectedOpItem(null);
             setOpItemAlert(null);
@@ -428,25 +436,26 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
             };
             const res = await getProdutos(params);
             setManualItem({ ...manualItem, results: res.data });
-        } catch (err) { alert('Erro: ' + (err.response?.data?.error || err.message)); } finally { setLoading(false); }
+        } catch (err) { alert('Erro ao buscar produto: ' + (err.response?.data?.error || err.message)); } finally { setLoading(false); }
     };
 
     const addManualItem = async () => {
         if (!manualItem.selected || !manualItem.qtd) return alert('Selecione um produto e informe a quantidade');
         setLoading(true);
         const payload = {
-            pedido: null,
-            item_pedido: null,
+            pedido: manualItem.op || manualItem.pedido || null,
+            item_pedido: manualItem.item_op || null,
             codigo_produto: manualItem.selected.codigo,
             descricao_produto: manualItem.selected.descricao,
             quantidade: manualItem.qtd,
             comentario: manualItem.obs,
-            valor_unitario: manualItem.valor_unitario || 0
+            valor_unitario: manualItem.valor_unitario || 0,
+            peso_unitario: Number(manualItem.selected.peso_liquido || manualItem.selected.peso || manualItem.selected.b1_peso) || 0
         };
         try {
             await addRomaneioItem(currRomaneioId, payload);
             loadRomaneio(currRomaneioId);
-            setManualItem({ search: '', client_filter: '', results: [], selected: null, qtd: '', obs: '', valor_unitario: '' });
+            setManualItem({ search: '', client_filter: '', results: [], selected: null, op: '', item_op: '', pedido: '', qtd: '', obs: '', valor_unitario: '' });
         } catch (err) { alert('Erro: ' + (err.response?.data?.error || err.message)); } finally { setLoading(false); }
     };
 
@@ -467,6 +476,8 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
         setLoading(true);
         try {
             await updateRomaneioItem(currRomaneioId, editingItem.id, {
+                pedido: editingItem.pedido || null,
+                item_pedido: editingItem.item_pedido || null,
                 quantidade: editingItem.quantidade,
                 comentario: editingItem.comentario,
                 valor_unitario: editingItem.valor_unitario,
@@ -965,8 +976,9 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
 
                             {activeTab === 'op' ? (
                                 <div className="flex gap-2 items-end flex-wrap">
-                                    <div><label className="text-xs font-bold block mb-1">OP</label><input className="border p-2 rounded w-24 text-sm" value={newItem.op} onChange={e => setNewItem({ ...newItem, op: e.target.value })} placeholder="OP..." /></div>
-                                    <div><label className="text-xs font-bold block mb-1">Item</label><input className="border p-2 rounded w-16 text-sm" value={newItem.item} onChange={e => setNewItem({ ...newItem, item: e.target.value })} placeholder="01" /></div>
+                                    <div><label className="text-xs font-bold block mb-1">OP</label><input className="border p-2 rounded w-24 text-sm" value={newItem.op} onChange={e => setNewItem({ ...newItem, op: e.target.value })} onKeyDown={e => e.key === 'Enter' && searchOp()} placeholder="OP..." /></div>
+                                    <div><label className="text-xs font-bold block mb-1">Item</label><input className="border p-2 rounded w-16 text-sm" value={newItem.item} onChange={e => setNewItem({ ...newItem, item: e.target.value })} onKeyDown={e => e.key === 'Enter' && searchOp()} placeholder="01" /></div>
+                                    <div><label className="text-xs font-bold block mb-1">Pedido</label><input className="border p-2 rounded w-28 text-sm" value={newItem.pedido_filter} onChange={e => setNewItem({ ...newItem, pedido_filter: e.target.value })} onKeyDown={e => e.key === 'Enter' && searchOp()} placeholder="Pedido..." /></div>
 
                                     {/* New Filters */}
                                     <div className="flex-1 min-w-[150px]">
@@ -975,6 +987,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                             className="border p-2 rounded w-full text-sm"
                                             value={newItem.client_filter}
                                             onChange={e => setNewItem({ ...newItem, client_filter: e.target.value })}
+                                            onKeyDown={e => e.key === 'Enter' && searchOp()}
                                             placeholder="Nome ou Cód..."
                                         />
                                     </div>
@@ -1016,17 +1029,26 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                                     </div>
                                                     <ul className="list-disc list-inside ml-2">
                                                         {opItemAlert.map((alertItem, idx) => (
-                                                            <li key={idx}>
+                                                             <li key={idx}>
                                                                 Romaneio <strong>#{alertItem.romaneio_id}</strong> ({alertItem.status}) - Qtd: <strong>{Number(alertItem.qtd_enviada).toFixed(2)}</strong> em {new Date(alertItem.data_criacao).toLocaleDateString('pt-BR')}
                                                             </li>
                                                         ))}
                                                     </ul>
                                                 </div>
                                             )}
-                                            <div className="flex gap-2 items-end">
-                                                <div className="flex-1 text-sm text-blue-900">
-                                                    <strong className="block text-xs mb-1 text-blue-800">OP: {selectedOpItem.op_origem}-{selectedOpItem.item_op}</strong>
+                                            <div className="flex gap-2 items-end flex-wrap">
+                                                <div className="flex-1 text-sm text-blue-900 min-w-[200px]">
+                                                    <strong className="block text-xs mb-1 text-blue-800">
+                                                        OP: {selectedOpItem.op_origem || selectedOpItem.op}-{selectedOpItem.item_op}
+                                                        {(selectedOpItem.raw_pedido || selectedOpItem.pedido_venda) ? ` | Pedido: ${selectedOpItem.raw_pedido || selectedOpItem.pedido_venda}` : ''}
+                                                        {selectedOpItem.nome_cliente ? ` | Cliente: ${selectedOpItem.nome_cliente}` : ''}
+                                                    </strong>
                                                     <span><strong>{selectedOpItem.codnoarvore}</strong>: {selectedOpItem.descnoarvore}</span>
+                                                    {selectedOpItem.pesonoarvore != null && Number(selectedOpItem.pesonoarvore) > 0 && (
+                                                        <span className="block text-xs text-blue-700 font-medium mt-0.5">
+                                                            Peso Unitário: {Number(selectedOpItem.pesonoarvore).toFixed(3)} kg {selectedOpItem.umnoarvore ? `(${selectedOpItem.umnoarvore})` : ''}
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div><label className="text-xs font-bold block mb-1">Qtd Enviar</label><input type="number" className="border p-2 rounded w-24 text-sm" value={newItem.qtd_enviar} onChange={e => setNewItem({ ...newItem, qtd_enviar: e.target.value })} /></div>
                                                 <div className="flex-1 min-w-[200px]"><label className="text-xs font-bold block mb-1">Observação</label><input className="border p-2 rounded w-full text-sm" value={newItem.comentario} onChange={e => setNewItem({ ...newItem, comentario: e.target.value })} /></div>
@@ -1040,9 +1062,13 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                             <table className="w-full text-xs">
                                                 <thead className="bg-slate-200 sticky top-0">
                                                     <tr>
+                                                        <th className="p-2 text-left">OP</th>
+                                                        <th className="p-2 text-left">Pedido</th>
+                                                        <th className="p-2 text-left">Cliente</th>
                                                         <th className="p-2 text-left">Código</th>
                                                         <th className="p-2 text-left">Descrição</th>
                                                         <th className="p-2 text-right">Qtd. OP</th>
+                                                        <th className="p-2 text-right">Peso (kg)</th>
                                                         <th className="p-2 text-center">PDF</th>
                                                         <th className="p-2 text-center">Ação</th>
                                                     </tr>
@@ -1050,10 +1076,16 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                                 <tbody>
                                                     {opResults.map((r, i) => (
                                                         <tr key={i} className="border-b hover:bg-slate-100">
-                                                            <td className="p-2 font-mono">{r.codnoarvore}</td>
+                                                            <td className="p-2 font-mono font-bold text-blue-800 whitespace-nowrap">{r.op_origem || r.op || '-'}</td>
+                                                            <td className="p-2 font-mono text-slate-700 whitespace-nowrap">{r.raw_pedido || r.pedido_venda || '-'}</td>
+                                                            <td className="p-2 text-slate-700 max-w-[140px] truncate" title={r.nome_cliente}>{r.nome_cliente || '-'}</td>
+                                                            <td className="p-2 font-mono font-medium">{r.codnoarvore}</td>
                                                             <td className="p-2">{r.descnoarvore}</td>
-                                                            <td className="p-2 text-right font-bold">
+                                                            <td className="p-2 text-right font-bold text-slate-800">
                                                                 {r.qtdtotalparaop ? Number(r.qtdtotalparaop).toFixed(2) : '-'}
+                                                            </td>
+                                                            <td className="p-2 text-right font-mono text-slate-600">
+                                                                {r.pesonoarvore != null && Number(r.pesonoarvore) > 0 ? Number(r.pesonoarvore).toFixed(3) : '-'}
                                                             </td>
                                                             <td className="p-2 text-center">
                                                                 {r.tem_arquivos ? (
@@ -1143,20 +1175,38 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                     {/* Manual Selection */}
                                     {manualItem.selected && (
                                         <div className="w-full bg-green-50 border border-green-200 p-3 mt-2 rounded flex gap-4 items-end flex-wrap">
-                                            <div className="flex-1 text-sm">
+                                            <div className="flex-1 text-sm min-w-[200px]">
                                                 <div className="text-xs text-green-800 font-bold mb-1">Produto Selecionado:</div>
                                                 <div>{manualItem.selected.codigo} - {manualItem.selected.descricao}</div>
                                             </div>
                                             <div>
+                                                <label className="text-xs font-bold block mb-1">OP / Pedido</label>
+                                                <input
+                                                    className="border p-2 rounded w-32 text-sm bg-white"
+                                                    value={manualItem.op || ''}
+                                                    onChange={e => setManualItem({ ...manualItem, op: e.target.value })}
+                                                    placeholder="OP / Pedido..."
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold block mb-1">Item OP</label>
+                                                <input
+                                                    className="border p-2 rounded w-16 text-sm bg-white"
+                                                    value={manualItem.item_op || ''}
+                                                    onChange={e => setManualItem({ ...manualItem, item_op: e.target.value })}
+                                                    placeholder="01"
+                                                />
+                                            </div>
+                                            <div>
                                                 <label className="text-xs font-bold block mb-1">Qtd</label>
-                                                <input type="number" className="border p-2 rounded w-20 text-sm" value={manualItem.qtd} onChange={e => setManualItem({ ...manualItem, qtd: e.target.value })} />
+                                                <input type="number" className="border p-2 rounded w-20 text-sm bg-white" value={manualItem.qtd} onChange={e => setManualItem({ ...manualItem, qtd: e.target.value })} />
                                             </div>
                                             {canViewValues && (
                                                 <div>
                                                     <label className="text-xs font-bold block mb-1">Valor Unit. (R$)</label>
                                                     <input
                                                         type="number" step="0.01"
-                                                        className="border p-2 rounded w-24 text-sm"
+                                                        className="border p-2 rounded w-24 text-sm bg-white"
                                                         value={manualItem.valor_unitario || ''}
                                                         onChange={e => setManualItem({ ...manualItem, valor_unitario: e.target.value })}
                                                         placeholder="0.00"
@@ -1166,13 +1216,13 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                             <div className="flex-1 min-w-[200px]">
                                                 <label className="text-xs font-bold block mb-1">Observação</label>
                                                 <input
-                                                    className="border p-2 rounded w-full text-sm"
+                                                    className="border p-2 rounded w-full text-sm bg-white"
                                                     value={manualItem.obs}
                                                     onChange={e => setManualItem({ ...manualItem, obs: e.target.value })}
                                                 />
                                             </div>
                                             <div className="flex gap-2">
-                                                <button onClick={addManualItem} className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700">Adicionar</button>
+                                                <button onClick={addManualItem} className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 font-bold">Adicionar</button>
                                                 <button onClick={() => setManualItem({ ...manualItem, selected: null, results: [] })} className="text-slate-500 underline text-xs">Trocar</button>
                                             </div>
                                         </div>
@@ -1231,31 +1281,49 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                             <h4 className="font-bold text-sm mb-2 text-yellow-800">Editando Item: {editingItem.codigo_produto}</h4>
                             <div className="flex flex-wrap gap-4">
                                 <div>
-                                    <label className="block text-xs font-bold">Quantidade</label>
-                                    <input type="number" className="border p-2 rounded w-24" value={editingItem.quantidade} onChange={e => setEditingItem({ ...editingItem, quantidade: e.target.value })} />
+                                    <label className="block text-xs font-bold">OP / Pedido</label>
+                                    <input
+                                        className="border p-2 rounded w-32 bg-white text-sm"
+                                        placeholder="OP ou Pedido"
+                                        value={editingItem.pedido || ''}
+                                        onChange={e => setEditingItem({ ...editingItem, pedido: e.target.value })}
+                                    />
                                 </div>
-                                <div className="flex-1">
+                                <div>
+                                    <label className="block text-xs font-bold">Item OP</label>
+                                    <input
+                                        className="border p-2 rounded w-16 bg-white text-sm"
+                                        placeholder="01"
+                                        value={editingItem.item_pedido || ''}
+                                        onChange={e => setEditingItem({ ...editingItem, item_pedido: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold">Quantidade</label>
+                                    <input type="number" className="border p-2 rounded w-24 bg-white text-sm" value={editingItem.quantidade} onChange={e => setEditingItem({ ...editingItem, quantidade: e.target.value })} />
+                                </div>
+                                <div className="flex-1 min-w-[200px]">
                                     <label className="block text-xs font-bold">Observação</label>
-                                    <input className="border p-2 rounded w-full" value={editingItem.comentario} onChange={e => setEditingItem({ ...editingItem, comentario: e.target.value })} />
+                                    <input className="border p-2 rounded w-full bg-white text-sm" value={editingItem.comentario} onChange={e => setEditingItem({ ...editingItem, comentario: e.target.value })} />
                                 </div>
                                 {canViewValues && (
                                     <div>
                                         <label className="block text-xs font-bold">Valor (R$)</label>
-                                        <input type="number" step="0.01" className="border p-2 rounded w-24" value={editingItem.valor_unitario} onChange={e => setEditingItem({ ...editingItem, valor_unitario: e.target.value })} />
+                                        <input type="number" step="0.01" className="border p-2 rounded w-24 bg-white text-sm" value={editingItem.valor_unitario} onChange={e => setEditingItem({ ...editingItem, valor_unitario: e.target.value })} />
                                     </div>
                                 )}
                                 <div>
                                     <label className="block text-xs font-bold">Peso Unit. (kg)</label>
-                                    <input type="number" step="0.001" className="border p-2 rounded w-28" placeholder={editingItem.peso_kg ? Number(editingItem.peso_kg).toFixed(3) : '0.000'} value={editingItem.peso_unitario ?? ''} onChange={e => setEditingItem({ ...editingItem, peso_unitario: e.target.value })} />
+                                    <input type="number" step="0.001" className="border p-2 rounded w-28 bg-white text-sm" placeholder={editingItem.peso_kg ? Number(editingItem.peso_kg).toFixed(3) : '0.000'} value={editingItem.peso_unitario ?? ''} onChange={e => setEditingItem({ ...editingItem, peso_unitario: e.target.value })} />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold">Área Pint. Unit. (m²)</label>
-                                    <input type="number" step="0.0001" className="border p-2 rounded w-32" placeholder={editingItem.area_pintura_m2 ? Number(editingItem.area_pintura_m2).toFixed(4) : '0.0000'} value={editingItem.area_pintura_unitario ?? ''} onChange={e => setEditingItem({ ...editingItem, area_pintura_unitario: e.target.value })} />
+                                    <input type="number" step="0.0001" className="border p-2 rounded w-32 bg-white text-sm" placeholder={editingItem.area_pintura_m2 ? Number(editingItem.area_pintura_m2).toFixed(4) : '0.0000'} value={editingItem.area_pintura_unitario ?? ''} onChange={e => setEditingItem({ ...editingItem, area_pintura_unitario: e.target.value })} />
                                 </div>
                             </div>
                             <p className="text-xs text-yellow-700 mt-2">Os valores de peso e área serão atualizados no cadastro do produto.</p>
                             <div className="flex gap-2 mt-3">
-                                <button onClick={saveEditItem} className="bg-green-600 text-white px-3 py-1 rounded text-xs">Salvar</button>
+                                <button onClick={saveEditItem} className="bg-green-600 text-white px-3 py-1 rounded text-xs font-bold">Salvar</button>
                                 <button onClick={() => setEditingItem(null)} className="bg-slate-300 text-slate-800 px-3 py-1 rounded text-xs">Cancelar</button>
                             </div>
                         </div>
@@ -1266,6 +1334,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                         <thead className="bg-slate-100">
                             <tr>
                                 <th className="p-2 text-left">Código</th>
+                                <th className="p-2 text-left">OP / Pedido</th>
                                 <th className="p-2 text-left">Descrição</th>
                                 <th className="p-2 text-right">Peso (kg)</th>
                                 <th className="p-2 text-right">Peso Tot.</th>
@@ -1282,7 +1351,10 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                         <tbody>
                             {items.map((it, idx) => (
                                 <tr key={idx} className="border-b hover:bg-slate-50">
-                                    <td className="p-2">{it.codigo_produto}</td>
+                                    <td className="p-2 font-mono font-medium">{it.codigo_produto}</td>
+                                    <td className="p-2 font-mono text-xs font-bold text-blue-800 whitespace-nowrap">
+                                        {it.pedido ? `${it.pedido}${it.item_pedido ? '/' + it.item_pedido : ''}` : '-'}
+                                    </td>
                                     <td className="p-2">{it.descricao_produto}</td>
                                     <td className="p-2 text-right">{it.peso_kg ? Number(it.peso_kg).toFixed(3) : '-'}</td>
                                     <td className="p-2 text-right font-bold text-slate-700">
@@ -1350,7 +1422,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                         </tbody>
                         <tfoot className="bg-slate-100 font-bold border-t-2 border-slate-300 text-xs">
                             <tr>
-                                <td colSpan="2" className="p-2 text-right">TOTAIS:</td>
+                                <td colSpan="3" className="p-2 text-right">TOTAIS:</td>
                                 <td>{/* Peso Unit */}</td>
                                 <td className="p-2 text-right text-slate-900 border-x">
                                     {items.reduce((acc, it) => acc + (Number(it.peso_kg || 0) * Number(it.quantidade || 0)), 0).toFixed(3)} kg
@@ -1363,6 +1435,7 @@ export default function RomaneioForm({ romaneioId, initialStep = 1, onSuccess })
                                 </td>
                                 <td>{/* Obs */}</td>
                                 <td>{/* PDF */}</td>
+                                <td>{/* Qtd Rec */}</td>
                                 {canViewValues && <td>{/* Vlr Unit */}</td>}
                                 {canViewValues && (
                                     <td className="p-2 text-right text-green-700 text-sm border-x border-green-200 bg-green-50">

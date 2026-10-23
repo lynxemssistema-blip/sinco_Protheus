@@ -1,4 +1,5 @@
 import React, { forwardRef } from 'react';
+import { getCompanyLegalName, getCompanyLogoBase64, getCompanyShortName } from '../services/companyBranding';
 
 const ProductionPrint = forwardRef(({ ops, filters }, ref) => {
 
@@ -16,14 +17,22 @@ const ProductionPrint = forwardRef(({ ops, filters }, ref) => {
         return 'Aguardando';
     };
 
+    const logo = getCompanyLogoBase64();
+    const legalName = getCompanyLegalName();
+
     return (
         <div ref={ref} className="p-8 font-sans text-xs text-slate-900 bg-white print:p-0">
             {/* Header */}
             <div className="mb-6 border-b border-slate-300 pb-4">
                 <div className="flex justify-between items-start">
-                    <div>
-                        <h1 className="text-xl font-bold uppercase tracking-wider text-slate-800">Relatório de Controle de Produção</h1>
-                        <p className="text-slate-500 mt-1">Lynx - Sistema de Gestão</p>
+                    <div className="flex items-center gap-3">
+                        {logo ? (
+                            <img src={logo} alt="Logo" className="h-10 max-w-[120px] object-contain" />
+                        ) : null}
+                        <div>
+                            <h1 className="text-xl font-bold uppercase tracking-wider text-slate-800">Relatório de Controle de Produção</h1>
+                            <p className="text-slate-500 mt-0.5 font-medium">{legalName}</p>
+                        </div>
                     </div>
                     <div className="text-right">
                         <p className="font-bold">{new Date().toLocaleDateString('pt-BR')} {new Date().toLocaleTimeString('pt-BR')}</p>

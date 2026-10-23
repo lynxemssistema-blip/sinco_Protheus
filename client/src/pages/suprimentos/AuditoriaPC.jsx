@@ -3,6 +3,7 @@ import { Upload, Search, CheckCircle, XCircle, Mail, ChevronRight, X, BarChart2,
 import api from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';
+import DOMPurify from 'dompurify';
 
 export default function AuditoriaPC() {
     const { user, hasPermission } = useAuth();
@@ -525,7 +526,7 @@ export default function AuditoriaPC() {
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Corpo</label>
-                                <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 h-48 overflow-y-auto text-sm" dangerouslySetInnerHTML={{ __html: emailData.corpo }} />
+                                <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 h-48 overflow-y-auto text-sm" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(emailData.corpo) }} />
                             </div>
                             <div className="flex gap-2 pt-2">
                                 <button onClick={() => setIsEmailModalOpen(false)} className="flex-1 py-2 rounded font-bold border border-gray-300 text-gray-700 hover:bg-gray-50">Cancelar</button>

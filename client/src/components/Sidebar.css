@@ -27,10 +27,19 @@
     background-color: var(--tech-bg);
     border-right: var(--tech-border);
     height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     transition: width 0.3s var(--ease-mechanical);
     box-shadow: 6px 0 32px rgba(0, 0, 0, 0.55);
+}
+
+@media (max-width: 768px) {
+    .tech-nav-item {
+        min-height: 44px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
 }
 
 /* Section Dividers */

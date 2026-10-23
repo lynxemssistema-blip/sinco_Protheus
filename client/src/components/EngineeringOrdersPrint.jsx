@@ -1,5 +1,5 @@
 import React from 'react';
-import metalfisaLogo from '../assets/metalfisa-logo.png';
+import { getCompanyLogoBase64, getCompanyLegalName, getCompanyShortName } from '../services/companyBranding';
 
 const formatDate = (val) => {
     if (!val) return '-';
@@ -100,7 +100,11 @@ const EngineeringOrdersPrint = React.forwardRef(({ orders, visibleCols, generate
                 <tbody>
                     <tr>
                         <td style={{ border: '2px solid #111', padding: '4px 8px', width: '16%', verticalAlign: 'middle' }}>
-                            <img src={metalfisaLogo} alt="Lynx" style={{ maxHeight: '32px', display: 'block' }} />
+                            {getCompanyLogoBase64() ? (
+                                <img src={getCompanyLogoBase64()} alt={getCompanyShortName()} style={{ maxHeight: '32px', display: 'block', objectFit: 'contain' }} />
+                            ) : (
+                                <span style={{ fontWeight: 'bold', fontSize: '10px' }}>{getCompanyShortName()}</span>
+                            )}
                         </td>
                         <td style={{ border: '2px solid #111', borderLeft: 'none', padding: '4px 8px', textAlign: 'center', fontWeight: 'bold', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', width: '60%', verticalAlign: 'middle' }}>
                             Relatório — Pedidos de Engenharia

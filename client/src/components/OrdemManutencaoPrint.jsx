@@ -1,5 +1,5 @@
 import React from 'react';
-import metalfisaLogo from '../assets/metalfisa-logo.png';
+import { getCompanyLogoBase64, getCompanyLegalName, getCompanyShortName } from '../services/companyBranding';
 
 const OrdemManutencaoPrint = React.forwardRef(({ ordem, materiais, historico, user, canViewValues }, ref) => {
     if (!ordem) return null;
@@ -15,18 +15,24 @@ const OrdemManutencaoPrint = React.forwardRef(({ ordem, materiais, historico, us
     // Helper para fotos da ordem (antes) e de execução (depois)
     const fotosProblema = typeof ordem.fotos === 'string' ? JSON.parse(ordem.fotos) : (ordem.fotos || []);
     const fotosExecucao = typeof ordem.fotos_execucao === 'string' ? JSON.parse(ordem.fotos_execucao) : (ordem.fotos_execucao || []);
+    const logo = getCompanyLogoBase64();
+    const companyName = getCompanyLegalName();
 
     return (
         <div ref={ref} className="print-content text-sm bg-white p-8 w-full print:w-auto" style={{ fontFamily: 'Arial, sans-serif' }}>
             {/* Cabecalho */}
             <div className="border border-black mb-4">
                 <div className="flex border-b border-black">
-                    <div className="w-1/4 p-2 border-r border-black flex items-center justify-center">
-                        <img src={metalfisaLogo} alt="Lynx" className="max-h-16" />
+                    <div className="w-1/4 p-2 border-r border-black flex flex-col items-center justify-center">
+                        {logo ? (
+                            <img src={logo} alt={companyName} className="max-h-16 object-contain" />
+                        ) : (
+                            <span className="font-bold text-sm text-center">{getCompanyShortName()}</span>
+                        )}
                     </div>
                     <div className="w-2/4 p-2 text-center uppercase font-bold flex flex-col items-center justify-center text-lg border-r border-black">
                         ORDEM DE MANUTENÇÃO (O.M.)
-                        <span className="text-sm font-normal mt-1 text-slate-700">Relatório de Intervenção e Custos</span>
+                        <span className="text-sm font-normal mt-1 text-slate-700">{companyName}</span>
                     </div>
                     <div className="w-1/4 p-2 flex flex-col justify-center items-center">
                         <div className="font-bold text-lg">Nº {ordem.id.toString().padStart(4, '0')}</div>

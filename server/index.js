@@ -24,6 +24,8 @@ const { sendText: waSend, logEmailSent, msgMeuCanal } = require('./services/what
 const whatsappAiAgent = require('./services/whatsappAiAgent');
 
 const app = express();
+// Habilita detecção segura do IP real do cliente através do Nginx/Reverse Proxy da Hostinger
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 
 // Global process error handlers to prevent crashes from transient socket terminations
@@ -529,15 +531,8 @@ const uploadAuthMiddleware = (req, res, next) => {
 
 app.use('/uploads', uploadAuthMiddleware);
 
-// Aviso System — Static uploads (images, audio, files)
-app.use('/uploads/avisos', express.static(path.join(__dirname, 'uploads/avisos'), { maxAge: '7d' }));
-app.use('/uploads/conferencias', express.static(path.join(__dirname, 'uploads/conferencias'), { maxAge: '7d' }));
-app.use('/uploads/romaneios', express.static(path.join(__dirname, 'uploads/romaneios'), { maxAge: '7d' }));
-app.use('/uploads/certificados', express.static(path.join(__dirname, 'uploads/certificados'), { maxAge: '7d' }));
-app.use('/uploads/sgq_ajuda', express.static(path.join(__dirname, 'uploads/sgq_ajuda'), { maxAge: '7d' }));
-app.use('/uploads/whatsapp', express.static(path.join(__dirname, 'uploads/whatsapp'), { maxAge: '7d' }));
-app.use('/uploads/checklists', express.static(path.join(__dirname, 'uploads/checklists'), { maxAge: '7d' }));
-app.use('/uploads/portaria', express.static(path.join(__dirname, 'uploads/portaria'), { maxAge: '7d' }));
+// Static uploads (images, audio, docs, files)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), { maxAge: '7d' }));
 app.use('/api/avisos', require('./routes/avisos'));
 app.use('/api/montagem', require('./routes/montagem'));
 

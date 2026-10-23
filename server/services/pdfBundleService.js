@@ -6,6 +6,21 @@ const path = require('path');
 const { normalizeFilePath, resolveCaseInsensitivePath } = require('../utils/pathResolver');
 
 const generateRomaneioBundle = async (romaneioId, { usuarioGerador } = {}) => {
+    // 0. Fetch Active Company Profile
+    let company = null;
+    try {
+        const [compRows] = await mysqlPool.query(
+            `SELECT razao_social, nome_fantasia, cnpj, logo_base64, logradouro, numero, bairro, cidade, uf
+             FROM app_company_settings 
+             ORDER BY id ASC LIMIT 1`
+        );
+        if (compRows && compRows.length > 0) {
+            company = compRows[0];
+        }
+    } catch(errComp) {
+        console.warn('[pdfBundleService] Não foi possível carregar company_settings:', errComp.message);
+    }
+
     // 1. Fetch Romaneio Header
     const [romRows] = await mysqlPool.execute(
         `SELECT id, cliente_nome, status, data_liberacao, data_previsao_retorno,
@@ -59,20 +74,39 @@ const generateRomaneioBundle = async (romaneioId, { usuarioGerador } = {}) => {
     cover.drawLine({ start: { x: col2X, y: topY }, end: { x: col2X, y: topY - 80 }, thickness: 1 });
     cover.drawLine({ start: { x: col3X, y: topY }, end: { x: col3X, y: topY - 80 }, thickness: 1 });
 
-    // HEADER TEXT: LOGO
-    const logoRelPath = path.join(__dirname, '../public/metalfisa-logo.png');
-    try {
-        const logoImageBytes = await fs.readFile(logoRelPath);
-        const pngImage = await pdfDoc.embedPng(logoImageBytes);
-        const scaleFactor = 50 / pngImage.height;
-        const pngDims = pngImage.scale(scaleFactor);
-        cover.drawImage(pngImage, {
-            x: marginX + 35,
-            y: topY - 65, 
-            width: pngDims.width,
-            height: pngDims.height,
-        });
-    } catch(e) { }
+    // HEADER TEXT: LOGO & EMPRESA
+    let logoDrawn = false;
+    if (company && company.logo_base64 && typeof company.logo_base64 === 'string' && company.logo_base64.startsWith('data:image')) {
+        try {
+            const base64Data = company.logo_base64.split(',')[1] || company.logo_base64;
+            const imgBytes = Buffer.from(base64Data, 'base64');
+            let embeddedImg;
+            if (company.logo_base64.includes('jpeg') || company.logo_base64.includes('jpg')) {
+                embeddedImg = await pdfDoc.embedJpg(imgBytes);
+            } else {
+                embeddedImg = await pdfDoc.embedPng(imgBytes);
+            }
+            const scaleFactor = 45 / embeddedImg.height;
+            const dims = embeddedImg.scale(Math.min(scaleFactor, 150 / embeddedImg.width));
+            cover.drawImage(embeddedImg, {
+                x: marginX + 15,
+                y: topY - 65,
+                width: dims.width,
+                height: dims.height,
+            });
+            logoDrawn = true;
+        } catch(e) {
+            console.warn('[pdfBundleService] Falha ao renderizar logo base64:', e.message);
+        }
+    }
+
+    if (!logoDrawn) {
+        const companyDisplayName = (company?.nome_fantasia || company?.razao_social || 'SINCO ERP').toUpperCase();
+        drawT(companyDisplayName.slice(0, 22), marginX + 15, topY - 45, 12, true);
+        if (company?.cnpj) {
+            drawT(`CNPJ: ${company.cnpj}`, marginX + 15, topY - 60, 8);
+        }
+    }
 
     // Titulo Central
     drawT('ROMANEIO DE ENTREGA CLIENTE', col2X + 90, topY - 45, 14, true);
@@ -89,7 +123,9 @@ const generateRomaneioBundle = async (romaneioId, { usuarioGerador } = {}) => {
     const agora = new Date();
     const dtGeracaoPdf = `${agora.toLocaleDateString('pt-BR')} ${agora.toLocaleTimeString('pt-BR')}`;
 
-    drawT('DADOS DA EMISSÃO / CONTROLE INTERNO', marginX + 10, emitY + 21, 8, true);
+    const empNome = company?.razao_social || company?.nome_fantasia || 'Empresa Emissora';
+    const empCnpj = company?.cnpj ? `  -  CNPJ: ${company.cnpj}` : '';
+    drawT(`EMPRESA: ${empNome}${empCnpj}`, marginX + 10, emitY + 21, 8, true);
     drawT(`Elaborado por: ${rom.usuario || 'Sistema'}   |   PDF gerado por: ${usuarioGerador || 'Sistema'}   em: ${dtGeracaoPdf}`, marginX + 10, emitY + 12, 8);
 
     let dtEmissao = rom.data_liberacao || rom.created_at || new Date();
@@ -169,8 +205,8 @@ const generateRomaneioBundle = async (romaneioId, { usuarioGerador } = {}) => {
 
     cover.drawRectangle({ x: marginX, y: tbY, width: width - (marginX * 2), height: 20, borderColor: rgb(0,0,0), borderWidth: 1, color: rgb(0.9,0.9,0.9) });
     drawT('It', marginX + 5, tbY + 6, 8, true);
-    drawT('Código', marginX + 30, tbY + 6, 8, true);
-    drawT('Pedido', marginX + 110, tbY + 6, 8, true);
+    drawT('Código', marginX + 25, tbY + 6, 8, true);
+    drawT('OP / Pedido', marginX + 100, tbY + 6, 8, true);
     drawT('Descrição', marginX + 180, tbY + 6, 8, true);
     drawT('Obs.', marginX + 380, tbY + 6, 8, true);
     drawT('Qtd Env', marginX + 500, tbY + 6, 8, true);
@@ -199,9 +235,9 @@ const generateRomaneioBundle = async (romaneioId, { usuarioGerador } = {}) => {
         }
         cover.drawLine({ start: { x: marginX, y }, end: { x: width - marginX, y }, thickness: 1 });
         drawT(String(i+1), marginX + 5, y + 6, 8);
-        drawT(item.codigo || '-', marginX + 30, y + 6, 8);
+        drawT(item.codigo || '-', marginX + 25, y + 6, 8);
         const ped = item.op_numero ? item.op_numero + (item.item_producao ? '/' + item.item_producao : '') : '-';
-        drawT(ped, marginX + 110, y + 6, 8);
+        drawT(ped, marginX + 100, y + 6, 8);
         const desc = item.descricao ? item.descricao.substring(0, 48) : '-';
         drawT(desc, marginX + 180, y + 6, 8);
         

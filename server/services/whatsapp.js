@@ -77,7 +77,7 @@ async function sendText(numbers, text, subject) {
     const results = await Promise.allSettled(
         targets.map(number =>
             axios.post(
-                `${BASE_URL}/message/sendText/${INSTANCE}`,
+                `${BASE_URL}/message/sendText/${encodeURIComponent(INSTANCE)}`,
                 { number, text },
                 { headers: { apikey: API_KEY, 'Content-Type': 'application/json' } }
             )

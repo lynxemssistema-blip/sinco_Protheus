@@ -9,7 +9,6 @@ import {
     Scissors, Layers, ArrowRight, CornerDownRight, CheckSquare, Split, FileSpreadsheet
 } from 'lucide-react';
 import api from '../services/api';
-import { logoBase64 } from '../services/metalfisaLogoBase64';
 
 // ─── Constantes de dados ────────────────────────────────────────────────────
 const DELIVERY_DATE = 'Agosto de 2026';

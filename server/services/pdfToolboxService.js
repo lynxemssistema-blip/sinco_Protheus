@@ -51,21 +51,42 @@ const generateToolboxReport = async (toolboxId, { usuarioGerador } = {}) => {
         page.drawLine({ start: { x: col2X, y: topY }, end: { x: col2X, y: topY - 80 }, thickness: 1 });
         page.drawLine({ start: { x: col3X, y: topY }, end: { x: col3X, y: topY - 80 }, thickness: 1 });
 
-        // Logo
+        // Logo & Empresa Ativa
+        let logoDrawn = false;
         try {
-            const logoRelPath = path.join(__dirname, '../public/metalfisa-logo.png');
-            const logoBytes = await fs.readFile(logoRelPath);
-            const pngImage = await pdfDoc.embedPng(logoBytes);
-            const scaleFactor = 50 / pngImage.height;
-            const pngDims = pngImage.scale(scaleFactor);
-            page.drawImage(pngImage, {
-                x: marginX + 20,
-                y: topY - 65,
-                width: pngDims.width,
-                height: pngDims.height
-            });
+            const [compRows] = await mysqlPool.query(
+                `SELECT razao_social, nome_fantasia, cnpj, logo_base64 FROM app_company_settings ORDER BY id ASC LIMIT 1`
+            );
+            const comp = compRows?.[0];
+            if (comp && comp.logo_base64 && typeof comp.logo_base64 === 'string' && comp.logo_base64.startsWith('data:image')) {
+                const base64Data = comp.logo_base64.split(',')[1] || comp.logo_base64;
+                const imgBytes = Buffer.from(base64Data, 'base64');
+                let embeddedImg;
+                if (comp.logo_base64.includes('jpeg') || comp.logo_base64.includes('jpg')) {
+                    embeddedImg = await pdfDoc.embedJpg(imgBytes);
+                } else {
+                    embeddedImg = await pdfDoc.embedPng(imgBytes);
+                }
+                const scaleFactor = 45 / embeddedImg.height;
+                const dims = embeddedImg.scale(Math.min(scaleFactor, 120 / embeddedImg.width));
+                page.drawImage(embeddedImg, {
+                    x: marginX + 15,
+                    y: topY - 65,
+                    width: dims.width,
+                    height: dims.height
+                });
+                logoDrawn = true;
+            } else if (comp) {
+                const name = (comp.nome_fantasia || comp.razao_social || 'SINCO ERP').toUpperCase();
+                drawT(name.slice(0, 18), marginX + 10, topY - 45, 11, true);
+                logoDrawn = true;
+            }
         } catch (e) {
-            drawT('LYNX', marginX + 20, topY - 45, 14, true);
+            console.warn('[pdfToolboxService] Falha ao renderizar logo corporativo:', e.message);
+        }
+
+        if (!logoDrawn) {
+            drawT('SINCO ERP', marginX + 10, topY - 45, 12, true);
         }
 
         drawT('TERMO DE RESPONSABILIDADE', col2X + 20, topY - 35, 14, true);

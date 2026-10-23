@@ -600,6 +600,33 @@ export default function ErpPedidosPage() {
         }
     };
 
+    // Estado e handlers para Exclusão / Cancelamento de Pedido (Soft Delete)
+    const [orderToDelete, setOrderToDelete] = useState(null);
+    const [deletingOrderLoading, setDeletingOrderLoading] = useState(false);
+
+    const handleDeleteOrder = (order) => {
+        setOrderToDelete(order);
+    };
+
+    const confirmDeleteOrder = async () => {
+        if (!orderToDelete) return;
+        setDeletingOrderLoading(true);
+        try {
+            const res = await api.delete(`/erp/pedidos/${orderToDelete.numero_pedido}`);
+            toast.success(res.data?.message || `Pedido ${orderToDelete.numero_pedido} excluído com sucesso!`);
+            setOrderToDelete(null);
+            if (viewOrderModal?.pedido?.numero_pedido === orderToDelete.numero_pedido) {
+                setViewOrderModal(null);
+            }
+            loadPedidos();
+        } catch (err) {
+            console.error('Erro ao excluir pedido:', err);
+            toast.error(err.response?.data?.error || err.message || 'Falha ao excluir pedido.');
+        } finally {
+            setDeletingOrderLoading(false);
+        }
+    };
+
     const loadPedidos = async () => {
         setLoading(true);
         try {
@@ -1599,6 +1626,16 @@ export default function ErpPedidosPage() {
                                                                 >
                                                                     <Eye className="w-4 h-4" />
                                                                 </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDeleteOrder(p);
+                                                                    }}
+                                                                    className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                                                    title="Excluir / Cancelar Pedido"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -1717,6 +1754,16 @@ export default function ErpPedidosPage() {
                                                     title="Ver e Editar Itens do Pedido"
                                                 >
                                                     <Eye className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDeleteOrder(p);
+                                                    }}
+                                                    className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                                    title="Excluir / Cancelar Pedido"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
                                                 </button>
                                             </div>
                                         </td>
@@ -2973,16 +3020,26 @@ export default function ErpPedidosPage() {
                             <div className="text-xs text-gray-500">
                                 💡 Itens com OP emitida não podem ter quantidade ou valor alterados para preservar a rastreabilidade da produção.
                             </div>
-                            <button
-                                onClick={() => {
-                                    setViewOrderModal(null);
-                                    setEditingItemId(null);
-                                    setItemActionMsg(null);
-                                }}
-                                className="px-5 py-2 rounded-xl text-sm font-semibold bg-gray-200 hover:bg-gray-300 text-gray-800 transition"
-                            >
-                                Fechar
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => handleDeleteOrder(viewOrderModal.pedido)}
+                                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition flex items-center gap-1.5 cursor-pointer"
+                                    title="Excluir / Cancelar este pedido (soft delete)"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                    Excluir Pedido
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setViewOrderModal(null);
+                                        setEditingItemId(null);
+                                        setItemActionMsg(null);
+                                    }}
+                                    className="px-5 py-2 rounded-xl text-sm font-semibold bg-gray-200 hover:bg-gray-300 text-gray-800 transition cursor-pointer"
+                                >
+                                    Fechar
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3800,6 +3857,53 @@ export default function ErpPedidosPage() {
                                 disabled={savingConfigPasta}
                             >
                                 {savingConfigPasta ? 'Salvando...' : 'Salvar Configurações'}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Confirmação de Exclusão (Soft Delete) */}
+            {orderToDelete && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-xl shadow-2xl border border-red-100 max-w-md w-full p-6 space-y-4">
+                        <div className="flex items-start gap-4">
+                            <div className="p-3 bg-red-100 text-red-600 rounded-full shrink-0">
+                                <AlertCircle size={28} />
+                            </div>
+                            <div className="space-y-1">
+                                <h3 className="text-lg font-bold text-gray-900">
+                                    Excluir Pedido {orderToDelete.numero}?
+                                </h3>
+                                <p className="text-sm text-gray-600">
+                                    Esta ação cancelará o pedido e seus itens do sistema. Os dados permanecerão no histórico para auditoria, mas não aparecerão nas listagens ativas.
+                                </p>
+                                {orderToDelete.cliente_nome && (
+                                    <div className="text-xs bg-gray-50 p-2.5 rounded-lg border border-gray-100 mt-2 text-gray-700">
+                                        <span className="font-semibold">Cliente:</span> {orderToDelete.cliente_nome}<br />
+                                        <span className="font-semibold">Valor Total:</span> R$ {Number(orderToDelete.total_liquido || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                            <Button
+                                variant="light"
+                                size="sm"
+                                onClick={() => setOrderToDelete(null)}
+                                disabled={deletingOrderLoading}
+                            >
+                                Cancelar
+                            </Button>
+                            <Button
+                                variant="danger"
+                                size="sm"
+                                icon={Trash2}
+                                onClick={confirmDeleteOrder}
+                                disabled={deletingOrderLoading}
+                            >
+                                {deletingOrderLoading ? 'Excluindo...' : 'Confirmar Exclusão'}
                             </Button>
                         </div>
                     </div>

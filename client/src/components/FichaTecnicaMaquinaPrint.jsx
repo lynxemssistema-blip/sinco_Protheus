@@ -1,7 +1,11 @@
 import React, { forwardRef } from 'react';
+import { getCompanyLogoBase64, getCompanyShortName, getCompanyLegalName } from '../services/companyBranding';
 
 const FichaTecnicaMaquinaPrint = forwardRef(({ maquina, checklistsModelos, categorias, setores }, ref) => {
     if (!maquina) return null;
+
+    const logo = getCompanyLogoBase64();
+    const shortName = getCompanyShortName();
 
     const catName = categorias?.find(c => c.id === maquina.id_categoria)?.nome || 'Não definida';
     const setorName = setores?.find(s => s.id === maquina.id_setor)?.nome || 'Não definido';
@@ -49,8 +53,12 @@ const FichaTecnicaMaquinaPrint = forwardRef(({ maquina, checklistsModelos, categ
 
             {/* HEADER ISO */}
             <div className="flex border-2 border-slate-800 mb-6 rounded-sm">
-                <div className="w-1/4 border-r-2 border-slate-800 flex items-center justify-center p-4">
-                    <h1 className="text-2xl font-black tracking-tighter text-slate-900">LYNX</h1>
+                <div className="w-1/4 border-r-2 border-slate-800 flex items-center justify-center p-3 text-center">
+                    {logo ? (
+                        <img src={logo} alt={shortName} className="max-h-12 max-w-full object-contain" />
+                    ) : (
+                        <h1 className="text-xl font-black tracking-tighter text-slate-900">{shortName}</h1>
+                    )}
                 </div>
                 <div className="w-2/4 flex flex-col items-center justify-center p-2 border-r-2 border-slate-800 text-center">
                     <h2 className="text-lg font-bold uppercase tracking-wide">Ficha Técnica de Equipamento</h2>

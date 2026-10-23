@@ -214,7 +214,7 @@ router.post('/log-batch', async (req, res) => {
     }
 });
 
-// POST /api/engineering-releases/save-network - Save PDF to network folder
+// POST /api/engineering-releases/save-network - Save PDF to network folder and uploads
 router.post('/save-network', upload.single('pdf'), async (req, res) => {
     try {
         const { codigo_produto, codigo_liberacao: providedCode } = req.body;
@@ -225,20 +225,35 @@ router.post('/save-network', upload.single('pdf'), async (req, res) => {
         const codigo_liberacao = providedCode || await generateCodigoLiberacaoEng();
         const safeCode = codigo_liberacao.replace(/[<>:"/\\|?*]/g, '-');
         const folderName = safeCode;
-        const baseLynx = process.platform === 'win32' ? '//192.168.1.253/Estrutura Lynx' : '/mnt/lynx';
-        const targetDir = path.join(baseLynx, '000-PRODUTOS', folderName);
-
-        if (!fs.existsSync(targetDir)) {
-            fs.mkdirSync(targetDir, { recursive: true });
-        }
-
         const cleanCodigo = codigo_produto.replace(/[^a-zA-Z0-9_-]/g, '');
         const fileName = req.file.originalname || `${cleanCodigo}_Estrutura.pdf`;
-        const targetPath = path.join(targetDir, fileName);
 
-        fs.writeFileSync(targetPath, req.file.buffer);
+        // 1. Salva sempre no diretório server/uploads/engineering para disponibilidade global em nuvem
+        const uploadsTargetDir = path.join(__dirname, '../uploads/engineering', folderName);
+        if (!fs.existsSync(uploadsTargetDir)) {
+            fs.mkdirSync(uploadsTargetDir, { recursive: true });
+        }
+        const uploadsTargetPath = path.join(uploadsTargetDir, fileName);
+        fs.writeFileSync(uploadsTargetPath, req.file.buffer);
 
-        res.json({ success: true, path: targetPath, codigo_liberacao });
+        // 2. Salva na rede interna se disponível
+        let finalPath = uploadsTargetPath;
+        try {
+            const baseLynx = process.platform === 'win32' ? '//192.168.1.253/Estrutura Lynx' : '/mnt/lynx';
+            const targetDir = path.join(baseLynx, '000-PRODUTOS', folderName);
+            if (fs.existsSync(baseLynx)) {
+                if (!fs.existsSync(targetDir)) {
+                    fs.mkdirSync(targetDir, { recursive: true });
+                }
+                const targetPath = path.join(targetDir, fileName);
+                fs.writeFileSync(targetPath, req.file.buffer);
+                finalPath = targetPath;
+            }
+        } catch (netErr) {
+            console.warn('⚠️ [SAVE NETWORK] Compartilhamento de rede indisponível, salvo em uploads:', netErr.message);
+        }
+
+        res.json({ success: true, path: finalPath, uploadsPath: uploadsTargetPath, codigo_liberacao });
     } catch (err) {
         console.error('❌ [SAVE NETWORK ERROR]', err);
         res.status(500).json({ error: err.message });

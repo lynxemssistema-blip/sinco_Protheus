@@ -278,11 +278,11 @@ LIMIT 2000;
 // GET /api/producao/op - Buscar estrutura por OP
 router.get('/op', async (req, res) => {
   try {
-    const { op, item, sequencia, client, product } = req.query;
+    const { op, item, sequencia, client, product, pedido } = req.query;
 
     // Validation: Require at least ONE filter
-    if (!op && !item && (!client || client.length < 3) && (!product || product.length < 3)) {
-      return res.status(400).json({ error: 'Informe pelo menos um filtro: OP, Item, Cliente (min 3 chars) ou Produto (min 3 chars).' });
+    if (!op && !item && !pedido && (!client || client.length < 3) && (!product || product.length < 3)) {
+      return res.status(400).json({ error: 'Informe pelo menos um filtro: OP, Pedido, Item, Cliente (min 3 chars) ou Produto (min 3 chars).' });
     }
 
     // Resolve filtro de pedidos inativos ANTES de montar whereClause
@@ -300,6 +300,11 @@ router.get('/op', async (req, res) => {
       params.push(formattedOp);
       whereClause += `AND (TRIM(c2.c2_num) = $${paramCount} OR TRIM(c2.c2_pedido) = $${paramCount} OR TRIM(c2.c2_obs) LIKE '%' || $${paramCount} || '%') `;
       paramCount++;
+    }
+
+    if (pedido) {
+      params.push(`%${pedido.trim()}%`);
+      whereClause += `AND (TRIM(c2.c2_pedido) LIKE $${paramCount++}) `;
     }
 
     if (item) {
@@ -320,8 +325,6 @@ router.get('/op', async (req, res) => {
     // Client Filter: Requires subquery/exists specific to Postgres + Protheus SC5 structure
     if (client) {
       params.push(`%${client.toUpperCase()}%`);
-      // Check if the OP's linked Order (c2_pedido) belongs to a client with matching Name or Code
-      // We join SC5 on Order Number (c5_num) and Filial (assuming shared filial context or ignoring for simplicity)
       whereClause += `
             AND EXISTS (
                 SELECT 1 
@@ -351,6 +354,8 @@ op_base AS (
     -- Propagate Pedido from any sequence in the same OP/Item group
     MAX(TRIM(c2.c2_pedido)) OVER (PARTITION BY c2.c2_num, c2.c2_item) AS raw_pedido,
     MAX(TRIM(c2.c2_obs)) OVER (PARTITION BY c2.c2_num, c2.c2_item) AS obs_venda,
+    MAX(TRIM(c5.c5_cliente)) OVER (PARTITION BY c2.c2_num, c2.c2_item) AS cod_cliente,
+    MAX(TRIM(a1.a1_nome)) OVER (PARTITION BY c2.c2_num, c2.c2_item) AS nome_cliente,
 
     ( c2.c2_num
       || lpad(btrim(c2.c2_item),   2, '0')
@@ -358,6 +363,8 @@ op_base AS (
     ) AS op_origem
 
   FROM public.sc2010 c2
+  LEFT JOIN public.sc5010 c5 ON TRIM(c5.c5_num) = TRIM(c2.c2_pedido) AND c5.d_e_l_e_t_ = ' '
+  LEFT JOIN public.sa1010 a1 ON a1.a1_cod = c5.c5_cliente AND a1.a1_loja = c5.c5_lojacli AND a1.d_e_l_e_t_ = ' '
   ${whereClause}
   LIMIT 100 -- Limit initial matches to prevent explosion if filter is too broad
 ),
@@ -372,16 +379,17 @@ arvore AS (
     ob.op_origem,
     ob.raw_pedido AS pedido_venda,
     ob.obs_venda,
+    ob.cod_cliente,
+    ob.nome_cliente,
 
     0 AS nivel,
-    CAST(ob.c2_produto AS text) AS cod_atual,
+    TRIM(ob.c2_produto) AS cod_atual,
     NULL::text          AS cod_pai,
 
-    1::numeric          AS fator_rel,
+    (1.000000)::numeric AS fator_rel,
     ob.qtd_op           AS qtd_op,
 
-    CAST(ob.c2_produto AS text) AS caminho,
-    ARRAY[CAST(ob.c2_produto AS text)] AS visitados
+    TRIM(ob.c2_produto)::text AS caminho
   FROM op_base ob
 
   UNION ALL
@@ -395,34 +403,27 @@ arvore AS (
     a.op_origem,
     a.pedido_venda,
     a.obs_venda,
+    a.cod_cliente,
+    a.nome_cliente,
 
     a.nivel + 1 AS nivel,
-    CAST(g1.g1_comp AS text) AS cod_atual,
-    CAST(g1.g1_cod AS text)  AS cod_pai,
+    TRIM(g1.g1_comp) AS cod_atual,
+    TRIM(g1.g1_cod)  AS cod_pai,
 
-    a.fator_rel * (CAST(REPLACE(CAST(g1.g1_quant AS text), ',', '.') AS numeric)) AS fator_rel,
+    (a.fator_rel * (g1.g1_quant)::numeric)::numeric AS fator_rel,
     a.qtd_op,
 
-    (a.caminho || ' > ' || g1.g1_comp) AS caminho,
-    (a.visitados || CAST(g1.g1_comp AS text))  AS visitados
+    (a.caminho || ' > ' || TRIM(g1.g1_comp)) AS caminho
 
   FROM arvore a
-
-  -- limita ramificação por pai (evita travar o pgAdmin se tiver BOM enorme)
-  JOIN LATERAL (
-    SELECT g1.*
-    FROM public.sg1010 g1
-    WHERE g1.g1_cod = a.cod_atual
-      AND g1.d_e_l_e_t_ = ' '
-    ORDER BY g1.g1_comp
-    LIMIT 200               -- <<< ajuste: 200 filhos por pai (seguro)
-  ) g1 ON TRUE
+  JOIN public.sg1010 g1
+    ON TRIM(g1.g1_cod) = a.cod_atual
+   AND g1.d_e_l_e_t_ = ' '
 
   WHERE
-    a.nivel < 25                                  -- <<< limite de níveis
-    AND array_length(a.visitados, 1) < 2000       -- <<< trava global “prática”
-    AND length(a.caminho) < 4000                  -- <<< evita string gigante
-    AND NOT (CAST(g1.g1_comp AS text) = ANY (a.visitados))-- anti-loop (ciclo)
+    a.nivel < 25
+    AND length(a.caminho) < 4000
+    AND a.caminho NOT LIKE ('%' || TRIM(g1.g1_comp) || '%')
 )
 
 SELECT
@@ -433,6 +434,8 @@ SELECT
   a.op,
   a.item_op,
   a.sequen_op,
+  a.cod_cliente,
+  a.nome_cliente,
 
   a.nivel,
 
@@ -441,6 +444,8 @@ SELECT
 
   a.cod_atual     AS codnoarvore,
   b_atual.b1_desc AS descnoarvore,
+  b_atual.b1_peso AS pesonoarvore,
+  b_atual.b1_um   AS umnoarvore,
 
   a.fator_rel               AS qtdrelativabom,
   (a.fator_rel * a.qtd_op)  AS qtdtotalparaop,

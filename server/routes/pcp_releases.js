@@ -494,26 +494,40 @@ router.post('/save-pdf', async (req, res) => {
         const safeCode = codigo_liberacao.replace(/[<>:"/\\|?*]/g, '-');
         const folderPath = path.join(OS_BASE_PATH, safeCode);
 
-        // Create folder if it doesn't exist
-        if (!fs.existsSync(folderPath)) {
-            fs.mkdirSync(folderPath, { recursive: true });
-            console.log(`📁 Pasta criada: ${folderPath}`);
-        }
-
-        // Write PDF file
+        // 1. Sempre salva no diretório server/uploads/os para disponibilidade global em nuvem
         const safeFilename = filename.replace(/[<>:"/\\|?*]/g, '-');
-        const filePath = path.join(folderPath, safeFilename);
         const pdfBuffer = Buffer.from(pdfBase64, 'base64');
-        fs.writeFileSync(filePath, pdfBuffer);
+        const uploadsFolderPath = path.join(__dirname, '../uploads/os', safeCode);
+        if (!fs.existsSync(uploadsFolderPath)) {
+            fs.mkdirSync(uploadsFolderPath, { recursive: true });
+        }
+        const uploadsFilePath = path.join(uploadsFolderPath, safeFilename);
+        fs.writeFileSync(uploadsFilePath, pdfBuffer);
+
+        let finalPath = uploadsFilePath;
+
+        // 2. Se o compartilhamento de rede estiver acessível, salva também nele
+        try {
+            if (fs.existsSync(OS_BASE_PATH)) {
+                if (!fs.existsSync(folderPath)) {
+                    fs.mkdirSync(folderPath, { recursive: true });
+                }
+                const filePath = path.join(folderPath, safeFilename);
+                fs.writeFileSync(filePath, pdfBuffer);
+                finalPath = filePath;
+            }
+        } catch (netErr) {
+            console.warn('⚠️ [SAVE OS PDF] Rede local indisponível, mantendo arquivo em uploads:', netErr.message);
+        }
 
         // Update database with the saved path
         await mysqlPool.query(
             `UPDATE app_pcp_releases SET caminho_arquivo = ? WHERE codigo_liberacao = ?`,
-            [filePath, codigo_liberacao]
+            [finalPath, codigo_liberacao]
         );
 
-        console.log(`✅ PDF salvo: ${filePath}`);
-        res.json({ success: true, path: filePath });
+        console.log(`✅ PDF salvo: ${finalPath}`);
+        res.json({ success: true, path: finalPath });
     } catch (err) {
         console.error('❌ [SAVE PDF ERROR]', err);
         res.status(500).json({ error: err.message });

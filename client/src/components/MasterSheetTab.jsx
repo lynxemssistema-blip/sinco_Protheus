@@ -1,18 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getSalesPlanningMasterSheet } from '../services/api';
+import { getSalesPlanningMasterSheet, getFileUrl } from '../services/api';
 import { exportMasterSheetExcel, exportMasterSheetPdf } from '../services/masterSheetExportGenerator';
 import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
 import { Download, Info, Table, Box, List, Settings, Activity, BarChart2, X, ChevronDown, FileText, Loader2, Play } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LabelList } from 'recharts';
-
-const getFileUrl = (path) => {
-    if (!path) return '';
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-    const serverUrl = baseUrl.replace('/api', '');
-    return `${serverUrl}${path}`;
-};
 
 const getTodayDate = () => {
     const today = new Date();
@@ -33,7 +26,7 @@ const DrawingIcon = ({ produto }) => {
                 d.url_arquivo && d.url_arquivo.toLowerCase().endsWith('.pdf')
             );
             if (pdfDoc) {
-                window.open(`/api/docs/view?path=${encodeURIComponent(pdfDoc.url_arquivo)}`, '_blank');
+                window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(pdfDoc.url_arquivo)}`), '_blank');
             } else {
                 alert(`Nenhum desenho em PDF encontrado para o produto ${produto}.`);
             }

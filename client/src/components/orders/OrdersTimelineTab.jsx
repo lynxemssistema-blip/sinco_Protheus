@@ -10,7 +10,6 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { api } from '../../services/api';
 import { toast } from 'react-toastify';
-import { logoBase64 } from '../../services/metalfisaLogoBase64';
 import { downloadBlob } from '../../utils/downloadHelper';
 
 export default function OrdersTimelineTab({ filters }) {

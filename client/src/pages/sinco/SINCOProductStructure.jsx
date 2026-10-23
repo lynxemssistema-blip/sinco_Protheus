@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { FileText, MessageSquare, XCircle, Search, Package, Network, Layers, ChevronDown, ChevronRight, Filter } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useAuth } from '../../contexts/AuthContext';
-import { getSincoProductStructure, getSincoComentariosEngenharia, createSincoComentarioEngenharia, updateSincoComentarioEngenhariaStatus, getSincoProdutosRaizes } from '../../services/api';
+import { getSincoProductStructure, getSincoComentariosEngenharia, createSincoComentarioEngenharia, updateSincoComentarioEngenhariaStatus, getSincoProdutosRaizes, getFileUrl } from '../../services/api';
 
 const openDoc = (filePath) => {
     if (!filePath) return;
@@ -18,7 +18,7 @@ const openDoc = (filePath) => {
         pdfPath = filePath + '.pdf';
     }
 
-    window.open(`/api/docs/view?path=${encodeURIComponent(pdfPath)}`, '_blank', 'noopener,noreferrer');
+    window.open(getFileUrl(`/api/docs/view?path=${encodeURIComponent(pdfPath)}`), '_blank', 'noopener,noreferrer');
 };
 
 // Badge colorido baseado no txtTipoDesenho

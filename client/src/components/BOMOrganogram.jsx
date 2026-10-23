@@ -419,32 +419,37 @@ export default function BOMOrganogram({
                             )}
 
                             {/* Recursos / Operações (Círculos) */}
-                            {item?.recursos && item.recursos.length > 0 && (
-                                <div className="border-t border-slate-100 pt-2 flex flex-wrap gap-1.5 justify-center">
-                                    {item.recursos.map((r, rIdx) => (
-                                        <button
-                                            key={`${r.operac}_${r.recurso}_${rIdx}`}
-                                            onClick={(e) => { e.stopPropagation(); onApontar(item, r); }}
-                                            className={`interactive-el group relative flex items-center justify-center w-7 h-7 rounded-full font-mono text-[9px] font-bold ring-2 transition-all hover:scale-110 hover:shadow-sm ${getOpStatusColor(r.status)}`}
-                                        >
-                                            {r.operac}
-                                            
-                                            {/* Hover tooltip premium flutuante */}
-                                            <span className="pointer-events-none absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-30 hidden group-hover:flex flex-col items-center">
-                                                <span className="bg-slate-900 text-white text-[10px] rounded p-2 shadow-lg whitespace-nowrap leading-tight text-left">
-                                                    <span className="font-bold block text-blue-300">Op {r.operac} - {r.recurso} — {r.desc_recurso}</span>
-                                                    <span className="block text-slate-400 font-mono text-[9px]">Código Recurso: {r.recurso}</span>
-                                                    {r.data_planejada_inicio && (
-                                                        <span className="block text-amber-300 font-semibold mt-0.5">📅 Plan: {fmtDate(r.data_planejada_inicio)}</span>
-                                                    )}
-                                                    <span className="block text-slate-300 mt-0.5">Progresso: {r.qtde_produzida} / {r.qtde_planejada} ({r.pct}%)</span>
+                            {item?.recursos && item.recursos.length > 0 && (() => {
+                                const uniqueRecursos = item.recursos.filter((r, idx, arr) => 
+                                    arr.findIndex(x => String(x.operac).trim() === String(r.operac).trim()) === idx
+                                );
+                                return (
+                                    <div className="border-t border-slate-100 pt-2 flex flex-wrap gap-1.5 justify-center">
+                                        {uniqueRecursos.map((r, rIdx) => (
+                                            <button
+                                                key={`${r.operac}_${r.recurso}_${rIdx}`}
+                                                onClick={(e) => { e.stopPropagation(); onApontar(item, r); }}
+                                                className={`interactive-el group relative flex items-center justify-center w-7 h-7 rounded-full font-mono text-[9px] font-bold ring-2 transition-all hover:scale-110 hover:shadow-sm ${getOpStatusColor(r.status)}`}
+                                            >
+                                                {r.operac}
+                                                
+                                                {/* Hover tooltip premium flutuante */}
+                                                <span className="pointer-events-none absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-30 hidden group-hover:flex flex-col items-center">
+                                                    <span className="bg-slate-900 text-white text-[10px] rounded p-2 shadow-lg whitespace-nowrap leading-tight text-left">
+                                                        <span className="font-bold block text-blue-300">Op {r.operac} - {r.recurso} — {r.desc_recurso}</span>
+                                                        <span className="block text-slate-400 font-mono text-[9px]">Código Recurso: {r.recurso}</span>
+                                                        {r.data_planejada_inicio && (
+                                                            <span className="block text-amber-300 font-semibold mt-0.5">📅 Plan: {fmtDate(r.data_planejada_inicio)}</span>
+                                                        )}
+                                                        <span className="block text-slate-300 mt-0.5">Progresso: {r.qtde_produzida} / {r.qtde_planejada} ({r.pct}%)</span>
+                                                    </span>
+                                                    <span className="w-2 h-2 bg-slate-900 rotate-45 -mt-1"></span>
                                                 </span>
-                                                <span className="w-2 h-2 bg-slate-900 rotate-45 -mt-1"></span>
-                                            </span>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
+                                            </button>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
 
                             {/* Collapse/Expand indicator button */}
                             {hasChildren && (
@@ -912,8 +917,12 @@ export default function BOMOrganogram({
                                         <Wrench className="w-3 h-3" /> Roteiro de Operações
                                     </div>
                                     <div className="flex flex-col gap-2">
-                                        {selectedNodeDetails?.recursos && selectedNodeDetails.recursos.map((r, rIdx) => (
-                                            <div key={`${r.operac}_${r.recurso}_${rIdx}`} className="border border-slate-100 p-2 rounded-lg bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                                        {selectedNodeDetails?.recursos && (() => {
+                                            const uniqueRecursos = selectedNodeDetails.recursos.filter((r, idx, arr) => 
+                                                arr.findIndex(x => String(x.operac).trim() === String(r.operac).trim()) === idx
+                                            );
+                                            return uniqueRecursos.map((r, rIdx) => (
+                                                <div key={`${r.operac}_${r.recurso}_${rIdx}`} className="border border-slate-100 p-2 rounded-lg bg-slate-50/50 hover:bg-slate-50 transition-colors">
                                                 <div className="flex items-center justify-between">
                                                     <span className="font-mono text-xs font-bold text-slate-700">Op {r.operac}</span>
                                                     <span className={`w-2 h-2 rounded-full ${r.status === 'done' ? 'bg-green-500' : r.status === 'in_progress' ? 'bg-blue-500 animate-pulse' : 'bg-slate-300'}`} />
@@ -941,7 +950,8 @@ export default function BOMOrganogram({
                                                     <Play className="w-2.5 h-2.5 fill-current" /> Apontar
                                                 </button>
                                             </div>
-                                        ))}
+                                        ));
+                                    })()}
                                     </div>
                                 </div>
                             </>

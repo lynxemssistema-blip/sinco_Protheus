@@ -71,6 +71,9 @@ router.get('/empresas', async (req, res) => {
                 e.IdEmpresa, e.RazaoSocial, e.NomeFantasia, e.Segmento, e.Cnpj,
                 e.Email, e.Telefone, e.plano, e.status_plano, 
                 COALESCE(e.ativa, 1) as ativa,
+                COALESCE(e.evolution_ativo, 0) as evolution_ativo,
+                COALESCE(e.evolution_instancia, 'Suporte Lynx') as evolution_instancia,
+                e.evolution_apikey, e.evolution_url,
                 e.data_vencimento, e.valor_mensalidade, e.motivo_bloqueio,
                 e.trial_expira_em, e.limite_usuarios, e.CriadoEm,
                 (SELECT COUNT(*) FROM usuario u WHERE u.IdEmpresa = e.IdEmpresa AND (u.D_E_L_E_T_E IS NULL OR u.D_E_L_E_T_E <> '*')) as total_usuarios,
@@ -89,7 +92,7 @@ router.get('/empresas', async (req, res) => {
 
 /**
  * PATCH /api/superadmin/empresas/:id
- * Altera plano, limites, ativação, data de vencimento ou status da empresa
+ * Altera plano, limites, ativação, data de vencimento, status ou Evolution API da empresa
  */
 router.patch('/empresas/:id', async (req, res) => {
     const empresaId = req.params.id;
@@ -101,7 +104,11 @@ router.patch('/empresas/:id', async (req, res) => {
         valor_mensalidade, 
         motivo_bloqueio, 
         limite_usuarios, 
-        estender_dias_trial 
+        estender_dias_trial,
+        evolution_ativo,
+        evolution_instancia,
+        evolution_apikey,
+        evolution_url
     } = req.body;
 
     try {
@@ -161,6 +168,27 @@ router.patch('/empresas/:id', async (req, res) => {
             updates.push("status_plano = 'trial'");
         }
 
+        if (evolution_ativo !== undefined && evolution_ativo !== null) {
+            const isEvoAtivo = evolution_ativo === true || evolution_ativo === 1 || evolution_ativo === '1';
+            updates.push('evolution_ativo = ?');
+            params.push(isEvoAtivo ? 1 : 0);
+        }
+
+        if (evolution_instancia !== undefined) {
+            updates.push('evolution_instancia = ?');
+            params.push(evolution_instancia ? String(evolution_instancia).trim() : 'Suporte Lynx');
+        }
+
+        if (evolution_apikey !== undefined) {
+            updates.push('evolution_apikey = ?');
+            params.push(evolution_apikey ? String(evolution_apikey).trim() : null);
+        }
+
+        if (evolution_url !== undefined) {
+            updates.push('evolution_url = ?');
+            params.push(evolution_url ? String(evolution_url).trim() : null);
+        }
+
         if (updates.length === 0) {
             return res.status(400).json({ error: 'Nenhum campo fornecido para atualização.' });
         }
@@ -168,10 +196,105 @@ router.patch('/empresas/:id', async (req, res) => {
         params.push(empresaId);
         await db.execute(`UPDATE empresa SET ${updates.join(', ')} WHERE IdEmpresa = ?`, params);
 
-        res.json({ message: 'Dados da empresa, assinatura e plano atualizados com sucesso!' });
+        res.json({ success: true, message: 'Dados da empresa atualizados com sucesso.' });
     } catch (err) {
         console.error('Erro ao atualizar empresa:', err);
-        res.status(500).json({ error: 'Erro ao salvar alterações da empresa' });
+        res.status(500).json({ error: 'Erro ao atualizar dados da empresa' });
+    }
+});
+
+/**
+ * POST /api/superadmin/empresas/:id/evolution-toggle
+ * Ativa ou desativa a Evolution API para uma empresa específica
+ */
+router.post('/empresas/:id/evolution-toggle', async (req, res) => {
+    try {
+        const empresaId = req.params.id;
+        const [rows] = await db.query('SELECT evolution_ativo, evolution_instancia FROM empresa WHERE IdEmpresa = ?', [empresaId]);
+        if (!rows.length) {
+            return res.status(404).json({ error: 'Empresa não encontrada' });
+        }
+
+        const novoStatus = rows[0].evolution_ativo === 1 ? 0 : 1;
+        await db.execute('UPDATE empresa SET evolution_ativo = ? WHERE IdEmpresa = ?', [novoStatus, empresaId]);
+
+        res.json({
+            success: true,
+            IdEmpresa: parseInt(empresaId),
+            evolution_ativo: novoStatus,
+            evolution_instancia: rows[0].evolution_instancia || 'Suporte Lynx',
+            message: novoStatus === 1 
+                ? 'Evolution API ativada para esta empresa com sucesso.' 
+                : 'Evolution API desativada para esta empresa.'
+        });
+    } catch (err) {
+        console.error('Erro ao alternar status da Evolution API:', err);
+        res.status(500).json({ error: 'Erro ao alternar status da Evolution API' });
+    }
+});
+
+/**
+ * GET /api/superadmin/empresas/:id/evolution-status
+ * Consulta o status de conexão da instância na Evolution API em tempo real
+ */
+router.get('/empresas/:id/evolution-status', async (req, res) => {
+    try {
+        const empresaId = req.params.id;
+        const [rows] = await db.query(
+            'SELECT IdEmpresa, RazaoSocial, evolution_ativo, evolution_instancia, evolution_apikey, evolution_url FROM empresa WHERE IdEmpresa = ?',
+            [empresaId]
+        );
+        if (!rows.length) {
+            return res.status(404).json({ error: 'Empresa não encontrada' });
+        }
+
+        const empresa = rows[0];
+        const baseUrl = empresa.evolution_url || process.env.EVOLUTION_API_URL || 'https://evo.lynxems.com.br';
+        const apiKey = empresa.evolution_apikey || process.env.EVOLUTION_API_KEY || '1C62EE90D11A-4C75-B1BA-383CDF634A39';
+        const instanceName = empresa.evolution_instancia || process.env.EVOLUTION_INSTANCE || 'Suporte Lynx';
+
+        const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
+        const targetUrl = `${cleanBaseUrl}/instance/connectionState/${encodeURIComponent(instanceName)}`;
+
+        try {
+            const evoRes = await fetch(targetUrl, {
+                headers: { apikey: apiKey }
+            });
+
+            if (!evoRes.ok) {
+                return res.json({
+                    success: false,
+                    evolution_ativo: empresa.evolution_ativo === 1,
+                    instance: instanceName,
+                    state: 'error',
+                    httpStatus: evoRes.status,
+                    message: `Evolution API respondeu com status HTTP ${evoRes.status}`
+                });
+            }
+
+            const data = await evoRes.json();
+            const state = data?.instance?.state || data?.state || 'disconnected';
+
+            res.json({
+                success: true,
+                evolution_ativo: empresa.evolution_ativo === 1,
+                instance: instanceName,
+                state: state, // 'open', 'connecting', 'close'
+                webhook_url: 'https://lynxems.com.br/api/webhook',
+                details: data
+            });
+        } catch (fetchErr) {
+            res.json({
+                success: false,
+                evolution_ativo: empresa.evolution_ativo === 1,
+                instance: instanceName,
+                state: 'unreachable',
+                message: `Não foi possível alcançar a Evolution API: ${fetchErr.message}`
+            });
+        }
+    } catch (err) {
+        console.error('Erro ao consultar status da Evolution API:', err);
+        res.status(500).json({ error: 'Erro ao consultar status da Evolution API' });
     }
 });
 

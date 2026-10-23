@@ -146,7 +146,7 @@ export default function HermesFeed() {
                         <div className="p-6 bg-slate-50 max-h-[60vh] overflow-y-auto">
                             <div 
                                 className="text-sm text-slate-700 whitespace-pre-wrap font-mono"
-                                dangerouslySetInnerHTML={{ __html: renderInline(urgentAlerts[0].text) }}
+                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderInline(urgentAlerts[0].text)) }}
                             />
                         </div>
                         <div className="p-4 bg-white border-t border-slate-200 flex justify-end">

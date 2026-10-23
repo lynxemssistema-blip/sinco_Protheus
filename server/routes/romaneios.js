@@ -1367,6 +1367,33 @@ router.get('/:id', async (req, res) => {
         const canViewFinancials = await hasFinancialAccess(req);
         const itensFiltrados = canViewFinancials ? itens : itens.map(({ valor_unitario, ...rest }) => rest);
 
+        // Fallback: se algum item ainda estiver com peso_kg zerado/nulo, busca no Protheus SB1010
+        const itemsSemPeso = itensFiltrados.filter(it => !it.peso_kg || Number(it.peso_kg) === 0);
+        if (itemsSemPeso.length > 0) {
+            try {
+                const codigosSemPeso = [...new Set(itemsSemPeso.map(it => (it.codigo_produto || '').trim()).filter(Boolean))];
+                if (codigosSemPeso.length > 0) {
+                    const placeholders = codigosSemPeso.map((_, idx) => `$${idx + 1}`).join(',');
+                    const sb1Res = await db.query(
+                        `SELECT TRIM(b1_cod) as b1_cod, b1_peso FROM public.sb1010 WHERE TRIM(b1_cod) IN (${placeholders}) AND d_e_l_e_t_ = ' '`,
+                        codigosSemPeso
+                    );
+                    const pesoMap = {};
+                    (sb1Res.rows || []).forEach(r => {
+                        pesoMap[r.b1_cod] = Number(r.b1_peso) || 0;
+                    });
+                    itensFiltrados.forEach(it => {
+                        const cod = (it.codigo_produto || '').trim();
+                        if ((!it.peso_kg || Number(it.peso_kg) === 0) && pesoMap[cod]) {
+                            it.peso_kg = pesoMap[cod];
+                        }
+                    });
+                }
+            } catch (errPesoComp) {
+                console.warn('⚠️ [ROMANEIOS] Erro ao buscar peso complementar no SB1010:', errPesoComp.message);
+            }
+        }
+
         // Adicionar e-mail e CNPJ do cliente (busca no Postgres)
         let clienteEmail = '';
         let clienteCnpj = '';
@@ -1394,13 +1421,38 @@ router.get('/:id', async (req, res) => {
 // Adicionar Item
 router.post('/:id/items', requirePermission('romaneios', 'edit'), async (req, res) => {
     try {
-        const { pedido, item_pedido, codigo_produto, descricao_produto, quantidade, comentario, valor_unitario } = req.body;
+        const { pedido, item_pedido, codigo_produto, descricao_produto, quantidade, comentario, valor_unitario, peso_unitario, area_pintura_unitario } = req.body;
         const romaneio_id = req.params.id;
 
+        let finalPeso = peso_unitario !== undefined && peso_unitario !== null && peso_unitario !== '' ? Number(peso_unitario) : null;
+        
+        // Se não foi informado peso_unitario, busca automaticamente do SB1010
+        if ((finalPeso === null || finalPeso === 0) && codigo_produto) {
+            try {
+                const sb1Res = await db.query("SELECT b1_peso FROM public.sb1010 WHERE TRIM(b1_cod) = $1 AND d_e_l_e_t_ = ' '", [codigo_produto.trim()]);
+                if (sb1Res && sb1Res.rows && sb1Res.rows.length > 0 && Number(sb1Res.rows[0].b1_peso) > 0) {
+                    finalPeso = Number(sb1Res.rows[0].b1_peso);
+                }
+            } catch (errPeso) {
+                console.warn('Não foi possível obter peso de sb1010:', errPeso.message);
+            }
+        }
+
         await mysqlPool.execute(
-            `INSERT INTO app_romaneio_items(romaneio_id, pedido, item_pedido, codigo_produto, descricao_produto, quantidade, comentario, valor_unitario)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-            [romaneio_id, pedido, item_pedido, (codigo_produto || '').trim(), (descricao_produto || '').trim(), quantidade, comentario, valor_unitario || 0]
+            `INSERT INTO app_romaneio_items(romaneio_id, pedido, item_pedido, codigo_produto, descricao_produto, quantidade, comentario, valor_unitario, peso_unitario, area_pintura_unitario)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                romaneio_id, 
+                pedido, 
+                item_pedido, 
+                (codigo_produto || '').trim(), 
+                (descricao_produto || '').trim(), 
+                quantidade, 
+                comentario, 
+                valor_unitario || 0,
+                finalPeso,
+                area_pintura_unitario || null
+            ]
         );
 
         res.json({ message: 'Item adicionado' });
@@ -1492,19 +1544,39 @@ router.delete('/:id', requirePermission('romaneios', 'delete'), async (req, res)
 // Editar Item
 router.put('/:id/items/:itemId', requirePermission('romaneios', 'edit'), async (req, res) => {
     try {
-        const { quantidade, comentario, valor_unitario, peso_unitario, area_pintura_unitario } = req.body;
+        const { quantidade, comentario, valor_unitario, peso_unitario, area_pintura_unitario, pedido, item_pedido } = req.body;
+
+        const updateFields = [
+            'quantidade = ?',
+            'comentario = ?',
+            'valor_unitario = ?',
+            'peso_unitario = ?',
+            'area_pintura_unitario = ?'
+        ];
+        const params = [
+            quantidade,
+            comentario,
+            valor_unitario || 0,
+            peso_unitario != null && peso_unitario !== '' ? peso_unitario : null,
+            area_pintura_unitario != null && area_pintura_unitario !== '' ? area_pintura_unitario : null
+        ];
+
+        if (pedido !== undefined) {
+            updateFields.push('pedido = ?');
+            params.push((pedido || '').trim() || null);
+        }
+        if (item_pedido !== undefined) {
+            updateFields.push('item_pedido = ?');
+            params.push((item_pedido || '').trim() || null);
+        }
+
+        params.push(req.params.itemId, req.params.id);
 
         await mysqlPool.execute(
             `UPDATE app_romaneio_items
-             SET quantidade = ?, comentario = ?, valor_unitario = ?,
-                 peso_unitario = ?, area_pintura_unitario = ?
+             SET ${updateFields.join(', ')}
              WHERE id = ? AND romaneio_id = ?`,
-            [
-                quantidade, comentario, valor_unitario || 0,
-                peso_unitario != null && peso_unitario !== '' ? peso_unitario : null,
-                area_pintura_unitario != null && area_pintura_unitario !== '' ? area_pintura_unitario : null,
-                req.params.itemId, req.params.id
-            ]
+            params
         );
 
         // Atualizar cadastro original do produto em produtos_docs se informado

@@ -1,19 +1,26 @@
 import React from 'react';
-import metalfisaLogo from '../../assets/metalfisa-logo.png';
+import { getCompanyLogoBase64, getCompanyLegalName, getCompanyShortName } from '../../services/companyBranding';
 
 const RomaneioPrintSGQ = React.forwardRef(({ romaneio, items }, ref) => {
     if (!romaneio) return null;
+    const logo = getCompanyLogoBase64();
+    const companyName = getCompanyLegalName();
 
     return (
         <div ref={ref} className="print-content text-sm bg-white p-8 w-full print:w-auto" style={{ fontFamily: 'Arial, sans-serif' }}>
             {/* Header */}
             <div className="border border-black mb-4">
                 <div className="flex border-b border-black">
-                    <div className="w-1/4 p-2 border-r border-black flex items-center justify-center">
-                        <img src={metalfisaLogo} alt="Lynx" className="max-h-16" />
+                    <div className="w-1/4 p-2 border-r border-black flex flex-col items-center justify-center">
+                        {logo ? (
+                            <img src={logo} alt={companyName} className="max-h-16 object-contain" />
+                        ) : (
+                            <span className="font-bold text-sm text-center">{getCompanyShortName()}</span>
+                        )}
                     </div>
-                    <div className="w-2/4 p-2 text-center uppercase font-bold flex items-center justify-center text-lg border-r border-black">
-                        Romaneio de Equipamentos / Instrumentos (SGQ)
+                    <div className="w-2/4 p-2 text-center uppercase font-bold flex flex-col items-center justify-center text-lg border-r border-black">
+                        <div>Romaneio de Equipamentos / Instrumentos (SGQ)</div>
+                        <div className="text-xs font-normal text-slate-600 mt-1">{companyName}</div>
                     </div>
                     <div className="w-1/4 p-2 flex flex-col justify-center items-center">
                         <div className="font-bold text-lg">Nº {romaneio.numero}</div>

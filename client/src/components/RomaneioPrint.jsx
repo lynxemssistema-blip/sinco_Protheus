@@ -1,10 +1,12 @@
 import React from 'react';
-import metalfisaLogo from '../assets/metalfisa-logo.png';
 import { useAuth } from '../contexts/AuthContext';
+import { getCompanyLogoBase64, getCompanyLegalName, getCompanyShortName, getCompanyAddressCnpjLine } from '../services/companyBranding';
 
 const RomaneioPrint = React.forwardRef(({ romaneio, items, nfs, typeDescription }, ref) => {
     const { hasPermission } = useAuth();
     const canViewValues = hasPermission('valores_financeiros', 'view');
+    const logo = getCompanyLogoBase64();
+    const companyName = getCompanyLegalName();
 
     if (!romaneio) return null;
 
@@ -13,11 +15,16 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, nfs, typeDescription 
             {/* Header */}
             <div className="border border-black mb-4">
                 <div className="flex border-b border-black">
-                    <div className="w-1/4 p-2 border-r border-black flex items-center justify-center">
-                        <img src={metalfisaLogo} alt="Lynx" className="max-h-16" />
+                    <div className="w-1/4 p-2 border-r border-black flex flex-col items-center justify-center">
+                        {logo ? (
+                            <img src={logo} alt={companyName} className="max-h-16 object-contain" />
+                        ) : (
+                            <span className="font-bold text-sm text-center">{companyName}</span>
+                        )}
                     </div>
-                    <div className="w-2/4 p-2 text-center uppercase font-bold flex items-center justify-center text-lg border-r border-black">
-                        Romaneio de {typeDescription || 'Saída'}
+                    <div className="w-2/4 p-2 text-center uppercase font-bold flex flex-col items-center justify-center text-lg border-r border-black">
+                        <div>Romaneio de {typeDescription || 'Saída'}</div>
+                        <div className="text-xs font-normal text-slate-600 mt-1">{companyName}</div>
                     </div>
                     <div className="w-1/4 p-2 flex flex-col justify-center items-center">
                         <div className="font-bold text-lg font-mono">
@@ -31,6 +38,7 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, nfs, typeDescription 
                 {/* Sender Info - Dynamic */}
                 <div className="p-2 border-b border-black text-xs">
                     <div className="font-bold uppercase">DADOS DA EMISSÃO / CONTROLE INTERNO</div>
+                    <div><strong>Empresa Emitente:</strong> {companyName} {getCompanyAddressCnpjLine() ? `— ${getCompanyAddressCnpjLine()}` : ''}</div>
                     <div>Elaborado por: {romaneio.usuario || 'Sistema'}</div>
                     <div className="flex gap-4 mt-0.5">
                         <span>Emissão: {new Date(romaneio.data_liberacao || romaneio.created_at || Date.now()).toLocaleDateString('pt-BR')}</span>
@@ -102,7 +110,7 @@ const RomaneioPrint = React.forwardRef(({ romaneio, items, nfs, typeDescription 
                             <td className="border border-black p-1 text-center">{index + 1}</td>
                             <td className="border border-black p-1">{item.codigo_produto}</td>
                             <td className="border border-black p-1">{item.descricao_produto}</td>
-                            <td className="border border-black p-1">{item.pedido ? `${item.pedido}/${item.item_pedido}` : '-'}</td>
+                            <td className="border border-black p-1">{item.pedido ? `${item.pedido}${item.item_pedido ? '/' + item.item_pedido : ''}` : '-'}</td>
                             <td className="border border-black p-1">{item.pedido ? romaneio.cliente_nome : ''}</td>
                             <td className="border border-black p-1 text-right">{item.peso_kg ? Number(item.peso_kg).toFixed(3) : '-'}</td>
                             <td className="border border-black p-1 text-right font-bold">

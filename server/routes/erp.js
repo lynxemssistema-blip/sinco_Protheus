@@ -25,6 +25,22 @@ const extOf = (name = '') => (String(name).split('?')[0].split('.').pop() || '')
     }
 })();
 
+// Ensure d_e_l_e_t_ column on erp_produtos, erp_clientes, erp_pedidos_venda and erp_pedidos_itens for Protheus standard soft delete (idempotent)
+(async () => {
+    try {
+        const softDeleteTables = ['erp_produtos', 'erp_clientes', 'erp_pedidos_venda', 'erp_pedidos_itens'];
+        for (const tbl of softDeleteTables) {
+            const [cols] = await mysql.query(`SHOW COLUMNS FROM ${tbl} LIKE 'd_e_l_e_t_'`);
+            if (!cols.length) {
+                await mysql.query(`ALTER TABLE ${tbl} ADD COLUMN d_e_l_e_t_ VARCHAR(1) NOT NULL DEFAULT ' '`);
+                console.log(`✅ [ERP] Coluna ${tbl}.d_e_l_e_t_ adicionada.`);
+            }
+        }
+    } catch (err) {
+        console.warn('⚠️ [ERP] Falha ao garantir colunas d_e_l_e_t_ no ERP:', err.message);
+    }
+})();
+
 // Order lifecycle: orcamento -> pedido (requires customer PO + attachment) | cancelado
 const STATUS_PEDIDO = ['orcamento', 'pedido', 'cancelado'];
 const PEDIDO_ANEXOS_DIR = path.join(__dirname, '../uploads/pedidos_anexos');
@@ -182,9 +198,18 @@ router.get('/stats', async (req, res) => {
             ? ' WHERE IdEmpresa = ? AND status != "cancelada"' 
             : ' WHERE status != "cancelada"';
 
-        const paWhere = tenantId ? ' WHERE IdEmpresa = ? AND tipo = "PA"' : ' WHERE tipo = "PA"';
-        const piWhere = tenantId ? ' WHERE IdEmpresa = ? AND tipo = "PI"' : ' WHERE tipo = "PI"';
-        const mpWhere = tenantId ? ' WHERE IdEmpresa = ? AND tipo = "MP"' : ' WHERE tipo = "MP"';
+        const prodWhere = tenantId 
+            ? " WHERE IdEmpresa = ? AND COALESCE(d_e_l_e_t_, ' ') <> '*'" 
+            : " WHERE COALESCE(d_e_l_e_t_, ' ') <> '*'";
+        const paWhere = tenantId 
+            ? " WHERE IdEmpresa = ? AND tipo = 'PA' AND COALESCE(d_e_l_e_t_, ' ') <> '*'" 
+            : " WHERE tipo = 'PA' AND COALESCE(d_e_l_e_t_, ' ') <> '*'";
+        const piWhere = tenantId 
+            ? " WHERE IdEmpresa = ? AND tipo = 'PI' AND COALESCE(d_e_l_e_t_, ' ') <> '*'" 
+            : " WHERE tipo = 'PI' AND COALESCE(d_e_l_e_t_, ' ') <> '*'";
+        const mpWhere = tenantId 
+            ? " WHERE IdEmpresa = ? AND tipo = 'MP' AND COALESCE(d_e_l_e_t_, ' ') <> '*'" 
+            : " WHERE tipo = 'MP' AND COALESCE(d_e_l_e_t_, ' ') <> '*'";
 
         const [
             [[prod]],
@@ -196,7 +221,7 @@ router.get('/stats', async (req, res) => {
             [[ped]],
             [[ops]]
         ] = await Promise.all([
-            mysql.query(`SELECT COUNT(*) as total FROM erp_produtos${whereEmpresa}`, params),
+            mysql.query(`SELECT COUNT(*) as total FROM erp_produtos${prodWhere}`, params),
             mysql.query(`SELECT COUNT(*) as total FROM erp_produtos${paWhere}`, params),
             mysql.query(`SELECT COUNT(*) as total FROM erp_produtos${piWhere}`, params),
             mysql.query(`SELECT COUNT(*) as total FROM erp_produtos${mpWhere}`, params),
@@ -307,7 +332,7 @@ router.get('/produtos/lookup', async (req, res) => {
             format = ''
         } = req.query;
 
-        let baseQuery = " FROM erp_produtos WHERE status = 'ativo'";
+        let baseQuery = " FROM erp_produtos WHERE COALESCE(d_e_l_e_t_, ' ') <> '*' AND status = 'ativo'";
         const params = [];
         if (tenantId) {
             baseQuery += ' AND IdEmpresa = ?';
@@ -433,10 +458,10 @@ router.get('/produtos/lookup', async (req, res) => {
 router.get('/produtos/grupos', async (req, res) => {
     try {
         const tenantId = getTenantId(req);
-        let where = " WHERE codigo LIKE '%-%'";
+        let where = " WHERE COALESCE(d_e_l_e_t_, ' ') <> '*' AND codigo LIKE '%-%'";
         const params = [];
         if (tenantId) {
-            where = " WHERE IdEmpresa = ? AND codigo LIKE '%-%'";
+            where = " WHERE IdEmpresa = ? AND COALESCE(d_e_l_e_t_, ' ') <> '*' AND codigo LIKE '%-%'";
             params.push(tenantId);
         }
 
@@ -586,7 +611,7 @@ router.get('/produtos', async (req, res) => {
                    ) as tem_estrutura
             FROM erp_produtos p
             LEFT JOIN erp_produtos_cores c ON (p.cor_id = c.id)
-            WHERE 1=1
+            WHERE COALESCE(p.d_e_l_e_t_, ' ') <> '*'
         `;
         const params = [];
 
@@ -1027,16 +1052,77 @@ router.put('/produtos/:codigo', async (req, res) => {
     }
 });
 
+// 4.2 PRODUTOS: Excluir Produto (Soft Delete Protheus D_E_L_E_T_ = '*')
+router.delete('/produtos/:codigo', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        const { codigo } = req.params;
+        const codLimpo = String(codigo || '').trim();
+
+        if (!codLimpo) {
+            return res.status(400).json({ error: 'Código ou ID do produto não informado.' });
+        }
+
+        const isNumeric = /^\d+$/.test(codLimpo);
+        const [existente] = await mysql.query(
+            `SELECT id, codigo, descricao FROM erp_produtos WHERE (codigo = ? OR (? = 1 AND id = ?)) AND IdEmpresa = ? LIMIT 1`,
+            [codLimpo, isNumeric ? 1 : 0, isNumeric ? parseInt(codLimpo, 10) : -1, tenantId]
+        );
+
+        if (!existente || existente.length === 0) {
+            return res.status(404).json({ error: `Produto "${codLimpo}" não encontrado para exclusão.` });
+        }
+
+        const prod = existente[0];
+        const codigoReal = prod.codigo;
+
+        // 1. Soft Delete em erp_produtos (d_e_l_e_t_ = '*', status = 'inativo')
+        await mysql.query(
+            `UPDATE erp_produtos SET d_e_l_e_t_ = '*', status = 'inativo', updated_at = NOW() WHERE id = ? AND IdEmpresa = ?`,
+            [prod.id, tenantId]
+        );
+
+        // 2. Soft Delete em sb1010 (Protheus SB1)
+        try {
+            await mysql.query(
+                `UPDATE sb1010 SET d_e_l_e_t_ = '*' WHERE b1_cod = ? AND (IdEmpresa = ? OR IdEmpresa IS NULL)`,
+                [codigoReal, tenantId]
+            );
+        } catch (sbErr) {
+            console.warn(`[ERP] Aviso ao aplicar soft delete em SB1010 (${codigoReal}):`, sbErr.message);
+        }
+
+        // 3. Soft Delete em sz1010 (Protheus SZ1 - Amarrações de clientes)
+        try {
+            await mysql.query(
+                `UPDATE sz1010 SET d_e_l_e_t_ = '*' WHERE z1_produto = ? AND (IdEmpresa = ? OR IdEmpresa IS NULL)`,
+                [codigoReal, tenantId]
+            );
+        } catch (szErr) {
+            console.warn(`[ERP] Aviso ao aplicar soft delete em SZ1010 (${codigoReal}):`, szErr.message);
+        }
+
+        res.json({
+            success: true,
+            message: `Produto ${codigoReal} excluído com sucesso (soft delete Protheus d_e_l_e_t_ = '*').`,
+            codigo: codigoReal
+        });
+    } catch (err) {
+        console.error('Erro em DELETE /api/erp/produtos/:codigo:', err);
+        res.status(500).json({ error: 'Erro ao excluir produto', detail: err.message });
+    }
+});
+
 // 5. CLIENTES: Lookup rápido para autocomplete nos pedidos
 router.get('/clientes/lookup', async (req, res) => {
     try {
         const tenantId = getTenantId(req);
         const { q = '' } = req.query;
         const term = `%${q.trim()}%`;
-        let where = ' WHERE (codigo LIKE ? OR razao_social LIKE ? OR nome_fantasia LIKE ? OR cnpj_cpf LIKE ?)';
+        let where = " WHERE COALESCE(d_e_l_e_t_, ' ') <> '*' AND (codigo LIKE ? OR razao_social LIKE ? OR nome_fantasia LIKE ? OR cnpj_cpf LIKE ?)";
         const params = [term, term, term, term];
         if (tenantId) {
-            where = ' WHERE IdEmpresa = ? AND (codigo LIKE ? OR razao_social LIKE ? OR nome_fantasia LIKE ? OR cnpj_cpf LIKE ?)';
+            where = " WHERE IdEmpresa = ? AND COALESCE(d_e_l_e_t_, ' ') <> '*' AND (codigo LIKE ? OR razao_social LIKE ? OR nome_fantasia LIKE ? OR cnpj_cpf LIKE ?)";
             params.unshift(tenantId);
         }
         const [rows] = await mysql.query(`
@@ -1080,7 +1166,7 @@ router.get('/clientes', async (req, res) => {
     try {
         const tenantId = getTenantId(req);
         const { search = '', limit = 50 } = req.query;
-        let query = 'SELECT * FROM erp_clientes WHERE 1=1';
+        let query = "SELECT * FROM erp_clientes WHERE COALESCE(d_e_l_e_t_, ' ') <> '*'";
         const params = [];
 
         if (tenantId) {
@@ -1277,6 +1363,57 @@ router.put('/clientes/:codigo', async (req, res) => {
     } catch (err) {
         console.error('Erro em PUT /api/erp/clientes/:codigo:', err);
         res.status(500).json({ error: 'Erro ao atualizar cliente', detail: err.message });
+    }
+});
+
+// 6.3. CLIENTES: Excluir Cliente (Soft Delete Protheus D_E_L_E_T_ = '*')
+router.delete('/clientes/:codigo', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req) || 1;
+        const { codigo } = req.params;
+        const codLimpo = String(codigo || '').trim();
+
+        if (!codLimpo) {
+            return res.status(400).json({ error: 'Código ou ID do cliente não informado.' });
+        }
+
+        const isNumeric = /^\d+$/.test(codLimpo);
+        const [existente] = await mysql.query(
+            `SELECT id, codigo, razao_social FROM erp_clientes WHERE (codigo = ? OR (? = 1 AND id = ?)) AND IdEmpresa = ? LIMIT 1`,
+            [codLimpo, isNumeric ? 1 : 0, isNumeric ? parseInt(codLimpo, 10) : -1, tenantId]
+        );
+
+        if (!existente || existente.length === 0) {
+            return res.status(404).json({ error: `Cliente "${codLimpo}" não encontrado para exclusão.` });
+        }
+
+        const cli = existente[0];
+        const codigoReal = cli.codigo;
+
+        // 1. Soft Delete em erp_clientes (d_e_l_e_t_ = '*', status = 'inativo')
+        await mysql.query(
+            `UPDATE erp_clientes SET d_e_l_e_t_ = '*', status = 'inativo', updated_at = NOW() WHERE id = ? AND IdEmpresa = ?`,
+            [cli.id, tenantId]
+        );
+
+        // 2. Soft Delete em sa1010 (Protheus SA1)
+        try {
+            await mysql.query(
+                `UPDATE sa1010 SET d_e_l_e_t_ = '*' WHERE a1_cod = ? AND (IdEmpresa = ? OR IdEmpresa IS NULL)`,
+                [codigoReal, tenantId]
+            );
+        } catch (saErr) {
+            console.warn(`[ERP] Aviso ao aplicar soft delete em SA1010 (${codigoReal}):`, saErr.message);
+        }
+
+        res.json({
+            success: true,
+            message: `Cliente ${codigoReal} - ${cli.razao_social} excluído com sucesso (soft delete).`,
+            codigo: codigoReal
+        });
+    } catch (err) {
+        console.error('Erro em DELETE /api/erp/clientes/:codigo:', err);
+        res.status(500).json({ error: 'Erro ao excluir cliente', detail: err.message });
     }
 });
 
@@ -1617,6 +1754,12 @@ router.get('/pedidos', async (req, res) => {
             params.push(tenantId);
         }
 
+        // Por padrão, esconde pedidos com soft delete (d_e_l_e_t_ = '*'), a menos que filtrando especificamente por cancelados
+        const incluirCancelados = status === 'cancelado' || req.query.incluir_cancelados === 'true' || req.query.incluir_deletados === 'true';
+        if (!incluirCancelados) {
+            whereClause += " AND COALESCE(p.d_e_l_e_t_, ' ') <> '*'";
+        }
+
         if (search) {
             whereClause += ' AND (p.numero_pedido LIKE ? OR c.razao_social LIKE ? OR c.nome_fantasia LIKE ?)';
             const term = `%${search}%`;
@@ -1631,7 +1774,9 @@ router.get('/pedidos', async (req, res) => {
         const parsedLimit = Math.min(Math.max(parseInt(limit) || 150, 1), 500);
         params.push(parsedLimit);
 
-        const itemsWhere = tenantId ? 'WHERE i.IdEmpresa = ?' : '';
+        const itemsWhere = tenantId 
+            ? "WHERE i.IdEmpresa = ? AND COALESCE(i.d_e_l_e_t_, ' ') <> '*'" 
+            : "WHERE COALESCE(i.d_e_l_e_t_, ' ') <> '*'";
         const itemsParams = tenantId ? [tenantId] : [];
 
         const query = `
@@ -1829,6 +1974,66 @@ router.put('/pedidos/:numero/status', async (req, res) => {
     }
 });
 
+// 7.2.1 PEDIDOS DE VENDA: Excluir / Cancelar Pedido (Soft Delete Protheus D_E_L_E_T_ = '*')
+router.delete('/pedidos/:numero', async (req, res) => {
+    try {
+        const tenantId = getTenantId(req);
+        const { numero } = req.params;
+
+        const pedido = await findPedidoHeader(tenantId, numero);
+        if (!pedido) {
+            return res.status(404).json({ error: 'Pedido/Orçamento não encontrado para exclusão.' });
+        }
+
+        // Verifica se há ordens de produção ativas vinculadas a este pedido
+        const [ops] = await mysql.query(
+            `SELECT numero_op FROM erp_ordens_producao
+             WHERE IdEmpresa = ? AND TRIM(pedido_venda) = TRIM(?) AND status != 'cancelada' LIMIT 1`,
+            [pedido.IdEmpresa, numero]
+        );
+        if (ops.length > 0) {
+            return res.status(400).json({ 
+                error: `Não é possível excluir o pedido ${numero}: existe Ordem de Produção ativa vinculada (OP: ${ops[0].numero_op}). Cancele a OP primeiro.` 
+            });
+        }
+
+        // 1. Soft Delete no cabeçalho do pedido (erp_pedidos_venda)
+        await mysql.query(
+            `UPDATE erp_pedidos_venda SET d_e_l_e_t_ = '*', status = 'cancelado', updated_at = NOW() WHERE id = ?`,
+            [pedido.id]
+        );
+
+        // 2. Soft Delete nos itens do pedido (erp_pedidos_itens)
+        await mysql.query(
+            `UPDATE erp_pedidos_itens SET d_e_l_e_t_ = '*', status = 'cancelado' WHERE pedido_numero = ? AND IdEmpresa = ?`,
+            [numero, pedido.IdEmpresa]
+        );
+
+        // 3. Soft Delete no Protheus SC5 (cabeçalho) e SC6 (itens)
+        try {
+            await mysql.query(
+                `UPDATE sc5010 SET d_e_l_e_t_ = '*' WHERE c5_num = ? AND (IdEmpresa = ? OR IdEmpresa IS NULL)`,
+                [numero, pedido.IdEmpresa]
+            );
+            await mysql.query(
+                `UPDATE sc6010 SET d_e_l_e_t_ = '*' WHERE c6_num = ? AND (IdEmpresa = ? OR IdEmpresa IS NULL)`,
+                [numero, pedido.IdEmpresa]
+            );
+        } catch (scErr) {
+            console.warn(`[ERP] Aviso ao aplicar soft delete em SC5/SC6 (${numero}):`, scErr.message);
+        }
+
+        res.json({
+            success: true,
+            message: `Pedido/Orçamento ${numero} excluído com sucesso (soft delete). Histórico preservado.`,
+            numero
+        });
+    } catch (err) {
+        console.error('Erro em DELETE /api/erp/pedidos/:numero:', err);
+        res.status(500).json({ error: 'Erro ao excluir pedido', detail: err.message });
+    }
+});
+
 // 7.3 PEDIDOS DE VENDA: Anexos (qualquer extensão, múltiplos arquivos)
 router.get('/pedidos/:numero/anexos', async (req, res) => {
     try {
@@ -1942,7 +2147,7 @@ router.get('/pedidos/:numero', async (req, res) => {
                    COALESCE(NULLIF(p.valor_total, 0), (
                        SELECT SUM(COALESCE(NULLIF(valor_total, 0), quantidade * preco_unitario)) 
                        FROM erp_pedidos_itens 
-                       WHERE pedido_numero = p.numero_pedido ${tenantId ? 'AND IdEmpresa = p.IdEmpresa' : ''}
+                       WHERE pedido_numero = p.numero_pedido AND COALESCE(d_e_l_e_t_, ' ') <> '*' ${tenantId ? 'AND IdEmpresa = p.IdEmpresa' : ''}
                    ), 0) as valor_total,
                    p.peso_total, p.tipo_frete, p.transportadora, p.status, p.observacoes, p.created_at, p.pedido_cliente, p.pasta_servidor, p.IdEmpresa,
                    c.razao_social as cliente_nome, c.cnpj_cpf, c.cidade, c.uf, c.telefone, c.email, c.logo_url as cliente_logo
@@ -1955,10 +2160,10 @@ router.get('/pedidos/:numero', async (req, res) => {
             return res.status(404).json({ error: 'Pedido não encontrado' });
         }
 
-        let whereItens = 'WHERE i.pedido_numero = ?';
+        let whereItens = "WHERE i.pedido_numero = ? AND COALESCE(i.d_e_l_e_t_, ' ') <> '*'";
         let paramsItens = [numero];
         if (tenantId) {
-            whereItens = 'WHERE i.IdEmpresa = ? AND i.pedido_numero = ?';
+            whereItens = "WHERE i.IdEmpresa = ? AND i.pedido_numero = ? AND COALESCE(i.d_e_l_e_t_, ' ') <> '*'";
             paramsItens = [tenantId, numero];
         }
 
@@ -2345,19 +2550,30 @@ router.delete('/pedidos/:numero/itens/:itemId', async (req, res) => {
             });
         }
 
-        let delSql = 'DELETE FROM erp_pedidos_itens WHERE id = ?';
+        // Soft delete no item (mantém histórico perpétuo para auditoria)
+        let delSql = "UPDATE erp_pedidos_itens SET d_e_l_e_t_ = '*', status = 'cancelado' WHERE id = ?";
         let delParams = [itemId];
         if (tenantId) {
-            delSql = 'DELETE FROM erp_pedidos_itens WHERE id = ? AND IdEmpresa = ?';
+            delSql = "UPDATE erp_pedidos_itens SET d_e_l_e_t_ = '*', status = 'cancelado' WHERE id = ? AND IdEmpresa = ?";
             delParams = [itemId, tenantId];
         }
         await conn.query(delSql, delParams);
 
-        // Recalcula totais
-        let sumSql = 'SELECT COALESCE(SUM(valor_total), 0) as total_pedido, COUNT(*) as total_itens FROM erp_pedidos_itens WHERE pedido_numero = ?';
+        // Sincroniza Protheus SC6
+        try {
+            await conn.query(
+                "UPDATE sc6010 SET d_e_l_e_t_ = '*' WHERE c6_num = ? AND c6_item = ? AND (IdEmpresa = ? OR IdEmpresa IS NULL)",
+                [numero, item.item_seq, tenantId]
+            );
+        } catch (sc6Err) {
+            console.warn(`[ERP] Aviso ao aplicar soft delete em SC6010 item ${item.item_seq}:`, sc6Err.message);
+        }
+
+        // Recalcula totais considerando apenas itens ativos
+        let sumSql = "SELECT COALESCE(SUM(valor_total), 0) as total_pedido, COUNT(*) as total_itens FROM erp_pedidos_itens WHERE pedido_numero = ? AND COALESCE(d_e_l_e_t_, ' ') <> '*'";
         let sumParams = [numero];
         if (tenantId) {
-            sumSql = 'SELECT COALESCE(SUM(valor_total), 0) as total_pedido, COUNT(*) as total_itens FROM erp_pedidos_itens WHERE IdEmpresa = ? AND pedido_numero = ?';
+            sumSql = "SELECT COALESCE(SUM(valor_total), 0) as total_pedido, COUNT(*) as total_itens FROM erp_pedidos_itens WHERE IdEmpresa = ? AND pedido_numero = ? AND COALESCE(d_e_l_e_t_, ' ') <> '*'";
             sumParams = [tenantId, numero];
         }
         const [[totais]] = await conn.query(sumSql, sumParams);
@@ -2555,7 +2771,7 @@ router.get('/ordens-producao', async (req, res) => {
         const tenantId = getTenantId(req);
         const { search = '', status = '', limit = 50, offset = 0 } = req.query;
 
-        let where = 'WHERE 1=1';
+        let where = "WHERE COALESCE(op.d_e_l_e_t_, ' ') <> '*'";
         const params = [];
         if (tenantId) {
             where += ' AND op.IdEmpresa = ?';
@@ -2575,7 +2791,20 @@ router.get('/ordens-producao', async (req, res) => {
 
         const query = `
             SELECT op.*, p.descricao as produto_descricao, p.unidade_medida, p.tipo as produto_tipo,
-                   p.peso_liquido, (op.quantidade_planejada * COALESCE(p.peso_liquido, 0)) as peso_total_planejado
+                   p.peso_liquido, (op.quantidade_planejada * COALESCE(p.peso_liquido, 0)) as peso_total_planejado,
+                   (
+                       (SELECT COUNT(*) FROM app_production_appointments apt 
+                        WHERE (apt.op_numero = op.numero_op OR op.numero_op LIKE CONCAT(apt.op_numero, '%') OR apt.op_numero LIKE CONCAT(op.numero_op, '%'))
+                          AND apt.quantidade > 0 AND COALESCE(apt.conferencia_status, '') NOT IN ('CANCELADO', 'DIVERGENTE'))
+                       +
+                       (SELECT COUNT(*) FROM app_ind_production_appointments ind
+                        WHERE (ind.op_fracionada = op.numero_op OR ind.op_base = op.numero_op OR op.numero_op LIKE CONCAT(ind.op_base, '%') OR ind.op_fracionada LIKE CONCAT(op.numero_op, '%'))
+                          AND ind.quantidade > 0)
+                       +
+                       (SELECT COUNT(*) FROM sh6010 sh
+                        WHERE (TRIM(sh.h6_op) = op.numero_op OR op.numero_op LIKE CONCAT(TRIM(sh.h6_op), '%') OR TRIM(sh.h6_op) LIKE CONCAT(op.numero_op, '%'))
+                          AND (sh.h6_qtdprod > 0 OR sh.h6_qtdperd > 0) AND COALESCE(sh.d_e_l_e_t_, ' ') <> '*')
+                   ) as total_apontamentos
             FROM erp_ordens_producao op
             LEFT JOIN erp_produtos p ON (op.produto_codigo = p.codigo ${tenantId ? 'AND p.IdEmpresa = op.IdEmpresa' : ''})
             ${where}
@@ -2665,6 +2894,140 @@ router.post('/ordens-producao', async (req, res) => {
         await conn.rollback();
         console.error('Erro ao abrir ordem de produção:', err);
         res.status(500).json({ error: 'Erro ao abrir ordem de produção', detail: err.message });
+    } finally {
+        conn.release();
+    }
+});
+
+// 13. ORDENS DE PRODUÇÃO: Excluir OP (Apenas se NÃO tiver apontamento)
+router.delete('/ordens-producao/:numeroOp', async (req, res) => {
+    const conn = await mysql.getConnection();
+    try {
+        const tenantId = getTenantId(req);
+        const numeroOp = String(req.params.numeroOp || '').trim();
+
+        // 1. Verificar se a OP existe e calcular apontamentos
+        const tenantCondition = tenantId ? 'AND op.IdEmpresa = ?' : '';
+        const params = tenantId ? [numeroOp, tenantId] : [numeroOp];
+
+        const query = `
+            SELECT op.*,
+                   (
+                       (SELECT COUNT(*) FROM app_production_appointments apt 
+                        WHERE (apt.op_numero = op.numero_op OR op.numero_op LIKE CONCAT(apt.op_numero, '%') OR apt.op_numero LIKE CONCAT(op.numero_op, '%'))
+                          AND apt.quantidade > 0 AND COALESCE(apt.conferencia_status, '') NOT IN ('CANCELADO', 'DIVERGENTE'))
+                       +
+                       (SELECT COUNT(*) FROM app_ind_production_appointments ind
+                        WHERE (ind.op_fracionada = op.numero_op OR ind.op_base = op.numero_op OR op.numero_op LIKE CONCAT(ind.op_base, '%') OR ind.op_fracionada LIKE CONCAT(op.numero_op, '%'))
+                          AND ind.quantidade > 0)
+                       +
+                       (SELECT COUNT(*) FROM sh6010 sh
+                        WHERE (TRIM(sh.h6_op) = op.numero_op OR op.numero_op LIKE CONCAT(TRIM(sh.h6_op), '%') OR TRIM(sh.h6_op) LIKE CONCAT(op.numero_op, '%'))
+                          AND (sh.h6_qtdprod > 0 OR sh.h6_qtdperd > 0) AND COALESCE(sh.d_e_l_e_t_, ' ') <> '*')
+                   ) as total_apontamentos
+            FROM erp_ordens_producao op
+            WHERE (op.numero_op = ? OR op.id = ?)
+            ${tenantCondition}
+            LIMIT 1
+        `;
+        const lookupParams = tenantId ? [numeroOp, numeroOp, tenantId] : [numeroOp, numeroOp];
+        const [ops] = await conn.query(query, lookupParams);
+
+        if (ops.length === 0) {
+            return res.status(404).json({ error: 'Ordem de Produção não encontrada.' });
+        }
+
+        const op = ops[0];
+        const totalApontamentos = Number(op.total_apontamentos || 0);
+        const qtdProduzida = parseFloat(op.quantidade_produzida || 0);
+
+        // REGRA DE SEGURANÇA: Se tem apontamentos, NÃO PODE EXCLUIR!
+        if (totalApontamentos > 0 || qtdProduzida > 0) {
+            return res.status(400).json({
+                error: `Esta OP possui ${totalApontamentos} apontamento(s) de produção registrados (${qtdProduzida} un. produzidas). Ordens com apontamento NÃO podem ser excluídas para manter o histórico de chão de fábrica. Utilize a opção de Cancelamento.`,
+                hasApontamentos: true,
+                totalApontamentos,
+                qtdProduzida
+            });
+        }
+
+        await conn.beginTransaction();
+
+        // Soft delete em erp_ordens_producao
+        const updateParams = tenantId ? [op.id, tenantId] : [op.id];
+        await conn.query(`
+            UPDATE erp_ordens_producao 
+            SET d_e_l_e_t_ = '*', status = 'excluida', updated_at = NOW() 
+            WHERE id = ? ${tenantCondition}
+        `, updateParams);
+
+        // Sincroniza exclusão lógica em sc2010 se existir
+        try {
+            await conn.query(`
+                UPDATE sc2010 
+                SET d_e_l_e_t_ = '*' 
+                WHERE TRIM(c2_num) = ? OR ? LIKE CONCAT(TRIM(c2_num), '%')
+            `, [op.numero_op, op.numero_op]);
+        } catch (sc2Err) {
+            console.warn('Aviso ao sincronizar sc2010 na exclusão de OP:', sc2Err.message);
+        }
+
+        await conn.commit();
+
+        res.json({
+            success: true,
+            message: `Ordem de Produção ${op.numero_op} excluída com sucesso (sem apontamentos).`
+        });
+    } catch (err) {
+        await conn.rollback();
+        console.error('Erro ao excluir OP:', err);
+        res.status(500).json({ error: 'Erro ao excluir ordem de produção', detail: err.message });
+    } finally {
+        conn.release();
+    }
+});
+
+// 14. ORDENS DE PRODUÇÃO: Cancelar OP (Para OPs com ou sem apontamento)
+router.post('/ordens-producao/:numeroOp/cancelar', async (req, res) => {
+    const conn = await mysql.getConnection();
+    try {
+        const tenantId = getTenantId(req);
+        const numeroOp = String(req.params.numeroOp || '').trim();
+
+        const tenantCondition = tenantId ? 'AND IdEmpresa = ?' : '';
+        const lookupParams = tenantId ? [numeroOp, numeroOp, tenantId] : [numeroOp, numeroOp];
+
+        const [ops] = await conn.query(`
+            SELECT * FROM erp_ordens_producao 
+            WHERE (numero_op = ? OR id = ?) ${tenantCondition}
+            LIMIT 1
+        `, lookupParams);
+
+        if (ops.length === 0) {
+            return res.status(404).json({ error: 'Ordem de Produção não encontrada.' });
+        }
+
+        const op = ops[0];
+
+        await conn.beginTransaction();
+
+        const updateParams = tenantId ? [op.id, tenantId] : [op.id];
+        await conn.query(`
+            UPDATE erp_ordens_producao 
+            SET status = 'cancelada', updated_at = NOW() 
+            WHERE id = ? ${tenantCondition}
+        `, updateParams);
+
+        await conn.commit();
+
+        res.json({
+            success: true,
+            message: `Ordem de Produção ${op.numero_op} cancelada com sucesso. O histórico de apontamentos foi preservado.`
+        });
+    } catch (err) {
+        await conn.rollback();
+        console.error('Erro ao cancelar OP:', err);
+        res.status(500).json({ error: 'Erro ao cancelar ordem de produção', detail: err.message });
     } finally {
         conn.release();
     }

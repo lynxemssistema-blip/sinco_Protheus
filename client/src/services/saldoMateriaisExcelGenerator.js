@@ -396,7 +396,8 @@ export const generateSaldoMateriaisExcel = async (items = [], filters = {}, user
     // =========================================================================
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const fileName = `MetalFisa_Saldo_Materiais_${fileTimestamp}.xlsx`;
+    const cleanPrefix = (getCompanyShortName() || 'SINCO').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `${cleanPrefix}_Saldo_Materiais_${fileTimestamp}.xlsx`;
 
     downloadBlob(blob, fileName);
     return fileName;

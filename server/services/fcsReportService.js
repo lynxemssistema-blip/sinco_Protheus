@@ -78,32 +78,33 @@ const utilizationColor = (pct) => {
     return GREEN;
 };
 
-const LOGO_PATH = path.join(__dirname, "../public/metalfisa-logo.png");
-// Dimensões reais do logo: 139×130px — proporção ~1.069:1
-// ExcelJS usa EMU (English Metric Units): 1px ≈ 9525 EMU
-const LOGO_W_EMU = Math.round(110 * 9525); // 110px de largura → preserva proporção sem esticar
-const LOGO_H_EMU = Math.round(103 * 9525); // 103px de altura (110 / 1.069 ≈ 103)
-function addLogoToSheet(wb, ws, topLeftCol = 0, topLeftRow = 0) {
-    if (!fs.existsSync(LOGO_PATH)) return;
-    try {
-        const imageId = wb.addImage({ filename: LOGO_PATH, extension: "png" });
-        ws.addImage(imageId, {
-            tl: { col: topLeftCol, row: topLeftRow },
-            ext: { width: LOGO_W_EMU / 9525, height: LOGO_H_EMU / 9525 }, // em pixels, ExcelJS converte
-            editAs: "absolute",  // não estica com a célula
-        });
-    } catch (_) {}
+const mysqlPool = require("./mysqlService");
+
+function addLogoToSheet(wb, ws, company, topLeftCol = 0, topLeftRow = 0) {
+    if (company && company.logo_base64 && typeof company.logo_base64 === "string" && company.logo_base64.startsWith("data:image")) {
+        try {
+            const base64Data = company.logo_base64.split(",")[1] || company.logo_base64;
+            const ext = company.logo_base64.includes("jpeg") || company.logo_base64.includes("jpg") ? "jpeg" : "png";
+            const imageId = wb.addImage({ base64: base64Data, extension: ext });
+            ws.addImage(imageId, {
+                tl: { col: topLeftCol, row: topLeftRow },
+                ext: { width: 110, height: 42 },
+                editAs: "absolute",
+            });
+        } catch (_) {}
+    }
 }
 
-function buildHeader(wb, ws, cols, titulo, subtitulo, planejador, dataBase, geradoEm) {
+function buildHeader(wb, ws, cols, titulo, subtitulo, planejador, dataBase, geradoEm, company) {
     ws.views = [{ showGridLines: false }];
     ws.mergeCells("A1:" + cols + "2");
     const hCell = ws.getCell("A1");
-    hCell.value = "LYNX INDUSTRIA E COMERCIO LTDA";
+    const compName = (company?.razao_social || company?.nome_fantasia || "SINCO INDUSTRIAL").toUpperCase();
+    hCell.value = compName;
     setFill(hCell, NAVY); setFont(hCell, { bold: true, size: 16, color: { argb: WHITE } });
     setAlign(hCell, "center", "middle");
     ws.getRow(1).height = 22; ws.getRow(2).height = 22;
-    addLogoToSheet(wb, ws, 0, 0); // col=0 row=0 — tamanho fixo, sem distorção
+    addLogoToSheet(wb, ws, company, 0, 0);
     ws.mergeCells("A3:" + cols + "3");
     const tCell = ws.getCell("A3");
     tCell.value = titulo;
@@ -135,7 +136,7 @@ function buildSheetCapa(wb, ws, report, meta) {
     buildHeader(wb, ws, "F",
         "Relatorio de Planejamento Inteligente FCS",
         "Agente FCS - " + (report.total_ops || 0) + " OPs processadas - " + Object.keys(report.resumo_recursos || {}).length + " Recursos",
-        report.planejador, report.data_base, meta.geradoEm);
+        report.planejador, report.data_base, meta.geradoEm, meta.company);
 
     let curRow = 11;
 
@@ -987,9 +988,18 @@ async function generateExcelReport(report) {
     const geradoEm = new Date().toLocaleString("pt-BR", {
         timeZone: "America/Sao_Paulo", day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit"
     });
+    let company = null;
+    try {
+        const [compRows] = await mysqlPool.query(
+            "SELECT razao_social, nome_fantasia, cnpj, logo_base64 FROM app_company_settings ORDER BY id ASC LIMIT 1"
+        );
+        if (compRows && compRows.length > 0) company = compRows[0];
+    } catch (_) {}
+
     const wb = new ExcelJS.Workbook();
-    wb.creator = "Lynx - Agente FCS"; wb.created = new Date(); wb.modified = new Date();
-    buildSheetCapa(wb, wb.addWorksheet("Capa"), report, { geradoEm });
+    wb.creator = (company?.nome_fantasia || company?.razao_social || "Lynx") + " - Agente FCS"; 
+    wb.created = new Date(); wb.modified = new Date();
+    buildSheetCapa(wb, wb.addWorksheet("Capa"), report, { geradoEm, company });
     buildSheetProgDiaria(wb, wb.addWorksheet("Prog. Diária"), report);
     buildSheetPorRecurso(wb, wb.addWorksheet("Por Recurso"), report);
     buildSheetCargaGeral(wb, wb.addWorksheet("Carga Geral"), report);

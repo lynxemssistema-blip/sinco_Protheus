@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import SunEditor from 'suneditor-react';
 import 'suneditor/dist/css/suneditor.min.css';
-import metalfisaLogo from '../../assets/metalfisa-logo.png';
+import { getCompanyLogoBase64, getCompanyShortName } from '../../services/companyBranding';
 import { 
     FileText,
     HelpCircle,
@@ -39,7 +39,11 @@ const DocumentHeader = ({ headerData, setHeaderData, activeSector }) => {
                 <tbody>
                     <tr>
                         <td rowSpan="6" style={{ width: '25%', border: '1px solid #000', padding: '10px' }}>
-                            <img src={metalfisaLogo} alt="Lynx" style={{ maxWidth: '100%', height: 'auto', maxHeight: '60px', margin: '0 auto' }} />
+                            {getCompanyLogoBase64() ? (
+                                <img src={getCompanyLogoBase64()} alt={getCompanyShortName()} style={{ maxWidth: '100%', height: 'auto', maxHeight: '60px', margin: '0 auto', objectFit: 'contain' }} />
+                            ) : (
+                                <div style={{ fontWeight: 'bold', fontSize: '11pt', color: '#111' }}>{getCompanyShortName()}</div>
+                            )}
                         </td>
                         <td rowSpan="2" style={{ width: '45%', border: '1px solid #000', fontWeight: 'bold', fontSize: '12pt', color: '#555' }}>
                             SISTEMA DE GESTÃO DA QUALIDADE

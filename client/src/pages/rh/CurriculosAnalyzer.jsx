@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Plus, Upload, Users, FileText, CheckCircle, XCircle, Clock, ChevronRight, MessageSquare, Download, ListChecks } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
+import DOMPurify from 'dompurify';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
 
@@ -234,10 +235,12 @@ const CurriculosAnalyzer = () => {
     
             return (
                 <div key={i} className="text-slate-600 leading-relaxed mb-1 text-[13px] text-justify" dangerouslySetInnerHTML={{ 
-                    __html: content
-                        .replace(linkRegex, (match) => `<a href="${match.startsWith('http') ? match : 'https://' + match}" target="_blank" class="text-blue-600 hover:underline cursor-pointer break-all">${match}</a>`)
-                        .replace(emailRegex, '<strong class="text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded font-semibold">$1</strong>')
-                        .replace(phoneRegex, '<strong class="text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded font-semibold">$1</strong>') 
+                    __html: DOMPurify.sanitize(
+                        content
+                            .replace(linkRegex, (match) => `<a href="${match.startsWith('http') ? match : 'https://' + match}" target="_blank" class="text-blue-600 hover:underline cursor-pointer break-all">${match}</a>`)
+                            .replace(emailRegex, '<strong class="text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded font-semibold">$1</strong>')
+                            .replace(phoneRegex, '<strong class="text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded font-semibold">$1</strong>')
+                    )
                 }} />
             );
         });

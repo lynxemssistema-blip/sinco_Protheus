@@ -146,6 +146,8 @@ export default function ErpClientesPage() {
     const [saving, setSaving] = useState(false);
     const [searchingCnpj, setSearchingCnpj] = useState(false);
     const [activeTab, setActiveTab] = useState('dados'); // 'dados' | 'contatos' | 'receita' | 'enderecos'
+    const [clienteToDelete, setClienteToDelete] = useState(null);
+    const [deletingClienteLoading, setDeletingClienteLoading] = useState(false);
 
     // Form state
     const initialForm = {
@@ -542,6 +544,27 @@ export default function ErpClientesPage() {
         }
     };
 
+    const handleDeleteCliente = (c) => {
+        setClienteToDelete(c);
+    };
+
+    const confirmDeleteCliente = async () => {
+        if (!clienteToDelete) return;
+        setDeletingClienteLoading(true);
+        try {
+            await api.delete(`/erp/clientes/${clienteToDelete.codigo}`);
+            await loadClientes();
+            setClienteToDelete(null);
+            setIsModalOpen(false);
+        } catch (err) {
+            console.error('Erro ao excluir cliente:', err);
+            const msg = err.response?.data?.error || 'Erro ao excluir cliente.';
+            alert(msg);
+        } finally {
+            setDeletingClienteLoading(false);
+        }
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSaving(true);
@@ -908,13 +931,22 @@ export default function ErpClientesPage() {
                                                 </span>
                                             </td>
                                             <td className="py-3.5 px-4 text-right">
-                                                <button
-                                                    onClick={() => handleOpenModal(c)}
-                                                    className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition"
-                                                    title="Editar Cliente"
-                                                >
-                                                    <Edit3 className="w-4 h-4" />
-                                                </button>
+                                                <div className="flex items-center justify-end gap-1">
+                                                    <button
+                                                        onClick={() => handleOpenModal(c)}
+                                                        className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition"
+                                                        title="Editar Cliente"
+                                                    >
+                                                        <Edit3 className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteCliente(c)}
+                                                        className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                                                        title="Excluir Cliente"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -2006,6 +2038,16 @@ export default function ErpClientesPage() {
                                     )}
                                 </div>
                                 <div className="flex items-center gap-3">
+                                    {editingClient && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDeleteCliente(editingClient)}
+                                            className="px-3 py-2 rounded-lg text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition flex items-center gap-1.5 mr-auto"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                            Excluir Cliente
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
                                         onClick={() => setIsModalOpen(false)}
@@ -2024,6 +2066,51 @@ export default function ErpClientesPage() {
                                 </div>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Confirmação de Exclusão (Soft Delete) */}
+            {clienteToDelete && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-xl shadow-2xl border border-red-100 max-w-md w-full p-6 space-y-4">
+                        <div className="flex items-start gap-4">
+                            <div className="p-3 bg-red-100 text-red-600 rounded-full shrink-0">
+                                <AlertTriangle className="w-6 h-6 text-red-600" />
+                            </div>
+                            <div className="space-y-1">
+                                <h3 className="text-lg font-bold text-gray-900">
+                                    Excluir Cliente {clienteToDelete.codigo}?
+                                </h3>
+                                <p className="text-sm text-gray-600">
+                                    Esta ação inativará o cliente do sistema. Os dados e histórico de pedidos permanecerão intactos no banco de dados para segurança e auditoria fiscal, mas ele não constará nas listagens ativas.
+                                </p>
+                                <div className="text-xs bg-gray-50 p-2.5 rounded-lg border border-gray-100 mt-2 text-gray-700">
+                                    <span className="font-semibold">Razão Social:</span> {clienteToDelete.razao_social || clienteToDelete.nome_fantasia || '-'}<br />
+                                    <span className="font-semibold">CNPJ/CPF:</span> {formatarDocumento(clienteToDelete.cnpj_cpf, clienteToDelete.tipo_pessoa)}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                            <button
+                                type="button"
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                                onClick={() => setClienteToDelete(null)}
+                                disabled={deletingClienteLoading}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                                onClick={confirmDeleteCliente}
+                                disabled={deletingClienteLoading}
+                            >
+                                {deletingClienteLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                {deletingClienteLoading ? 'Excluindo...' : 'Confirmar Exclusão'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

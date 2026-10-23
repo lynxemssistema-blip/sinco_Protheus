@@ -235,8 +235,8 @@ export const getProductionOrders = async (params) => {
     return response.data;
 };
 
-export const getProductionOrdersByOp = async (op, item, sequencia, client, product) => {
-    const response = await api.get('/producao/op', { params: { op, item, sequencia, client, product } });
+export const getProductionOrdersByOp = async (op, item, sequencia, client, product, pedido) => {
+    const response = await api.get('/producao/op', { params: { op, item, sequencia, client, product, pedido } });
     return response.data;
 };
 
@@ -657,10 +657,16 @@ export const getPCPForecastHistory = (pedido, item) => api.get(`/pedidos/items/$
 
 export const getFileUrl = (path) => {
     if (!path) return '';
-    if (path.startsWith('http')) return path;
+    const token = localStorage.getItem('@Lynx:token') || localStorage.getItem('@LynxEMS:token') || localStorage.getItem('token') || '';
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+        if (path.includes('/api/docs/view') && !path.includes('token=') && token) {
+            const separator = path.includes('?') ? '&' : '?';
+            return `${path}${separator}token=${encodeURIComponent(token)}`;
+        }
+        return path;
+    }
     const base = getBaseUrl();
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
-    const token = localStorage.getItem('@Lynx:token');
     if (token && (cleanPath.startsWith('/api/docs/view') || cleanPath.startsWith('/uploads')) && !cleanPath.includes('token=')) {
         const separator = cleanPath.includes('?') ? '&' : '?';
         return `${base}${cleanPath}${separator}token=${encodeURIComponent(token)}`;

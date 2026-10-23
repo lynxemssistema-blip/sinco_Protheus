@@ -17,6 +17,7 @@ import GlobalTimerWidget from './components/GlobalTimerWidget';
 import HelpDrawer from './components/HelpDrawer';
 import EmailBlockerModal from './components/EmailBlockerModal';
 import TenantTopBar from './components/TenantTopBar';
+import MobileBottomNav from './components/MobileBottomNav';
 
 const GestaoColaboradores = React.lazy(() => import('./pages/empresa/GestaoColaboradores'));
 const SuperadminEmpresas = React.lazy(() => import('./pages/admin/SuperadminEmpresas'));
@@ -108,7 +109,6 @@ const MeuCanal = React.lazy(() => import('./pages/MeuCanal'));
 
 const Analise3DPage = React.lazy(() => import('./pages/Analise3DPage'));
 const TaxaOcupacao = React.lazy(() => import('./pages/pcp-refinado/TaxaOcupacao'));
-const RastreabilidadePCP = React.lazy(() => import('./pages/pcp-refinado/RastreabilidadePCP'));
 const TVDashboard = React.lazy(() => import('./pages/TVDashboard'));
 const CalendarioAtividades = React.lazy(() => import('./pages/CalendarioAtividades'));
 const PropostaComercialSuperAdmin = React.lazy(() => import('./pages/admin/PropostaComercialSuperAdmin'));
@@ -235,7 +235,7 @@ const Layout = ({ children, fullWidth = true }) => {
     }, [location.pathname, isMobile]);
 
     return (
-        <div className="min-h-screen bg-gray-50 font-sans text-gray-900 flex print:block">
+        <div className="min-h-[100dvh] h-[100dvh] bg-gray-50 font-sans text-gray-900 flex print:block">
 
             <Sidebar
                 isOpen={isSidebarOpen}
@@ -244,7 +244,7 @@ const Layout = ({ children, fullWidth = true }) => {
             />
 
             {/* Main Content */}
-            <main className={`flex-1 flex flex-col h-screen overflow-hidden w-full transition-all duration-300 relative ${isOpen && isPinned && !isMobile ? 'pr-[420px]' : ''}`}>
+            <main className={`flex-1 flex flex-col h-[100dvh] overflow-hidden w-full transition-all duration-300 relative ${isOpen && isPinned && !isMobile ? 'pr-[420px]' : ''}`}>
                 <TenantTopBar />
                 <EmailBlockerModal />
                 {!isPortalCliente && <FloatingAvisos />}
@@ -254,15 +254,16 @@ const Layout = ({ children, fullWidth = true }) => {
                 <header className="md:hidden bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-30 print:hidden">
                     <h1 className="text-lg font-bold text-slate-900">Lynx PCP</h1>
                     <button
-                        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg min-w-[44px] min-h-[44px] flex items-center justify-center"
                         onClick={() => setIsSidebarOpen(true)}
+                        aria-label="Abrir Menu Lateral"
                     >
                         <Menu className="h-6 w-6" />
                     </button>
                 </header>
 
                 {/* Scrollable Area */}
-                <div className="flex-1 overflow-auto p-1 md:p-2 w-full print:overflow-visible print:h-auto print:p-0">
+                <div className="flex-1 overflow-auto p-1 md:p-2 pb-20 md:pb-2 w-full touch-scroll print:overflow-visible print:h-auto print:p-0">
                     <div className={`${fullWidth ? 'w-full' : 'max-w-7xl mx-auto'} space-y-2 sm:space-y-3`}>
                         {children}
                     </div>
@@ -274,10 +275,15 @@ const Layout = ({ children, fullWidth = true }) => {
                         onClick={toggleHelp}
                         title="Ajuda desta tela"
                         aria-label="Abrir ajuda contextual"
-                        className="fixed bottom-6 right-6 z-[990] w-12 h-12 rounded-full bg-slate-900 text-white shadow-2xl hover:bg-blue-600 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 print:hidden"
+                        className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[990] w-12 h-12 rounded-full bg-slate-900 text-white shadow-2xl hover:bg-blue-600 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 print:hidden"
                     >
                         <HelpCircle className="h-5 w-5" />
                     </button>
+                )}
+
+                {/* Mobile Bottom Navigation Bar (Fixo para Celulares e iPhones) */}
+                {!isPortalCliente && (
+                    <MobileBottomNav onOpenMenu={() => setIsSidebarOpen(true)} />
                 )}
             </main>
         </div>
@@ -539,11 +545,7 @@ function App() {
                                         } />
                                         <Route path="/settings" element={<Navigate to="/configuracoes" replace />} />
 
-                                        <Route path="/pcp-refinado/rastreabilidade" element={
-                                            <Layout fullWidth={true}>
-                                                <RastreabilidadePCP />
-                                            </Layout>
-                                        } />
+                                        <Route path="/pcp-refinado/rastreabilidade" element={<Navigate to="/pcp-refinado/ocupacao" replace />} />
                                         <Route path="/producao/relatorios" element={<Navigate to="/visao-geral" replace />} />
                                         <Route path="/relatorios" element={<Navigate to="/visao-geral" replace />} />
                                         <Route path="/sgq" element={

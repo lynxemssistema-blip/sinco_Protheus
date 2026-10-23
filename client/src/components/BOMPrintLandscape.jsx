@@ -1,6 +1,6 @@
 import React from 'react';
 import { Printer, Package, Wrench, Layers, CheckCircle2, Clock, Calendar, AlertTriangle, GitFork, ShieldCheck } from 'lucide-react';
-import { logoBase64 } from '../services/metalfisaLogoBase64';
+import { getCompanyLogoBase64, getCompanyLegalName, getCompanyShortName } from '../services/companyBranding';
 
 const fmtDate = (raw) => {
     if (!raw) return '—';
@@ -187,19 +187,19 @@ export default function BOMPrintLandscape({ data, opNum, itemPv, pedido, produto
                     {/* ═══ CABEÇALHO PADRÃO OFICIAL LYNX ═══ */}
                     <div className="border-2 border-slate-800 rounded-t-lg overflow-hidden mb-3">
                         <div className="grid grid-cols-12 divide-x-2 divide-slate-800 bg-slate-50">
-                            {/* Logo */}
-                            <div className="col-span-3 p-2.5 flex flex-col items-center justify-center bg-white">
-                                {logoBase64 ? (
+                            {/* Logo & Empresa Ativa */}
+                            <div className="col-span-3 p-2.5 flex flex-col items-center justify-center bg-white text-center">
+                                {getCompanyLogoBase64() ? (
                                     <img 
-                                        src={logoBase64} 
-                                        alt="Logo Lynx" 
+                                        src={getCompanyLogoBase64()} 
+                                        alt={getCompanyShortName()} 
                                         className="h-11 object-contain max-w-full"
                                     />
                                 ) : (
-                                    <div className="font-extrabold text-lg text-slate-900 tracking-tight">LYNX</div>
+                                    <div className="font-extrabold text-lg text-slate-900 tracking-tight">{getCompanyShortName()}</div>
                                 )}
-                                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter mt-0.5">
-                                    Estruturas Metálicas
+                                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter mt-0.5 truncate max-w-full">
+                                    {getCompanyLegalName()}
                                 </span>
                             </div>
 

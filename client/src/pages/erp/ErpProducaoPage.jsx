@@ -4,7 +4,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import {
     Factory, Plus, Search, RefreshCw, CheckCircle2, AlertCircle,
     Calendar, Layers, Tag, Box, AlertTriangle, ArrowRight,
-    TrendingUp, Clock, X, FileText
+    TrendingUp, Clock, X, FileText, Trash2, Ban
 } from 'lucide-react';
 
 export default function ErpProducaoPage() {
@@ -20,6 +20,8 @@ export default function ErpProducaoPage() {
     const [modalError, setModalError] = useState(null);
     const [modalSuccess, setModalSuccess] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [opToAction, setOpToAction] = useState(null); // { op, type: 'excluir' | 'cancelar' }
+    const [actionLoading, setActionLoading] = useState(false);
 
     // Form state
     const today = new Date().toISOString().split('T')[0];
@@ -120,6 +122,26 @@ export default function ErpProducaoPage() {
             setModalError(msg);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const confirmAction = async () => {
+        if (!opToAction) return;
+        setActionLoading(true);
+        try {
+            if (opToAction.type === 'excluir') {
+                await api.delete(`/erp/ordens-producao/${encodeURIComponent(opToAction.op.numero_op)}`);
+            } else {
+                await api.post(`/erp/ordens-producao/${encodeURIComponent(opToAction.op.numero_op)}/cancelar`);
+            }
+            await loadOrdens();
+            setOpToAction(null);
+        } catch (err) {
+            console.error('Erro na ação da OP:', err);
+            const msg = err.response?.data?.error || err.message;
+            alert(msg);
+        } finally {
+            setActionLoading(false);
         }
     };
 
@@ -245,19 +267,20 @@ export default function ErpProducaoPage() {
                                 <th className="py-3 px-4">Previsão Fim</th>
                                 <th className="py-3 px-4">Prioridade</th>
                                 <th className="py-3 px-4">Status</th>
+                                <th className="py-3 px-4 text-right">Ações</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="9" className="py-12 text-center text-gray-500">
+                                    <td colSpan="10" className="py-12 text-center text-gray-500">
                                         <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
                                         Carregando ordens de produção...
                                     </td>
                                 </tr>
                             ) : ordens.length === 0 ? (
                                 <tr>
-                                    <td colSpan="9" className="py-12 text-center text-gray-500">
+                                    <td colSpan="10" className="py-12 text-center text-gray-500">
                                         Nenhuma ordem de produção encontrada.
                                     </td>
                                 </tr>
@@ -265,7 +288,17 @@ export default function ErpProducaoPage() {
                                 ordens.map((op) => (
                                     <tr key={op.id || op.numero_op} className="hover:bg-gray-50/80 transition">
                                         <td className="py-3.5 px-4 font-mono font-bold text-blue-700">
-                                            {op.numero_op}
+                                            <div className="flex items-center gap-1.5">
+                                                <span>{op.numero_op}</span>
+                                                {Number(op.total_apontamentos || 0) > 0 && (
+                                                    <span 
+                                                        className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200"
+                                                        title={`${op.total_apontamentos} apontamento(s) de chão de fábrica registrados`}
+                                                    >
+                                                        {op.total_apontamentos} apt
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="py-3.5 px-4">
                                             <div className="font-semibold text-gray-900 font-mono">{op.produto_codigo}</div>
@@ -304,6 +337,34 @@ export default function ErpProducaoPage() {
                                             }`}>
                                                 {op.status || 'aberta'}
                                             </span>
+                                        </td>
+                                        <td className="py-3.5 px-4 text-right">
+                                            <div className="flex items-center justify-end gap-1.5">
+                                                {Number(op.total_apontamentos || 0) === 0 && parseFloat(op.quantidade_produzida || 0) === 0 ? (
+                                                    <button
+                                                        onClick={() => setOpToAction({ op, type: 'excluir' })}
+                                                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition"
+                                                        title="Excluir OP (Sem Apontamentos)"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                        <span className="hidden sm:inline">Excluir</span>
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => setOpToAction({ op, type: 'cancelar' })}
+                                                        disabled={op.status === 'cancelada'}
+                                                        className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border transition ${
+                                                            op.status === 'cancelada'
+                                                                ? 'opacity-40 cursor-not-allowed bg-gray-50 text-gray-400 border-gray-200'
+                                                                : 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200'
+                                                        }`}
+                                                        title={op.status === 'cancelada' ? 'OP já está cancelada' : `Cancelar OP (${op.total_apontamentos} apontamentos registrados)`}
+                                                    >
+                                                        <Ban className="w-3.5 h-3.5" />
+                                                        <span className="hidden sm:inline">{op.status === 'cancelada' ? 'Cancelada' : 'Cancelar'}</span>
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))
@@ -591,6 +652,72 @@ export default function ErpProducaoPage() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Confirmação: Excluir OP (sem apontamento) ou Cancelar OP (com apontamento) */}
+            {opToAction && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white rounded-xl shadow-2xl border border-gray-200 max-w-md w-full p-6 space-y-4">
+                        <div className="flex items-start gap-4">
+                            <div className={`p-3 rounded-full shrink-0 ${
+                                opToAction.type === 'excluir' 
+                                    ? 'bg-red-100 text-red-600' 
+                                    : 'bg-amber-100 text-amber-700'
+                            }`}>
+                                {opToAction.type === 'excluir' ? <Trash2 size={24} /> : <Ban size={24} />}
+                            </div>
+                            <div className="space-y-1">
+                                <h3 className="text-lg font-bold text-gray-900">
+                                    {opToAction.type === 'excluir' 
+                                        ? `Excluir OP ${opToAction.op.numero_op}?` 
+                                        : `Cancelar OP ${opToAction.op.numero_op}?`}
+                                </h3>
+                                <p className="text-sm text-gray-600">
+                                    {opToAction.type === 'excluir' ? (
+                                        <>Esta Ordem de Produção <strong>não possui apontamentos</strong> e será excluída do sistema com segurança.</>
+                                    ) : (
+                                        <>Esta OP possui <strong>{opToAction.op.total_apontamentos || 0} apontamento(s) de chão de fábrica</strong> ({parseFloat(opToAction.op.quantidade_produzida || 0).toLocaleString('pt-BR')} un. produzidas). Conforme a regra de rastreabilidade fabril, ela não pode ser excluída, mas seu status passará para <strong>CANCELADA</strong>, preservando 100% dos dados para auditoria.</>
+                                    )}
+                                </p>
+                                <div className="text-xs bg-gray-50 p-2.5 rounded-lg border border-gray-100 mt-2 text-gray-700 space-y-1">
+                                    <div><span className="font-semibold">Produto:</span> {opToAction.op.produto_codigo} {opToAction.op.produto_descricao ? `- ${opToAction.op.produto_descricao}` : ''}</div>
+                                    <div><span className="font-semibold">Qtd Planejada:</span> {parseFloat(opToAction.op.quantidade_planejada || 0).toLocaleString('pt-BR')} {opToAction.op.unidade_medida || 'UN'}</div>
+                                    {opToAction.op.pedido_venda && (
+                                        <div><span className="font-semibold">Pedido Venda:</span> {opToAction.op.pedido_venda}</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                            <button
+                                type="button"
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                                onClick={() => setOpToAction(null)}
+                                disabled={actionLoading}
+                            >
+                                Voltar
+                            </button>
+                            <button
+                                type="button"
+                                className={`px-4 py-2 text-sm font-semibold text-white rounded-lg transition flex items-center gap-1.5 shadow-sm disabled:opacity-50 ${
+                                    opToAction.type === 'excluir'
+                                        ? 'bg-red-600 hover:bg-red-700'
+                                        : 'bg-amber-600 hover:bg-amber-700'
+                                }`}
+                                onClick={confirmAction}
+                                disabled={actionLoading}
+                            >
+                                {actionLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : (
+                                    opToAction.type === 'excluir' ? <Trash2 className="w-4 h-4" /> : <Ban className="w-4 h-4" />
+                                )}
+                                {actionLoading 
+                                    ? 'Processando...' 
+                                    : (opToAction.type === 'excluir' ? 'Confirmar Exclusão' : 'Confirmar Cancelamento')}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

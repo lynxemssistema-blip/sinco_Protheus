@@ -81,8 +81,7 @@ export const MENU_GROUPS = [
         id: 'pcp_refinado',
         label: 'PCP Refinado',
         items: [
-            { id: 'pcp_ocupacao_recursos', label: 'Taxa de Ocupação', path: '/pcp-refinado/ocupacao', icon: BarChart2 },
-            { id: 'rastreabilidade_pedidos', label: 'Rastreio de Faturamento', path: '/pcp-refinado/rastreabilidade', icon: Network }
+            { id: 'pcp_ocupacao_recursos', label: 'Taxa de Ocupação', path: '/pcp-refinado/ocupacao', icon: BarChart2 }
         ]
     },
     {

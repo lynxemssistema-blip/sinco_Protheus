@@ -20,12 +20,46 @@
 
 html {
   -webkit-text-size-adjust: 100%;
-  /* Prevent font scaling in landscape while allowing user zoom */
   text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+}
+
+/* Prevenção de Auto-Zoom incômodo no Safari do iPhone em campos de formulário */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Momentum scrolling em containers roláveis no iOS */
+.touch-scroll {
+  -webkit-overflow-scrolling: touch;
+  overflow-y: auto;
+}
+
+/* Safe area padding utilities para iPhone (Home bar & Notch) */
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+}
+
+.pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+}
+
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 body {
-@apply bg-gray-50 text-gray-900;
+  @apply bg-gray-50 text-gray-900;
+  -webkit-font-smoothing: antialiased;
 }
 
 @media print {

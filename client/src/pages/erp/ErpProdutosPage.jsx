@@ -65,6 +65,25 @@ export default function ErpProdutosPage() {
     // Modal de Zoom da Imagem do Produto
     const [previewImage, setPreviewImage] = useState(null);
 
+    // Modal de Confirmação de Exclusão (Soft Delete Protheus D_E_L_E_T_ = '*')
+    const [productToDelete, setProductToDelete] = useState(null);
+    const [deletingProduct, setDeletingProduct] = useState(false);
+
+    const handleConfirmDelete = async () => {
+        if (!productToDelete) return;
+        setDeletingProduct(true);
+        try {
+            await api.delete(`/erp/produtos/${encodeURIComponent(productToDelete.codigo)}`);
+            setProductToDelete(null);
+            await loadData();
+        } catch (err) {
+            console.error('Erro ao excluir produto:', err);
+            alert('Erro ao excluir produto: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setDeletingProduct(false);
+        }
+    };
+
     const handleOpenQuickStructure = async (prod) => {
         setQuickStructureProduct(prod);
         setQuickStructureLoading(true);
@@ -236,12 +255,16 @@ export default function ErpProdutosPage() {
             if (colorFilter) {
                 url += `&cor_id=${encodeURIComponent(colorFilter)}`;
             }
-            const [prodRes, statsRes] = await Promise.all([
+            const [prodRes, statsRes] = await Promise.allSettled([
                 api.get(url),
                 api.get('/erp/stats')
             ]);
-            setProdutos(prodRes.data || []);
-            setStats(statsRes.data || {});
+            if (prodRes.status === 'fulfilled') {
+                setProdutos(prodRes.value?.data || []);
+            }
+            if (statsRes.status === 'fulfilled') {
+                setStats(statsRes.value?.data || {});
+            }
         } catch (err) {
             console.error('Erro ao carregar dados do ERP:', err);
         } finally {
@@ -777,6 +800,16 @@ export default function ErpProdutosPage() {
                                                 >
                                                     <Database className="w-4 h-4" />
                                                 </button>
+
+                                                {/* Botão Excluir Produto (Soft Delete Protheus D_E_L_E_T_ = '*') */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setProductToDelete(p)}
+                                                    className="p-1.5 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition inline-flex items-center justify-center cursor-pointer"
+                                                    title="Excluir Produto (Soft Delete Protheus D_E_L_E_T_ = '*')"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
                                             </div>
                                         </td>
                                     </tr>
@@ -822,6 +855,74 @@ export default function ErpProdutosPage() {
                 onSuccess={() => loadData()}
                 isSinco={false}
             />
+
+            {/* Modal de Confirmação de Exclusão (Soft Delete Protheus D_E_L_E_T_ = '*') */}
+            {productToDelete && (
+                <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+                    <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-md overflow-hidden p-6 space-y-4">
+                        <div className="flex items-start gap-3">
+                            <div className="p-3 bg-red-100 text-red-600 rounded-xl shrink-0">
+                                <Trash2 className="w-6 h-6" />
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-base font-bold text-gray-900">
+                                    Confirmar Exclusão de Produto
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Esta ação realizará a exclusão lógica no padrão Protheus (<code className="font-mono text-red-600 bg-red-50 px-1 py-0.5 rounded font-bold">D_E_L_E_T_ = '*'</code>).
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                            <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
+                                    {productToDelete.codigo}
+                                </span>
+                                <span className="text-xs font-mono text-gray-500">
+                                    Tipo: {productToDelete.tipo || 'PA'}
+                                </span>
+                            </div>
+                            <div className="text-xs font-medium text-gray-800 line-clamp-2">
+                                {productToDelete.descricao}
+                            </div>
+                        </div>
+
+                        <div className="text-[11px] text-gray-500 bg-amber-50 border border-amber-200 p-2.5 rounded-lg flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>
+                                O produto não será apagado definitivamente do banco de dados, permitindo rastreabilidade histórica.
+                            </span>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                            <button
+                                type="button"
+                                onClick={() => setProductToDelete(null)}
+                                disabled={deletingProduct}
+                                className="px-4 py-2 rounded-lg text-xs font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 transition cursor-pointer"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirmDelete}
+                                disabled={deletingProduct}
+                                className="px-4 py-2 rounded-lg text-xs font-bold text-white bg-red-600 hover:bg-red-700 active:scale-98 transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            >
+                                {deletingProduct ? (
+                                    <span>Excluindo...</span>
+                                ) : (
+                                    <>
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span>Confirmar Exclusão</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* Modal de Zoom da Foto do Produto */}
             {previewImage && (
                 <div 
